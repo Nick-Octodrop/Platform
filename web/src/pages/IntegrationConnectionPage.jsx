@@ -4,6 +4,7 @@ import { ArrowRight, CheckCircle2, Circle, KeyRound, Plus, ShieldCheck, TestTube
 import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
+import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
 import { buildIntegrationOauthRedirectUri, encodeIntegrationOauthState } from "../utils/integrationsOAuth.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
@@ -68,6 +69,46 @@ function buildMappingJsonFromForm(form) {
       .map((part) => part.trim())
       .filter(Boolean),
     field_mappings: fieldMappings,
+  };
+}
+
+function extractMappingAdvancedOverrides(mappingJson) {
+  const raw = mappingJson && typeof mappingJson === "object" ? { ...mappingJson } : {};
+  delete raw.resource_key;
+  delete raw.usage_scope;
+  delete raw.record_mode;
+  delete raw.match_on;
+  delete raw.field_mappings;
+  return raw;
+}
+
+function mappingFormFromRecord(mapping) {
+  const mappingJson = mapping?.mapping_json && typeof mapping.mapping_json === "object" ? mapping.mapping_json : {};
+  const fieldMappings = Array.isArray(mappingJson.field_mappings) ? mappingJson.field_mappings : [];
+  return {
+    name: String(mapping?.name || ""),
+    source_entity: String(mapping?.source_entity || ""),
+    target_entity: String(mapping?.target_entity || ""),
+    resource_key: String(mappingJson.resource_key || ""),
+    usage_scope: String(mappingJson.usage_scope || "sync_and_automation"),
+    record_mode: String(mappingJson.record_mode || "upsert"),
+    match_on_text: Array.isArray(mappingJson.match_on) ? mappingJson.match_on.join(", ") : "",
+    field_mappings: fieldMappings.length
+      ? fieldMappings.map((row) => ({
+          to: String(row?.to || ""),
+          value_type: Object.prototype.hasOwnProperty.call(row || {}, "value")
+            ? "constant"
+            : Object.prototype.hasOwnProperty.call(row || {}, "ref")
+              ? "ref"
+              : "path",
+          source: String(row?.path ?? row?.ref ?? row?.value ?? ""),
+          transform: String(row?.transform || ""),
+          value_map_rows: Object.entries(row?.value_map && typeof row.value_map === "object" ? row.value_map : {}).map(([from, to]) => ({ from, to: String(to ?? "") })),
+          value_map_default: String(row?.value_map_default || ""),
+        }))
+      : [{ to: "", value_type: "path", source: "", transform: "", value_map_rows: [], value_map_default: "" }],
+    mapping_json_text: prettyJson(extractMappingAdvancedOverrides(mappingJson)),
+    sample_source_text: "{}",
   };
 }
 
@@ -407,6 +448,8 @@ export default function IntegrationConnectionPage() {
     bodyText: "",
   });
   const [newMapping, setNewMapping] = useState(defaultNewMappingState);
+  const [mappingDrawerOpen, setMappingDrawerOpen] = useState(false);
+  const [editingMappingId, setEditingMappingId] = useState("");
   const [creatingMapping, setCreatingMapping] = useState(false);
   const [previewingMapping, setPreviewingMapping] = useState(false);
   const [mappingPreview, setMappingPreview] = useState(null);
@@ -547,6 +590,13 @@ export default function IntegrationConnectionPage() {
     () => mappingEntities.find((entity) => entity?.entity_id === newMapping.target_entity) || null,
     [mappingEntities, newMapping.target_entity],
   );
+  const selectedEditingMapping = useMemo(
+    () => (Array.isArray(mappings) ? mappings : []).find((mapping) => String(mapping?.id || "") === editingMappingId) || null,
+    [editingMappingId, mappings],
+  );
+  const mappingDrawerTitle = editingMappingId
+    ? (selectedEditingMapping?.name ? `Edit ${selectedEditingMapping.name}` : "Edit mapping profile")
+    : "New mapping profile";
   const sampleSourceFieldOptions = useMemo(
     () => uniquePathOptions(collectJsonPaths(safeJsonParse(newMapping.sample_source_text, {}))),
     [newMapping.sample_source_text],
@@ -1044,7 +1094,41 @@ export default function IntegrationConnectionPage() {
     }));
   }
 
-  async function createMapping() {
+  function resetMappingEditor() {
+    setNewMapping(defaultNewMappingState());
+    setMappingPreview(null);
+    setEditingMappingId("");
+  }
+
+  function closeMappingDrawer() {
+    if (creatingMapping || previewingMapping) return;
+    setMappingDrawerOpen(false);
+    resetMappingEditor();
+  }
+
+  function openNewMappingDrawer() {
+    resetMappingEditor();
+    setMappingDrawerOpen(true);
+  }
+
+  function openEditMappingDrawer(mapping) {
+    if (!mapping?.id) return;
+    setEditingMappingId(String(mapping.id));
+    setNewMapping(mappingFormFromRecord(mapping));
+    setMappingPreview(null);
+    setMappingDrawerOpen(true);
+  }
+
+  function resetCurrentMappingForm() {
+    if (selectedEditingMapping) {
+      setNewMapping(mappingFormFromRecord(selectedEditingMapping));
+    } else {
+      setNewMapping(defaultNewMappingState());
+    }
+    setMappingPreview(null);
+  }
+
+  async function saveMapping() {
     if (creatingMapping || !item?.id) return;
     setCreatingMapping(true);
     setError("");
@@ -1052,22 +1136,31 @@ export default function IntegrationConnectionPage() {
       const guidedMapping = buildMappingJsonFromForm(newMapping);
       const advancedMapping = safeJsonParse(newMapping.mapping_json_text, {});
       const sourceEntity = newMapping.source_entity.trim() || selectedResource?.source_entity || (newMapping.resource_key.trim() ? `${providerKey}.${newMapping.resource_key.trim()}` : "");
-      await apiFetch("/integrations/mappings", {
-        method: "POST",
-        body: {
-          connection_id: item.id,
-          name: newMapping.name.trim(),
-          source_entity: sourceEntity,
-          target_entity: newMapping.target_entity.trim(),
-          mapping_json: { ...guidedMapping, ...advancedMapping },
-        },
-      });
-      setNewMapping(defaultNewMappingState());
-      setMappingPreview(null);
-      setNotice(detailT("notices.mapping_added"));
+      const body = {
+        connection_id: item.id,
+        name: newMapping.name.trim(),
+        source_entity: sourceEntity,
+        target_entity: newMapping.target_entity.trim(),
+        mapping_json: { ...guidedMapping, ...advancedMapping },
+      };
+      if (editingMappingId) {
+        await apiFetch(`/integrations/mappings/${encodeURIComponent(editingMappingId)}`, {
+          method: "PATCH",
+          body,
+        });
+        setNotice("Mapping profile updated.");
+      } else {
+        await apiFetch("/integrations/mappings", {
+          method: "POST",
+          body,
+        });
+        setNotice(detailT("notices.mapping_added"));
+      }
+      setMappingDrawerOpen(false);
+      resetMappingEditor();
       await load();
     } catch (err) {
-      setError(err?.message || detailT("errors.create_mapping"));
+      setError(err?.message || (editingMappingId ? "Failed to update mapping profile" : detailT("errors.create_mapping")));
     } finally {
       setCreatingMapping(false);
     }
@@ -1497,6 +1590,455 @@ export default function IntegrationConnectionPage() {
     });
   }
 
+  const mappingEditorContent = (
+    <div className="space-y-4">
+      <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+        <div className="font-medium">Profile editor</div>
+        <div className="mt-1 opacity-80">
+          One mapping profile is one reusable recipe for translating a provider record into OCTO fields.
+        </div>
+      </div>
+      <label className="form-control">
+        <span className="label-text text-sm">{t("common.name")}</span>
+        <input className="input input-bordered" value={newMapping.name} onChange={(e) => setNewMapping((prev) => ({ ...prev, name: e.target.value }))} placeholder={detailT("mappings.name_placeholder")} />
+      </label>
+      <label className="form-control">
+        <span className="label-text text-sm">{detailT("mappings.source_entity")}</span>
+        {mappingResources.length ? (
+          <input
+            className="input input-bordered"
+            value={newMapping.source_entity || selectedResource?.source_entity || ""}
+            readOnly
+            placeholder={detailT("mappings.source_entity_placeholder")}
+          />
+        ) : (
+          <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder={detailT("mappings.source_entity_placeholder")} />
+        )}
+        <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.source_entity_help")}</span>
+      </label>
+      <label className="form-control">
+        <span className="label-text text-sm">{detailT("mappings.target_entity")}</span>
+        {mappingEntities.length ? (
+          <AppSelect
+            className="select select-bordered"
+            value={newMapping.target_entity}
+            onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))}
+          >
+            <option value="">{detailT("mappings.target_entity_placeholder")}</option>
+            {mappingEntities.map((entity) => (
+              <option key={entity.entity_id} value={entity.entity_id}>
+                {entity.label || entity.entity_id}
+              </option>
+            ))}
+          </AppSelect>
+        ) : (
+          <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder={detailT("mappings.target_entity_placeholder")} />
+        )}
+        <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.target_entity_help")}</span>
+      </label>
+      <label className="form-control">
+        <span className="label-text text-sm">{detailT("mappings.resource_key")}</span>
+        {mappingResources.length ? (
+          <AppSelect
+            className="select select-bordered"
+            value={newMapping.resource_key}
+            onChange={(e) => selectMappingResource(e.target.value)}
+          >
+            <option value="">{detailT("mappings.resource_key_placeholder")}</option>
+            {mappingResources.map((resource) => (
+              <option key={resource.key} value={resource.key}>
+                {resource.label || resource.key}
+              </option>
+            ))}
+          </AppSelect>
+        ) : (
+          <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder={detailT("mappings.resource_key_placeholder")} />
+        )}
+        <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.resource_key_help")}</span>
+      </label>
+      {selectedResource || selectedTargetEntity ? (
+        <div className="rounded-box border border-base-300 bg-base-100 p-3 text-sm">
+          <div className="font-medium">Mapping direction</div>
+          <div className="mt-1 opacity-80">
+            {(selectedResource?.label || newMapping.resource_key || "Provider record")}
+            {" -> "}
+            {(selectedTargetEntity?.label || newMapping.target_entity || "OCTO entity")}
+          </div>
+          <div className="mt-1 text-xs opacity-60">
+            Provider records from this resource will be translated into fields on the selected OCTO entity.
+          </div>
+        </div>
+      ) : null}
+      <label className="form-control">
+        <span className="label-text text-sm">Usage</span>
+        <AppSelect className="select select-bordered" value={newMapping.usage_scope} onChange={(e) => setNewMapping((prev) => ({ ...prev, usage_scope: e.target.value }))}>
+          <option value="sync_and_automation">Sync + Automation</option>
+          <option value="sync_only">Sync only</option>
+          <option value="automation_only">Automation only</option>
+        </AppSelect>
+        <span className="label-text-alt opacity-70 mt-1">Use sync-only mappings during integration sync, automation-only mappings inside workflows, or make one profile reusable for both.</span>
+      </label>
+      <label className="form-control">
+        <span className="label-text text-sm">{detailT("mappings.record_mode")}</span>
+        <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
+          <option value="upsert">{detailT("mappings.record_mode_upsert")}</option>
+          <option value="create">{detailT("mappings.record_mode_create")}</option>
+        </AppSelect>
+      </label>
+      {newMapping.record_mode === "upsert" ? (
+        targetFieldOptions.length ? (
+          <div className="form-control">
+            <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {targetFieldOptions.map((field) => {
+                const selected = selectedMatchOnFields.includes(field.value);
+                return (
+                  <button
+                    key={field.value}
+                    className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
+                    type="button"
+                    onClick={() => toggleMatchOnField(field.value)}
+                  >
+                    {field.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
+          </div>
+        ) : (
+          <label className="form-control">
+            <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
+            <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder={detailT("mappings.match_on_placeholder")} />
+            <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
+          </label>
+        )
+      ) : null}
+
+      <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
+        <div className="space-y-3">
+          <div className="rounded-box border border-base-300 bg-base-200/50 p-3 text-sm">
+            <div className="font-medium">How field selection works</div>
+            <div className="mt-1 opacity-80">
+              This is where you choose the exact field pairs, such as
+              <span className="font-medium"> Xero EmailAddress {"->"} OCTO contact.email</span>.
+              Sync does not pick raw fields separately. Sync runs the mapping profiles you enable, and each profile applies the field pairs defined here.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn btn-sm btn-outline"
+              type="button"
+              onClick={applySuggestedFieldMappings}
+              disabled={!suggestedFieldMappings.length}
+            >
+              Auto-fill suggested fields
+            </button>
+            {suggestedFieldMappings.length ? (
+              <div className="text-xs opacity-70 self-center">
+                Found {suggestedFieldMappings.length} likely provider {"->"} OCTO field matches from the selected resource and entity.
+              </div>
+            ) : (
+              <div className="text-xs opacity-60 self-center">
+                Choose a provider resource and target OCTO entity first to enable field suggestions.
+              </div>
+            )}
+          </div>
+          {(newMapping.field_mappings || []).map((row, index) => (
+            <div key={index} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
+              {(() => {
+                const targetFieldDef = targetFieldDefinitionById.get(row?.to);
+                const targetEnumOptions = normalizeOptionItems(targetFieldDef?.options);
+                const sourceSampleRecord = safeJsonParse(newMapping.sample_source_text, selectedResource?.sample_record || {});
+                const sourceSampleValue = row?.value_type === "path" && row?.source ? (() => {
+                  try {
+                    return row.source.split(".").reduce((current, part) => {
+                      if (current == null) return undefined;
+                      const token = String(part || "").trim();
+                      if (!token) return current;
+                      const bracketMatch = token.match(/^(.+)\[(\d+)\]$/);
+                      if (bracketMatch) {
+                        const next = current?.[bracketMatch[1]];
+                        return Array.isArray(next) ? next[Number(bracketMatch[2])] : undefined;
+                      }
+                      return current?.[token];
+                    }, sourceSampleRecord);
+                  } catch {
+                    return undefined;
+                  }
+                })() : undefined;
+                const sourceValueSuggestions = Array.isArray(sourceSampleValue)
+                  ? sourceSampleValue.filter((item) => ["string", "number"].includes(typeof item)).map((item) => String(item))
+                  : ["string", "number"].includes(typeof sourceSampleValue)
+                    ? [String(sourceSampleValue)]
+                    : [];
+                const sourceValueSuggestionsUnique = Array.from(new Set(sourceValueSuggestions.filter(Boolean)));
+                const sourceValueDatalistId = `mapping-source-values-${index}`;
+                return (
+                  <>
+                    <div className="rounded-box bg-base-200/70 px-3 py-2 text-sm font-medium">
+                      {mappingPairSummary(row, sourceFieldOptionMap, targetFieldOptionMap, mappingProvider?.provider_name || provider?.name || providerKey)}
+                    </div>
+                    <label className="form-control">
+                      <span className="label-text text-sm">{detailT("mappings.value_source")}</span>
+                      <AppSelect
+                        className="select select-bordered"
+                        value={row.value_type}
+                        onChange={(e) => updateFieldMappingRow(index, { value_type: e.target.value })}
+                      >
+                        <option value="path">{detailT("mappings.value_source_path")}</option>
+                        <option value="constant">{detailT("mappings.value_source_constant")}</option>
+                        <option value="ref">{detailT("mappings.value_source_ref")}</option>
+                      </AppSelect>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">
+                        {row.value_type === "constant"
+                          ? "Constant value"
+                          : row.value_type === "ref"
+                            ? "Reference"
+                            : `${mappingProvider?.provider_name || provider?.name || "Provider"} field`}
+                      </span>
+                      {row.value_type === "path" && sourceFieldOptions.length ? (
+                        <AppSelect
+                          className="select select-bordered"
+                          value={row.source}
+                          onChange={(e) => {
+                            const nextSource = e.target.value;
+                            const updates = { source: nextSource };
+                            if (!row.to) {
+                              const matchedTarget = findBestMatchingField(sourceFieldOptionMap.get(nextSource), targetFieldOptions);
+                              if (matchedTarget?.value) updates.to = matchedTarget.value;
+                            }
+                            updateFieldMappingRow(index, updates);
+                          }}
+                        >
+                          <option value="">{detailT("mappings.source_path_placeholder")}</option>
+                          {sourceFieldOptions.map((field) => (
+                            <option key={field.value} value={field.value}>
+                              {field.label}{field.type ? ` (${field.type})` : ""}
+                            </option>
+                          ))}
+                        </AppSelect>
+                      ) : (
+                        <input
+                          className="input input-bordered"
+                          value={row.source}
+                          onChange={(e) => updateFieldMappingRow(index, { source: e.target.value })}
+                          placeholder={row.value_type === "constant" ? detailT("mappings.constant_placeholder") : row.value_type === "ref" ? detailT("mappings.reference_placeholder") : detailT("mappings.source_path_placeholder")}
+                        />
+                      )}
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">OCTO field</span>
+                      {targetFieldOptions.length ? (
+                        <AppSelect
+                          className="select select-bordered"
+                          value={row.to}
+                          onChange={(e) => {
+                            const nextTarget = e.target.value;
+                            const updates = { to: nextTarget };
+                            if (row.value_type === "path" && !row.source) {
+                              const matchedSource = findBestMatchingField(targetFieldOptionMap.get(nextTarget), sourceFieldOptions);
+                              if (matchedSource?.value) updates.source = matchedSource.value;
+                            }
+                            updateFieldMappingRow(index, updates);
+                          }}
+                        >
+                          <option value="">{detailT("mappings.target_field_placeholder")}</option>
+                          {targetFieldOptions.map((field) => (
+                            <option key={field.value} value={field.value}>
+                              {field.label}
+                            </option>
+                          ))}
+                        </AppSelect>
+                      ) : (
+                        <input
+                          className="input input-bordered"
+                          value={row.to}
+                          onChange={(e) => updateFieldMappingRow(index, { to: e.target.value })}
+                          placeholder={detailT("mappings.target_field_placeholder")}
+                        />
+                      )}
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text text-sm">{detailT("mappings.transform")}</span>
+                      <AppSelect
+                        className="select select-bordered"
+                        value={row.transform || ""}
+                        onChange={(e) => updateFieldMappingRow(index, { transform: e.target.value })}
+                      >
+                        <option value="">{detailT("mappings.no_transform")}</option>
+                        <option value="trim">{detailT("mappings.transform_trim")}</option>
+                        <option value="lower">{detailT("mappings.transform_lower")}</option>
+                        <option value="upper">{detailT("mappings.transform_upper")}</option>
+                        <option value="string">{detailT("mappings.transform_string")}</option>
+                        <option value="number">{detailT("mappings.transform_number")}</option>
+                        <option value="integer">{detailT("mappings.transform_integer")}</option>
+                        <option value="boolean">{detailT("mappings.transform_boolean")}</option>
+                        <option value="null_if_empty">{detailT("mappings.transform_null_if_empty")}</option>
+                      </AppSelect>
+                    </label>
+                    <div className="space-y-3 rounded-box border border-base-300 bg-base-200/40 p-3">
+                      <div>
+                        <div className="text-sm font-medium">Value map</div>
+                        <div className="mt-1 text-xs opacity-70">
+                          Use this when the provider value and OCTO value are named differently, for example
+                          <span className="font-medium"> supplier {"->"} NL supplier</span>.
+                        </div>
+                        {targetEnumOptions.length ? (
+                          <div className="mt-1 text-xs opacity-60">
+                            Valid OCTO values for this field: {targetEnumOptions.map((option) => option.label).join(", ")}
+                          </div>
+                        ) : null}
+                      </div>
+                      {(Array.isArray(row.value_map_rows) ? row.value_map_rows : []).map((entry, mapIndex) => (
+                        <div key={`${index}-map-${mapIndex}`} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                          <label className="form-control">
+                            <span className="label-text text-sm">{mappingProvider?.provider_name || provider?.name || "Provider"} value</span>
+                            <input
+                              className="input input-bordered"
+                              list={sourceValueSuggestionsUnique.length ? sourceValueDatalistId : undefined}
+                              value={entry.from || ""}
+                              onChange={(e) => updateFieldValueMapRow(index, mapIndex, { from: e.target.value })}
+                              placeholder="supplier"
+                            />
+                            {sourceValueSuggestionsUnique.length ? (
+                              <datalist id={sourceValueDatalistId}>
+                                {sourceValueSuggestionsUnique.map((option) => (
+                                  <option key={option} value={option} />
+                                ))}
+                              </datalist>
+                            ) : null}
+                          </label>
+                          <label className="form-control">
+                            <span className="label-text text-sm">OCTO value</span>
+                            {targetEnumOptions.length ? (
+                              <AppSelect
+                                className="select select-bordered"
+                                value={entry.to || ""}
+                                onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
+                              >
+                                <option value="">Select OCTO value</option>
+                                {targetEnumOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </AppSelect>
+                            ) : (
+                              <input
+                                className="input input-bordered"
+                                value={entry.to || ""}
+                                onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
+                                placeholder="NL supplier"
+                              />
+                            )}
+                          </label>
+                          <div className="flex items-end">
+                            <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldValueMapRow(index, mapIndex)}>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn btn-sm btn-outline" type="button" onClick={() => addFieldValueMapRow(index)}>
+                          <Plus className="h-4 w-4" />
+                          Add value map
+                        </button>
+                      </div>
+                      <label className="form-control">
+                        <span className="label-text text-sm">Fallback OCTO value</span>
+                        {targetEnumOptions.length ? (
+                          <AppSelect
+                            className="select select-bordered"
+                            value={row.value_map_default || ""}
+                            onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
+                          >
+                            <option value="">Leave original provider value</option>
+                            {targetEnumOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </AppSelect>
+                        ) : (
+                          <input
+                            className="input input-bordered"
+                            value={row.value_map_default || ""}
+                            onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
+                            placeholder="Leave blank to keep the original provider value when no map entry matches"
+                          />
+                        )}
+                      </label>
+                    </div>
+                    <div className="flex justify-end">
+                      <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldMappingRow(index)} disabled={(newMapping.field_mappings || []).length <= 1}>
+                        {detailT("mappings.remove_row")}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ))}
+          <button className="btn btn-sm btn-outline" type="button" onClick={addFieldMappingRow}>
+            <Plus className="h-4 w-4" />
+            {detailT("mappings.add_field_mapping")}
+          </button>
+        </div>
+      </Section>
+
+      <Section title={detailT("mappings.preview_title")} help={detailT("mappings.preview_help")}>
+        <div className="space-y-3">
+          <JsonField label={detailT("mappings.sample_source_record")} value={newMapping.sample_source_text} onChange={(text) => setNewMapping((prev) => ({ ...prev, sample_source_text: text }))} minHeight="10rem" />
+          <div className="flex flex-wrap gap-2">
+            {selectedResource?.sample_record ? (
+              <button
+                className="btn btn-sm btn-ghost"
+                type="button"
+                onClick={() => setNewMapping((prev) => ({ ...prev, sample_source_text: prettyJson(selectedResource.sample_record) }))}
+              >
+                Use {selectedResource.label || selectedResource.key} sample
+              </button>
+            ) : null}
+            <button className="btn btn-sm btn-outline" type="button" onClick={previewMapping} disabled={previewingMapping}>
+              {previewingMapping ? detailT("mappings.previewing") : detailT("mappings.preview_action")}
+            </button>
+          </div>
+          {mappingPreview ? (
+            <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(mappingPreview, null, 2)}</pre>
+          ) : (
+            <div className="text-sm opacity-60">{detailT("mappings.no_preview")}</div>
+          )}
+        </div>
+      </Section>
+
+      <details className="collapse collapse-arrow border border-base-300 bg-base-100">
+        <summary className="collapse-title text-sm font-medium">{detailT("mappings.advanced_json_title")}</summary>
+        <div className="collapse-content">
+          <JsonField
+            label={detailT("mappings.advanced_overrides")}
+            value={newMapping.mapping_json_text}
+            onChange={(text) => setNewMapping((prev) => ({ ...prev, mapping_json_text: text }))}
+            minHeight="10rem"
+            help={detailT("mappings.advanced_overrides_help")}
+          />
+        </div>
+      </details>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="btn btn-primary btn-sm" type="button" onClick={saveMapping} disabled={creatingMapping || !newMapping.name.trim() || !(newMapping.source_entity.trim() || selectedResource?.source_entity || newMapping.resource_key.trim()) || !newMapping.target_entity.trim()}>
+          {creatingMapping ? (editingMappingId ? "Saving..." : detailT("mappings.adding")) : (editingMappingId ? "Save mapping profile" : detailT("mappings.add"))}
+        </button>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={resetCurrentMappingForm} disabled={creatingMapping || previewingMapping}>
+          {detailT("mappings.reset")}
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <TabbedPaneShell
       title=""
@@ -1849,442 +2391,10 @@ export default function IntegrationConnectionPage() {
                     </div>
                   </div>
                 </div>
-                <label className="form-control">
-                  <span className="label-text text-sm">{t("common.name")}</span>
-                  <input className="input input-bordered" value={newMapping.name} onChange={(e) => setNewMapping((prev) => ({ ...prev, name: e.target.value }))} placeholder={detailT("mappings.name_placeholder")} />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("mappings.source_entity")}</span>
-                  {mappingResources.length ? (
-                    <input
-                      className="input input-bordered"
-                      value={newMapping.source_entity || selectedResource?.source_entity || ""}
-                      readOnly
-                      placeholder={detailT("mappings.source_entity_placeholder")}
-                    />
-                  ) : (
-                    <input className="input input-bordered" value={newMapping.source_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, source_entity: e.target.value }))} placeholder={detailT("mappings.source_entity_placeholder")} />
-                  )}
-                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.source_entity_help")}</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("mappings.target_entity")}</span>
-                  {mappingEntities.length ? (
-                    <AppSelect
-                      className="select select-bordered"
-                      value={newMapping.target_entity}
-                      onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))}
-                    >
-                      <option value="">{detailT("mappings.target_entity_placeholder")}</option>
-                      {mappingEntities.map((entity) => (
-                        <option key={entity.entity_id} value={entity.entity_id}>
-                          {entity.label || entity.entity_id}
-                        </option>
-                      ))}
-                    </AppSelect>
-                  ) : (
-                    <input className="input input-bordered" value={newMapping.target_entity} onChange={(e) => setNewMapping((prev) => ({ ...prev, target_entity: e.target.value }))} placeholder={detailT("mappings.target_entity_placeholder")} />
-                  )}
-                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.target_entity_help")}</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("mappings.resource_key")}</span>
-                  {mappingResources.length ? (
-                    <AppSelect
-                      className="select select-bordered"
-                      value={newMapping.resource_key}
-                      onChange={(e) => selectMappingResource(e.target.value)}
-                    >
-                      <option value="">{detailT("mappings.resource_key_placeholder")}</option>
-                      {mappingResources.map((resource) => (
-                        <option key={resource.key} value={resource.key}>
-                          {resource.label || resource.key}
-                        </option>
-                      ))}
-                    </AppSelect>
-                  ) : (
-                    <input className="input input-bordered" value={newMapping.resource_key} onChange={(e) => setNewMapping((prev) => ({ ...prev, resource_key: e.target.value }))} placeholder={detailT("mappings.resource_key_placeholder")} />
-                  )}
-                  <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.resource_key_help")}</span>
-                </label>
-                {selectedResource || selectedTargetEntity ? (
-                  <div className="rounded-box border border-base-300 bg-base-100 p-3 text-sm">
-                    <div className="font-medium">Mapping direction</div>
-                    <div className="mt-1 opacity-80">
-                      {(selectedResource?.label || newMapping.resource_key || "Provider record")}
-                      {" -> "}
-                      {(selectedTargetEntity?.label || newMapping.target_entity || "OCTO entity")}
-                    </div>
-                    <div className="mt-1 text-xs opacity-60">
-                      Provider records from this resource will be translated into fields on the selected OCTO entity.
-                    </div>
-                  </div>
-                ) : null}
-                <label className="form-control">
-                  <span className="label-text text-sm">Usage</span>
-                  <AppSelect className="select select-bordered" value={newMapping.usage_scope} onChange={(e) => setNewMapping((prev) => ({ ...prev, usage_scope: e.target.value }))}>
-                    <option value="sync_and_automation">Sync + Automation</option>
-                    <option value="sync_only">Sync only</option>
-                    <option value="automation_only">Automation only</option>
-                  </AppSelect>
-                  <span className="label-text-alt opacity-70 mt-1">Use sync-only mappings during integration sync, automation-only mappings inside workflows, or make one profile reusable for both.</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("mappings.record_mode")}</span>
-                  <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
-                    <option value="upsert">{detailT("mappings.record_mode_upsert")}</option>
-                    <option value="create">{detailT("mappings.record_mode_create")}</option>
-                  </AppSelect>
-                </label>
-                {newMapping.record_mode === "upsert" ? (
-                  targetFieldOptions.length ? (
-                    <div className="form-control">
-                      <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {targetFieldOptions.map((field) => {
-                          const selected = selectedMatchOnFields.includes(field.value);
-                          return (
-                            <button
-                              key={field.value}
-                              className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
-                              type="button"
-                              onClick={() => toggleMatchOnField(field.value)}
-                            >
-                              {field.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
-                    </div>
-                  ) : (
-                    <label className="form-control">
-                      <span className="label-text text-sm">{detailT("mappings.match_on")}</span>
-                      <input className="input input-bordered" value={newMapping.match_on_text} onChange={(e) => setNewMapping((prev) => ({ ...prev, match_on_text: e.target.value }))} placeholder={detailT("mappings.match_on_placeholder")} />
-                      <span className="label-text-alt opacity-70 mt-1">{detailT("mappings.match_on_help")}</span>
-                    </label>
-                  )
-                ) : null}
-
-                <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
-                  <div className="space-y-3">
-                    <div className="rounded-box border border-base-300 bg-base-200/50 p-3 text-sm">
-                      <div className="font-medium">How field selection works</div>
-                      <div className="mt-1 opacity-80">
-                        This is where you choose the exact field pairs, such as
-                        <span className="font-medium"> Xero EmailAddress {"->"} OCTO contact.email</span>.
-                        Sync does not pick raw fields separately. Sync runs the mapping profiles you enable, and each profile applies the field pairs defined here.
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        className="btn btn-sm btn-outline"
-                        type="button"
-                        onClick={applySuggestedFieldMappings}
-                        disabled={!suggestedFieldMappings.length}
-                      >
-                        Auto-fill suggested fields
-                      </button>
-                      {suggestedFieldMappings.length ? (
-                        <div className="text-xs opacity-70 self-center">
-                          Found {suggestedFieldMappings.length} likely provider {"->"} OCTO field matches from the selected resource and entity.
-                        </div>
-                      ) : (
-                        <div className="text-xs opacity-60 self-center">
-                          Choose a provider resource and target OCTO entity first to enable field suggestions.
-                        </div>
-                      )}
-                    </div>
-                    {(newMapping.field_mappings || []).map((row, index) => (
-                      <div key={index} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
-                        {(() => {
-                          const targetFieldDef = targetFieldDefinitionById.get(row?.to);
-                          const targetEnumOptions = normalizeOptionItems(targetFieldDef?.options);
-                          const sourceSampleRecord = safeJsonParse(newMapping.sample_source_text, selectedResource?.sample_record || {});
-                          const sourceSampleValue = row?.value_type === "path" && row?.source ? (() => {
-                            try {
-                              return row.source.split(".").reduce((current, part) => {
-                                if (current == null) return undefined;
-                                const token = String(part || "").trim();
-                                if (!token) return current;
-                                const bracketMatch = token.match(/^(.+)\[(\d+)\]$/);
-                                if (bracketMatch) {
-                                  const next = current?.[bracketMatch[1]];
-                                  return Array.isArray(next) ? next[Number(bracketMatch[2])] : undefined;
-                                }
-                                return current?.[token];
-                              }, sourceSampleRecord);
-                            } catch {
-                              return undefined;
-                            }
-                          })() : undefined;
-                          const sourceValueSuggestions = Array.isArray(sourceSampleValue)
-                            ? sourceSampleValue.filter((item) => ["string", "number"].includes(typeof item)).map((item) => String(item))
-                            : ["string", "number"].includes(typeof sourceSampleValue)
-                              ? [String(sourceSampleValue)]
-                              : [];
-                          const sourceValueSuggestionsUnique = Array.from(new Set(sourceValueSuggestions.filter(Boolean)));
-                          const sourceValueDatalistId = `mapping-source-values-${index}`;
-                          return (
-                            <>
-                        <div className="rounded-box bg-base-200/70 px-3 py-2 text-sm font-medium">
-                          {mappingPairSummary(row, sourceFieldOptionMap, targetFieldOptionMap, mappingProvider?.provider_name || provider?.name || providerKey)}
-                        </div>
-                        <label className="form-control">
-                          <span className="label-text text-sm">{detailT("mappings.value_source")}</span>
-                          <AppSelect
-                            className="select select-bordered"
-                            value={row.value_type}
-                            onChange={(e) => updateFieldMappingRow(index, { value_type: e.target.value })}
-                          >
-                            <option value="path">{detailT("mappings.value_source_path")}</option>
-                            <option value="constant">{detailT("mappings.value_source_constant")}</option>
-                            <option value="ref">{detailT("mappings.value_source_ref")}</option>
-                          </AppSelect>
-                        </label>
-                        <label className="form-control">
-                          <span className="label-text text-sm">
-                            {row.value_type === "constant"
-                              ? "Constant value"
-                              : row.value_type === "ref"
-                                ? "Reference"
-                                : `${mappingProvider?.provider_name || provider?.name || "Provider"} field`}
-                          </span>
-                          {row.value_type === "path" && sourceFieldOptions.length ? (
-                            <AppSelect
-                              className="select select-bordered"
-                              value={row.source}
-                              onChange={(e) => {
-                                const nextSource = e.target.value;
-                                const updates = { source: nextSource };
-                                if (!row.to) {
-                                  const matchedTarget = findBestMatchingField(sourceFieldOptionMap.get(nextSource), targetFieldOptions);
-                                  if (matchedTarget?.value) updates.to = matchedTarget.value;
-                                }
-                                updateFieldMappingRow(index, updates);
-                              }}
-                            >
-                              <option value="">{detailT("mappings.source_path_placeholder")}</option>
-                              {sourceFieldOptions.map((field) => (
-                                <option key={field.value} value={field.value}>
-                                  {field.label}{field.type ? ` (${field.type})` : ""}
-                                </option>
-                              ))}
-                            </AppSelect>
-                          ) : (
-                            <input
-                              className="input input-bordered"
-                              value={row.source}
-                              onChange={(e) => updateFieldMappingRow(index, { source: e.target.value })}
-                              placeholder={row.value_type === "constant" ? detailT("mappings.constant_placeholder") : row.value_type === "ref" ? detailT("mappings.reference_placeholder") : detailT("mappings.source_path_placeholder")}
-                            />
-                          )}
-                        </label>
-                        <label className="form-control">
-                          <span className="label-text text-sm">OCTO field</span>
-                          {targetFieldOptions.length ? (
-                            <AppSelect
-                              className="select select-bordered"
-                              value={row.to}
-                              onChange={(e) => {
-                                const nextTarget = e.target.value;
-                                const updates = { to: nextTarget };
-                                if (row.value_type === "path" && !row.source) {
-                                  const matchedSource = findBestMatchingField(targetFieldOptionMap.get(nextTarget), sourceFieldOptions);
-                                  if (matchedSource?.value) updates.source = matchedSource.value;
-                                }
-                                updateFieldMappingRow(index, updates);
-                              }}
-                            >
-                              <option value="">{detailT("mappings.target_field_placeholder")}</option>
-                              {targetFieldOptions.map((field) => (
-                                <option key={field.value} value={field.value}>
-                                  {field.label}
-                                </option>
-                              ))}
-                            </AppSelect>
-                          ) : (
-                            <input
-                              className="input input-bordered"
-                              value={row.to}
-                              onChange={(e) => updateFieldMappingRow(index, { to: e.target.value })}
-                              placeholder={detailT("mappings.target_field_placeholder")}
-                            />
-                          )}
-                        </label>
-                        <label className="form-control">
-                          <span className="label-text text-sm">{detailT("mappings.transform")}</span>
-                          <AppSelect
-                            className="select select-bordered"
-                            value={row.transform || ""}
-                            onChange={(e) => updateFieldMappingRow(index, { transform: e.target.value })}
-                          >
-                            <option value="">{detailT("mappings.no_transform")}</option>
-                            <option value="trim">{detailT("mappings.transform_trim")}</option>
-                            <option value="lower">{detailT("mappings.transform_lower")}</option>
-                            <option value="upper">{detailT("mappings.transform_upper")}</option>
-                            <option value="string">{detailT("mappings.transform_string")}</option>
-                            <option value="number">{detailT("mappings.transform_number")}</option>
-                            <option value="integer">{detailT("mappings.transform_integer")}</option>
-                            <option value="boolean">{detailT("mappings.transform_boolean")}</option>
-                            <option value="null_if_empty">{detailT("mappings.transform_null_if_empty")}</option>
-                          </AppSelect>
-                        </label>
-                        <div className="space-y-3 rounded-box border border-base-300 bg-base-200/40 p-3">
-                          <div>
-                            <div className="text-sm font-medium">Value map</div>
-                            <div className="mt-1 text-xs opacity-70">
-                              Use this when the provider value and OCTO value are named differently, for example
-                              <span className="font-medium"> supplier {"->"} NL supplier</span>.
-                            </div>
-                            {targetEnumOptions.length ? (
-                              <div className="mt-1 text-xs opacity-60">
-                                Valid OCTO values for this field: {targetEnumOptions.map((option) => option.label).join(", ")}
-                              </div>
-                            ) : null}
-                          </div>
-                          {(Array.isArray(row.value_map_rows) ? row.value_map_rows : []).map((entry, mapIndex) => (
-                            <div key={`${index}-map-${mapIndex}`} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                              <label className="form-control">
-                                <span className="label-text text-sm">{mappingProvider?.provider_name || provider?.name || "Provider"} value</span>
-                                <input
-                                  className="input input-bordered"
-                                  list={sourceValueSuggestionsUnique.length ? sourceValueDatalistId : undefined}
-                                  value={entry.from || ""}
-                                  onChange={(e) => updateFieldValueMapRow(index, mapIndex, { from: e.target.value })}
-                                  placeholder="supplier"
-                                />
-                                {sourceValueSuggestionsUnique.length ? (
-                                  <datalist id={sourceValueDatalistId}>
-                                    {sourceValueSuggestionsUnique.map((option) => (
-                                      <option key={option} value={option} />
-                                    ))}
-                                  </datalist>
-                                ) : null}
-                              </label>
-                              <label className="form-control">
-                                <span className="label-text text-sm">OCTO value</span>
-                                {targetEnumOptions.length ? (
-                                  <AppSelect
-                                    className="select select-bordered"
-                                    value={entry.to || ""}
-                                    onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
-                                  >
-                                    <option value="">Select OCTO value</option>
-                                    {targetEnumOptions.map((option) => (
-                                      <option key={option.value} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </AppSelect>
-                                ) : (
-                                  <input
-                                    className="input input-bordered"
-                                    value={entry.to || ""}
-                                    onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
-                                    placeholder="NL supplier"
-                                  />
-                                )}
-                              </label>
-                              <div className="flex items-end">
-                                <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldValueMapRow(index, mapIndex)}>
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                          <div className="flex flex-wrap gap-2">
-                            <button className="btn btn-sm btn-outline" type="button" onClick={() => addFieldValueMapRow(index)}>
-                              <Plus className="h-4 w-4" />
-                              Add value map
-                            </button>
-                          </div>
-                          <label className="form-control">
-                            <span className="label-text text-sm">Fallback OCTO value</span>
-                            {targetEnumOptions.length ? (
-                              <AppSelect
-                                className="select select-bordered"
-                                value={row.value_map_default || ""}
-                                onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
-                              >
-                                <option value="">Leave original provider value</option>
-                                {targetEnumOptions.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </AppSelect>
-                            ) : (
-                              <input
-                                className="input input-bordered"
-                                value={row.value_map_default || ""}
-                                onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
-                                placeholder="Leave blank to keep the original provider value when no map entry matches"
-                              />
-                            )}
-                          </label>
-                        </div>
-                        <div className="flex justify-end">
-                          <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldMappingRow(index)} disabled={(newMapping.field_mappings || []).length <= 1}>
-                            {detailT("mappings.remove_row")}
-                          </button>
-                        </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    ))}
-                    <button className="btn btn-sm btn-outline" type="button" onClick={addFieldMappingRow}>
-                      <Plus className="h-4 w-4" />
-                      {detailT("mappings.add_field_mapping")}
-                    </button>
-                  </div>
-                </Section>
-
-                <Section title={detailT("mappings.preview_title")} help={detailT("mappings.preview_help")}>
-                  <div className="space-y-3">
-                    <JsonField label={detailT("mappings.sample_source_record")} value={newMapping.sample_source_text} onChange={(text) => setNewMapping((prev) => ({ ...prev, sample_source_text: text }))} minHeight="10rem" />
-                    <div className="flex flex-wrap gap-2">
-                      {selectedResource?.sample_record ? (
-                        <button
-                          className="btn btn-sm btn-ghost"
-                          type="button"
-                          onClick={() => setNewMapping((prev) => ({ ...prev, sample_source_text: prettyJson(selectedResource.sample_record) }))}
-                        >
-                          Use {selectedResource.label || selectedResource.key} sample
-                        </button>
-                      ) : null}
-                      <button className="btn btn-sm btn-outline" type="button" onClick={previewMapping} disabled={previewingMapping}>
-                        {previewingMapping ? detailT("mappings.previewing") : detailT("mappings.preview_action")}
-                      </button>
-                    </div>
-                    {mappingPreview ? (
-                      <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(mappingPreview, null, 2)}</pre>
-                    ) : (
-                      <div className="text-sm opacity-60">{detailT("mappings.no_preview")}</div>
-                    )}
-                  </div>
-                </Section>
-
-                <details className="collapse collapse-arrow border border-base-300 bg-base-100">
-                  <summary className="collapse-title text-sm font-medium">{detailT("mappings.advanced_json_title")}</summary>
-                  <div className="collapse-content">
-                    <JsonField
-                      label={detailT("mappings.advanced_overrides")}
-                      value={newMapping.mapping_json_text}
-                      onChange={(text) => setNewMapping((prev) => ({ ...prev, mapping_json_text: text }))}
-                      minHeight="10rem"
-                      help={detailT("mappings.advanced_overrides_help")}
-                    />
-                  </div>
-                </details>
-
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary btn-sm" type="button" onClick={createMapping} disabled={creatingMapping || !newMapping.name.trim() || !(newMapping.source_entity.trim() || selectedResource?.source_entity || newMapping.resource_key.trim()) || !newMapping.target_entity.trim()}>
-                    {creatingMapping ? detailT("mappings.adding") : detailT("mappings.add")}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setNewMapping(defaultNewMappingState()); setMappingPreview(null); }}>
-                    {detailT("mappings.reset")}
+                  <button className="btn btn-primary btn-sm" type="button" onClick={openNewMappingDrawer}>
+                    <Plus className="h-4 w-4" />
+                    New mapping profile
                   </button>
                 </div>
               </div>
@@ -2325,6 +2435,15 @@ export default function IntegrationConnectionPage() {
                   },
                 },
                 {
+                  key: "open",
+                  label: "",
+                  render: (row) => (
+                    <button className="btn btn-outline btn-xs" type="button" onClick={() => openEditMappingDrawer(row)}>
+                      Open
+                    </button>
+                  ),
+                },
+                {
                   key: "actions",
                   label: "",
                   render: (row) => (
@@ -2336,6 +2455,16 @@ export default function IntegrationConnectionPage() {
               ]}
               rows={mappings}
             />
+            <ResponsiveDrawer
+              open={mappingDrawerOpen}
+              onClose={closeMappingDrawer}
+              title={mappingDrawerTitle}
+              description="Edit one mapping profile at a time. This follows the same object-focused flow as automations."
+              mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+              zIndexClass="z-[240]"
+            >
+              {mappingEditorContent}
+            </ResponsiveDrawer>
           </div>
         ) : activeTab === "logs" ? (
           <div className="space-y-4">

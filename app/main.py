@@ -39669,6 +39669,141 @@ def _artifact_ai_resolve_notify_recipients(inputs: dict, meta: dict | None) -> N
             inputs.pop("recipient_user_id", None)
 
 
+def _artifact_ai_email_field_candidates(meta: dict | None, entity_id: str | None) -> list[dict]:
+    fields = _artifact_ai_automation_entity_fields(meta, entity_id)
+    results: list[dict] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id.strip():
+            continue
+        field_type = str(field.get("type") or "").strip().lower()
+        label = str(field.get("label") or "").strip().lower()
+        suffix = field_id.strip().split(".")[-1].lower()
+        if field_type == "email" or "email" in label or "email" in suffix:
+            results.append(field)
+    return results
+
+
+def _artifact_ai_match_email_field(meta: dict | None, entity_id: str | None, raw_value: Any) -> str | None:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    fields = _artifact_ai_email_field_candidates(meta, entity_id)
+    if not fields:
+        return None
+    normalized = _ai_norm_token(raw_value)
+    if not normalized:
+        return None
+    for field in fields:
+        field_id = str(field.get("id") or "").strip()
+        suffix = field_id.split(".")[-1] if field_id else ""
+        label = str(field.get("label") or "").strip()
+        candidates = [field_id, suffix, label]
+        if any(isinstance(candidate, str) and _ai_norm_token(candidate) == normalized for candidate in candidates if candidate):
+            return field_id
+    return None
+
+
+def _artifact_ai_normalize_send_email_inputs(inputs: dict, meta: dict | None, entity_id: str | None) -> None:
+    if not isinstance(inputs, dict):
+        return
+
+    def _coerce_string_list(value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if item not in (None, "") and str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return []
+
+    direct_emails = _coerce_string_list(inputs.get("to"))
+    direct_emails = [item for item in direct_emails if "@" in item and "{{" not in item and "}}" not in item]
+
+    internal_emails = _coerce_string_list(inputs.get("to_internal_emails"))
+    field_ids = _coerce_string_list(inputs.get("to_field_ids"))
+    if isinstance(inputs.get("to_field_id"), str) and inputs.get("to_field_id").strip():
+        field_ids.append(inputs.get("to_field_id").strip())
+    lookup_field_ids = _coerce_string_list(inputs.get("to_lookup_field_ids"))
+    if isinstance(inputs.get("to_lookup_field_id"), str) and inputs.get("to_lookup_field_id").strip():
+        lookup_field_ids.append(inputs.get("to_lookup_field_id").strip())
+    expr_values: list[str] = []
+
+    raw_to_values: list[str] = []
+    if isinstance(inputs.get("to"), list):
+        raw_to_values.extend(str(item).strip() for item in inputs.get("to") if item not in (None, "") and str(item).strip())
+    elif isinstance(inputs.get("to"), str) and inputs.get("to").strip():
+        raw_to_values.append(inputs.get("to").strip())
+
+    for raw_value in raw_to_values:
+        if "@" in raw_value and "{{" not in raw_value and "}}" not in raw_value:
+            continue
+        resolved_ref = _artifact_ai_resolve_automation_condition_var(raw_value, entity_id, meta)
+        if isinstance(resolved_ref, str) and resolved_ref.startswith("trigger.record.fields."):
+            field_ref = resolved_ref.split("trigger.record.fields.", 1)[1].strip()
+            matched_field = _artifact_ai_match_email_field(meta, entity_id, field_ref)
+            if matched_field:
+                field_ids.append(matched_field)
+                continue
+        matched_field = _artifact_ai_match_email_field(meta, entity_id, raw_value)
+        if matched_field:
+            field_ids.append(matched_field)
+            continue
+        if "{{" in raw_value or "}}" in raw_value or _artifact_ai_is_automation_ref(raw_value):
+            expr_values.append(raw_value)
+
+    if not field_ids and not direct_emails and not internal_emails and not lookup_field_ids and not expr_values:
+        email_fields = _artifact_ai_email_field_candidates(meta, entity_id)
+        if len(email_fields) == 1:
+            field_id = email_fields[0].get("id")
+            if isinstance(field_id, str) and field_id.strip():
+                field_ids.append(field_id.strip())
+
+    def _dedupe(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        results: list[str] = []
+        for item in values:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            key = text.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(text)
+        return results
+
+    field_ids = _dedupe(field_ids)
+    lookup_field_ids = _dedupe(lookup_field_ids)
+    direct_emails = _dedupe(direct_emails)
+    internal_emails = _dedupe(internal_emails)
+    expr_values = _dedupe(expr_values)
+
+    if field_ids:
+        inputs["to_field_ids"] = copy.deepcopy(field_ids)
+        inputs["to_field_id"] = field_ids[0]
+    else:
+        inputs.pop("to_field_ids", None)
+        inputs.pop("to_field_id", None)
+    if lookup_field_ids:
+        inputs["to_lookup_field_ids"] = copy.deepcopy(lookup_field_ids)
+        inputs["to_lookup_field_id"] = lookup_field_ids[0]
+    else:
+        inputs.pop("to_lookup_field_ids", None)
+        inputs.pop("to_lookup_field_id", None)
+    if direct_emails:
+        inputs["to"] = copy.deepcopy(direct_emails)
+    else:
+        inputs.pop("to", None)
+    if internal_emails:
+        inputs["to_internal_emails"] = copy.deepcopy(internal_emails)
+    else:
+        inputs.pop("to_internal_emails", None)
+    if expr_values:
+        inputs["to_expr"] = ", ".join(expr_values)
+    elif not isinstance(inputs.get("to_expr"), str) or not inputs.get("to_expr").strip():
+        inputs.pop("to_expr", None)
+
+
 def _artifact_ai_normalize_automation_condition_operand(value: Any, *, prefer_ref: bool = False) -> dict | None:
     if isinstance(value, dict):
         if isinstance(value.get("var"), str) and value.get("var").strip():
@@ -39902,6 +40037,16 @@ def _artifact_ai_normalize_automation_step(
                 continue
             next_inputs[field_name] = copy.deepcopy(candidate)
             normalized.pop(field_name, None)
+    elif action_id == "system.send_email":
+        if isinstance(normalized.get("entity_id"), str) and normalized.get("entity_id").strip():
+            next_inputs["entity_id"] = normalized.get("entity_id").strip()
+            normalized.pop("entity_id", None)
+        send_email_entity_id = next_inputs.get("entity_id")
+        if not isinstance(send_email_entity_id, str) or not send_email_entity_id.strip():
+            send_email_entity_id = default_entity_id
+            if isinstance(send_email_entity_id, str) and send_email_entity_id.strip():
+                next_inputs["entity_id"] = send_email_entity_id.strip()
+        _artifact_ai_normalize_send_email_inputs(next_inputs, meta, send_email_entity_id if isinstance(send_email_entity_id, str) else None)
     if next_inputs:
         normalized["inputs"] = next_inputs
     elif "inputs" in normalized:
@@ -40226,6 +40371,8 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "For condition checks, use the concrete field id from meta.entities[].fields[].id in left.var instead of leaving the field blank or using only a label. "
             "For system.notify, always include recipients plus concrete title and body text. "
             "If the user says notify me or does not name a recipient, prefer meta.current_user_id when available. "
+            "For system.send_email, when the request says to send to the trigger record or contact email, prefer to_field_ids with the matching email field id from the trigger entity instead of a loose string in to. "
+            "Use to only for literal email addresses, to_expr for computed address expressions, to_field_ids for record email fields, and to_lookup_field_ids for lookup recipient sources. "
             "For system.apply_integration_mapping, use mapping_id from meta.integration_mappings and pass source_record as a concrete object or raw context reference like {{trigger.payload}}. "
             "Do not invent unknown action ids. "
             "summary must describe the change in plain English. "
@@ -41357,6 +41504,24 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "title required for notify", f"{step_path}.inputs.title"))
                         if not isinstance(inputs.get("body"), str) or not inputs.get("body").strip():
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "body required for notify", f"{step_path}.inputs.body"))
+                    if kind == "action" and action_id == "system.send_email":
+                        has_direct_recipients = isinstance(inputs.get("to"), list) and len([item for item in inputs.get("to") if isinstance(item, str) and item.strip()]) > 0
+                        has_expr_recipients = isinstance(inputs.get("to_expr"), str) and inputs.get("to_expr").strip()
+                        has_field_recipients = isinstance(inputs.get("to_field_ids"), list) and len([item for item in inputs.get("to_field_ids") if isinstance(item, str) and item.strip()]) > 0
+                        has_lookup_recipients = isinstance(inputs.get("to_lookup_field_ids"), list) and len([item for item in inputs.get("to_lookup_field_ids") if isinstance(item, str) and item.strip()]) > 0
+                        has_internal_recipients = isinstance(inputs.get("to_internal_emails"), list) and len([item for item in inputs.get("to_internal_emails") if isinstance(item, str) and item.strip()]) > 0
+                        if not any((has_direct_recipients, has_expr_recipients, has_field_recipients, has_lookup_recipients, has_internal_recipients)):
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "at least one recipient source is required for send_email", f"{step_path}.inputs"))
+                        has_template = isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip()
+                        has_inline_content = (
+                            isinstance(inputs.get("subject"), str) and inputs.get("subject").strip()
+                        ) or (
+                            isinstance(inputs.get("body_html"), str) and inputs.get("body_html").strip()
+                        ) or (
+                            isinstance(inputs.get("body_text"), str) and inputs.get("body_text").strip()
+                        )
+                        if not has_template and not has_inline_content:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "template_id or email content is required for send_email", f"{step_path}.inputs"))
                     if kind == "action" and action_id == "system.apply_integration_mapping":
                         mapping_id = inputs.get("mapping_id")
                         if not isinstance(mapping_id, str) or not mapping_id.strip():

@@ -22,6 +22,17 @@ import ScopedAiAssistantPane from "../components/ScopedAiAssistantPane.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
 
+function coerceStringArray(value) {
+  if (Array.isArray(value)) return value.filter((item) => item !== undefined && item !== null).map((item) => String(item));
+  if (value === undefined || value === null || value === "") return [];
+  if (typeof value === "string") {
+    return value.includes(",")
+      ? value.split(",").map((item) => item.trim()).filter(Boolean)
+      : [value];
+  }
+  return [String(value)];
+}
+
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
   const [options, setOptions] = useState([]);
   const [search, setSearch] = useState("");
@@ -1692,7 +1703,30 @@ export default function AutomationEditorPage({ user }) {
     "Preparing a validated automation proposal",
   ]), [name]);
 
-  const runAutomationAiPlan = useCallback(async (rawText) => {
+  const buildAutomationAiRepairPrompt = useCallback((validation, summary) => {
+    const items = Array.isArray(validation?.errors) ? validation.errors : [];
+    const messages = items
+      .map((item) => {
+        if (!item) return "";
+        if (typeof item === "string") return item.trim();
+        const path = typeof item.path === "string" && item.path.trim() ? `${item.path.trim()}: ` : "";
+        const message = typeof item.message === "string" && item.message.trim()
+          ? item.message.trim()
+          : typeof item.code === "string" && item.code.trim()
+            ? item.code.trim()
+            : "";
+        return `${path}${message}`.trim();
+      })
+      .filter(Boolean);
+    const summaryLine = typeof summary === "string" && summary.trim() ? summary.trim() : "the current automation request";
+    return [
+      `Fix the current automation draft for ${summaryLine}.`,
+      messages.length ? `Resolve these validation issues exactly:\n- ${messages.join("\n- ")}` : "Resolve the current validation issues.",
+      "Keep the intended behavior, but return a valid automation draft.",
+    ].join("\n\n");
+  }, []);
+
+  const runAutomationAiPlan = useCallback(async (rawText, draftOverride = null) => {
     const prompt = String(rawText || "").trim();
     if (!prompt || !automationId || chatLoading) return;
     setPendingAiPlan(null);
@@ -1704,7 +1738,7 @@ export default function AutomationEditorPage({ user }) {
         method: "POST",
         body: {
           prompt,
-          draft: buildAutomationDefinition(),
+          draft: draftOverride && typeof draftOverride === "object" ? draftOverride : buildAutomationDefinition(),
         },
       });
       setPendingAiPlan({
@@ -1724,6 +1758,22 @@ export default function AutomationEditorPage({ user }) {
       setChatLoading(false);
     }
   }, [automationId, buildAutomationDefinition, chatLoading, t]);
+
+  const runAutomationAiFix = useCallback(async (options = {}) => {
+    const validation = options?.validation && typeof options.validation === "object"
+      ? options.validation
+      : {
+          errors: validationPanelErrors.map((message) => ({ message })),
+        };
+    const draft = options?.draft && typeof options.draft === "object"
+      ? options.draft
+      : buildAutomationDefinition();
+    const summary = typeof options?.summary === "string" && options.summary.trim()
+      ? options.summary.trim()
+      : "the current automation";
+    const repairPrompt = buildAutomationAiRepairPrompt(validation, summary);
+    return runAutomationAiPlan(repairPrompt, draft);
+  }, [buildAutomationAiRepairPrompt, buildAutomationDefinition, runAutomationAiPlan, validationPanelErrors]);
 
   const triggerSummaryText = useMemo(() => {
     if (trigger?.kind === "schedule") {
@@ -1749,9 +1799,10 @@ export default function AutomationEditorPage({ user }) {
       idleMessage={t("settings.automation_editor.validation_idle")}
       showSuccess={true}
       showFix={automationAiEnabled}
-      fixDisabled
+      fixDisabled={chatLoading || validationPanelErrors.length === 0}
+      onFix={() => runAutomationAiFix({ summary: name.trim() || "the current automation" })}
     />
-  ), [automationAiEnabled, t, validationPanelErrors]);
+  ), [automationAiEnabled, chatLoading, name, runAutomationAiFix, t, validationPanelErrors]);
 
   const validateRecord = useCallback(async () => ({
     compiled_ok: validationPanelErrors.length === 0,
@@ -2094,6 +2145,17 @@ export default function AutomationEditorPage({ user }) {
               validation={pendingAiPlan.validation}
               actions={[
                 { label: "Apply draft", onClick: applyPendingAutomationPlan, primary: true, disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid },
+                ...(pendingAutomationPlanInvalid
+                  ? [{
+                      label: "Fix with AI",
+                      onClick: () => runAutomationAiFix({
+                        draft: pendingAiPlan?.draft,
+                        validation: pendingAiPlan?.validation,
+                        summary: pendingAiPlan?.summary,
+                      }),
+                      disabled: chatLoading,
+                    }]
+                  : []),
                 { label: "Discard", onClick: discardPendingAutomationPlan },
               ]}
             />
@@ -2120,7 +2182,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, t, userLabel]);
+  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiFix, runAutomationAiPlan, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {
@@ -2881,7 +2943,7 @@ export default function AutomationEditorPage({ user }) {
                     <div className="mt-3 space-y-3">
                       <label className="form-control">
                         <span className="label-text">{t("settings.automation_editor.direct_email_addresses")}</span>
-                        <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                        <input className="input input-bordered" value={coerceStringArray(step.inputs?.to).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                         <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.direct_email_addresses_help")}</span>
                       </label>
 
@@ -3994,7 +4056,7 @@ export default function AutomationEditorPage({ user }) {
               </label>
               <label className="form-control md:col-span-2">
                 <span className="label-text">{t("settings.automation_editor.selected_records_comma")}</span>
-                <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                <input className="input input-bordered" value={coerceStringArray(step.inputs?.selected_ids).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                 <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.selected_records_comma_help")}</span>
               </label>
             </div>
@@ -5425,7 +5487,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-12">
                           <span className="label-text">{t("settings.automation_editor.direct_email_addresses")}</span>
-                          <input className="input input-bordered" value={(step.inputs?.to || []).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                          <input className="input input-bordered" value={coerceStringArray(step.inputs?.to).join(", ")} onChange={(e) => updateStepInput(index, "to", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                           <span className="label label-text-alt opacity-50">{t("settings.automation_editor.direct_email_addresses_help")}</span>
                         </label>
                         <label className="form-control md:col-span-6">
@@ -5660,7 +5722,7 @@ export default function AutomationEditorPage({ user }) {
                         </label>
                         <label className="form-control md:col-span-2">
                           <span className="label-text">{t("settings.automation_editor.selected_records_comma")}</span>
-                          <input className="input input-bordered" value={(step.inputs?.selected_ids || []).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
+                          <input className="input input-bordered" value={coerceStringArray(step.inputs?.selected_ids).join(", ")} onChange={(e) => updateStepInput(index, "selected_ids", e.target.value.split(",").map((v) => v.trim()).filter(Boolean))} />
                           <span className="label label-text-alt opacity-50">{t("settings.automation_editor.selected_records_comma_help")}</span>
                         </label>
                   </div>

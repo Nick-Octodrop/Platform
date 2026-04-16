@@ -51,6 +51,18 @@ def _fake_response(payload: dict) -> dict:
 
 
 class TestArtifactAiEndpoints(unittest.TestCase):
+    @staticmethod
+    def _seed_automation_step() -> dict:
+        return {
+            "kind": "action",
+            "action_id": "system.notify",
+            "inputs": {
+                "recipient_user_id": "user-1",
+                "title": "Automation",
+                "body": "Body",
+            },
+        }
+
     def test_email_template_ai_plan_returns_validated_draft(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -159,7 +171,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                     "name": "Reminder",
                     "description": "",
                     "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
-                    "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                    "steps": [self._seed_automation_step()],
                 },
             ).json()
             automation_id = created["automation"]["id"]
@@ -205,6 +217,89 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertTrue(validation.get("compiled_ok"))
 
+    def test_automation_ai_plan_normalizes_contact_email_recipient_to_field_source(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Contact welcome",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_contacts.record.biz_contact.created",
+                        "label": "Contact created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_contact",
+                    }
+                ],
+                "entities": [
+                    {
+                        "id": "entity.biz_contact",
+                        "label": "Contact",
+                        "fields": [
+                            {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                            {"id": "biz_contact.email", "label": "Contact Email", "type": "email"},
+                        ],
+                    }
+                ],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Send the welcome email to the contact email field.",
+                        "draft": {
+                            "name": "Contact welcome",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "to": "contact email",
+                                        "subject": "Welcome",
+                                        "body_text": "Thanks for signing up.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the contact using the contact email field.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            draft = body.get("draft") or {}
+            step_inputs = (((draft.get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to_field_ids"), ["biz_contact.email"])
+            self.assertNotIn("to", step_inputs)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
     def test_automation_ai_plan_maps_partial_entity_change_to_matching_catalog_trigger(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -214,7 +309,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                     "name": "Reminder",
                     "description": "",
                     "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
-                    "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                    "steps": [self._seed_automation_step()],
                 },
             ).json()
             automation_id = created["automation"]["id"]
@@ -230,7 +325,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                                 "kind": "event",
                                 "filters": [{"path": "entity_id", "op": "eq", "value": "entity.biz_purchase_order"}],
                             },
-                            "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                            "steps": [self._seed_automation_step()],
                             "status": "draft",
                         },
                         "assumptions": [],
@@ -843,7 +938,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                     "name": "Reminder",
                     "description": "",
                     "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
-                    "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                    "steps": [self._seed_automation_step()],
                 },
             ).json()
             automation_id = created["automation"]["id"]
@@ -1015,7 +1110,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                 json={
                     "name": "Reminder",
                     "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
-                    "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                    "steps": [self._seed_automation_step()],
                 },
             ).json()["automation"]
 
@@ -1204,7 +1299,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                     "name": automation_name,
                     "description": "",
                     "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
-                    "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                    "steps": [self._seed_automation_step()],
                 },
             ).json()["automation"]
             email_template = client.post(
@@ -1231,7 +1326,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                                 "name": automation_name,
                                 "description": "Send a reminder.",
                                 "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
-                                "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                                "steps": [self._seed_automation_step()],
                                 "status": "draft",
                             },
                             "assumptions": [],
