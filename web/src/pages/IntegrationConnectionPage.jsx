@@ -242,6 +242,7 @@ export default function IntegrationConnectionPage() {
   const [authorizingOAuth, setAuthorizingOAuth] = useState(false);
   const [exchangingOAuth, setExchangingOAuth] = useState(false);
   const [refreshingOAuth, setRefreshingOAuth] = useState(false);
+  const [disconnectingOAuth, setDisconnectingOAuth] = useState(false);
   const [requestForm, setRequestForm] = useState({
     method: "GET",
     path: "/",
@@ -337,6 +338,24 @@ export default function IntegrationConnectionPage() {
     if (returnedCode) {
       setOauthCode((prev) => prev || returnedCode);
     }
+    const oauthStatus = params.get("oauth");
+    const oauthMessage = params.get("message");
+    if (oauthStatus === "connected") {
+      setNotice("Xero connected successfully.");
+      setOauthAuthorizeResult(null);
+      void load();
+    } else if (oauthStatus === "error") {
+      setError(oauthMessage || "Xero connection failed.");
+      setOauthAuthorizeResult(null);
+    }
+    if (oauthStatus === "connected" || oauthStatus === "error" || returnedCode) {
+      params.delete("oauth");
+      params.delete("message");
+      params.delete("code");
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
   }, [connectionId, item?.type]);
 
   const providerIndex = useMemo(() => {
@@ -350,6 +369,7 @@ export default function IntegrationConnectionPage() {
   const providerKey = providerKeyFromType(item?.type);
   const provider = providerIndex.get(providerKey) || null;
   const isXeroProvider = providerKey === "xero";
+  const xeroConnected = isXeroProvider && Boolean(config?.xero_tenant_id);
   const providerManifest = provider?.manifest_json || {};
   const providerCapabilities = Array.isArray(providerManifest?.capabilities) ? providerManifest.capabilities : [];
   const providerSupportsSync = providerCapabilities.includes("sync.poll");
@@ -610,16 +630,26 @@ export default function IntegrationConnectionPage() {
     setError("");
     setNotice("");
     try {
-      const state = encodeIntegrationOauthState({
-        connectionId: item.id,
-        providerKey,
-        returnOrigin: typeof window !== "undefined" ? window.location.origin : "",
-      });
+      const body = { redirect_uri: oauthRedirectUri.trim() };
+      if (isXeroProvider) {
+        body.return_origin = typeof window !== "undefined" ? window.location.origin : "";
+      } else {
+        body.state = encodeIntegrationOauthState({
+          connectionId: item.id,
+          providerKey,
+          returnOrigin: typeof window !== "undefined" ? window.location.origin : "",
+        });
+      }
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/oauth/authorize-url`, {
         method: "POST",
-        body: { redirect_uri: oauthRedirectUri.trim(), state },
+        body,
       });
-      setOauthAuthorizeResult(res?.result || null);
+      const result = res?.result || null;
+      setOauthAuthorizeResult(result);
+      if (isXeroProvider && result?.authorize_url && typeof window !== "undefined") {
+        window.location.assign(result.authorize_url);
+        return;
+      }
       setNotice(detailT("notices.authorize_url_generated"));
     } catch (err) {
       setOauthAuthorizeResult(null);
@@ -672,6 +702,30 @@ export default function IntegrationConnectionPage() {
       setError(err?.message || detailT("errors.refresh_oauth_tokens"));
     } finally {
       setRefreshingOAuth(false);
+    }
+  }
+
+  async function disconnectOauthConnection() {
+    if (!item?.id || disconnectingOAuth) return;
+    setDisconnectingOAuth(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/oauth/disconnect`, { method: "POST" });
+      setOauthAuthorizeResult(null);
+      setOauthCode("");
+      setTestResult(null);
+      setNotice(isXeroProvider ? "Xero disconnected." : detailT("notices.connection_saved"));
+      await load();
+      if (res?.connection) {
+        setItem(res.connection);
+        setConfig(res.connection.config || {});
+        setConfigText(prettyJson(res.connection.config || {}));
+      }
+    } catch (err) {
+      setError(err?.message || (isXeroProvider ? "Failed to disconnect Xero." : detailT("errors.save_failed")));
+    } finally {
+      setDisconnectingOAuth(false);
     }
   }
 
@@ -1025,11 +1079,13 @@ export default function IntegrationConnectionPage() {
       steps.push({
         icon: TestTube2,
         title: detailT("setup.guide.test_title"),
-        description: hasTestedConnection
-          ? detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })
-          : detailT("setup.guide.test_description"),
-        actionLabel: detailT("setup.guide.test_now"),
-        onAction: runTest,
+        description: isXeroProvider && !config?.xero_tenant_id
+          ? "Connect Xero first, then run a connection test once the tenant is attached."
+          : hasTestedConnection
+            ? detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })
+            : detailT("setup.guide.test_description"),
+        actionLabel: isXeroProvider && !config?.xero_tenant_id ? "" : detailT("setup.guide.test_now"),
+        onAction: isXeroProvider && !config?.xero_tenant_id ? null : runTest,
         complete: Boolean(item?.health_status && item.health_status !== "error" && hasTestedConnection),
       });
       return steps;
@@ -1063,6 +1119,14 @@ export default function IntegrationConnectionPage() {
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
+      {xeroConnected ? (
+        <div className="alert alert-success text-sm mb-4">
+          <div>
+            <div className="font-medium">{`Connected to ${config?.xero_tenant_name || "your Xero organisation"}`}</div>
+            <div className="mt-1 opacity-80">Tokens are stored automatically in Octodrop Secrets and linked to this integration.</div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {loading ? (
@@ -1532,6 +1596,14 @@ export default function IntegrationConnectionPage() {
                         <div className="text-xs uppercase tracking-wide opacity-60">Selected tenant</div>
                         <div className="mt-1">{config?.xero_tenant_name || "Not connected yet"}</div>
                       </div>
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Connection status</div>
+                        <div className="mt-1">{xeroConnected ? "Connected" : "Waiting for Xero approval"}</div>
+                      </div>
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Token storage</div>
+                        <div className="mt-1">Managed automatically in Octodrop Secrets</div>
+                      </div>
                     </div>
                   </Section>
                 ) : null}
@@ -1558,31 +1630,72 @@ export default function IntegrationConnectionPage() {
                     help={isXeroProvider ? "Open the Xero login, approve access for this workspace, and the callback will complete the token exchange automatically." : detailT("setup.oauth_help")}
                   >
                     <div className="space-y-3">
-                      <label className="form-control">
-                        <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
-                        <input
-                          className="input input-bordered"
-                          value={oauthRedirectUri}
-                          onChange={(e) => setOauthRedirectUri(e.target.value)}
-                          placeholder={detailT("setup.redirect_uri_placeholder")}
-                          readOnly={isXeroProvider}
-                          disabled={isXeroProvider}
-                        />
-                        <span className="label-text-alt opacity-70 mt-1">
-                          {isXeroProvider ? "This must exactly match the redirect URI registered on the Octodrop Xero app." : detailT("setup.redirect_uri_help")}
-                        </span>
-                      </label>
+                      {isXeroProvider ? (
+                        <>
+                          <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
+                            <div className="font-medium">{xeroConnected ? "Xero is connected for this workspace" : "Connect this workspace to Xero"}</div>
+                            <div className="mt-2 opacity-80">
+                              {xeroConnected
+                                ? `Octodrop is connected to ${config?.xero_tenant_name || "the selected Xero organisation"}. Tokens are stored automatically in Octodrop Secrets and linked to this integration.`
+                                : "Click the button below, sign in to Xero, and approve access. Octodrop will exchange the code, store the tokens in Secrets, link them to this integration, and bring you back here automatically."}
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                              <div className="rounded-box bg-base-100 px-3 py-2">
+                                <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
+                                <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
+                              </div>
+                              <div className="rounded-box bg-base-100 px-3 py-2">
+                                <div className="text-xs uppercase tracking-wide opacity-60">Access token expiry</div>
+                                <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
+                              </div>
+                              <div className="rounded-box bg-base-100 px-3 py-2">
+                                <div className="text-xs uppercase tracking-wide opacity-60">Last token refresh</div>
+                                <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
+                              </div>
+                            </div>
+                          </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
-                          {authorizingOAuth ? detailT("setup.generating") : isXeroProvider ? "Generate Xero login" : detailT("setup.generate_authorize_url")}
-                        </button>
-                        <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
-                          {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
-                        </button>
-                      </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button className="btn btn-sm btn-primary" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
+                              {authorizingOAuth ? "Opening Xero..." : xeroConnected ? "Reconnect Xero" : "Connect to Xero"}
+                            </button>
+                            {xeroConnected ? (
+                              <>
+                                <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth || disconnectingOAuth}>
+                                  {refreshingOAuth ? detailT("setup.refreshing") : "Refresh Xero tokens"}
+                                </button>
+                                <button className="btn btn-sm btn-outline btn-error" type="button" onClick={disconnectOauthConnection} disabled={disconnectingOAuth || refreshingOAuth}>
+                                  {disconnectingOAuth ? "Disconnecting Xero..." : "Disconnect Xero"}
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <label className="form-control">
+                            <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
+                            <input
+                              className="input input-bordered"
+                              value={oauthRedirectUri}
+                              onChange={(e) => setOauthRedirectUri(e.target.value)}
+                              placeholder={detailT("setup.redirect_uri_placeholder")}
+                            />
+                            <span className="label-text-alt opacity-70 mt-1">{detailT("setup.redirect_uri_help")}</span>
+                          </label>
 
-                      {oauthAuthorizeResult?.authorize_url ? (
+                          <div className="flex flex-wrap gap-2">
+                            <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
+                              {authorizingOAuth ? detailT("setup.generating") : detailT("setup.generate_authorize_url")}
+                            </button>
+                            <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
+                              {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {oauthAuthorizeResult?.authorize_url && !isXeroProvider ? (
                         <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
                           <div className="text-sm font-medium">{detailT("setup.authorize_url")}</div>
                           <textarea className="textarea textarea-bordered min-h-[7rem] w-full text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
@@ -1612,24 +1725,24 @@ export default function IntegrationConnectionPage() {
                               {exchangingOAuth ? detailT("setup.exchanging") : detailT("setup.exchange_code")}
                             </button>
                           </div>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                              <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.access_token_expiry")}</div>
+                              <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
+                            </div>
+                            <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                              <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.last_token_refresh")}</div>
+                              <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
+                            </div>
+                          </div>
                         </>
                       ) : null}
-
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                          <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.access_token_expiry")}</div>
-                          <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
-                        </div>
-                        <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                          <div className="text-xs uppercase tracking-wide opacity-60">{detailT("setup.last_token_refresh")}</div>
-                          <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
-                        </div>
-                      </div>
                     </div>
                   </Section>
                 ) : null}
 
-                <details className="collapse collapse-arrow border border-base-300 bg-base-100">
+                {!isXeroProvider ? (
+                  <details className="collapse collapse-arrow border border-base-300 bg-base-100">
                   <summary className="collapse-title text-sm font-medium">{detailT("setup.advanced_config_title")}</summary>
                   <div className="collapse-content">
                     {visibleSetupGroups.some(([groupKey]) => groupKey === "advanced") ? (
@@ -1652,12 +1765,15 @@ export default function IntegrationConnectionPage() {
                       help={detailT("setup.full_config_help")}
                     />
                   </div>
-                </details>
+                  </details>
+                ) : null}
 
                 <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id}>
-                    {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
-                  </button>
+                  {!isXeroProvider || xeroConnected ? (
+                    <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id || disconnectingOAuth}>
+                      {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
+                    </button>
+                  ) : null}
                   <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
                     {saving ? t("common.saving") : t("common.save")}
                   </button>

@@ -1,4 +1,5 @@
 const DEFAULT_PUBLIC_APP_ORIGIN = "https://app.octodrop.com";
+const DEFAULT_PUBLIC_API_ORIGIN = "https://octodrop-platform-api.fly.dev";
 
 function trimOrigin(value) {
   return String(value || "").replace(/\/+$/, "");
@@ -8,12 +9,15 @@ function resolveProviderOauthOrigin(origin, providerKey) {
   const baseOrigin = trimOrigin(origin);
   const normalizedProviderKey = String(providerKey || "").trim().toLowerCase();
   if (normalizedProviderKey === "xero") {
-    return trimOrigin(
-      import.meta.env.VITE_XERO_OAUTH_APP_ORIGIN ||
-      import.meta.env.VITE_PUBLIC_APP_ORIGIN ||
-      import.meta.env.VITE_APP_ORIGIN ||
-      DEFAULT_PUBLIC_APP_ORIGIN,
-    );
+    const explicitRedirectUri = trimOrigin(import.meta.env.VITE_XERO_OAUTH_REDIRECT_URI || "");
+    if (explicitRedirectUri) {
+      return explicitRedirectUri.replace(/\/integrations\/oauth\/xero\/callback$/i, "");
+    }
+    const configuredApiUrl = trimOrigin(import.meta.env.VITE_API_URL || "");
+    if (/^https?:\/\//i.test(configuredApiUrl) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredApiUrl)) {
+      return configuredApiUrl;
+    }
+    return trimOrigin(import.meta.env.VITE_PUBLIC_API_ORIGIN || DEFAULT_PUBLIC_API_ORIGIN);
   }
   return baseOrigin;
 }

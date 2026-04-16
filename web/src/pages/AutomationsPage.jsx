@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { apiFetch } from "../api";
 import { useNavigate } from "react-router-dom";
+import { useAccessContext } from "../access.js";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
@@ -22,6 +23,7 @@ const DEFAULT_STEPS = [
 
 export default function AutomationsPage() {
   const { t } = useI18n();
+  const { actor } = useAccessContext();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,6 +54,10 @@ export default function AutomationsPage() {
 
   async function createAutomation() {
     try {
+      const nextTitle = t("settings.automations.title");
+      const nextBody = "Update this notification step with the real message and recipients.";
+      const defaultRecipientUserId = String(actor?.user_id || "me").trim() || "me";
+      const notifyInputs = { recipient_user_id: defaultRecipientUserId, title: nextTitle, body: nextBody };
       const data = await apiFetch("/automations", {
         method: "POST",
         body: {
@@ -60,7 +66,7 @@ export default function AutomationsPage() {
           status: "draft",
           trigger: DEFAULT_TRIGGER,
           steps: DEFAULT_STEPS.map((step) => step.id === "step_notify"
-            ? { ...step, inputs: { ...step.inputs, title: t("settings.automations.title") } }
+            ? { ...step, inputs: notifyInputs }
             : step),
         },
       });

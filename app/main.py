@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import os
 import re
 import sys
@@ -22,7 +23,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.docs import get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Response, RedirectResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -37862,6 +37863,56 @@ async def get_integration_connection(request: Request, connection_id: str) -> di
     return _ok_response({"connection": item})
 
 
+_DEFAULT_XERO_RETURN_ORIGIN = "https://app.octodrop.com"
+
+
+def _integration_oauth_state_secret() -> bytes:
+    raw = os.getenv("APP_SECRET_KEY", "").strip() or os.getenv("OCTO_OAUTH_STATE_SECRET", "").strip()
+    if not raw:
+        raw = "octo-dev-oauth-state"
+    return raw.encode("utf-8")
+
+
+def _integration_oauth_state_encode(payload: dict[str, Any]) -> str:
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(_integration_oauth_state_secret(), body, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(body + b"." + signature).decode("ascii").rstrip("=")
+
+
+def _integration_oauth_state_decode(token: str) -> dict[str, Any]:
+    raw = str(token or "").strip()
+    if not raw:
+        raise ValueError("Missing OAuth state")
+    padded = raw + "=" * (-len(raw) % 4)
+    decoded = base64.urlsafe_b64decode(padded.encode("ascii"))
+    body, signature = decoded.rsplit(b".", 1)
+    expected = hmac.new(_integration_oauth_state_secret(), body, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected):
+        raise ValueError("Invalid OAuth state signature")
+    payload = json.loads(body.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid OAuth state payload")
+    return payload
+
+
+def _safe_return_origin(origin: Any) -> str:
+    candidate = str(origin or "").strip().rstrip("/")
+    if not candidate:
+        return _DEFAULT_XERO_RETURN_ORIGIN
+    parsed = urllib.parse.urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return _DEFAULT_XERO_RETURN_ORIGIN
+    return candidate
+
+
+def _integration_provider_callback_uri(request: Request, provider_key: str) -> str:
+    normalized = str(provider_key or "").strip().lower()
+    base = str(request.base_url).rstrip("/")
+    if normalized == "xero":
+        return f"{base}/integrations/oauth/xero/callback"
+    return f"{base}/integrations/oauth/{normalized or 'callback'}/callback"
+
+
 @app.post("/integrations/connections/{connection_id}/test")
 async def test_integration_connection_endpoint(request: Request, connection_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -37926,14 +37977,27 @@ async def integration_connection_oauth_authorize_url(request: Request, connectio
         body = {}
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    provider_key = _integration_provider_key(item)
     redirect_uri = body.get("redirect_uri")
     state = body.get("state")
-    if not isinstance(redirect_uri, str) or not redirect_uri.strip():
-        return _error_response("REDIRECT_URI_REQUIRED", "redirect_uri is required", "redirect_uri", status=400)
-    if state is not None and (not isinstance(state, str) or not state.strip()):
-        return _error_response("STATE_INVALID", "state must be a non-empty string", "state", status=400)
+    if provider_key == "xero":
+        redirect_uri = _integration_provider_callback_uri(request, provider_key)
+        state = _integration_oauth_state_encode(
+            {
+                "provider_key": provider_key,
+                "connection_id": connection_id,
+                "workspace_id": actor.get("workspace_id") if isinstance(actor, dict) else "default",
+                "return_origin": _safe_return_origin(body.get("return_origin")),
+                "created_at": _now(),
+            }
+        )
+    else:
+        if not isinstance(redirect_uri, str) or not redirect_uri.strip():
+            return _error_response("REDIRECT_URI_REQUIRED", "redirect_uri is required", "redirect_uri", status=400)
+        if state is not None and (not isinstance(state, str) or not state.strip()):
+            return _error_response("STATE_INVALID", "state must be a non-empty string", "state", status=400)
     try:
-        result = build_connection_authorize_url(item, redirect_uri.strip(), state=state.strip() if isinstance(state, str) else None)
+        result = build_connection_authorize_url(item, str(redirect_uri).strip(), state=state.strip() if isinstance(state, str) else None)
     except IntegrationProviderError as exc:
         return _error_response("OAUTH_AUTHORIZE_FAILED", str(exc), "connection_id", status=400)
     except Exception as exc:
@@ -37985,6 +38049,74 @@ async def integration_connection_oauth_exchange(request: Request, connection_id:
     return _ok_response({"result": result})
 
 
+@app.get("/integrations/oauth/xero/callback", include_in_schema=False)
+async def integration_xero_oauth_callback(request: Request) -> Response:
+    params = request.query_params
+    provider_error = str(params.get("error") or "").strip()
+    provider_error_description = str(params.get("error_description") or "").strip()
+    code = str(params.get("code") or "").strip()
+    state_token = str(params.get("state") or "").strip()
+
+    try:
+        state = _integration_oauth_state_decode(state_token)
+    except Exception as exc:
+        return HTMLResponse(f"Invalid OAuth state: {exc}", status_code=400)
+
+    connection_id = str(state.get("connection_id") or "").strip()
+    workspace_id = str(state.get("workspace_id") or "default").strip() or "default"
+    return_origin = _safe_return_origin(state.get("return_origin"))
+    destination_base = f"{return_origin}/integrations/connections/{urllib.parse.quote(connection_id)}"
+
+    if provider_error:
+        message = provider_error_description or provider_error
+        return RedirectResponse(
+            f"{destination_base}?oauth=error&message={urllib.parse.quote(message)}",
+            status_code=302,
+        )
+    if not connection_id or not code:
+        message = "Missing OAuth connection or authorization code"
+        return RedirectResponse(
+            f"{destination_base}?oauth=error&message={urllib.parse.quote(message)}",
+            status_code=302,
+        )
+
+    token = set_org_id(workspace_id)
+    try:
+        item = connection_store.get(connection_id)
+        if not item or not _is_integration_type(item.get("type")) or _integration_provider_key(item) != "xero":
+            message = "Connection not found for Xero OAuth callback"
+            return RedirectResponse(
+                f"{destination_base}?oauth=error&message={urllib.parse.quote(message)}",
+                status_code=302,
+            )
+        redirect_uri = _integration_provider_callback_uri(request, "xero")
+        try:
+            exchange_connection_oauth_code(item, workspace_id, code=code, redirect_uri=redirect_uri)
+            _log_integration_request(connection_id, {"ok": True, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange")
+            if hasattr(connection_store, "update"):
+                connection_store.update(
+                    connection_id,
+                    {
+                        "health_status": "ok",
+                        "last_tested_at": _now(),
+                        "last_success_at": _now(),
+                        "last_error": None,
+                    },
+                )
+        except IntegrationProviderError as exc:
+            _log_integration_request(connection_id, {"ok": False, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange", error_message=str(exc))
+            if hasattr(connection_store, "update"):
+                connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
+            return RedirectResponse(
+                f"{destination_base}?oauth=error&message={urllib.parse.quote(str(exc))}",
+                status_code=302,
+            )
+    finally:
+        reset_org_id(token)
+
+    return RedirectResponse(f"{destination_base}?oauth=connected", status_code=302)
+
+
 @app.post("/integrations/connections/{connection_id}/oauth/refresh")
 async def integration_connection_oauth_refresh(request: Request, connection_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -38018,6 +38150,70 @@ async def integration_connection_oauth_refresh(request: Request, connection_id: 
             connection_store.update(connection_id, {"health_status": "error", "last_tested_at": _now(), "last_error": str(exc)})
         return _error_response("OAUTH_REFRESH_FAILED", str(exc), "connection_id", status=502)
     return _ok_response({"result": result})
+
+
+@app.post("/integrations/connections/{connection_id}/oauth/disconnect")
+async def integration_connection_oauth_disconnect(request: Request, connection_id: str) -> dict:
+    actor = _resolve_actor(request)
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    item = connection_store.get(connection_id)
+    if not item or not _is_integration_type(item.get("type")):
+        return _error_response("CONNECTION_NOT_FOUND", "Connection not found", "connection_id", status=404)
+    config = item.get("config") if isinstance(item.get("config"), dict) else {}
+    auth_mode = str(config.get("auth_mode") or config.get("provider_auth_type") or "").strip().lower()
+    if auth_mode != "oauth2":
+        return _error_response("OAUTH_DISCONNECT_UNSUPPORTED", "Connection is not configured for OAuth2", "connection_id", status=400)
+    provider_key = _integration_provider_key(item)
+    existing_secret_refs = dict(item.get("secret_refs") or {})
+    deleted_secret_ids = [
+        str(existing_secret_refs.get(secret_key) or "").strip()
+        for secret_key in ("access_token", "refresh_token")
+        if str(existing_secret_refs.get(secret_key) or "").strip()
+    ]
+    next_secret_refs = {
+        key: value
+        for key, value in existing_secret_refs.items()
+        if key not in {"access_token", "refresh_token"}
+    }
+    config_updates: dict[str, Any] = {
+        "oauth_access_token_expires_at": None,
+        "oauth_last_token_refresh_at": None,
+        "oauth_token_response": {},
+    }
+    if provider_key == "xero":
+        config_updates.update(
+            {
+                "xero_tenant_id": None,
+                "xero_tenant_name": None,
+                "xero_tenants": [],
+            }
+        )
+    next_config = {**config, **config_updates}
+    updated = connection_store.update(
+        connection_id,
+        {
+            "config": next_config,
+            "secret_refs": next_secret_refs,
+            "health_status": "unknown",
+            "last_tested_at": None,
+            "last_success_at": None,
+            "last_error": None,
+        },
+    ) if hasattr(connection_store, "update") else None
+    if secret_store and hasattr(secret_store, "delete"):
+        for secret_id in deleted_secret_ids:
+            try:
+                secret_store.delete(secret_id)
+            except Exception:
+                pass
+    return _ok_response(
+        {
+            "connection": updated or connection_store.get(connection_id),
+            "deleted_secret_ids": deleted_secret_ids,
+        }
+    )
 
 
 @app.post("/integrations/connections/{connection_id}/request")
