@@ -28,16 +28,17 @@ import { startAgentStream } from "../studio2/useAgentStream.js";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
-import AgentChatInput from "../ui/AgentChatInput.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
-import { formatDateTime, formatTime } from "../utils/dateTime.js";
+import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL } from "../ui/pageShell.js";
 import { MoreHorizontal } from "lucide-react";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import ArtifactAiStageCard from "../components/ArtifactAiStageCard.jsx";
+import ScopedAiAssistantPane from "../components/ScopedAiAssistantPane.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { writeStudioPreviewManifest } from "./studio/studioPreviewStore.js";
 
@@ -673,11 +674,9 @@ export default function Studio2Page({ user }) {
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [pendingAgentPlan, setPendingAgentPlan] = useState(null);
   const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [progressEvents, setProgressEvents] = useState([]);
-  const [stopReason, setStopReason] = useState(null);
-  const [streamDone, setStreamDone] = useState(false);
-  const [lastValidationSummary, setLastValidationSummary] = useState(null);
   const streamCancelRef = useRef(null);
   const [rightTab, setRightTab] = useState("preview");
   const previewFrameRef = useRef(null);
@@ -804,6 +803,10 @@ export default function Studio2Page({ user }) {
         designWarnings: [],
       });
     setInstalledManifest(null);
+  }, [routeModuleId]);
+
+  useEffect(() => {
+    setPendingAgentPlan(null);
   }, [routeModuleId]);
 
   useEffect(() => {
@@ -1546,21 +1549,14 @@ function buildPreviewManifest() {
 
   async function sendAgentMessage(userMessage) {
     if (!routeModuleId || !userMessage.trim()) return;
+    setPendingAgentPlan(null);
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setChatLoading(true);
     try {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
       const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history);
       const payload = res.data || {};
-      const assistantMessage = payload.notes || payload.assistant_message || t("settings.studio.agent.no_response");
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", text: assistantMessage, ts: nowIso(), diagnostics: payload.diagnostics || null },
-      ]);
-      const drafts = payload.drafts || {};
-      if (drafts && drafts[routeModuleId]) {
-        setDraftText(stringifyPretty(drafts[routeModuleId]));
-      }
+      applyAgentPayload(payload, null, payload.diagnostics || null);
     } catch (err) {
       if (err.code === "OPENAI_NOT_CONFIGURED" || (err.message || "").includes("OpenAI")) {
         if (canManageSettings) {
@@ -1667,43 +1663,99 @@ function buildPreviewManifest() {
     return { errors, warnings, strictErrors, completenessErrors, designWarnings };
   }
 
-  function applyAgentPayload(payload, assistantOverride = null) {
+  function applyAgentPayload(payload, assistantOverride = null, diagnostics = null) {
     const assistantMessage = assistantOverride || payload.notes || payload.assistant_message || t("settings.studio.agent.draft_updated");
-    setChatMessages((prev) => [...prev, { role: "assistant", text: assistantMessage, ts: nowIso() }]);
+    setChatMessages((prev) => [...prev, { role: "assistant", text: assistantMessage, ts: nowIso(), diagnostics }]);
     const drafts = payload.drafts || {};
-    if (drafts && drafts[routeModuleId]) {
-      setDraftText(stringifyPretty(drafts[routeModuleId]));
-    }
+    const nextDraftText = drafts && drafts[routeModuleId] ? stringifyPretty(drafts[routeModuleId]) : "";
     const errors = payload.validation?.errors || [];
     const warnings = payload.validation?.warnings || [];
     const strictErrors = payload.validation?.strict_errors || [];
     const completenessErrors = payload.validation?.completeness_errors || [];
     const designWarnings = payload.validation?.design_warnings || [];
-    setLastChanges(summarizeChanges(payload.calls || [], payload.ops_by_module || [], t));
+    const changeSummary = summarizeChanges(payload.calls || [], payload.ops_by_module || [], t);
     const hasErrors = errors.length + strictErrors.length + completenessErrors.length > 0;
-    setValidation({
-      status: hasErrors ? "error" : "ok",
-      errors,
-      warnings,
-      strictErrors,
-      completenessErrors,
-      designWarnings,
+    setPendingAgentPlan({
+      draftText: nextDraftText,
+      summary: assistantMessage,
+      changes: changeSummary,
+      warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
+      validation: payload.validation
+        ? {
+            status: hasErrors ? "error" : "ok",
+            errors,
+            warnings,
+            strictErrors,
+            completenessErrors,
+            designWarnings,
+          }
+        : null,
     });
-    if (errors.length === 0) {
+  }
+
+  function applyPendingAgentPlan({ openPreview = false } = {}) {
+    if (!pendingAgentPlan?.draftText) return;
+    setDraftText(pendingAgentPlan.draftText);
+    if (Array.isArray(pendingAgentPlan.changes)) {
+      setLastChanges(pendingAgentPlan.changes);
+    }
+    if (pendingAgentPlan.validation) {
+      setValidation(pendingAgentPlan.validation);
+    }
+    if (openPreview || pendingAgentPlan.validation?.status !== "error") {
       setRightTab("preview");
     }
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        ts: nowIso(),
+        card: {
+          title: "Studio Plan",
+          summary: pendingAgentPlan.summary,
+          stageLabel: openPreview ? "Applied + Preview" : "Applied",
+          stageTone: "success",
+          detailsTitle: "Planned Changes",
+          details: pendingAgentPlan.changes || [],
+          warnings: pendingAgentPlan.warnings || [],
+          validation: pendingAgentPlan.validation,
+        },
+      },
+    ]);
+    setPendingAgentPlan(null);
+  }
+
+  function discardPendingAgentPlan() {
+    if (pendingAgentPlan) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          ts: nowIso(),
+          card: {
+            title: "Studio Plan",
+            summary: pendingAgentPlan.summary,
+            stageLabel: "Discarded",
+            stageTone: "ghost",
+            detailsTitle: "Planned Changes",
+            details: pendingAgentPlan.changes || [],
+            warnings: pendingAgentPlan.warnings || [],
+            validation: pendingAgentPlan.validation,
+          },
+        },
+      ]);
+    }
+    setPendingAgentPlan(null);
   }
 
   async function runAgentDraftFlow(userMessage) {
     if (!routeModuleId) return;
+    setPendingAgentPlan(null);
     setChatLoading(true);
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setProgressEvents([
       { event: "run_started", phase: "start", iter: null, ts_ms: Date.now(), data: { local: true } },
     ]);
-    setStopReason(null);
-    setLastValidationSummary(null);
-    setStreamDone(false);
     let doneReceived = false;
     try {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
@@ -1716,15 +1768,8 @@ function buildPreviewManifest() {
             const next = [...prev, evt].slice(-200);
             return next;
           });
-          if (evt.event === "stopped") {
-            setStopReason(evt.data?.stop_reason || "stopped");
-          }
-          if (evt.event === "validate_result") {
-            setLastValidationSummary(evt.data || null);
-          }
           if (evt.event === "final_done" || evt.event === "done") {
             doneReceived = true;
-            setStreamDone(true);
             if (evt.request_id) {
               // eslint-disable-next-line no-console
               console.debug("agent stream done received", evt.request_id);
@@ -1735,12 +1780,11 @@ function buildPreviewManifest() {
       streamCancelRef.current = cancel;
       const finalEnvelope = await promise;
       doneReceived = true;
-      setStreamDone(true);
       if (!finalEnvelope?.ok) {
         pushToast("error", finalEnvelope?.errors?.[0]?.message || t("settings.studio.errors.agent_stream_failed"));
         return;
       }
-      applyAgentPayload(finalEnvelope.data || {});
+      applyAgentPayload(finalEnvelope.data || {}, null, finalEnvelope.data?.diagnostics || null);
       return;
     } catch (err) {
       if (doneReceived) {
@@ -1753,7 +1797,7 @@ function buildPreviewManifest() {
         if (Array.isArray(payload.progress)) {
           setProgressEvents(payload.progress.slice(-200));
         }
-        applyAgentPayload(payload);
+        applyAgentPayload(payload, null, payload.diagnostics || null);
       } catch (fallbackErr) {
         if (fallbackErr.code === "OPENAI_NOT_CONFIGURED" || (fallbackErr.message || "").includes("OpenAI")) {
           if (canManageSettings) {
@@ -1764,7 +1808,6 @@ function buildPreviewManifest() {
         } else {
           pushToast("error", fallbackErr.message || t("settings.studio.errors.agent_chat_failed"));
         }
-        setStreamDone(true);
       }
     } finally {
       setChatLoading(false);
@@ -1776,9 +1819,7 @@ function buildPreviewManifest() {
     if (streamCancelRef.current) {
       streamCancelRef.current();
       streamCancelRef.current = null;
-      setStopReason("cancelled");
       setChatLoading(false);
-      setStreamDone(true);
     }
   }
 
@@ -1933,18 +1974,6 @@ function buildPreviewManifest() {
     }
   }
 
-  const groupedProgress = useMemo(() => {
-    const groups = new Map();
-    progressEvents.forEach((evt) => {
-      const key = evt.iter == null ? "meta" : `iter-${evt.iter + 1}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key).push(evt);
-    });
-    return Array.from(groups.entries());
-  }, [progressEvents]);
-
   function summarizeProgressEvent(evt) {
     if (!evt) return "Waiting for updates…";
     const data = evt.data || {};
@@ -1982,104 +2011,77 @@ function buildPreviewManifest() {
     return evt.event || "Running…";
   }
 
-  function renderProgressEvent(evt, idx) {
-    const data = evt.data || {};
-    const debugEnabled = localStorage.getItem("octo_layout_debug") === "1";
-    const ts = Number.isFinite(evt.ts_ms) ? formatTime(evt.ts_ms, "") : "";
-    const debugLine = debugEnabled ? (
-      <div className="text-[10px] opacity-60">
-        {evt.event} {evt.request_id ? `· ${evt.request_id}` : ""} {ts ? `· ${ts}` : ""}
-      </div>
-    ) : null;
-    if (evt.event === "planner_result") {
-      return (
-        <div key={`planner-${idx}`} className="text-xs">
-          {debugLine}
-          <div className="font-semibold">Planner</div>
-          <ul className="list-disc pl-4">
-            {(data.build_spec_summary || []).slice(0, 10).map((item, i) => (
-              <li key={`plan-${i}`}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      );
+  const studioPlanProgressItems = useMemo(() => {
+    const items = [];
+    const seen = new Set();
+    for (const evt of progressEvents) {
+      if (!evt || typeof evt !== "object") continue;
+      const data = evt.data || {};
+      if (evt.event === "planner_result" && Array.isArray(data.build_spec_summary)) {
+        for (const item of data.build_spec_summary.slice(0, 4)) {
+          const line = typeof item === "string" ? item.trim() : "";
+          if (line && !seen.has(line)) {
+            seen.add(line);
+            items.push(line);
+          }
+        }
+        continue;
+      }
+      if (evt.event === "builder_result") {
+        if (Array.isArray(data.plan_summary)) {
+          for (const item of data.plan_summary.slice(0, 4)) {
+            const line = typeof item === "string" ? item.trim() : "";
+            if (line && !seen.has(line)) {
+              seen.add(line);
+              items.push(line);
+            }
+          }
+        }
+        const tools = Array.isArray(data.tools_used) ? data.tools_used.filter(Boolean) : [];
+        if (tools.length > 0) {
+          const line = `Using tools: ${tools.join(", ")}`;
+          if (!seen.has(line)) {
+            seen.add(line);
+            items.push(line);
+          }
+        }
+        continue;
+      }
+      if (evt.event === "apply_result") {
+        const diff = data.diff_summary || {};
+        const line = `Draft changes: ${diff.entities_added || 0} entities, ${diff.pages_added || 0} pages, ${diff.views_added || 0} views`;
+        if (!seen.has(line)) {
+          seen.add(line);
+          items.push(line);
+        }
+        continue;
+      }
+      if (evt.event === "validate_result") {
+        const counts = data.error_counts || {};
+        const line = `Validation check: ${counts.total || 0} errors`;
+        if (!seen.has(line)) {
+          seen.add(line);
+          items.push(line);
+        }
+        continue;
+      }
+      const summary = summarizeProgressEvent(evt);
+      if (summary && !seen.has(summary) && evt.event !== "run_started" && evt.event !== "final_done") {
+        seen.add(summary);
+        items.push(summary);
+      }
     }
-    if (evt.event === "builder_result") {
-      return (
-        <div key={`builder-${idx}`} className="text-xs">
-          {debugLine}
-          <div className="font-semibold">Builder</div>
-          <div className="opacity-70">Ops: {data.ops_count || 0}</div>
-          {Array.isArray(data.tools_used) && data.tools_used.length > 0 && (
-            <div className="opacity-70">Tools: {data.tools_used.join(", ")}</div>
-          )}
-          {Array.isArray(data.plan_summary) && data.plan_summary.length > 0 && (
-            <ul className="list-disc pl-4">
-              {data.plan_summary.slice(0, 6).map((item, i) => (
-                <li key={`plan-step-${i}`}>{item}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      );
-    }
-    if (evt.event === "apply_result") {
-      const diff = data.diff_summary || {};
-      return (
-        <div key={`apply-${idx}`} className="text-xs">
-          {debugLine}
-          <div className="font-semibold">Apply</div>
-          <div className="opacity-70">
-            Entities: {diff.entities_added || 0}, Pages: {diff.pages_added || 0}, Views: {diff.views_added || 0}, Actions:{" "}
-            {diff.actions_added || 0}
-          </div>
-        </div>
-      );
-    }
-    if (evt.event === "validate_result") {
-      const counts = data.error_counts || {};
-      return (
-        <div key={`validate-${idx}`} className="text-xs">
-          {debugLine}
-          <div className="font-semibold">Validate</div>
-          <div className="opacity-70">
-            Errors: {counts.total || 0} (schema {counts.schema || 0}, strict {counts.strict || 0}, completeness{" "}
-            {counts.completeness || 0})
-          </div>
-          {Array.isArray(data.top_errors) && data.top_errors.length > 0 && (
-            <ul className="list-disc pl-4">
-              {data.top_errors.slice(0, 5).map((err, i) => (
-                <li key={`err-${i}`}>{err.code || "ERR"}: {err.message}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      );
-    }
-    if (evt.event === "iter_timing") {
-      return (
-        <div key={`timing-${idx}`} className="text-xs opacity-70">
-          {debugLine}
-          Timing: {Math.round(data.iter_total_ms || 0)}ms (builder {Math.round(data.builder_ms || 0)}ms, apply{" "}
-          {Math.round(data.apply_ms || 0)}ms, validate {Math.round(data.validate_ms || 0)}ms)
-        </div>
-      );
-    }
-    if (evt.event === "stopped") {
-      return (
-        <div key={`stopped-${idx}`} className="text-xs">
-          {debugLine}
-          <span className="badge badge-warning badge-sm">Stopped: {data.stop_reason || "unknown"}</span>
-        </div>
-      );
-    }
-    return (
-      <div key={`evt-${idx}`} className="text-xs opacity-70">
-        {debugLine}
-        {evt.event}
-      </div>
-    );
-  }
+    return items.slice(-6);
+  }, [progressEvents]);
+
+  const studioPlanningStatusItems = useMemo(() => {
+    if (studioPlanProgressItems.length > 0) return [];
+    return [
+      `Reviewing ${activeModuleName || "the current module"} and the current draft`,
+      "Planning manifest changes, pages, and data updates",
+      "Preparing a validated proposal for review",
+    ];
+  }, [activeModuleName, studioPlanProgressItems]);
 
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -2383,89 +2385,72 @@ function buildPreviewManifest() {
       );
     }
     return (
-      <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
-        <div ref={chatListRef} className="flex-1 min-h-0 overflow-auto space-y-4">
-          {chatMessages.length === 0 && (
-            <div className="chat chat-start">
-              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("common.assistant")}</div>
-              <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
-                {routeModuleId
-                  ? t("settings.studio.agent.describe_change_for_module", { moduleName: activeModuleName })
-                  : t("settings.studio.agent.intro")}
-              </div>
-            </div>
-          )}
-          {chatMessages.map((m, idx) => (
-            <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
-              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
-                {m.role === "user" ? userLabel : m.role}
-              </div>
-              <div className={`chat-bubble text-sm leading-5 max-w-[85%] ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
-                <div className="whitespace-pre-wrap text-sm">{m.text}</div>
-              </div>
-              {m.diagnostics?.parse_error && (
-                <div className="chat-footer mt-2 text-xs text-error">
-                  AI parse error: {m.diagnostics.parse_error}
-                </div>
-              )}
-            </div>
-          ))}
-          {(chatLoading || progressEvents.length > 0) && (
-            <div className="border border-base-200 rounded-box p-3 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold uppercase opacity-70">
-                <span>Agent Progress</span>
-                {stopReason && <span className="badge badge-outline badge-sm">{stopReason}</span>}
-              </div>
-              <div className="text-xs opacity-70">
-                {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}
-              </div>
-              {groupedProgress.map(([key, list]) => (
-                <div key={key} className="collapse collapse-arrow border border-base-200 rounded-box">
-                  <input type="checkbox" defaultChecked={key === "meta" || chatLoading} />
-                  <div className="collapse-title text-xs font-semibold">
-                    {key === "meta" ? "Plan" : `Iteration ${key.replace("iter-", "")}`}
-                  </div>
-                  <div className="collapse-content space-y-2">
-                    {list.map((evt, idx) => renderProgressEvent(evt, idx))}
-                  </div>
-                </div>
-              ))}
-              {chatLoading && !streamDone && (
-                <div className="text-xs opacity-60">Running… {summarizeProgressEvent(progressEvents[progressEvents.length - 1])}</div>
-              )}
-              {streamDone && <div className="text-xs opacity-60">Stream complete.</div>}
-            </div>
-          )}
-        </div>
-        <div className="shrink-0 border-t border-base-200 pt-3 space-y-2">
-            <AgentChatInput
-              value={chatInput}
-              onChange={setChatInput}
-              onSend={handleAgentChat}
-              disabled={!routeModuleId || chatLoading}
-              placeholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
-              minRows={4}
-            />
-            {chatLoading && (
-              <div className="flex justify-end">
-                <button className="btn btn-ghost btn-xs" onClick={cancelAgentRun}>Cancel</button>
-              </div>
-            )}
+      <div ref={leftPaneRef} className="h-full min-h-0 overflow-hidden">
+        <div className="h-full min-h-0">
+          <ScopedAiAssistantPane
+            introMessage={routeModuleId
+              ? t("settings.studio.agent.describe_change_for_module", { moduleName: activeModuleName })
+              : t("settings.studio.agent.intro")}
+            assistantLabel={t("common.assistant")}
+            userLabel={userLabel}
+            messages={chatMessages}
+            scrollRef={chatListRef}
+            autoScrollKey={`${chatMessages.length}:${chatLoading ? progressEvents.length : "idle"}:${pendingAgentPlan ? "proposal" : "none"}`}
+            stageCard={chatLoading ? (
+              <ArtifactAiStageCard
+                title="Studio Plan"
+                summary={summarizeProgressEvent(progressEvents[progressEvents.length - 1])}
+                stageLabel="Planning"
+                stageTone="warning"
+                statusItems={studioPlanningStatusItems}
+                detailsTitle={studioPlanProgressItems.length > 0 ? "Plan Progress" : ""}
+                details={studioPlanProgressItems}
+                busy
+                actions={[
+                  { label: "Cancel", onClick: cancelAgentRun, allowWhileBusy: true },
+                ]}
+              />
+            ) : (!chatLoading && pendingAgentPlan ? (
+              <ArtifactAiStageCard
+                title="Studio Plan"
+                summary={pendingAgentPlan.summary}
+                stageLabel="Ready to Apply"
+                stageTone="primary"
+                detailsTitle="Planned Changes"
+                details={pendingAgentPlan.changes?.length ? pendingAgentPlan.changes : studioPlanProgressItems}
+                warnings={pendingAgentPlan.warnings}
+                validation={pendingAgentPlan.validation}
+                actions={[
+                  { label: "Apply draft", onClick: () => applyPendingAgentPlan(), primary: true, disabled: !pendingAgentPlan?.draftText },
+                  { label: "Apply + Preview", onClick: () => applyPendingAgentPlan({ openPreview: true }), disabled: !pendingAgentPlan?.draftText },
+                  { label: "Discard", onClick: discardPendingAgentPlan },
+                ]}
+              />
+            ) : null)}
+            inputValue={chatInput}
+            onInputChange={setChatInput}
+            onSend={handleAgentChat}
+            inputDisabled={!routeModuleId || chatLoading}
+            inputPlaceholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
+            minRows={4}
+          />
         </div>
       </div>
     );
   }, [
     activeModuleName,
+    applyPendingAgentPlan,
     cancelAgentRun,
     chatInput,
     chatLoading,
     chatMessages,
-    groupedProgress,
+    discardPendingAgentPlan,
     handleAgentChat,
+    pendingAgentPlan,
     progressEvents,
+    studioPlanningStatusItems,
+    studioPlanProgressItems,
     routeModuleId,
-    stopReason,
-    streamDone,
     canManageSettings,
     isSuperadmin,
     providerStatusLoading,

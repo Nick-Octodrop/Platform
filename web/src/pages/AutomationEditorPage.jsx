@@ -8,7 +8,6 @@ import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
 import CodeTextarea from "../components/CodeTextarea.jsx";
 import ValidationPanel from "../components/ValidationPanel.jsx";
 import { useToast } from "../components/Toast.jsx";
-import AgentChatInput from "../ui/AgentChatInput.jsx";
 import SystemListToolbar from "../ui/SystemListToolbar.jsx";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -18,6 +17,8 @@ import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import ArtifactAiStageCard from "../components/ArtifactAiStageCard.jsx";
+import ScopedAiAssistantPane from "../components/ScopedAiAssistantPane.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
 
@@ -327,6 +328,7 @@ export default function AutomationEditorPage({ user }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [pendingAiPlan, setPendingAiPlan] = useState(null);
   const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
@@ -355,6 +357,30 @@ export default function AutomationEditorPage({ user }) {
   const automationAddButtonClass = "btn btn-sm btn-ghost shrink-0";
 
   function buildAutomationDefinition(nextName = name, nextDescription = description, nextTrigger = trigger, nextTriggerExprText = triggerExprText, nextSteps = steps) {
+    const normalizeStepForPersist = (step) => {
+      if (!step || typeof step !== "object" || Array.isArray(step)) return step;
+      const normalized = JSON.parse(JSON.stringify(step));
+      if (normalized.kind === "action" && normalized.action_id === "system.update_record") {
+        const nextInputs = { ...(normalized.inputs || {}) };
+        const parsedPatch = parseJsonObjectInput(nextInputs.patch);
+        nextInputs.patch = parsedPatch;
+        normalized.inputs = nextInputs;
+      }
+      if (normalized.kind === "action" && normalized.action_id === "system.create_record") {
+        const nextInputs = { ...(normalized.inputs || {}) };
+        const parsedValues = parseJsonObjectInput(nextInputs.values);
+        nextInputs.values = parsedValues;
+        normalized.inputs = nextInputs;
+      }
+      if (normalized.kind === "condition") {
+        normalized.then_steps = Array.isArray(normalized.then_steps) ? normalized.then_steps.map(normalizeStepForPersist) : [];
+        normalized.else_steps = Array.isArray(normalized.else_steps) ? normalized.else_steps.map(normalizeStepForPersist) : [];
+      }
+      if (normalized.kind === "foreach") {
+        normalized.steps = Array.isArray(normalized.steps) ? normalized.steps.map(normalizeStepForPersist) : [];
+      }
+      return normalized;
+    };
     let normalizedTrigger = nextTrigger && typeof nextTrigger === "object" && !Array.isArray(nextTrigger)
       ? JSON.parse(JSON.stringify(nextTrigger))
       : { kind: "event", event_types: [], filters: [], every_minutes: 60 };
@@ -383,7 +409,7 @@ export default function AutomationEditorPage({ user }) {
       name: typeof nextName === "string" ? nextName : "",
       description: typeof nextDescription === "string" ? nextDescription : "",
       trigger: normalizedTrigger,
-      steps: Array.isArray(nextSteps) ? JSON.parse(JSON.stringify(nextSteps)) : [],
+      steps: Array.isArray(nextSteps) ? nextSteps.map(normalizeStepForPersist) : [],
     };
   }
 
@@ -949,10 +975,16 @@ export default function AutomationEditorPage({ user }) {
 
   const triggerOptions = useMemo(() => {
     const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
-    if (catalog.length === 0) {
-      return [{ label: t("settings.automation_editor.events"), options: meta.event_types || [] }];
-    }
     const grouped = new Map();
+    const genericEvents = (Array.isArray(meta.event_types) ? meta.event_types : []).filter(
+      (evt) => typeof evt === "string" && evt && !catalog.some((item) => item?.id === evt)
+    );
+    if (genericEvents.length > 0) {
+      grouped.set(t("settings.automation_editor.events"), genericEvents);
+    }
+    if (catalog.length === 0) {
+      return Array.from(grouped.entries()).map(([label, options]) => ({ label, options }));
+    }
     for (const evt of catalog) {
       const label = evt.source_module_name || evt.source_module_id || t("settings.automation_editor.events");
       if (!grouped.has(label)) grouped.set(label, []);
@@ -976,6 +1008,22 @@ export default function AutomationEditorPage({ user }) {
     const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
     return catalog.find((evt) => evt?.id === selectedTriggerEventId) || null;
   }, [meta.event_catalog, selectedTriggerEventId]);
+  const eventLabelById = useMemo(() => {
+    const map = new Map();
+    const catalog = Array.isArray(meta.event_catalog) ? meta.event_catalog : [];
+    for (const evt of catalog) {
+      if (evt?.id) {
+        map.set(evt.id, evt.label || evt.id);
+      }
+    }
+    const genericEvents = Array.isArray(meta.event_types) ? meta.event_types : [];
+    for (const evt of genericEvents) {
+      if (typeof evt === "string" && evt && !map.has(evt)) {
+        map.set(evt, evt);
+      }
+    }
+    return map;
+  }, [meta.event_catalog, meta.event_types]);
   const defaultConditionEntityId = triggerEventMeta?.entity_id || "";
 
   const entityOptions = useMemo(() => {
@@ -1429,6 +1477,25 @@ export default function AutomationEditorPage({ user }) {
     return [...(Array.isArray(commonOptions) ? commonOptions : []), ...recordFieldOptions];
   }
 
+  function resolveConditionFieldOptionValue(leftVar, availableFieldPaths) {
+    const raw = String(leftVar || "").trim();
+    if (!raw) return "";
+    const options = Array.isArray(availableFieldPaths) ? availableFieldPaths : [];
+    const exact = options.find((item) => item?.value === raw);
+    if (exact) return exact.value;
+    const rawSuffix = raw.split(".").pop() || raw;
+    const recordFieldMatch = options.find((item) => {
+      const value = String(item?.value || "");
+      if (!value.startsWith("trigger.")) return false;
+      if (value === raw) return true;
+      const valueSuffix = value.split(".").pop() || value;
+      const fieldId = String(item?.id || "");
+      const fieldIdSuffix = fieldId.split(".").pop() || fieldId;
+      return fieldId === raw || valueSuffix === rawSuffix || fieldIdSuffix === rawSuffix;
+    });
+    return recordFieldMatch?.value || raw;
+  }
+
   function coerceConditionLiteralValue(raw, { fieldDef, op, isNumericOp }) {
     const fieldType = String(fieldDef?.type || "string").toLowerCase();
     if (op === "in" || op === "not_in") {
@@ -1541,12 +1608,12 @@ export default function AutomationEditorPage({ user }) {
 
   useEffect(() => {
     if (!steps.length) {
-      setSelectedStepPath([]);
+      setSelectedStepPath((current) => (Array.isArray(current) && current.length === 0 ? current : []));
       setStepModalOpen(false);
       return;
     }
     if (!getStepAtPath(selectedStepPath, steps)) {
-      setSelectedStepPath([0]);
+      setSelectedStepPath((current) => (pathsEqual(current, [0]) ? current : [0]));
     }
   }, [steps, selectedStepPath]);
 
@@ -1584,6 +1651,45 @@ export default function AutomationEditorPage({ user }) {
     return next;
   }, [validationErrors, jsonEditorError, error]);
 
+  const automationPlanningStatusItems = useMemo(() => ([
+    `Reviewing ${name.trim() || "the current automation"} and the current draft`,
+    "Checking triggers, rules, and step configuration",
+    "Preparing a validated automation proposal",
+  ]), [name]);
+
+  const runAutomationAiPlan = useCallback(async (rawText) => {
+    const prompt = String(rawText || "").trim();
+    if (!prompt || !automationId || chatLoading) return;
+    setPendingAiPlan(null);
+    setChatMessages((prev) => [...prev, { role: "user", text: prompt }]);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await apiFetch(`/automations/${automationId}/ai/plan`, {
+        method: "POST",
+        body: {
+          prompt,
+          draft: buildAutomationDefinition(),
+        },
+      });
+      setPendingAiPlan({
+        draft: res?.draft || null,
+        validation: res?.validation || null,
+        summary: String(res?.summary || "Automation draft ready to apply."),
+        assumptions: Array.isArray(res?.assumptions) ? res.assumptions : [],
+        warnings: Array.isArray(res?.warnings) ? res.warnings : [],
+      });
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: String(res?.summary || "Automation draft ready to apply.") },
+      ]);
+    } catch (err) {
+      setChatMessages((prev) => [...prev, { role: "assistant", text: err?.message || t("common.error") }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [automationId, buildAutomationDefinition, chatLoading, t]);
+
   const triggerSummaryText = useMemo(() => {
     if (trigger?.kind === "schedule") {
       const everyMinutes = Number(trigger?.every_minutes) > 0 ? Number(trigger.every_minutes) : null;
@@ -1598,80 +1704,7 @@ export default function AutomationEditorPage({ user }) {
     return triggerOptions.flatMap((group) => group.options || []).find((evt) => (typeof evt === "string" ? evt : evt.id) === selectedTriggerEventId)?.label || selectedTriggerEventId || t("settings.automation_editor.select_event");
   }, [t, trigger, triggerMode, triggerOptions, selectedTriggerEventId, webhookConnectionOptions, webhookTriggerConnectionId, webhookTriggerEventKey]);
 
-  const bubbleBase = "chat-bubble text-sm leading-5 max-w-[85%]";
   const userLabel = user?.email || t("settings.automation_editor.user");
-
-  const renderLeftPane = useCallback(() => (
-    <div className="h-full min-h-0 flex flex-col overflow-hidden">
-      {!isSuperadmin ? (
-        <div className="flex-1 min-h-0 overflow-auto space-y-4">
-          <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
-            <div className={`${bubbleBase} bg-base-200 text-base-content`}>
-              Automation AI is currently limited to superadmins.
-            </div>
-          </div>
-        </div>
-      ) : automationAiEnabled ? (
-        <>
-          <div className="flex-1 min-h-0 overflow-auto space-y-4">
-            {chatMessages.length === 0 && (
-              <div className="chat chat-start">
-                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
-                <div className={`${bubbleBase} bg-base-200 text-base-content`}>
-                  {t("settings.automation_editor.default_agent_message")}
-                </div>
-              </div>
-            )}
-            {chatMessages.map((m, idx) => (
-              <div key={`${m.role}-${idx}`} className={`chat ${m.role === "user" ? "chat-end" : "chat-start"}`}>
-                <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">
-                  {m.role === "user" ? userLabel : m.role}
-                </div>
-                <div className={`${bubbleBase} ${m.role === "user" ? "bg-primary text-primary-content" : "bg-base-200 text-base-content"}`}>
-                  <div className="whitespace-pre-wrap text-sm">{m.text}</div>
-                </div>
-              </div>
-            ))}
-            {chatLoading && <div className="text-xs opacity-60">{t("settings.automation_editor.agent_thinking")}</div>}
-          </div>
-          <div className="shrink-0 border-t border-base-200 pt-3">
-            <AgentChatInput
-              value={chatInput}
-              onChange={setChatInput}
-              onSend={() => {
-                const text = chatInput.trim();
-                if (!text || chatLoading) return;
-                setChatMessages((prev) => [...prev, { role: "user", text }]);
-                setChatInput("");
-                setChatLoading(true);
-                setTimeout(() => {
-                  setChatMessages((prev) => [...prev, { role: "assistant", text: t("settings.automation_editor.agent_wiring_soon") }]);
-                  setChatLoading(false);
-                }, 500);
-              }}
-              disabled={chatLoading}
-              placeholder={t("settings.automation_editor.describe_change")}
-              minRows={4}
-            />
-          </div>
-        </>
-      ) : (
-        providerStatusLoading ? (
-          <LoadingSpinner className="min-h-0 h-full" />
-        ) : (
-          <ProviderUnavailableState
-            title={t("settings.template_studio.openai_not_connected")}
-            description={t("settings.automation_editor.openai_not_connected_description")}
-            actionLabel={t("settings.template_studio.connect_openai")}
-            canManageSettings={canManageSettings}
-            loading={providerStatusLoading}
-            onAction={() => setOpenAiModalOpen(true)}
-          />
-        )
-      )}
-    </div>
-  ), [automationAiEnabled, bubbleBase, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, providerStatusLoading, t, userLabel]);
 
   const renderValidationPanel = useCallback(() => (
     <ValidationPanel
@@ -1789,6 +1822,247 @@ export default function AutomationEditorPage({ user }) {
     }
     return "";
   }
+
+  function describePlanValue(value) {
+    if (Array.isArray(value)) {
+      return value.length ? value.join(", ") : "a value";
+    }
+    if (value && typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "a value";
+      }
+    }
+    const text = String(value ?? "").trim();
+    return text || "a value";
+  }
+
+  function formatAutomationRecipientLabel(value) {
+    if (typeof value !== "string") return t("settings.automation_editor.unknown_user");
+    const raw = value.trim();
+    if (!raw) return t("settings.automation_editor.unknown_user");
+    const member = memberById.get(raw);
+    if (member) {
+      return member.name || member.email || member.user_email || member.user_id || raw;
+    }
+    if (raw.includes("{{") || raw.includes("}}") || raw.startsWith("trigger.") || raw.startsWith("steps.") || raw.startsWith("session.")) {
+      return "Dynamic recipient";
+    }
+    return raw;
+  }
+
+  function describeAutomationEntityLabel(entityId, fallback = "record") {
+    const raw = trimText(entityId);
+    const normalized = normalizeRouteEntityId(raw);
+    return entityById.get(raw)?.label || entityById.get(normalized)?.label || normalized || raw || fallback;
+  }
+
+  function describeAutomationTrigger(triggerDef) {
+    if (!triggerDef || typeof triggerDef !== "object") {
+      return "Trigger: Select an event";
+    }
+    if (triggerDef.kind === "schedule") {
+      const everyMinutes = Number(triggerDef.every_minutes) > 0 ? Number(triggerDef.every_minutes) : null;
+      return everyMinutes ? `Trigger: Every ${everyMinutes} minute${everyMinutes === 1 ? "" : "s"}` : "Trigger: Scheduled run";
+    }
+    const eventId = Array.isArray(triggerDef.event_types) ? String(triggerDef.event_types[0] || "").trim() : "";
+    const eventLabel = eventLabelById.get(eventId) || eventId || "Select event";
+    const filterCount = Array.isArray(triggerDef.filters) ? triggerDef.filters.length : 0;
+    return filterCount > 0
+      ? `Trigger: ${eventLabel} with ${filterCount} rule${filterCount === 1 ? "" : "s"}`
+      : `Trigger: ${eventLabel}`;
+  }
+
+  function describeAutomationPlanStep(step, index) {
+    const stepNumber = index + 1;
+    if (!step || typeof step !== "object") {
+      return `Step ${stepNumber}: Configure a step`;
+    }
+    if (step.kind === "condition") {
+      const left = step?.expr?.left?.var || "a field";
+      const op = step?.expr?.op || "eq";
+      const right = describePlanValue(step?.expr?.right?.literal);
+      const thenSummary = Array.isArray(step.then_steps) && step.then_steps.length > 0
+        ? describeAutomationPlanStep(step.then_steps[0], 0).replace(/^Step 1:\s*/, "")
+        : "do nothing";
+      const elseSummary = Array.isArray(step.else_steps) && step.else_steps.length > 0
+        ? describeAutomationPlanStep(step.else_steps[0], 0).replace(/^Step 1:\s*/, "")
+        : "do nothing";
+      return `Step ${stepNumber}: If ${left} ${op} ${right}, then ${thenSummary}; otherwise ${elseSummary}`;
+    }
+    if (step.kind === "delay") {
+      const detail = stepDetailText(step);
+      return detail ? `Step ${stepNumber}: ${stepSummaryText(step)} - ${detail}` : `Step ${stepNumber}: ${stepSummaryText(step)}`;
+    }
+    if (step.kind === "foreach") {
+      const childCount = Array.isArray(step.steps) ? step.steps.length : 0;
+      const detail = stepDetailText(step);
+      return detail
+        ? `Step ${stepNumber}: ${stepSummaryText(step)} - ${detail} across ${childCount} nested step${childCount === 1 ? "" : "s"}`
+        : `Step ${stepNumber}: ${stepSummaryText(step)}`;
+    }
+    if (step.action_id === "system.update_record") {
+      const entityLabel = describeAutomationEntityLabel(step.inputs?.entity_id, "trigger record");
+      const changedFields = Object.keys(parseJsonObjectInput(step.inputs?.patch));
+      return changedFields.length > 0
+        ? `Step ${stepNumber}: Update ${entityLabel} fields ${changedFields.join(", ")}`
+        : `Step ${stepNumber}: Update ${entityLabel}`;
+    }
+    if (step.action_id === "system.create_record") {
+      const entityLabel = describeAutomationEntityLabel(step.inputs?.entity_id, "record");
+      const changedFields = Object.keys(parseJsonObjectInput(step.inputs?.values));
+      return changedFields.length > 0
+        ? `Step ${stepNumber}: Create ${entityLabel} with fields ${changedFields.join(", ")}`
+        : `Step ${stepNumber}: Create ${entityLabel}`;
+    }
+    if (step.action_id === "system.notify") {
+      const recipients = Array.isArray(step.inputs?.recipient_user_ids)
+        ? step.inputs.recipient_user_ids
+        : step.inputs?.recipient_user_id
+          ? [step.inputs.recipient_user_id]
+          : [];
+      const recipientSummary = recipients.length > 0
+        ? formatAutomationRecipientLabel(recipients[0]) + (recipients.length > 1 ? ` +${recipients.length - 1} more` : "")
+        : "selected recipients";
+      const bodySummary = typeof step.inputs?.body === "string" && step.inputs.body.trim()
+        ? step.inputs.body.trim()
+        : typeof step.inputs?.title === "string" && step.inputs.title.trim()
+          ? step.inputs.title.trim()
+          : "";
+      return bodySummary
+        ? `Step ${stepNumber}: Send notification to ${recipientSummary} saying "${bodySummary}"`
+        : `Step ${stepNumber}: Send notification to ${recipientSummary}`;
+    }
+    const detail = stepDetailText(step);
+    return detail ? `Step ${stepNumber}: ${stepSummaryText(step)} - ${detail}` : `Step ${stepNumber}: ${stepSummaryText(step)}`;
+  }
+
+  const pendingAutomationPlanSteps = Array.isArray(pendingAiPlan?.draft?.steps) ? pendingAiPlan.draft.steps : [];
+  const pendingAutomationPlanDetails = pendingAiPlan?.draft && typeof pendingAiPlan.draft === "object"
+    ? [
+        describeAutomationTrigger(pendingAiPlan.draft.trigger),
+        ...pendingAutomationPlanSteps.slice(0, 4).map((step, index) => describeAutomationPlanStep(step, index)),
+        ...(pendingAutomationPlanSteps.length > 4
+          ? [`${pendingAutomationPlanSteps.length - 4} more step${pendingAutomationPlanSteps.length - 4 === 1 ? "" : "s"} in this plan`]
+          : []),
+      ].filter(Boolean)
+    : [];
+  const pendingAutomationPlanInvalid = pendingAiPlan?.validation?.compiled_ok === false;
+
+  const applyPendingAutomationPlan = useCallback(() => {
+    if (!pendingAiPlan?.draft) return;
+    applyAutomationDefinition(pendingAiPlan.draft);
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        card: {
+          title: "Automation Plan",
+          summary: pendingAiPlan.summary,
+          stageLabel: "Applied",
+          stageTone: "success",
+          detailsTitle: "Planned Changes",
+          details: pendingAutomationPlanDetails,
+          assumptions: pendingAiPlan.assumptions,
+          warnings: pendingAiPlan.warnings,
+          validation: pendingAiPlan.validation,
+        },
+      },
+    ]);
+    setPendingAiPlan(null);
+  }, [applyAutomationDefinition, pendingAiPlan, pendingAutomationPlanDetails]);
+
+  const discardPendingAutomationPlan = useCallback(() => {
+    if (pendingAiPlan) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          card: {
+            title: "Automation Plan",
+            summary: pendingAiPlan.summary,
+            stageLabel: "Discarded",
+            stageTone: "ghost",
+            detailsTitle: "Planned Changes",
+            details: pendingAutomationPlanDetails,
+            assumptions: pendingAiPlan.assumptions,
+            warnings: pendingAiPlan.warnings,
+            validation: pendingAiPlan.validation,
+          },
+        },
+      ]);
+    }
+    setPendingAiPlan(null);
+  }, [pendingAiPlan, pendingAutomationPlanDetails]);
+
+  const renderLeftPane = useCallback(() => (
+    <div className="h-full min-h-0 flex flex-col overflow-hidden">
+      {!isSuperadmin ? (
+        <div className="flex-1 min-h-0 overflow-auto space-y-4">
+          <div className="chat chat-start">
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
+            <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
+              Automation AI is currently limited to superadmins.
+            </div>
+          </div>
+        </div>
+      ) : automationAiEnabled ? (
+        <ScopedAiAssistantPane
+          introMessage={t("settings.automation_editor.default_agent_message")}
+          assistantLabel={t("settings.template_studio.assistant")}
+          userLabel={userLabel}
+          messages={chatMessages}
+          autoScrollKey={`${chatMessages.length}:${chatLoading ? "loading" : "idle"}:${pendingAiPlan ? "proposal" : "none"}`}
+          stageCard={chatLoading ? (
+            <ArtifactAiStageCard
+              title="Automation Plan"
+              summary="Working through the request and preparing a validated automation proposal."
+              stageLabel="Planning"
+              stageTone="warning"
+              statusItems={automationPlanningStatusItems}
+              busy
+            />
+          ) : (!chatLoading && pendingAiPlan ? (
+            <ArtifactAiStageCard
+              title="Automation Plan"
+              summary={pendingAiPlan.summary}
+              stageLabel={pendingAutomationPlanInvalid ? "Needs Fix" : "Ready to Apply"}
+              stageTone={pendingAutomationPlanInvalid ? "error" : "primary"}
+              detailsTitle="Planned Changes"
+              details={pendingAutomationPlanDetails}
+              assumptions={pendingAiPlan.assumptions}
+              warnings={pendingAiPlan.warnings}
+              validation={pendingAiPlan.validation}
+              actions={[
+                { label: "Apply draft", onClick: applyPendingAutomationPlan, primary: true, disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid },
+                { label: "Discard", onClick: discardPendingAutomationPlan },
+              ]}
+            />
+          ) : null)}
+          inputValue={chatInput}
+          onInputChange={setChatInput}
+          onSend={() => runAutomationAiPlan(chatInput)}
+          inputDisabled={chatLoading}
+          inputPlaceholder={t("settings.automation_editor.describe_change")}
+          minRows={4}
+        />
+      ) : (
+        providerStatusLoading ? (
+          <LoadingSpinner className="min-h-0 h-full" />
+        ) : (
+          <ProviderUnavailableState
+            title={t("settings.template_studio.openai_not_connected")}
+            description={t("settings.automation_editor.openai_not_connected_description")}
+            actionLabel={t("settings.template_studio.connect_openai")}
+            canManageSettings={canManageSettings}
+            loading={providerStatusLoading}
+            onAction={() => setOpenAiModalOpen(true)}
+          />
+        )
+      )}
+    </div>
+  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {
@@ -2315,8 +2589,7 @@ export default function AutomationEditorPage({ user }) {
                           <span className="label-text">{t("settings.automation_editor.selected_recipients")}</span>
                           <div className="mt-2 flex flex-wrap gap-2">
                             {selectedIds.map((userId) => {
-                              const member = memberById.get(userId);
-                              const label = member?.name || member?.email || member?.user_email || t("settings.automation_editor.unknown_user");
+                              const label = formatAutomationRecipientLabel(userId);
                               return (
                                 <span key={userId} className="badge badge-outline badge-dismissible">
                                   {label}
@@ -4102,7 +4375,8 @@ export default function AutomationEditorPage({ user }) {
               ];
           const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
           const fieldPathOptions = availableFieldPaths.filter((item) => !commonOptions.some((opt) => opt.value === item.value));
-          const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
+          const resolvedLeftVar = resolveConditionFieldOptionValue(leftVar, availableFieldPaths);
+          const selectedFieldDef = availableFieldPaths.find((item) => item.value === resolvedLeftVar) || null;
           const isExistsOp = op === "exists" || op === "not_exists";
           const isInListOp = op === "in" || op === "not_in";
           const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
@@ -4145,7 +4419,7 @@ export default function AutomationEditorPage({ user }) {
                 <span className="label-text">{t("settings.automation_editor.check")}</span>
                 <AppSelect
                   className="select select-bordered"
-                  value={leftVar}
+                  value={resolvedLeftVar}
                   onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
                 >
                   <option value="">{t("settings.automation_editor.select_field")}</option>
@@ -4743,8 +5017,7 @@ export default function AutomationEditorPage({ user }) {
                                 ? [step.inputs.recipient_user_id]
                                 : []
                             ).map((userId) => {
-                              const member = memberById.get(userId);
-                              const label = member?.name || member?.email || member?.user_email || t("settings.automation_editor.unknown_user");
+                              const label = formatAutomationRecipientLabel(userId);
                               return (
                                 <span key={userId} className="badge badge-outline badge-dismissible">
                                   {label}
@@ -5396,7 +5669,8 @@ export default function AutomationEditorPage({ user }) {
                     { value: "trigger.user_id", label: t("settings.automation_editor.trigger_user"), type: "user", options: [] },
                   ];
                   const availableFieldPaths = buildConditionFieldOptions(selectedEntityFields, commonOptions);
-                  const selectedFieldDef = availableFieldPaths.find((item) => item.value === leftVar) || null;
+                  const resolvedLeftVar = resolveConditionFieldOptionValue(leftVar, availableFieldPaths);
+                  const selectedFieldDef = availableFieldPaths.find((item) => item.value === resolvedLeftVar) || null;
                   const isExistsOp = op === "exists" || op === "not_exists";
                   const isInListOp = op === "in" || op === "not_in";
                   const isNumericOp = ["gt", "gte", "lt", "lte"].includes(op);
@@ -5437,7 +5711,7 @@ export default function AutomationEditorPage({ user }) {
                         <input
                           className="input input-bordered"
                           list={`automation-condition-fields-${normalizedPath.join("-") || "root"}`}
-                          value={leftVar}
+                          value={resolvedLeftVar}
                           onChange={(e) => updateStep(index, { expr: { ...expr, left: { var: e.target.value } } })}
                           placeholder={triggerMode === "webhook" ? t("settings.automation_editor.webhook_field_path_placeholder") : t("settings.automation_editor.record_field_path_placeholder")}
                         />
@@ -6061,15 +6335,18 @@ export default function AutomationEditorPage({ user }) {
           </div>
         </div>
         {jsonEditorDirty ? <div className="text-xs opacity-60">{t("settings.automation_editor.json_has_unapplied_changes")}</div> : null}
-        <CodeTextarea
-          value={jsonEditorText}
-          onChange={(e) => {
-            setJsonEditorText(e.target.value);
-            setJsonEditorDirty(true);
-            if (jsonEditorError) setJsonEditorError("");
-          }}
-          minHeight="70vh"
-        />
+        <div className="flex-1 min-h-0">
+          <CodeTextarea
+            value={jsonEditorText}
+            onChange={(e) => {
+              setJsonEditorText(e.target.value);
+              setJsonEditorDirty(true);
+              if (jsonEditorError) setJsonEditorError("");
+            }}
+            fill
+            className="h-full min-h-0"
+          />
+        </div>
       </section>
     </div>
   );

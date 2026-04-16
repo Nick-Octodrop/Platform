@@ -5,6 +5,7 @@ import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
+import { buildIntegrationOauthRedirectUri, encodeIntegrationOauthState } from "../utils/integrationsOAuth.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function providerKeyFromType(type) {
@@ -78,6 +79,22 @@ function titleCase(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
     .trim();
 }
+
+const XERO_HIDDEN_SETUP_FIELDS = new Set([
+  "base_url",
+  "authorization_url",
+  "token_url",
+  "client_id",
+  "default_headers",
+  "oauth_token_refresh_leeway_seconds",
+  "test_request",
+  "xero_tenants",
+]);
+
+const XERO_READONLY_SETUP_FIELDS = new Set([
+  "xero_tenant_name",
+  "xero_tenant_id",
+]);
 
 function SimpleModal({ title, subtitle = "", children, onClose, maxWidthClass = "max-w-xl" }) {
   return (
@@ -307,14 +324,20 @@ export default function IntegrationConnectionPage() {
 
   useEffect(() => {
     if (!connectionId || typeof window === "undefined") return;
-    const nextRedirectUri = `${window.location.origin}/integrations/connections/${connectionId}`;
-    setOauthRedirectUri((prev) => prev || nextRedirectUri);
+    const resolvedProviderKey = providerKeyFromType(item?.type);
+    const nextRedirectUri = buildIntegrationOauthRedirectUri(window.location.origin, resolvedProviderKey, connectionId);
+    setOauthRedirectUri((prev) => {
+      if (!prev || prev.includes(`/integrations/connections/${connectionId}`) || prev.includes("/integrations/oauth/")) {
+        return nextRedirectUri;
+      }
+      return prev;
+    });
     const params = new URLSearchParams(window.location.search);
     const returnedCode = params.get("code");
     if (returnedCode) {
       setOauthCode((prev) => prev || returnedCode);
     }
-  }, [connectionId]);
+  }, [connectionId, item?.type]);
 
   const providerIndex = useMemo(() => {
     const map = new Map();
@@ -326,6 +349,7 @@ export default function IntegrationConnectionPage() {
 
   const providerKey = providerKeyFromType(item?.type);
   const provider = providerIndex.get(providerKey) || null;
+  const isXeroProvider = providerKey === "xero";
   const providerManifest = provider?.manifest_json || {};
   const providerCapabilities = Array.isArray(providerManifest?.capabilities) ? providerManifest.capabilities : [];
   const providerSupportsSync = providerCapabilities.includes("sync.poll");
@@ -333,6 +357,7 @@ export default function IntegrationConnectionPage() {
   const setupFields = Array.isArray(providerManifest?.setup_schema?.fields) ? providerManifest.setup_schema.fields : [];
   const syncFields = Array.isArray(providerManifest?.sync_schema?.fields) ? providerManifest.sync_schema.fields : [];
   const secretKeys = Array.isArray(providerManifest?.secret_keys) ? providerManifest.secret_keys : [];
+  const requiresManualSecrets = !isXeroProvider && secretKeys.length > 0;
   const groupedSetupFields = useMemo(() => {
     const groups = new Map();
     for (const rawField of setupFields) {
@@ -344,19 +369,38 @@ export default function IntegrationConnectionPage() {
     }
     return Array.from(groups.entries());
   }, [setupFields]);
+  const visibleSetupGroups = useMemo(
+    () => groupedSetupFields
+      .map(([groupKey, fields]) => [
+        groupKey,
+        fields.filter((rawField) => {
+          const field = typeof rawField === "string" ? { id: rawField } : rawField;
+          if (!field?.id) return false;
+          if (!isXeroProvider) return true;
+          return !XERO_HIDDEN_SETUP_FIELDS.has(field.id);
+        }),
+      ])
+      .filter(([, fields]) => fields.length),
+    [groupedSetupFields, isXeroProvider],
+  );
 
   const tabs = useMemo(
     () => [
       { id: "setup", label: t("settings.integrations.detail.tabs.setup") },
-      { id: "secrets", label: t("settings.integrations.detail.tabs.secrets") },
+      ...(requiresManualSecrets ? [{ id: "secrets", label: t("settings.integrations.detail.tabs.secrets") }] : []),
       { id: "request", label: t("settings.integrations.detail.tabs.request") },
       ...(providerSupportsSync ? [{ id: "sync", label: t("settings.integrations.detail.tabs.sync") }] : []),
       { id: "webhooks", label: t("settings.integrations.detail.tabs.webhooks") },
       { id: "mappings", label: t("settings.integrations.detail.tabs.mappings") },
       { id: "logs", label: t("settings.integrations.detail.tabs.logs") },
     ],
-    [providerSupportsSync, t],
+    [providerSupportsSync, requiresManualSecrets, t],
   );
+
+  useEffect(() => {
+    if (tabs.some((tab) => tab.id === activeTab)) return;
+    setActiveTab("setup");
+  }, [activeTab, tabs]);
 
   function updateConfigField(key, value) {
     setConfig((prev) => {
@@ -566,9 +610,14 @@ export default function IntegrationConnectionPage() {
     setError("");
     setNotice("");
     try {
+      const state = encodeIntegrationOauthState({
+        connectionId: item.id,
+        providerKey,
+        returnOrigin: typeof window !== "undefined" ? window.location.origin : "",
+      });
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/oauth/authorize-url`, {
         method: "POST",
-        body: { redirect_uri: oauthRedirectUri.trim() },
+        body: { redirect_uri: oauthRedirectUri.trim(), state },
       });
       setOauthAuthorizeResult(res?.result || null);
       setNotice(detailT("notices.authorize_url_generated"));
@@ -759,6 +808,7 @@ export default function IntegrationConnectionPage() {
     const label = field.label || fieldId.replaceAll("_", " ");
     const help = field.help || "";
     const placeholder = field.placeholder || "";
+    const readOnly = isXeroProvider && XERO_READONLY_SETUP_FIELDS.has(fieldId);
     const showWhen = field.show_when;
     if (showWhen && typeof showWhen === "object") {
       const actualValue = config?.[showWhen.field];
@@ -798,6 +848,7 @@ export default function IntegrationConnectionPage() {
           onChange={(text) => updateConfigField(fieldId, safeJsonParse(text, {}))}
           help={help}
           minHeight={fieldId === "test_request" ? "10rem" : "8rem"}
+          disabled={readOnly}
         />
       );
     }
@@ -810,7 +861,8 @@ export default function IntegrationConnectionPage() {
             inputMode="numeric"
             value={config?.[fieldId] ?? ""}
             onChange={(e) => updateConfigField(fieldId, e.target.value)}
-            disabled={saving}
+            disabled={saving || readOnly}
+            readOnly={readOnly}
             placeholder={placeholder}
           />
           {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
@@ -826,7 +878,7 @@ export default function IntegrationConnectionPage() {
               className="toggle toggle-sm"
               checked={Boolean(config?.[fieldId])}
               onChange={(e) => updateConfigField(fieldId, e.target.checked)}
-              disabled={saving}
+              disabled={saving || readOnly}
             />
             <span className="label-text text-sm">{label}</span>
           </label>
@@ -841,7 +893,8 @@ export default function IntegrationConnectionPage() {
           className="input input-bordered"
           value={config?.[fieldId] || ""}
           onChange={(e) => updateConfigField(fieldId, e.target.value)}
-          disabled={saving}
+          disabled={saving || readOnly}
+          readOnly={readOnly}
           placeholder={placeholder}
         />
         {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
@@ -930,31 +983,46 @@ export default function IntegrationConnectionPage() {
     return map;
   }, [secrets]);
   const linkedSecretCount = useMemo(
-    () => secretKeys.filter((secretKey) => Boolean(secretRefs?.[secretKey])).length,
-    [secretKeys, secretRefs],
+    () => (requiresManualSecrets ? secretKeys.filter((secretKey) => Boolean(secretRefs?.[secretKey])).length : 0),
+    [requiresManualSecrets, secretKeys, secretRefs],
   );
   const hasTestedConnection = Boolean(item?.last_tested_at);
   const setupGuideSteps = useMemo(
-    () => [
-      {
-        icon: ShieldCheck,
-        title: detailT("setup.guide.review_title"),
-        description: detailT("setup.guide.review_description"),
-        actionLabel: "",
-        onAction: null,
-        complete: Boolean((name || "").trim()) && setupFields.length > 0 ? true : Boolean((name || "").trim() && Object.keys(config || {}).length > 0),
-      },
-      {
-        icon: KeyRound,
-        title: detailT("setup.guide.attach_secrets_title"),
-        description: secretKeys.length
-          ? detailT("setup.guide.attach_secrets_progress", { linked: linkedSecretCount, total: secretKeys.length })
-          : detailT("secrets.none_declared"),
-        actionLabel: secretKeys.length ? detailT("setup.guide.open_secrets") : "",
-        onAction: secretKeys.length ? () => setActiveTab("secrets") : null,
-        complete: secretKeys.length === 0 || linkedSecretCount === secretKeys.length,
-      },
-      {
+    () => {
+      const steps = [
+        {
+          icon: ShieldCheck,
+          title: detailT("setup.guide.review_title"),
+          description: detailT("setup.guide.review_description"),
+          actionLabel: "",
+          onAction: null,
+          complete: Boolean((name || "").trim()) && setupFields.length > 0 ? true : Boolean((name || "").trim() && Object.keys(config || {}).length > 0),
+        },
+      ];
+      if (isXeroProvider) {
+        steps.push({
+          icon: KeyRound,
+          title: "Connect the workspace to Xero",
+          description: config?.xero_tenant_id
+            ? `Connected to ${config?.xero_tenant_name || "the selected Xero organisation"}.`
+            : "Use the shared Octodrop Xero app to sign in and approve this workspace. No manual client secret or code paste is required here.",
+          actionLabel: "",
+          onAction: null,
+          complete: Boolean(config?.xero_tenant_id),
+        });
+      } else {
+        steps.push({
+          icon: KeyRound,
+          title: detailT("setup.guide.attach_secrets_title"),
+          description: secretKeys.length
+            ? detailT("setup.guide.attach_secrets_progress", { linked: linkedSecretCount, total: secretKeys.length })
+            : detailT("secrets.none_declared"),
+          actionLabel: secretKeys.length ? detailT("setup.guide.open_secrets") : "",
+          onAction: secretKeys.length ? () => setActiveTab("secrets") : null,
+          complete: secretKeys.length === 0 || linkedSecretCount === secretKeys.length,
+        });
+      }
+      steps.push({
         icon: TestTube2,
         title: detailT("setup.guide.test_title"),
         description: hasTestedConnection
@@ -963,9 +1031,10 @@ export default function IntegrationConnectionPage() {
         actionLabel: detailT("setup.guide.test_now"),
         onAction: runTest,
         complete: Boolean(item?.health_status && item.health_status !== "error" && hasTestedConnection),
-      },
-    ],
-    [config, hasTestedConnection, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length, t],
+      });
+      return steps;
+    },
+    [config, detailT, hasTestedConnection, isXeroProvider, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length, t],
   );
 
   function secretsForSlot(secretKey) {
@@ -1441,7 +1510,33 @@ export default function IntegrationConnectionPage() {
                   </AppSelect>
                 </label>
 
-                {groupedSetupFields
+                {isXeroProvider ? (
+                  <Section
+                    title="Xero connection"
+                    help="This workspace uses the shared Octodrop Xero app. The only required step here is approving access in Xero, then Octodrop stores the tokens and tenant automatically."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">OAuth app</div>
+                        <div className="mt-1">Shared Octodrop Xero app</div>
+                      </div>
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
+                        <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
+                      </div>
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Scopes</div>
+                        <div className="mt-1 break-words">{String(config?.oauth_scope || "").trim() || "—"}</div>
+                      </div>
+                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
+                        <div className="text-xs uppercase tracking-wide opacity-60">Selected tenant</div>
+                        <div className="mt-1">{config?.xero_tenant_name || "Not connected yet"}</div>
+                      </div>
+                    </div>
+                  </Section>
+                ) : null}
+
+                {visibleSetupGroups
                   .filter(([groupKey]) => groupKey !== "advanced")
                   .map(([groupKey, fields]) => (
                     <Section
@@ -1458,7 +1553,10 @@ export default function IntegrationConnectionPage() {
                   ))}
 
                 {authMode === "oauth2" ? (
-                  <Section title={detailT("setup.oauth_title")} help={detailT("setup.oauth_help")}>
+                  <Section
+                    title={isXeroProvider ? "Connect to Xero" : detailT("setup.oauth_title")}
+                    help={isXeroProvider ? "Open the Xero login, approve access for this workspace, and the callback will complete the token exchange automatically." : detailT("setup.oauth_help")}
+                  >
                     <div className="space-y-3">
                       <label className="form-control">
                         <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
@@ -1467,13 +1565,17 @@ export default function IntegrationConnectionPage() {
                           value={oauthRedirectUri}
                           onChange={(e) => setOauthRedirectUri(e.target.value)}
                           placeholder={detailT("setup.redirect_uri_placeholder")}
+                          readOnly={isXeroProvider}
+                          disabled={isXeroProvider}
                         />
-                        <span className="label-text-alt opacity-70 mt-1">{detailT("setup.redirect_uri_help")}</span>
+                        <span className="label-text-alt opacity-70 mt-1">
+                          {isXeroProvider ? "This must exactly match the redirect URI registered on the Octodrop Xero app." : detailT("setup.redirect_uri_help")}
+                        </span>
                       </label>
 
                       <div className="flex flex-wrap gap-2">
                         <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
-                          {authorizingOAuth ? detailT("setup.generating") : detailT("setup.generate_authorize_url")}
+                          {authorizingOAuth ? detailT("setup.generating") : isXeroProvider ? "Generate Xero login" : detailT("setup.generate_authorize_url")}
                         </button>
                         <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
                           {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
@@ -1483,31 +1585,35 @@ export default function IntegrationConnectionPage() {
                       {oauthAuthorizeResult?.authorize_url ? (
                         <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
                           <div className="text-sm font-medium">{detailT("setup.authorize_url")}</div>
-                          <textarea className="textarea textarea-bordered min-h-[7rem] text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
+                          <textarea className="textarea textarea-bordered min-h-[7rem] w-full text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
                           <div className="flex flex-wrap gap-2">
                             <a className="btn btn-sm btn-primary" href={oauthAuthorizeResult.authorize_url} target="_blank" rel="noreferrer">
-                              {detailT("setup.open_provider_login")}
+                              {isXeroProvider ? "Open Xero login" : detailT("setup.open_provider_login")}
                             </a>
                           </div>
                         </div>
                       ) : null}
 
-                      <label className="form-control">
-                        <span className="label-text text-sm">{detailT("setup.authorization_code")}</span>
-                        <input
-                          className="input input-bordered"
-                          value={oauthCode}
-                          onChange={(e) => setOauthCode(e.target.value)}
-                          placeholder={detailT("setup.authorization_code_placeholder")}
-                        />
-                        <span className="label-text-alt opacity-70 mt-1">{detailT("setup.authorization_code_help")}</span>
-                      </label>
+                      {!isXeroProvider ? (
+                        <>
+                          <label className="form-control">
+                            <span className="label-text text-sm">{detailT("setup.authorization_code")}</span>
+                            <input
+                              className="input input-bordered"
+                              value={oauthCode}
+                              onChange={(e) => setOauthCode(e.target.value)}
+                              placeholder={detailT("setup.authorization_code_placeholder")}
+                            />
+                            <span className="label-text-alt opacity-70 mt-1">{detailT("setup.authorization_code_help")}</span>
+                          </label>
 
-                      <div className="flex flex-wrap gap-2">
-                        <button className="btn btn-sm btn-primary" type="button" onClick={exchangeOauthCode} disabled={exchangingOAuth || !oauthRedirectUri.trim() || !oauthCode.trim()}>
-                          {exchangingOAuth ? detailT("setup.exchanging") : detailT("setup.exchange_code")}
-                        </button>
-                      </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button className="btn btn-sm btn-primary" type="button" onClick={exchangeOauthCode} disabled={exchangingOAuth || !oauthRedirectUri.trim() || !oauthCode.trim()}>
+                              {exchangingOAuth ? detailT("setup.exchanging") : detailT("setup.exchange_code")}
+                            </button>
+                          </div>
+                        </>
+                      ) : null}
 
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
@@ -1526,10 +1632,10 @@ export default function IntegrationConnectionPage() {
                 <details className="collapse collapse-arrow border border-base-300 bg-base-100">
                   <summary className="collapse-title text-sm font-medium">{detailT("setup.advanced_config_title")}</summary>
                   <div className="collapse-content">
-                    {groupedSetupFields.some(([groupKey]) => groupKey === "advanced") ? (
+                    {visibleSetupGroups.some(([groupKey]) => groupKey === "advanced") ? (
                       <div className="mb-4 space-y-3">
                         <div className="text-sm opacity-70">{detailT("setup.advanced_config_help")}</div>
-                        {groupedSetupFields
+                        {visibleSetupGroups
                           .filter(([groupKey]) => groupKey === "advanced")
                           .flatMap(([, fields]) => fields)
                           .map((field) => renderSetupField(field))}

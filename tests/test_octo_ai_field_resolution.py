@@ -665,7 +665,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
         self.assertEqual(
             structured["requested_scope"],
-            {"requested_modules": [], "missing_modules": []},
+            {"requested_modules": [], "missing_modules": [], "requested_artifacts": ["Contacts"]},
         )
         self.assertEqual(
             structured["clarifications"],
@@ -681,6 +681,129 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(structured["questions"]["meta"]["id"], "confirm_plan")
         self.assertEqual(structured["assumptions"], ["Use the existing Contacts form."])
         self.assertEqual(structured["risks"], ["Review downstream automations before apply."])
+
+    def test_structured_plan_tracks_non_module_artifacts_as_first_class_scope(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "affected_artifacts": [
+                    {"artifact_type": "automation", "artifact_id": "automation_quote_reminder"},
+                    {"artifact_type": "email_template", "artifact_id": "email_quote_approved"},
+                ],
+                "proposed_changes": [
+                    {
+                        "op": "update_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": "automation_quote_reminder",
+                        "automation": {
+                            "name": "Quote Reminder",
+                            "trigger": {"kind": "event"},
+                            "steps": [{"kind": "action", "action_id": "system.send_email"}],
+                        },
+                    },
+                    {
+                        "op": "update_email_template_record",
+                        "artifact_type": "email_template",
+                        "artifact_id": "email_quote_approved",
+                        "email_template": {
+                            "name": "Quote Approved",
+                            "subject": "Quote approved",
+                            "body_html": "<p>Approved</p>",
+                            "body_text": "Approved",
+                        },
+                    },
+                ],
+                "planner_state": {"intent": "multi_request"},
+            },
+            {
+                "full_selected_artifacts": [
+                    {"artifact_type": "automation", "artifact_id": "automation_quote_reminder", "manifest": {"name": "Quote Reminder"}},
+                    {"artifact_type": "email_template", "artifact_id": "email_quote_approved", "manifest": {"name": "Quote Approved"}},
+                ],
+                "request_summary": "Update the reminder automation and quote approved email.",
+            },
+        )
+
+        self.assertEqual(
+            structured["artifacts"],
+            [
+                {
+                    "artifact_type": "automation",
+                    "artifact_id": "automation_quote_reminder",
+                    "artifact_label": "Quote Reminder",
+                    "status": "planned",
+                },
+                {
+                    "artifact_type": "email_template",
+                    "artifact_id": "email_quote_approved",
+                    "artifact_label": "Quote Approved",
+                    "status": "planned",
+                },
+            ],
+        )
+        self.assertEqual(
+            structured["requested_scope"],
+            {
+                "requested_modules": [],
+                "missing_modules": [],
+                "requested_artifacts": ["Quote Reminder", "Quote Approved"],
+            },
+        )
+        self.assertEqual(structured["changes"][0]["artifact_type"], "automation")
+        self.assertEqual(structured["changes"][0]["artifact_label"], "Quote Reminder")
+        self.assertEqual(structured["changes"][1]["artifact_type"], "email_template")
+        self.assertEqual(structured["changes"][1]["artifact_label"], "Quote Approved")
+
+    def test_structured_plan_keeps_semantic_summary_when_non_module_artifact_is_named(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "affected_artifacts": [{"artifact_type": "email_template", "artifact_id": "email_quote_approved"}],
+                "proposed_changes": [
+                    {
+                        "op": "update_email_template_record",
+                        "artifact_type": "email_template",
+                        "artifact_id": "email_quote_approved",
+                        "email_template": {
+                            "name": "Quote Approved",
+                            "subject": "Quote approved",
+                            "body_html": "<p>Approved</p>",
+                            "body_text": "Approved",
+                        },
+                    }
+                ],
+                "planner_state": {"intent": "template_change"},
+                "plan_v1": {
+                    "version": "1",
+                    "intent": "template_change",
+                    "summary": "Update the Quote Approved email template for approval follow-up.",
+                    "artifacts": [
+                        {
+                            "artifact_type": "email_template",
+                            "artifact_id": "email_quote_approved",
+                            "artifact_label": "Quote Approved",
+                            "status": "planned",
+                        }
+                    ],
+                    "changes": [
+                        {
+                            "op": "update_email_template_record",
+                            "artifact_type": "email_template",
+                            "artifact_id": "email_quote_approved",
+                            "artifact_label": "Quote Approved",
+                            "summary": "Update email template 'Quote Approved'.",
+                        }
+                    ],
+                },
+            },
+            {
+                "full_selected_artifacts": [
+                    {"artifact_type": "email_template", "artifact_id": "email_quote_approved", "manifest": {"name": "Quote Approved"}},
+                ],
+            },
+        )
+
+        self.assertEqual(structured["source"], "semantic_plan_v1")
+        self.assertEqual(structured["summary"], "Update the Quote Approved email template for approval follow-up.")
+        self.assertEqual(structured["artifacts"][0]["artifact_label"], "Quote Approved")
 
     def test_structured_plan_prefers_semantic_plan_v1_when_present(self) -> None:
         structured = _ai_build_structured_plan(

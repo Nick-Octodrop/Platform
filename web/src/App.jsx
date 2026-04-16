@@ -53,6 +53,7 @@ const OpsJobPage = lazy(() => import("./pages/OpsJobPage.jsx"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx"));
 const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage.jsx"));
 const IntegrationConnectionPage = lazy(() => import("./pages/IntegrationConnectionPage.jsx"));
+const IntegrationOAuthCallbackPage = lazy(() => import("./pages/IntegrationOAuthCallbackPage.jsx"));
 const EmailHomePage = lazy(() => import("./pages/EmailHomePage.jsx"));
 const EmailConnectionsPage = lazy(() => import("./pages/EmailConnectionsPage.jsx"));
 const EmailConnectionDetailPage = lazy(() => import("./pages/EmailConnectionDetailPage.jsx"));
@@ -608,6 +609,14 @@ export default function App() {
             <Route
               path="/ext/v1/events.md"
               element={lazyPage(<ExternalApiDocsRedirectPage path="/ext/v1/events.md" label="External Event Catalog" />)}
+            />
+            <Route
+              path="/integrations/oauth/xero/callback"
+              element={(
+                <ProtectedRoute user={user} loading={loading}>
+                  {lazyPage(<IntegrationOAuthCallbackPage />)}
+                </ProtectedRoute>
+              )}
             />
             <Route
               path="/*"

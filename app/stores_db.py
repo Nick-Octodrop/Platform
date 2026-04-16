@@ -38,6 +38,14 @@ from contextvars import ContextVar
 _ORG_ID: ContextVar[str] = ContextVar("org_id", default="default")
 
 
+def _provider_env(*keys: str) -> str:
+    for key in keys:
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _json_dumps(value: object) -> str:
     return json.dumps(value, default=str)
 
@@ -2738,6 +2746,120 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
         },
     },
     {
+        "key": "xero",
+        "name": "Xero",
+        "description": "Connect a client workspace to Xero using Octodrop's shared OAuth app and per-workspace authorization.",
+        "auth_type": "oauth2",
+        "manifest": {
+            "capabilities": ["action.http_request", "sync.poll"],
+            "secret_keys": ["client_secret", "access_token", "refresh_token"],
+            "supported_auth_modes": ["oauth2"],
+            "default_config": {
+                "auth_mode": "oauth2",
+                "base_url": "https://api.xero.com/api.xro/2.0",
+                "authorization_url": "https://login.xero.com/identity/connect/authorize",
+                "token_url": "https://identity.xero.com/connect/token",
+                "client_id": _provider_env("OCTO_XERO_CLIENT_ID", "XERO_CLIENT_ID"),
+                "oauth_scope": "openid profile email offline_access accounting.invoices accounting.contacts accounting.settings",
+                "oauth_token_refresh_leeway_seconds": 120,
+                "default_headers": {
+                    "Accept": "application/json",
+                },
+                "test_request": {
+                    "method": "GET",
+                    "url": "https://api.xero.com/connections",
+                },
+            },
+            "setup_schema": {
+                "fields": [
+                    {
+                        "id": "base_url",
+                        "type": "text",
+                        "label": "Base URL",
+                        "group": "connection",
+                        "help": "Default Xero API base URL. Leave this as the standard Xero API unless you know you need a different endpoint family.",
+                        "placeholder": "https://api.xero.com/api.xro/2.0",
+                    },
+                    {
+                        "id": "authorization_url",
+                        "type": "text",
+                        "label": "Authorization URL",
+                        "group": "connection",
+                        "help": "Xero OAuth2 authorize endpoint for the shared Octodrop app.",
+                        "placeholder": "https://login.xero.com/identity/connect/authorize",
+                    },
+                    {
+                        "id": "token_url",
+                        "type": "text",
+                        "label": "Token URL",
+                        "group": "connection",
+                        "help": "Xero OAuth2 token endpoint for exchanging auth codes and refreshing tokens.",
+                        "placeholder": "https://identity.xero.com/connect/token",
+                    },
+                    {
+                        "id": "client_id",
+                        "type": "text",
+                        "label": "Client ID",
+                        "group": "connection",
+                        "help": "Client ID from the Octodrop Xero app in the Xero developer portal.",
+                    },
+                    {
+                        "id": "oauth_scope",
+                        "type": "text",
+                        "label": "Scopes",
+                        "group": "connection",
+                        "help": "Scopes requested during Xero authorization. Adjust only if this workspace needs fewer or more permissions.",
+                        "placeholder": "openid profile email offline_access accounting.invoices accounting.contacts accounting.settings",
+                    },
+                    {
+                        "id": "xero_tenant_name",
+                        "type": "text",
+                        "label": "Selected tenant",
+                        "group": "connection",
+                        "help": "Filled automatically after the workspace authorizes Xero.",
+                        "placeholder": "Acme Ltd",
+                    },
+                    {
+                        "id": "xero_tenant_id",
+                        "type": "text",
+                        "label": "Selected tenant ID",
+                        "group": "connection",
+                        "help": "Used automatically on API requests via the Xero-Tenant-Id header.",
+                    },
+                    {
+                        "id": "default_headers",
+                        "type": "json",
+                        "label": "Default headers",
+                        "group": "advanced",
+                        "help": "Optional extra headers sent with every request. Accept: application/json is included by default.",
+                    },
+                    {
+                        "id": "oauth_token_refresh_leeway_seconds",
+                        "type": "number",
+                        "label": "Token refresh leeway seconds",
+                        "group": "advanced",
+                        "help": "Refresh access tokens slightly before they expire.",
+                        "placeholder": "120",
+                    },
+                    {
+                        "id": "xero_tenants",
+                        "type": "json",
+                        "label": "Discovered tenants",
+                        "group": "advanced",
+                        "help": "Stored automatically after authorization so the workspace can target the correct Xero organisation.",
+                    },
+                    {
+                        "id": "test_request",
+                        "type": "json",
+                        "label": "Saved test request",
+                        "group": "advanced",
+                        "help": "Used by Test connection. The default checks the Xero tenant list endpoint.",
+                    },
+                ]
+            },
+        },
+    },
+    {
         "key": "generic_webhook",
         "name": "Generic Webhook",
         "description": "Receive or send signed webhook events.",
@@ -2838,7 +2960,7 @@ class DbIntegrationProviderStore:
                         )
         except Exception as exc:
             if not _is_undefined_table(exc):
-                raise
+                return
 
     def list(self, include_system: bool = True) -> list[dict]:
         self.bootstrap_system()
@@ -2862,8 +2984,6 @@ class DbIntegrationProviderStore:
                 )
                 return [dict(r) for r in rows]
         except Exception as exc:
-            if not _is_undefined_table(exc):
-                raise
             if include_system:
                 return [
                     {
@@ -2897,8 +3017,6 @@ class DbIntegrationProviderStore:
                 )
                 return dict(row) if row else None
         except Exception as exc:
-            if not _is_undefined_table(exc):
-                raise
             for provider in _SYSTEM_INTEGRATION_PROVIDERS:
                 if provider["key"] == key:
                     return {

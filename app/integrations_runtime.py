@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -158,6 +159,39 @@ def _provider_display_name(connection: dict) -> str:
     return str(connection.get("name") or provider_key_for_connection(connection) or "integration").strip() or "integration"
 
 
+def _provider_default_client_id(provider_key: str) -> str:
+    normalized = str(provider_key or "").strip().lower()
+    if normalized == "xero":
+        return os.getenv("OCTO_XERO_CLIENT_ID", "").strip() or os.getenv("XERO_CLIENT_ID", "").strip()
+    return ""
+
+
+def _provider_default_client_secret(provider_key: str) -> str:
+    normalized = str(provider_key or "").strip().lower()
+    if normalized == "xero":
+        return os.getenv("OCTO_XERO_CLIENT_SECRET", "").strip() or os.getenv("XERO_CLIENT_SECRET", "").strip()
+    return ""
+
+
+def _normalize_xero_oauth_scope(scope_value: str) -> str:
+    scope = " ".join(str(scope_value or "").split()).strip()
+    if not scope:
+        return scope
+    parts = scope.split(" ")
+    replacements = {
+        # Xero granular scopes for new apps replace the old broad transactions scope.
+        "accounting.transactions": "accounting.invoices",
+    }
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        next_part = replacements.get(part, part)
+        if next_part and next_part not in seen:
+            normalized.append(next_part)
+            seen.add(next_part)
+    return " ".join(normalized)
+
+
 def _upsert_connection_secret(connection: dict, org_id: str, *, secret_key: str, value: str) -> dict:
     connection_id = str(connection.get("id") or "")
     if not connection_id:
@@ -186,7 +220,12 @@ def _update_connection_config(connection: dict, config_updates: dict[str, Any]) 
     connection_id = str(connection.get("id") or "")
     config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
     next_config = {**config, **config_updates}
-    updated = DbConnectionStore().update(connection_id, {"config": next_config}) if connection_id else None
+    updated = None
+    if connection_id:
+        try:
+            updated = DbConnectionStore().update(connection_id, {"config": next_config})
+        except Exception:
+            updated = None
     if updated:
         return updated
     return {**connection, "config": next_config}
@@ -221,7 +260,7 @@ class GenericRestProvider:
         if str(config.get("auth_mode") or "").strip().lower() != "oauth2":
             raise IntegrationProviderError("Connection is not configured for OAuth2")
         authorization_url = str(config.get("authorization_url") or "").strip()
-        client_id = str(config.get("client_id") or "").strip()
+        client_id = str(config.get("client_id") or "").strip() or _provider_default_client_id(provider_key_for_connection(connection))
         if not authorization_url:
             raise IntegrationProviderError("authorization_url is required")
         if not client_id:
@@ -235,6 +274,8 @@ class GenericRestProvider:
             "state": oauth_state,
         }
         scope = str(config.get("oauth_scope") or "").strip()
+        if provider_key_for_connection(connection) == "xero":
+            scope = _normalize_xero_oauth_scope(scope)
         if scope:
             params["scope"] = scope
         audience = str(config.get("oauth_audience") or "").strip()
@@ -251,7 +292,7 @@ class GenericRestProvider:
     def _oauth_token_request(self, connection: dict, org_id: str, data: dict[str, Any]) -> tuple[dict, dict]:
         config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
         token_url = str(config.get("token_url") or "").strip()
-        client_id = str(config.get("client_id") or "").strip()
+        client_id = str(config.get("client_id") or "").strip() or _provider_default_client_id(provider_key_for_connection(connection))
         if not token_url:
             raise IntegrationProviderError("token_url is required")
         if not client_id:
@@ -266,6 +307,8 @@ class GenericRestProvider:
             )
         except Exception:
             client_secret = None
+        if not client_secret:
+            client_secret = _provider_default_client_secret(provider_key_for_connection(connection)) or None
         if client_secret:
             payload["client_secret"] = client_secret
         extra = _coerce_object(config.get("oauth_extra_token_params"), "oauth_extra_token_params")
@@ -594,6 +637,102 @@ class GenericRestProvider:
 _GENERIC_REST_PROVIDER = GenericRestProvider()
 
 
+class XeroProvider(GenericRestProvider):
+    key = "xero"
+
+    def _fetch_xero_tenants(self, connection: dict, access_token: str) -> list[dict[str, Any]]:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        timeout = float(config.get("timeout_seconds") or 30)
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(
+                "https://api.xero.com/connections",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                },
+            )
+        try:
+            body = response.json()
+        except Exception as exc:
+            raise IntegrationProviderError(f"Xero tenant lookup returned non-JSON response: {response.text[:300]}") from exc
+        if response.status_code >= 400:
+            error_message = None
+            if isinstance(body, dict):
+                error_message = body.get("error_description") or body.get("error") or body.get("message")
+            raise IntegrationProviderError(f"Xero tenant lookup failed: {error_message or f'HTTP {response.status_code}'}")
+        if not isinstance(body, list):
+            raise IntegrationProviderError("Xero tenant lookup must return a JSON array")
+        tenants: list[dict[str, Any]] = []
+        for item in body:
+            if not isinstance(item, dict):
+                continue
+            tenant_id = str(item.get("tenantId") or item.get("tenant_id") or "").strip()
+            tenant_name = str(item.get("tenantName") or item.get("tenant_name") or "").strip()
+            connection_id = str(item.get("id") or "").strip()
+            if not tenant_id and not connection_id and not tenant_name:
+                continue
+            tenants.append(
+                {
+                    "id": connection_id or None,
+                    "tenantId": tenant_id or None,
+                    "tenantName": tenant_name or None,
+                    "tenantType": item.get("tenantType") or item.get("tenant_type"),
+                    "createdDateUtc": item.get("createdDateUtc") or item.get("created_date_utc"),
+                    "updatedDateUtc": item.get("updatedDateUtc") or item.get("updated_date_utc"),
+                }
+            )
+        return tenants
+
+    def _sync_xero_tenant_metadata(self, connection: dict, org_id: str, access_token: str) -> dict:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        try:
+            tenants = self._fetch_xero_tenants(connection, access_token)
+        except Exception as exc:
+            return _update_connection_config(
+                connection,
+                {
+                    "xero_tenants": [],
+                    "xero_tenant_sync_error": str(exc),
+                },
+            )
+        existing_tenant_id = str(config.get("xero_tenant_id") or "").strip()
+        selected_tenant = None
+        if existing_tenant_id:
+            selected_tenant = next((tenant for tenant in tenants if str(tenant.get("tenantId") or "").strip() == existing_tenant_id), None)
+        if selected_tenant is None and tenants:
+            selected_tenant = tenants[0]
+        return _update_connection_config(
+            connection,
+            {
+                "xero_tenants": tenants,
+                "xero_tenant_id": selected_tenant.get("tenantId") if selected_tenant else None,
+                "xero_tenant_name": selected_tenant.get("tenantName") if selected_tenant else None,
+                "xero_tenant_type": selected_tenant.get("tenantType") if selected_tenant else None,
+                "xero_connection_id": selected_tenant.get("id") if selected_tenant else None,
+                "xero_tenant_sync_error": None,
+            },
+        )
+
+    def _store_oauth_token_response(self, connection: dict, org_id: str, token_body: dict) -> dict:
+        next_connection = super()._store_oauth_token_response(connection, org_id, token_body)
+        access_token = token_body.get("access_token")
+        if isinstance(access_token, str) and access_token.strip():
+            return self._sync_xero_tenant_metadata(next_connection, org_id, access_token.strip())
+        return next_connection
+
+    def _build_auth(self, connection: dict, org_id: str) -> tuple[dict[str, str], dict[str, Any]]:
+        headers, params = super()._build_auth(connection, org_id)
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        tenant_id = str(config.get("xero_tenant_id") or "").strip()
+        headers.setdefault("Accept", "application/json")
+        if tenant_id:
+            headers.setdefault("xero-tenant-id", tenant_id)
+        return headers, params
+
+
+_XERO_PROVIDER = XeroProvider()
+
+
 class GenericWebhookProvider:
     key = "generic_webhook"
 
@@ -690,6 +829,8 @@ def get_integration_provider(connection: dict) -> GenericRestProvider:
     provider_key = provider_key_for_connection(connection)
     if provider_key == "generic_rest":
         return _GENERIC_REST_PROVIDER
+    if provider_key == "xero":
+        return _XERO_PROVIDER
     if provider_key == "generic_webhook":
         return _GENERIC_WEBHOOK_PROVIDER
     raise IntegrationProviderError(f"Unsupported integration provider: {provider_key or 'unknown'}")

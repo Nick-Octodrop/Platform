@@ -48,6 +48,11 @@ function StatusChip({ label, tone = "ghost" }) {
   return <span className={className}>{label}</span>;
 }
 
+function humanizePlanStatus(status) {
+  if (typeof status !== "string" || !status.trim()) return "planned";
+  return status.replace(/_/g, " ");
+}
+
 function ActionStrip({ actions, busy = false }) {
   const visible = Array.isArray(actions) ? actions.filter((item) => item && item.label && typeof item.onClick === "function") : [];
   if (!visible.length) return null;
@@ -543,7 +548,15 @@ export default function OctoAiWorkspacePage() {
     return latestPlanOps.map((item) => octoT("plan.op_in_artifact", { op: item.op, artifact: item.artifact_id || octoT("plan.workspace") }));
   }, [structuredPlan, latestPlanOps, t]);
 
-  const moduleSummaries = useMemo(() => {
+  const artifactSummaries = useMemo(() => {
+    if (Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0) {
+      return structuredPlan.artifacts.map((item) => {
+        const label = item?.artifact_label || item?.artifact_id || octoT("plan.workspace");
+        const typeLabel = typeof item?.artifact_type === "string" ? item.artifact_type.replace(/_/g, " ") : "artifact";
+        const status = humanizePlanStatus(item?.status);
+        return `${label} (${typeLabel}, ${status})`;
+      });
+    }
     if (Array.isArray(structuredPlan?.modules) && structuredPlan.modules.length > 0) {
       return structuredPlan.modules.map((item) => {
         const label = item?.module_label || item?.module_id || octoT("plan.unknown_module");
@@ -1116,7 +1129,11 @@ export default function OctoAiWorkspacePage() {
     <div className="space-y-3">
       <InfoList title={octoT("lists.plan_summary")} items={planSummaryText ? [planSummaryText] : []} emptyText={octoT("lists.no_summary")} />
       <InfoList title={octoT("lists.changes")} items={changeSummaries} emptyText={octoT("lists.no_changes")} />
-      <InfoList title={octoT("lists.modules")} items={moduleSummaries} emptyText={octoT("lists.no_modules")} />
+      <InfoList
+        title={Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0 ? "Affected artifacts" : octoT("lists.modules")}
+        items={artifactSummaries}
+        emptyText={Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0 ? "No affected artifacts yet." : octoT("lists.no_modules")}
+      />
       <InfoList title={octoT("lists.advisories")} items={latestAdvisories} emptyText={octoT("lists.no_advisories")} />
     </div>
   );

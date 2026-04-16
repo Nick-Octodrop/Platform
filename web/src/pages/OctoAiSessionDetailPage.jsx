@@ -50,6 +50,11 @@ function messageRoleLabel(message) {
   return message?.role || "assistant";
 }
 
+function humanizePlanStatus(status) {
+  if (typeof status !== "string" || !status.trim()) return "planned";
+  return status.replace(/_/g, " ");
+}
+
 export default function OctoAiSessionDetailPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -112,7 +117,15 @@ export default function OctoAiSessionDetailPage() {
     return [];
   }, [structuredPlan]);
 
-  const moduleItems = useMemo(() => {
+  const artifactItems = useMemo(() => {
+    if (Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0) {
+      return structuredPlan.artifacts.map((item) => {
+        const label = item?.artifact_label || item?.artifact_id || t("settings.octo_ai.session_detail.unknown_module");
+        const typeLabel = typeof item?.artifact_type === "string" ? item.artifact_type.replace(/_/g, " ") : "artifact";
+        const status = humanizePlanStatus(item?.status);
+        return `${label} (${typeLabel}, ${status})`;
+      });
+    }
     if (Array.isArray(structuredPlan?.modules) && structuredPlan.modules.length > 0) {
       return structuredPlan.modules.map((item) => {
         const label = item?.module_label || item?.module_id || t("settings.octo_ai.session_detail.unknown_module");
@@ -156,7 +169,11 @@ export default function OctoAiSessionDetailPage() {
             <div className={activeTab === "overview" ? "" : "hidden"}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <SummaryList title={t("settings.octo_ai.session_detail.session_summary")} items={overviewItems} emptyText={t("settings.octo_ai.session_detail.no_session_summary")} />
-                <SummaryList title={t("settings.octo_ai.session_detail.affected_modules")} items={moduleItems} emptyText={t("settings.octo_ai.session_detail.no_affected_modules")} />
+                <SummaryList
+                  title={Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0 ? "Affected artifacts" : t("settings.octo_ai.session_detail.affected_modules")}
+                  items={artifactItems}
+                  emptyText={Array.isArray(structuredPlan?.artifacts) && structuredPlan.artifacts.length > 0 ? "No affected artifacts yet." : t("settings.octo_ai.session_detail.no_affected_modules")}
+                />
               </div>
               <div className="mt-4 rounded-box border border-base-200 bg-base-100 p-4 text-sm">
                 {t("settings.octo_ai.session_detail.history_only_description")}

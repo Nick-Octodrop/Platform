@@ -300,6 +300,10 @@ export default function TemplateStudioShell({
         initialMessage={profile?.agentMessage}
         agentKind={profile?.kind}
         user={user}
+        recordId={recordId}
+        draft={draft}
+        setDraft={setDraft}
+        setValidationState={setValidationState}
       />
     );
   const undefinedList = (validationState?.undefined && validationState.undefined.length > 0)
