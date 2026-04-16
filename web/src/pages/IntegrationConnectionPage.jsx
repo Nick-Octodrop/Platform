@@ -33,9 +33,10 @@ function defaultNewMappingState() {
     source_entity: "",
     target_entity: "",
     resource_key: "",
+    usage_scope: "sync_and_automation",
     record_mode: "upsert",
     match_on_text: "",
-    field_mappings: [{ to: "", value_type: "path", source: "", transform: "" }],
+    field_mappings: [{ to: "", value_type: "path", source: "", transform: "", value_map_rows: [], value_map_default: "" }],
     mapping_json_text: "{}",
     sample_source_text: "{}",
   };
@@ -50,11 +51,17 @@ function buildMappingJsonFromForm(form) {
       else if (row.value_type === "ref") item.ref = row.source.trim();
       else item.path = row.source.trim();
       if (row.transform) item.transform = row.transform;
+      const valueMapEntries = (Array.isArray(row?.value_map_rows) ? row.value_map_rows : [])
+        .filter((entry) => String(entry?.from || "").trim())
+        .map((entry) => [String(entry.from).trim(), entry?.to ?? ""]);
+      if (valueMapEntries.length) item.value_map = Object.fromEntries(valueMapEntries);
+      if (String(row?.value_map_default || "").trim()) item.value_map_default = String(row.value_map_default).trim();
       return item;
     })
     .filter(Boolean);
   return {
     resource_key: form?.resource_key?.trim() || undefined,
+    usage_scope: form?.usage_scope || "sync_and_automation",
     record_mode: form?.record_mode || "upsert",
     match_on: (form?.match_on_text || "")
       .split(",")
@@ -93,11 +100,12 @@ function uniquePathOptions(items) {
   return (Array.isArray(items) ? items : [])
     .filter(Boolean)
     .map((item) => {
-      if (typeof item === "string") return { value: item, label: item, type: "" };
+      if (typeof item === "string") return { value: item, label: item, type: "", options: [] };
       return {
         value: String(item.path || item.value || ""),
         label: String(item.label || item.path || item.value || ""),
         type: String(item.type || ""),
+        options: Array.isArray(item.options) ? item.options : [],
       };
     })
     .filter((item) => item.value)
@@ -106,6 +114,22 @@ function uniquePathOptions(items) {
       seen.add(item.value);
       return true;
     });
+}
+
+function normalizeOptionItems(options) {
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((option) => {
+      if (typeof option === "string") return { value: option, label: option };
+      if (!option || typeof option !== "object") return null;
+      const value = String(option.value ?? option.id ?? "").trim();
+      if (!value) return null;
+      return {
+        value,
+        label: String(option.label ?? option.name ?? option.value ?? option.id ?? value),
+      };
+    })
+    .filter(Boolean);
 }
 
 function tokenizeFieldText(value) {
@@ -159,6 +183,38 @@ function mappingPairSummary(row, sourceOptionMap, targetOptionMap, providerName 
     || (row?.value_type === "constant" ? `Constant: ${row?.source || "—"}` : row?.value_type === "ref" ? `Reference: ${row?.source || "—"}` : row?.source || "Choose source field");
   const targetLabel = targetOptionMap.get(row?.to)?.label || row?.to || "Choose OCTO field";
   return `${providerName}: ${sourceLabel} -> OCTO: ${targetLabel}`;
+}
+
+function mappingUsageScopeValue(mapping) {
+  const raw = String(mapping?.mapping_json?.usage_scope || mapping?.usage_scope || "sync_and_automation").trim().toLowerCase();
+  if (raw === "sync_only" || raw === "automation_only" || raw === "sync_and_automation") return raw;
+  return "sync_and_automation";
+}
+
+function mappingUsageScopeLabel(value) {
+  switch (String(value || "").trim().toLowerCase()) {
+    case "sync_only":
+      return "Sync only";
+    case "automation_only":
+      return "Automation only";
+    default:
+      return "Sync + Automation";
+  }
+}
+
+function xeroSyncPreset(resourceKey) {
+  const normalized = String(resourceKey || "").trim();
+  if (!normalized) return null;
+  return {
+    resource_key: normalized,
+    scope_key: normalized,
+    items_path: normalized,
+    request: {
+      method: "GET",
+      path: `/${normalized}`,
+      headers: { Accept: "application/json" },
+    },
+  };
 }
 
 function SummaryStat({ label, value }) {
@@ -500,7 +556,7 @@ export default function IntegrationConnectionPage() {
     [selectedResource, sampleSourceFieldOptions],
   );
   const targetFieldOptions = useMemo(
-    () => uniquePathOptions((selectedTargetEntity?.fields || []).map((field) => ({ value: field.id, label: field.label || field.id, type: field.type || "" }))),
+    () => uniquePathOptions((selectedTargetEntity?.fields || []).map((field) => ({ value: field.id, label: field.label || field.id, type: field.type || "", options: field.options || [] }))),
     [selectedTargetEntity],
   );
   const sourceFieldOptionMap = useMemo(
@@ -510,6 +566,10 @@ export default function IntegrationConnectionPage() {
   const targetFieldOptionMap = useMemo(
     () => new Map(targetFieldOptions.map((field) => [field.value, field])),
     [targetFieldOptions],
+  );
+  const targetFieldDefinitionById = useMemo(
+    () => new Map((selectedTargetEntity?.fields || []).map((field) => [field.id, field])),
+    [selectedTargetEntity],
   );
   const suggestedFieldMappings = useMemo(() => {
     const usedSourceValues = new Set();
@@ -559,6 +619,29 @@ export default function IntegrationConnectionPage() {
       .filter(([, fields]) => fields.length),
     [groupedSetupFields, isXeroProvider],
   );
+  const syncConfig = config?.sync || {};
+  const selectedSyncResourceKey = String(syncConfig?.resource_key || "").trim();
+  const selectedSyncResource = useMemo(
+    () => mappingResources.find((resource) => resource?.key === selectedSyncResourceKey) || null,
+    [mappingResources, selectedSyncResourceKey],
+  );
+  const selectedSyncMappingIds = useMemo(
+    () => (Array.isArray(syncConfig?.mapping_ids) ? syncConfig.mapping_ids : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean),
+    [syncConfig],
+  );
+  const selectedSyncMappings = useMemo(
+    () => (Array.isArray(mappings) ? mappings : []).filter((mapping) => {
+      const mappingResourceKey = String(mapping?.mapping_json?.resource_key || "").trim();
+      if (mappingResourceKey !== selectedSyncResourceKey) return false;
+      const usageScope = mappingUsageScopeValue(mapping);
+      return usageScope === "sync_only" || usageScope === "sync_and_automation";
+    }),
+    [mappings, selectedSyncResourceKey],
+  );
+  const canSaveConnection = Boolean(item?.id && name.trim()) && !loading && !saving;
+  const saveActionLabel = saving ? t("common.saving") : t("common.save");
 
   const tabs = useMemo(
     () => [
@@ -595,6 +678,43 @@ export default function IntegrationConnectionPage() {
           [key]: value,
         },
       };
+      setConfigText(prettyJson(next));
+      return next;
+    });
+  }
+
+  function applyXeroSyncResource(resourceKey) {
+    const preset = xeroSyncPreset(resourceKey);
+    setConfig((prev) => {
+      const currentSync = { ...((prev || {}).sync || {}) };
+      const nextSync = {
+        ...currentSync,
+        ...(preset || {}),
+        resource_key: resourceKey,
+        scope_key: currentSync.scope_key || preset?.scope_key || resourceKey,
+      };
+      const next = {
+        ...(prev || {}),
+        sync: nextSync,
+      };
+      setConfigText(prettyJson(next));
+      return next;
+    });
+  }
+
+  function toggleSyncMapping(mappingId) {
+    const normalized = String(mappingId || "").trim();
+    if (!normalized) return;
+    setConfig((prev) => {
+      const currentSync = { ...((prev || {}).sync || {}) };
+      const currentIds = Array.isArray(currentSync.mapping_ids) ? currentSync.mapping_ids.map((item) => String(item || "").trim()).filter(Boolean) : [];
+      const nextIds = currentIds.includes(normalized)
+        ? currentIds.filter((item) => item !== normalized)
+        : [...currentIds, normalized];
+      const nextSync = { ...currentSync };
+      if (nextIds.length) nextSync.mapping_ids = nextIds;
+      else delete nextSync.mapping_ids;
+      const next = { ...(prev || {}), sync: nextSync };
       setConfigText(prettyJson(next));
       return next;
     });
@@ -986,10 +1106,51 @@ export default function IntegrationConnectionPage() {
     }));
   }
 
+  function updateFieldValueMapRow(rowIndex, mapIndex, updates) {
+    setNewMapping((prev) => ({
+      ...prev,
+      field_mappings: (prev.field_mappings || []).map((row, index) => {
+        if (index !== rowIndex) return row;
+        const nextRows = Array.isArray(row.value_map_rows) ? row.value_map_rows : [];
+        return {
+          ...row,
+          value_map_rows: nextRows.map((entry, entryIndex) => (entryIndex === mapIndex ? { ...entry, ...updates } : entry)),
+        };
+      }),
+    }));
+  }
+
+  function addFieldValueMapRow(rowIndex) {
+    setNewMapping((prev) => ({
+      ...prev,
+      field_mappings: (prev.field_mappings || []).map((row, index) => (
+        index === rowIndex
+          ? {
+              ...row,
+              value_map_rows: [...(Array.isArray(row.value_map_rows) ? row.value_map_rows : []), { from: "", to: "" }],
+            }
+          : row
+      )),
+    }));
+  }
+
+  function removeFieldValueMapRow(rowIndex, mapIndex) {
+    setNewMapping((prev) => ({
+      ...prev,
+      field_mappings: (prev.field_mappings || []).map((row, index) => {
+        if (index !== rowIndex) return row;
+        return {
+          ...row,
+          value_map_rows: (Array.isArray(row.value_map_rows) ? row.value_map_rows : []).filter((_, entryIndex) => entryIndex !== mapIndex),
+        };
+      }),
+    }));
+  }
+
   function addFieldMappingRow() {
     setNewMapping((prev) => ({
       ...prev,
-      field_mappings: [...(prev.field_mappings || []), { to: "", value_type: "path", source: "", transform: "" }],
+      field_mappings: [...(prev.field_mappings || []), { to: "", value_type: "path", source: "", transform: "", value_map_rows: [], value_map_default: "" }],
     }));
   }
 
@@ -1162,6 +1323,40 @@ export default function IntegrationConnectionPage() {
     const placeholder = field.placeholder || "";
     const syncConfig = config?.sync || {};
     const syncRequest = syncConfig?.request || {};
+    if (fieldType === "select") {
+      const options = Array.isArray(field.options) ? field.options : [];
+      return (
+        <label key={fieldId} className="form-control">
+          <span className="label-text text-sm">{label}</span>
+          <AppSelect
+            className="select select-bordered"
+            value={syncConfig?.[fieldId] || ""}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              if (isXeroProvider && fieldId === "resource_key") {
+                applyXeroSyncResource(nextValue);
+              } else {
+                updateSyncField(fieldId, nextValue);
+              }
+            }}
+          >
+            <option value="">{placeholder || `Select ${label.toLowerCase()}`}</option>
+            {options.map((option) => {
+              const normalized = typeof option === "string"
+                ? { value: option, label: option }
+                : { value: String(option?.value || ""), label: String(option?.label || option?.value || "") };
+              if (!normalized.value) return null;
+              return (
+                <option key={normalized.value} value={normalized.value}>
+                  {normalized.label || normalized.value}
+                </option>
+              );
+            })}
+          </AppSelect>
+          {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
+        </label>
+      );
+    }
     if (fieldType === "request_builder") {
       return (
         <Section key={fieldId} title={label} help={help || detailT("sync.request_builder_help")}>
@@ -1309,9 +1504,22 @@ export default function IntegrationConnectionPage() {
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
-      mobilePrimaryActions={[]}
+      mobilePrimaryActions={[
+        {
+          label: saveActionLabel,
+          onClick: save,
+          disabled: !canSaveConnection,
+          className: "btn btn-primary btn-sm",
+        },
+      ]}
       mobileOverflowActions={[]}
-      rightActions={null}
+      rightActions={(
+        <div className="flex items-center gap-2">
+          <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={!canSaveConnection}>
+            {saveActionLabel}
+          </button>
+        </div>
+      )}
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
@@ -1405,11 +1613,6 @@ export default function IntegrationConnectionPage() {
                   })}
                 </div>
               )}
-              <div className="flex flex-wrap gap-2">
-                <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !item?.id}>
-                  {saving ? t("common.saving") : t("common.save")}
-                </button>
-              </div>
             </Section>
           </div>
         ) : activeTab === "request" ? (
@@ -1458,6 +1661,84 @@ export default function IntegrationConnectionPage() {
           <div className="space-y-4">
             <Section title={detailT("sync.title")} help={detailT("sync.help")}>
               <div className="space-y-3">
+                {isXeroProvider ? (
+                  <div className="space-y-3">
+                    <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+                      <div className="font-medium">How Xero sync works today</div>
+                      <div className="mt-1 opacity-80">
+                        Current live sync mode is
+                        <span className="font-medium"> Xero {"->"} OCTO</span>.
+                        Octodrop fetches a Xero resource, then applies any saved mappings for that resource into OCTO records.
+                      </div>
+                      <div className="mt-2 opacity-70">
+                        That means the effective source of truth for synced fields is currently
+                        <span className="font-medium"> Xero</span>.
+                        Bidirectional sync governance like OCTO-wins, Xero-wins, newest-wins, or per-field ownership is not wired yet.
+                      </div>
+                    </div>
+                    {selectedSyncResource ? (
+                      <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
+                        <div className="font-medium">Selected sync resource</div>
+                        <div className="mt-1 opacity-80">
+                          {selectedSyncResource.label || selectedSyncResource.key} {"->"} {(selectedSyncResource.suggested_target_entity || "OCTO records")}
+                        </div>
+                        <div className="mt-2 opacity-70">
+                          {selectedSyncMappings.length
+                            ? `${selectedSyncMappings.length} saved mapping profile${selectedSyncMappings.length === 1 ? "" : "s"} will be eligible for this resource during sync.`
+                            : "No saved mapping profiles currently target this resource yet, so sync can fetch records but will not translate them into OCTO records until you add a mapping."}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
+                      <div className="font-medium">Current sync governance</div>
+                      <div className="mt-1 opacity-80">
+                        Sync chooses the
+                        <span className="font-medium"> resource </span>
+                        and which saved
+                        <span className="font-medium"> mapping profiles </span>
+                        are allowed to run. Each mapping profile then decides the exact field pairs, such as Xero Name {"->"} OCTO contact.name.
+                      </div>
+                      <div className="mt-2 opacity-70">
+                        Best practice is to keep
+                        <span className="font-medium"> sync mappings </span>
+                        for records you want imported or updated by sync, and keep
+                        <span className="font-medium"> automation-only mappings </span>
+                        for payload shaping inside workflows where you do not want scheduled sync to touch them.
+                      </div>
+                    </div>
+                    {selectedSyncResource ? (
+                      <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
+                        <div className="font-medium">Mapping profiles used by this sync</div>
+                        <div className="mt-1 opacity-70">
+                          Leave this empty to run every sync-capable mapping for {selectedSyncResource.label || selectedSyncResource.key}. Or choose a smaller set if only some mappings should run during scheduled/manual sync.
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedSyncMappings.length ? selectedSyncMappings.map((mapping) => {
+                            const mappingId = String(mapping?.id || "").trim();
+                            const selected = selectedSyncMappingIds.includes(mappingId);
+                            return (
+                              <button
+                                key={mappingId}
+                                className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
+                                type="button"
+                                onClick={() => toggleSyncMapping(mappingId)}
+                              >
+                                {mapping?.name || mappingId}
+                              </button>
+                            );
+                          }) : <div className="opacity-60">No sync-capable mappings exist for this resource yet.</div>}
+                        </div>
+                        {selectedSyncMappings.length ? (
+                          <div className="mt-2 text-xs opacity-60">
+                            {selectedSyncMappingIds.length
+                              ? `${selectedSyncMappingIds.length} mapping profile${selectedSyncMappingIds.length === 1 ? "" : "s"} explicitly selected for sync.`
+                              : "No explicit selection yet. Sync will run all eligible sync-capable mappings for this resource by default."}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {syncFields.length === 0 ? (
                   <div className="text-sm opacity-60">{detailT("sync.no_schema")}</div>
                 ) : (
@@ -1557,6 +1838,16 @@ export default function IntegrationConnectionPage() {
                     <span className="font-medium"> provider {"->"} OCTO</span>.
                     This is an inbound translation layer, not a two-way export mapper yet.
                   </div>
+                  <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
+                    <div className="font-medium">You can have multiple mapping profiles</div>
+                    <div className="mt-1 opacity-80">
+                      One profile should represent one reusable recipe, usually
+                      <span className="font-medium"> one resource + one purpose + one direction</span>.
+                    </div>
+                    <div className="mt-2 text-xs opacity-70">
+                      Good examples: <span className="font-medium">Xero Contacts Import</span>, <span className="font-medium">Xero Contacts Automation Normalize</span>, <span className="font-medium">Xero Invoices Import</span>.
+                    </div>
+                  </div>
                 </div>
                 <label className="form-control">
                   <span className="label-text text-sm">{t("common.name")}</span>
@@ -1630,6 +1921,15 @@ export default function IntegrationConnectionPage() {
                   </div>
                 ) : null}
                 <label className="form-control">
+                  <span className="label-text text-sm">Usage</span>
+                  <AppSelect className="select select-bordered" value={newMapping.usage_scope} onChange={(e) => setNewMapping((prev) => ({ ...prev, usage_scope: e.target.value }))}>
+                    <option value="sync_and_automation">Sync + Automation</option>
+                    <option value="sync_only">Sync only</option>
+                    <option value="automation_only">Automation only</option>
+                  </AppSelect>
+                  <span className="label-text-alt opacity-70 mt-1">Use sync-only mappings during integration sync, automation-only mappings inside workflows, or make one profile reusable for both.</span>
+                </label>
+                <label className="form-control">
                   <span className="label-text text-sm">{detailT("mappings.record_mode")}</span>
                   <AppSelect className="select select-bordered" value={newMapping.record_mode} onChange={(e) => setNewMapping((prev) => ({ ...prev, record_mode: e.target.value }))}>
                     <option value="upsert">{detailT("mappings.record_mode_upsert")}</option>
@@ -1668,6 +1968,14 @@ export default function IntegrationConnectionPage() {
 
                 <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
                   <div className="space-y-3">
+                    <div className="rounded-box border border-base-300 bg-base-200/50 p-3 text-sm">
+                      <div className="font-medium">How field selection works</div>
+                      <div className="mt-1 opacity-80">
+                        This is where you choose the exact field pairs, such as
+                        <span className="font-medium"> Xero EmailAddress {"->"} OCTO contact.email</span>.
+                        Sync does not pick raw fields separately. Sync runs the mapping profiles you enable, and each profile applies the field pairs defined here.
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         className="btn btn-sm btn-outline"
@@ -1689,6 +1997,36 @@ export default function IntegrationConnectionPage() {
                     </div>
                     {(newMapping.field_mappings || []).map((row, index) => (
                       <div key={index} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
+                        {(() => {
+                          const targetFieldDef = targetFieldDefinitionById.get(row?.to);
+                          const targetEnumOptions = normalizeOptionItems(targetFieldDef?.options);
+                          const sourceSampleRecord = safeJsonParse(newMapping.sample_source_text, selectedResource?.sample_record || {});
+                          const sourceSampleValue = row?.value_type === "path" && row?.source ? (() => {
+                            try {
+                              return row.source.split(".").reduce((current, part) => {
+                                if (current == null) return undefined;
+                                const token = String(part || "").trim();
+                                if (!token) return current;
+                                const bracketMatch = token.match(/^(.+)\[(\d+)\]$/);
+                                if (bracketMatch) {
+                                  const next = current?.[bracketMatch[1]];
+                                  return Array.isArray(next) ? next[Number(bracketMatch[2])] : undefined;
+                                }
+                                return current?.[token];
+                              }, sourceSampleRecord);
+                            } catch {
+                              return undefined;
+                            }
+                          })() : undefined;
+                          const sourceValueSuggestions = Array.isArray(sourceSampleValue)
+                            ? sourceSampleValue.filter((item) => ["string", "number"].includes(typeof item)).map((item) => String(item))
+                            : ["string", "number"].includes(typeof sourceSampleValue)
+                              ? [String(sourceSampleValue)]
+                              : [];
+                          const sourceValueSuggestionsUnique = Array.from(new Set(sourceValueSuggestions.filter(Boolean)));
+                          const sourceValueDatalistId = `mapping-source-values-${index}`;
+                          return (
+                            <>
                         <div className="rounded-box bg-base-200/70 px-3 py-2 text-sm font-medium">
                           {mappingPairSummary(row, sourceFieldOptionMap, targetFieldOptionMap, mappingProvider?.provider_name || provider?.name || providerKey)}
                         </div>
@@ -1705,7 +2043,13 @@ export default function IntegrationConnectionPage() {
                           </AppSelect>
                         </label>
                         <label className="form-control">
-                          <span className="label-text text-sm">{row.value_type === "constant" ? detailT("mappings.value_source_constant") : row.value_type === "ref" ? detailT("mappings.reference") : detailT("mappings.source_path")}</span>
+                          <span className="label-text text-sm">
+                            {row.value_type === "constant"
+                              ? "Constant value"
+                              : row.value_type === "ref"
+                                ? "Reference"
+                                : `${mappingProvider?.provider_name || provider?.name || "Provider"} field`}
+                          </span>
                           {row.value_type === "path" && sourceFieldOptions.length ? (
                             <AppSelect
                               className="select select-bordered"
@@ -1737,7 +2081,7 @@ export default function IntegrationConnectionPage() {
                           )}
                         </label>
                         <label className="form-control">
-                          <span className="label-text text-sm">{detailT("mappings.target_field")}</span>
+                          <span className="label-text text-sm">OCTO field</span>
                           {targetFieldOptions.length ? (
                             <AppSelect
                               className="select select-bordered"
@@ -1786,11 +2130,108 @@ export default function IntegrationConnectionPage() {
                             <option value="null_if_empty">{detailT("mappings.transform_null_if_empty")}</option>
                           </AppSelect>
                         </label>
+                        <div className="space-y-3 rounded-box border border-base-300 bg-base-200/40 p-3">
+                          <div>
+                            <div className="text-sm font-medium">Value map</div>
+                            <div className="mt-1 text-xs opacity-70">
+                              Use this when the provider value and OCTO value are named differently, for example
+                              <span className="font-medium"> supplier {"->"} NL supplier</span>.
+                            </div>
+                            {targetEnumOptions.length ? (
+                              <div className="mt-1 text-xs opacity-60">
+                                Valid OCTO values for this field: {targetEnumOptions.map((option) => option.label).join(", ")}
+                              </div>
+                            ) : null}
+                          </div>
+                          {(Array.isArray(row.value_map_rows) ? row.value_map_rows : []).map((entry, mapIndex) => (
+                            <div key={`${index}-map-${mapIndex}`} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                              <label className="form-control">
+                                <span className="label-text text-sm">{mappingProvider?.provider_name || provider?.name || "Provider"} value</span>
+                                <input
+                                  className="input input-bordered"
+                                  list={sourceValueSuggestionsUnique.length ? sourceValueDatalistId : undefined}
+                                  value={entry.from || ""}
+                                  onChange={(e) => updateFieldValueMapRow(index, mapIndex, { from: e.target.value })}
+                                  placeholder="supplier"
+                                />
+                                {sourceValueSuggestionsUnique.length ? (
+                                  <datalist id={sourceValueDatalistId}>
+                                    {sourceValueSuggestionsUnique.map((option) => (
+                                      <option key={option} value={option} />
+                                    ))}
+                                  </datalist>
+                                ) : null}
+                              </label>
+                              <label className="form-control">
+                                <span className="label-text text-sm">OCTO value</span>
+                                {targetEnumOptions.length ? (
+                                  <AppSelect
+                                    className="select select-bordered"
+                                    value={entry.to || ""}
+                                    onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
+                                  >
+                                    <option value="">Select OCTO value</option>
+                                    {targetEnumOptions.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </AppSelect>
+                                ) : (
+                                  <input
+                                    className="input input-bordered"
+                                    value={entry.to || ""}
+                                    onChange={(e) => updateFieldValueMapRow(index, mapIndex, { to: e.target.value })}
+                                    placeholder="NL supplier"
+                                  />
+                                )}
+                              </label>
+                              <div className="flex items-end">
+                                <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldValueMapRow(index, mapIndex)}>
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap gap-2">
+                            <button className="btn btn-sm btn-outline" type="button" onClick={() => addFieldValueMapRow(index)}>
+                              <Plus className="h-4 w-4" />
+                              Add value map
+                            </button>
+                          </div>
+                          <label className="form-control">
+                            <span className="label-text text-sm">Fallback OCTO value</span>
+                            {targetEnumOptions.length ? (
+                              <AppSelect
+                                className="select select-bordered"
+                                value={row.value_map_default || ""}
+                                onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
+                              >
+                                <option value="">Leave original provider value</option>
+                                {targetEnumOptions.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </AppSelect>
+                            ) : (
+                              <input
+                                className="input input-bordered"
+                                value={row.value_map_default || ""}
+                                onChange={(e) => updateFieldMappingRow(index, { value_map_default: e.target.value })}
+                                placeholder="Leave blank to keep the original provider value when no map entry matches"
+                              />
+                            )}
+                          </label>
+                        </div>
                         <div className="flex justify-end">
                           <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => removeFieldMappingRow(index)} disabled={(newMapping.field_mappings || []).length <= 1}>
                             {detailT("mappings.remove_row")}
                           </button>
                         </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     ))}
                     <button className="btn btn-sm btn-outline" type="button" onClick={addFieldMappingRow}>
@@ -1849,6 +2290,13 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
+            <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+              <div className="font-medium">{`Saved mapping profiles${mappings.length ? ` (${mappings.length})` : ""}`}</div>
+              <div className="mt-1 opacity-70">
+                Each row below is a separate saved mapping profile for this integration. Sync and automations can reuse these by name.
+              </div>
+            </div>
+
             <TableList
               emptyLabel={detailT("mappings.none")}
               columns={[
@@ -1856,6 +2304,7 @@ export default function IntegrationConnectionPage() {
                 { key: "resource", label: detailT("mappings.resource"), render: (row) => row.mapping_json?.resource_key || "—" },
                 { key: "source_entity", label: detailT("mappings.source") },
                 { key: "target_entity", label: detailT("mappings.target") },
+                { key: "usage", label: "Usage", render: (row) => mappingUsageScopeLabel(mappingUsageScopeValue(row)) },
                 { key: "mode", label: detailT("mappings.mode"), render: (row) => row.mapping_json?.record_mode || row.mapping_json?.mode || "create" },
                 {
                   key: "pairs",
@@ -2155,9 +2604,6 @@ export default function IntegrationConnectionPage() {
                       {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
                     </button>
                   ) : null}
-                  <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={loading || saving || !name.trim()}>
-                    {saving ? t("common.saving") : t("common.save")}
-                  </button>
                 </div>
               </div>
             </Section>

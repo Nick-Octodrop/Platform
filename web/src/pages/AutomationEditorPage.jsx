@@ -1570,6 +1570,19 @@ export default function AutomationEditorPage({ user }) {
     return map;
   }, [integrationMappingOptions]);
 
+  function integrationMappingUsageScope(mapping) {
+    const raw = String(mapping?.mapping_json?.usage_scope || mapping?.usage_scope || "sync_and_automation").trim().toLowerCase();
+    if (raw === "sync_only" || raw === "automation_only" || raw === "sync_and_automation") return raw;
+    return "sync_and_automation";
+  }
+
+  function integrationMappingUsageLabel(mapping) {
+    const scope = integrationMappingUsageScope(mapping);
+    if (scope === "sync_only") return "Sync only";
+    if (scope === "automation_only") return "Automation only";
+    return "Sync + Automation";
+  }
+
   const webhookConnectionOptions = useMemo(
     () => integrationConnectionOptions,
     [integrationConnectionOptions]
@@ -3813,17 +3826,18 @@ export default function AutomationEditorPage({ user }) {
           (() => {
             const selectedConnectionId = step.inputs?.connection_id || "";
             const availableMappings = selectedConnectionId
-              ? integrationMappingOptions.filter((mapping) => mapping?.connection_id === selectedConnectionId)
-              : integrationMappingOptions;
+              ? integrationMappingOptions.filter((mapping) => mapping?.connection_id === selectedConnectionId && integrationMappingUsageScope(mapping) !== "sync_only")
+              : integrationMappingOptions.filter((mapping) => integrationMappingUsageScope(mapping) !== "sync_only");
             const selectedMapping = integrationMappingById.get(step.inputs?.mapping_id);
             const selectedConnectionName = integrationConnectionOptions.find((conn) => conn.id === selectedConnectionId)?.name
               || selectedConnectionId
               || "Choose connection";
+            const selectedMappingPairs = Array.isArray(selectedMapping?.mapping_json?.field_mappings) ? selectedMapping.mapping_json.field_mappings.slice(0, 4) : [];
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
                   <div className="font-medium text-sm">Mapping setup</div>
-                  <div className="text-xs opacity-60 mt-1">Pick a saved integration mapping and the provider payload you want to translate into Octodrop.</div>
+                  <div className="text-xs opacity-60 mt-1">Pick a saved integration mapping and the provider payload you want to translate into Octodrop. Sync-only mappings are hidden here so workflow builders only see mappings intended for automation use.</div>
                   <div className={`${standardGridClass} mt-3`}>
                     <label className="form-control">
                       <span className="label-text">{t("common.connection")}</span>
@@ -3854,28 +3868,29 @@ export default function AutomationEditorPage({ user }) {
                     </label>
                     <label className="form-control">
                       <span className="label-text">Saved mapping</span>
-                      <AppSelect
-                        className="select select-bordered"
-                        value={step.inputs?.mapping_id || ""}
-                        onChange={(e) => {
-                          const nextMappingId = e.target.value;
-                          const nextMapping = integrationMappingById.get(nextMappingId);
-                          updateStep(index, {
-                            inputs: {
-                              ...(step.inputs || {}),
-                              mapping_id: nextMappingId,
-                              connection_id: nextMapping?.connection_id || selectedConnectionId,
-                            },
-                          });
-                        }}
-                      >
-                        <option value="">Select mapping</option>
-                        {availableMappings.map((mapping) => (
-                          <option key={mapping.id} value={mapping.id}>
-                            {mapping.name || mapping.id}
-                          </option>
-                        ))}
-                      </AppSelect>
+                        <AppSelect
+                          className="select select-bordered"
+                          value={step.inputs?.mapping_id || ""}
+                          onChange={(e) => {
+                            const nextMappingId = e.target.value;
+                            const nextMapping = integrationMappingById.get(nextMappingId);
+                            updateStep(index, {
+                              inputs: {
+                                ...(step.inputs || {}),
+                                mapping_id: nextMappingId,
+                                connection_id: nextMapping?.connection_id || selectedConnectionId,
+                                resource_key: nextMapping?.mapping_json?.resource_key || step.inputs?.resource_key || "",
+                              },
+                            });
+                          }}
+                        >
+                          <option value="">Select mapping</option>
+                          {availableMappings.map((mapping) => (
+                            <option key={mapping.id} value={mapping.id}>
+                              {(mapping.name || mapping.id)}{mapping?.mapping_json?.resource_key ? ` • ${mapping.mapping_json.resource_key}` : ""}{` • ${integrationMappingUsageLabel(mapping)}`}
+                            </option>
+                          ))}
+                        </AppSelect>
                     </label>
                     <label className="form-control md:col-span-2">
                       <span className="label-text">Source record</span>
@@ -3918,6 +3933,17 @@ export default function AutomationEditorPage({ user }) {
                         ? `${selectedMapping.name || selectedMapping.id} maps ${selectedMapping.source_entity || "provider data"} into ${selectedMapping.target_entity || "Octodrop data"} using ${selectedConnectionName}.`
                         : `No saved mapping selected yet for ${selectedConnectionName}.`}
                     </div>
+                    {selectedMapping && (
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        <span className="rounded-full bg-base-200 px-2 py-1">{integrationMappingUsageLabel(selectedMapping)}</span>
+                        {selectedMapping?.mapping_json?.resource_key ? (
+                          <span className="rounded-full bg-base-200 px-2 py-1">Resource: {selectedMapping.mapping_json.resource_key}</span>
+                        ) : null}
+                        {selectedMapping?.mapping_json?.record_mode ? (
+                          <span className="rounded-full bg-base-200 px-2 py-1">Mode: {selectedMapping.mapping_json.record_mode}</span>
+                        ) : null}
+                      </div>
+                    )}
                     {selectedMapping?.mapping_json?.match_on && (
                       <div className="text-xs opacity-60 mt-2">
                         Match on: {Array.isArray(selectedMapping.mapping_json.match_on)
@@ -3925,6 +3951,15 @@ export default function AutomationEditorPage({ user }) {
                           : String(selectedMapping.mapping_json.match_on)}
                       </div>
                     )}
+                    {selectedMappingPairs.length ? (
+                      <div className="mt-3 space-y-1 text-xs opacity-70">
+                        {selectedMappingPairs.map((mapping, pairIndex) => (
+                          <div key={`${selectedMapping.id}-pair-${pairIndex}`}>
+                            {(mapping.path || mapping.ref || mapping.value || "—")} {"->"} {mapping.to || "—"}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>

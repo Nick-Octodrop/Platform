@@ -200,6 +200,27 @@ def _apply_transform(value: Any, transform: str) -> Any:
     return value
 
 
+def _apply_value_map(value: Any, mapping: dict) -> Any:
+    value_map = mapping.get("value_map")
+    if not isinstance(value_map, dict) or not value_map:
+        return value
+    if value is None:
+        lookup_key = ""
+    elif isinstance(value, bool):
+        lookup_key = "true" if value else "false"
+    else:
+        lookup_key = str(value)
+    if lookup_key in value_map:
+        return value_map.get(lookup_key)
+    normalized = lookup_key.strip().lower()
+    for raw_key, mapped_value in value_map.items():
+        if isinstance(raw_key, str) and raw_key.strip().lower() == normalized:
+            return mapped_value
+    if "value_map_default" in mapping:
+        return mapping.get("value_map_default")
+    return value
+
+
 def _resolve_ref(ref: str, source_record: dict, context: dict) -> Any:
     if not isinstance(ref, str) or not ref:
         return None
@@ -275,6 +296,7 @@ def preview_integration_mapping(mapping_json: dict, source_record: dict, context
             for transform in transforms:
                 if isinstance(transform, str):
                     value = _apply_transform(value, transform)
+        value = _apply_value_map(value, mapping)
         if mapping.get("null_if_empty") is True and _value_missing(value):
             value = None
         if _value_missing(value) and mapping.get("skip_if_missing") is True:
@@ -400,4 +422,3 @@ def execute_integration_mapping(mapping: dict, source_record: dict, context: dic
         "target_entity": target_entity_def.get("id"),
         "preview": preview,
     }
-

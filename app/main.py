@@ -38384,6 +38384,10 @@ async def run_integration_connection_sync_endpoint(request: Request, connection_
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     sync_config = body.get("sync") if isinstance(body.get("sync"), dict) else {}
     for key in (
+        "sync_mode",
+        "source_of_truth",
+        "conflict_policy",
+        "mapping_ids",
         "scope_key",
         "resource_key",
         "cursor_param",

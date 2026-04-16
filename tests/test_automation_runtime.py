@@ -352,6 +352,49 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(captured["context"]["resource_key"], "Contacts")
         self.assertEqual(captured["context"]["source"], "automation")
 
+    def test_apply_integration_mapping_rejects_sync_only_mapping(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Reject Sync Mapping",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["integration.webhook.received"]},
+                "steps": [
+                    {
+                        "id": "map_contact",
+                        "kind": "action",
+                        "action_id": "system.apply_integration_mapping",
+                        "inputs": {
+                            "connection_id": "conn_xero",
+                            "mapping_id": "map_contact",
+                            "source_record": {"Name": "Nick"},
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "integration.webhook.received",
+                "trigger_payload": {"payload": {"Name": "Nick"}},
+            }
+        )
+
+        with patch("app.worker.DbIntegrationMappingStore.get", return_value={
+            "id": "map_contact",
+            "connection_id": "conn_xero",
+            "name": "Xero Contact Sync Mapping",
+            "target_entity": "entity.biz_contact",
+            "mapping_json": {"resource_key": "Contacts", "usage_scope": "sync_only"},
+        }):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

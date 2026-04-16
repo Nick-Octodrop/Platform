@@ -15,7 +15,7 @@ os.environ["SUPABASE_URL"] = "http://localhost"
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app import integrations_runtime
+from app import integration_mapping_runtime, integrations_runtime
 
 
 def _superadmin_actor() -> dict:
@@ -118,6 +118,25 @@ class _FakeHttpxClient:
 
 
 class TestXeroIntegration(unittest.TestCase):
+    def test_mapping_preview_supports_value_translation(self) -> None:
+        preview = integration_mapping_runtime.preview_integration_mapping(
+            {
+                "field_mappings": [
+                    {
+                        "to": "contact.type",
+                        "path": "ContactType",
+                        "value_map": {
+                            "SUPPLIER": "NL supplier",
+                            "CUSTOMER": "NL customer",
+                        },
+                        "value_map_default": "Unknown type",
+                    }
+                ]
+            },
+            {"ContactType": "SUPPLIER"},
+        )
+        self.assertEqual(preview.get("values", {}).get("contact.type"), "NL supplier")
+
     def test_xero_mapping_catalog_endpoint_exposes_provider_resources(self) -> None:
         client = TestClient(main.app)
         with (
@@ -163,6 +182,13 @@ class TestXeroIntegration(unittest.TestCase):
             providers = providers_body.get("providers") or []
             xero_provider = next((item for item in providers if item.get("key") == "xero"), None)
             self.assertIsNotNone(xero_provider, providers)
+            manifest = xero_provider.get("manifest_json") or {}
+            sync_schema = manifest.get("sync_schema") or {}
+            sync_fields = sync_schema.get("fields") or []
+            sync_field_ids = {field.get("id") for field in sync_fields if isinstance(field, dict)}
+            self.assertIn("sync_mode", sync_field_ids)
+            self.assertIn("source_of_truth", sync_field_ids)
+            self.assertIn("conflict_policy", sync_field_ids)
 
             create_res = client.post(
                 "/integrations/connections",
@@ -186,6 +212,9 @@ class TestXeroIntegration(unittest.TestCase):
             self.assertEqual(config.get("authorization_url"), "https://login.xero.com/identity/connect/authorize")
             self.assertEqual(config.get("token_url"), "https://identity.xero.com/connect/token")
             self.assertEqual((config.get("test_request") or {}).get("url"), "https://api.xero.com/connections")
+            self.assertEqual((config.get("sync") or {}).get("sync_mode"), "inbound_only")
+            self.assertEqual((config.get("sync") or {}).get("source_of_truth"), "provider")
+            self.assertEqual((config.get("sync") or {}).get("conflict_policy"), "source_of_truth")
 
     def test_xero_oauth_exchange_stores_tenant_metadata_and_runtime_adds_tenant_header(self) -> None:
         client = TestClient(main.app)

@@ -705,15 +705,41 @@ def _mapping_matches_resource(mapping: dict, resource_key: str | None) -> bool:
     return configured.strip() == actual
 
 
+def _mapping_usage_scope(mapping: dict) -> str:
+    mapping_json = mapping.get("mapping_json") if isinstance(mapping.get("mapping_json"), dict) else {}
+    value = str(mapping_json.get("usage_scope") or "sync_and_automation").strip().lower()
+    if value in {"sync_only", "automation_only", "sync_and_automation"}:
+        return value
+    return "sync_and_automation"
+
+
+def _mapping_allows_usage(mapping: dict, usage: str) -> bool:
+    scope = _mapping_usage_scope(mapping)
+    normalized = str(usage or "").strip().lower()
+    if normalized == "sync":
+        return scope in {"sync_only", "sync_and_automation"}
+    if normalized == "automation":
+        return scope in {"automation_only", "sync_and_automation"}
+    return True
+
+
 def _apply_connection_mappings(connection: dict, *, resource_key: str | None, items: list, source: str) -> dict:
     connection_id = str(connection.get("id") or "")
     if not connection_id or not isinstance(items, list) or not items:
         return {"count": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "results": []}
     mapping_store = DbIntegrationMappingStore()
+    sync_config = (connection.get("config") or {}).get("sync") if isinstance((connection.get("config") or {}).get("sync"), dict) else {}
+    configured_mapping_ids = sync_config.get("mapping_ids") if isinstance(sync_config.get("mapping_ids"), list) else []
+    selected_mapping_ids = {str(item).strip() for item in configured_mapping_ids if isinstance(item, str) and item.strip()}
     mappings = [
         mapping
         for mapping in (mapping_store.list(connection_id=connection_id) or [])
-        if isinstance(mapping, dict) and _mapping_matches_resource(mapping, resource_key)
+        if (
+            isinstance(mapping, dict)
+            and _mapping_matches_resource(mapping, resource_key)
+            and _mapping_allows_usage(mapping, "sync")
+            and (not selected_mapping_ids or str(mapping.get("id") or "").strip() in selected_mapping_ids)
+        )
     ]
     if not mappings:
         return {"count": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "results": []}
@@ -1387,6 +1413,8 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         mapping = DbIntegrationMappingStore().get(mapping_id.strip())
         if not mapping:
             raise RuntimeError("Integration mapping not found")
+        if not _mapping_allows_usage(mapping, "automation"):
+            raise RuntimeError("Selected mapping is configured for sync only")
         connection_id = inputs.get("connection_id")
         mapping_connection_id = mapping.get("connection_id")
         if isinstance(connection_id, str) and connection_id.strip():
@@ -1486,6 +1514,10 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             raise RuntimeError("Connection not found")
         sync_config = inputs.get("sync") if isinstance(inputs.get("sync"), dict) else {}
         for key in (
+            "sync_mode",
+            "source_of_truth",
+            "conflict_policy",
+            "mapping_ids",
             "scope_key",
             "resource_key",
             "cursor_param",

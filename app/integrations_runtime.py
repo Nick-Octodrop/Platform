@@ -155,6 +155,18 @@ def _resolve_sync_config(connection: dict, override: dict | None = None) -> dict
     return sync
 
 
+def _validate_sync_governance(connection: dict, resolved_sync: dict) -> None:
+    provider_key = provider_key_for_connection(connection)
+    if provider_key != "xero":
+        return
+    sync_mode = str(resolved_sync.get("sync_mode") or "inbound_only").strip().lower()
+    if sync_mode and sync_mode != "inbound_only":
+        raise IntegrationProviderError("Xero sync currently supports inbound_only only. Outbound and bidirectional modes are reserved but not active yet.")
+    source_of_truth = str(resolved_sync.get("source_of_truth") or "provider").strip().lower()
+    if source_of_truth and source_of_truth != "provider":
+        raise IntegrationProviderError("Xero inbound sync currently requires source_of_truth=provider.")
+
+
 def _provider_display_name(connection: dict) -> str:
     return str(connection.get("name") or provider_key_for_connection(connection) or "integration").strip() or "integration"
 
@@ -575,6 +587,7 @@ class GenericRestProvider:
 
     def run_sync(self, connection: dict, sync_config: dict, org_id: str, checkpoint: dict | None = None) -> dict:
         resolved = _resolve_sync_config(connection, sync_config)
+        _validate_sync_governance(connection, resolved)
         request_config = resolved.get("request") if isinstance(resolved.get("request"), dict) else {}
         if not request_config:
             raise IntegrationProviderError("Sync request configuration is required")

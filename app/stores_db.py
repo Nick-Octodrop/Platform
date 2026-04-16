@@ -2769,6 +2769,87 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                     "method": "GET",
                     "url": "https://api.xero.com/connections",
                 },
+                "sync": {
+                    "sync_mode": "inbound_only",
+                    "source_of_truth": "provider",
+                    "conflict_policy": "source_of_truth",
+                    "resource_key": "Contacts",
+                    "scope_key": "Contacts",
+                },
+            },
+            "sync_schema": {
+                "fields": [
+                    {
+                        "id": "sync_mode",
+                        "type": "select",
+                        "label": "Sync mode",
+                        "help": "Choose whether this connection currently pulls from Xero only or is reserved for future outbound/bidirectional sync.",
+                        "options": [
+                            {"value": "inbound_only", "label": "Inbound only (Xero -> OCTO)"},
+                            {"value": "outbound_only", "label": "Outbound only (reserved)"},
+                            {"value": "bidirectional", "label": "Bidirectional (reserved)"},
+                        ],
+                    },
+                    {
+                        "id": "source_of_truth",
+                        "type": "select",
+                        "label": "Source of truth",
+                        "help": "Define which system owns synced values for this connection.",
+                        "options": [
+                            {"value": "provider", "label": "Provider owns synced fields"},
+                            {"value": "octo", "label": "OCTO owns synced fields"},
+                            {"value": "field_level", "label": "Field-level ownership (reserved)"},
+                        ],
+                    },
+                    {
+                        "id": "conflict_policy",
+                        "type": "select",
+                        "label": "Conflict policy",
+                        "help": "Choose what should happen if inbound and local values differ.",
+                        "options": [
+                            {"value": "source_of_truth", "label": "Use source of truth"},
+                            {"value": "newest_wins", "label": "Newest change wins (reserved)"},
+                            {"value": "manual_review", "label": "Flag for manual review (reserved)"},
+                        ],
+                    },
+                    {
+                        "id": "schedule_enabled",
+                        "type": "boolean",
+                        "label": "Run on a schedule",
+                        "help": "Turn this on if Octodrop should poll Xero automatically for the selected resource.",
+                    },
+                    {
+                        "id": "schedule_every_minutes",
+                        "type": "number",
+                        "label": "Run every N minutes",
+                        "help": "Simple polling interval for the shared scheduler.",
+                        "placeholder": "60",
+                    },
+                    {
+                        "id": "resource_key",
+                        "type": "select",
+                        "label": "Xero resource",
+                        "help": "Choose which Xero resource this sync pulls into OCTO.",
+                        "options": [
+                            {"value": "Contacts", "label": "Contacts"},
+                            {"value": "Invoices", "label": "Invoices"},
+                            {"value": "Items", "label": "Items"},
+                        ],
+                    },
+                    {
+                        "id": "scope_key",
+                        "type": "text",
+                        "label": "Checkpoint scope",
+                        "help": "Separate checkpoints by resource when one Xero connection syncs more than one resource.",
+                        "placeholder": "Contacts",
+                    },
+                    {
+                        "id": "emit_events",
+                        "type": "boolean",
+                        "label": "Emit automation events for each synced item",
+                        "help": "When enabled, each fetched Xero item is emitted into the automation event stream after sync.",
+                    },
+                ]
             },
             "mapping_catalog": {
                 "resources": [
