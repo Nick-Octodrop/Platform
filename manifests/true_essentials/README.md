@@ -5,9 +5,10 @@
 ### `te_catalog.json`
 - Product master records for the Shopify-facing catalog
 - Product forms designed as operational work surfaces with clean pricing, Shopify, notes, and activity structure
-- Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, and manual stock controls
+- Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, manual stock controls, Shopify compare-at pricing, storefront description fields, and a dedicated Shopify image attachment field
 - Catalog navigation now includes dedicated pricing-review and stock-watch pages, plus graph and pivot analysis on the main products page
 - Supplier-linked product pricing now lives in `te_sourcing` to keep module installs clean and avoid circular dependencies
+- Catalog records are intended to be the source of truth for product title, handle, storefront description, storefront image selection, sell price, compare-at price, and stock-tracking intent before data is pushed into Shopify
 
 ### `te_suppliers.json`
 - Supplier master records with structured address, communication, lead time, and status
@@ -58,3 +59,19 @@
   - More formal document templates and generation flows if purchase/supplier paperwork needs to become structured
 - `te_sync`
   - Shopify/supplier import-sync support when operational data starts to move in and out automatically
+
+## Shopify phase 1 setup
+
+1. Install or reinstall the suite:
+   - `python manifests/true_essentials/install_all.py`
+2. Create and authorize a Shopify integration connection in Octodrop.
+3. Bind the manual product-push automation to that connection:
+   - `python manifests/true_essentials/setup_shopify_phase1.py --connection-name "True Essentials Shopify" --publish`
+
+The phase-1 Shopify setup currently creates two manual actions on `te_product` records:
+- `Push To Shopify`
+- `Push Stock To Shopify`
+
+The product push sends the catalog master into Shopify using GraphQL `productSet` and writes back Shopify product, variant, inventory-item, status, and URL fields onto the same Octodrop product record.
+
+The stock push sends `stock_available` into one configured Shopify location using GraphQL `inventorySetQuantities`. It expects the product to have already been pushed once so that the Shopify inventory item ID is known.

@@ -362,6 +362,25 @@ def _conflicting_modules(installed: list[dict[str, Any]], manifest: dict[str, An
     return conflicts
 
 
+def _select_install_target(installed: list[dict[str, Any]], manifest: dict[str, Any]) -> tuple[str, dict[str, Any] | None, list[dict[str, Any]]]:
+    desired_id = _module_id(manifest)
+    exact: dict[str, Any] | None = None
+    for mod in installed:
+        module_id = mod.get("module_id")
+        if isinstance(module_id, str) and module_id == desired_id:
+            exact = mod
+            break
+    conflicts = _conflicting_modules(installed, manifest)
+    if exact is not None:
+        return desired_id, exact, conflicts
+    if len(conflicts) == 1:
+        conflict = conflicts[0]
+        conflict_id = conflict.get("module_id")
+        if isinstance(conflict_id, str) and conflict_id:
+            return conflict_id, conflict, conflicts
+    return desired_id, None, conflicts
+
+
 def install_folder(folder: Path, *, dry_run: bool = False, base_url: str | None = None, token: str | None = None, workspace_id: str | None = None) -> int:
     files = order_manifest_files(load_manifest_files(folder))
     if not files:
@@ -380,40 +399,45 @@ def install_folder(folder: Path, *, dry_run: bool = False, base_url: str | None 
         next_pending: list[ManifestFile] = []
         progress = False
         for item in pending:
-            module_id = _module_id(item.manifest)
-            print(f"[install] {'plan   ' if dry_run else 'apply  '} {module_id} <- {item.path.relative_to(_repo_root())}")
+            manifest_module_id = _module_id(item.manifest)
+            print(f"[install] {'plan   ' if dry_run else 'apply  '} {manifest_module_id} <- {item.path.relative_to(_repo_root())}")
             if dry_run:
                 continue
             installed = _fetch_installed_modules(base_url, token, workspace_id)
-            conflicts = _conflicting_modules(installed, item.manifest)
-            for conflict in conflicts:
-                conflict_id = conflict.get("module_id")
-                if not isinstance(conflict_id, str) or not conflict_id:
-                    continue
-                conflict_name = conflict.get("name") if isinstance(conflict.get("name"), str) else conflict_id
-                print(f"[install] archive {conflict_id} ({conflict_name}) -> replace with {module_id}")
-                _archive_module_recursive(base_url, token, workspace_id, conflict_id)
+            target_module_id, incumbent, conflicts = _select_install_target(installed, item.manifest)
+            if len(conflicts) > 1 and incumbent is None:
+                labels = ", ".join(
+                    str(conflict.get("module_id") or conflict.get("name") or "unknown")
+                    for conflict in conflicts
+                )
+                raise SystemExit(
+                    f"Install failed for {manifest_module_id}: multiple existing modules match this manifest. "
+                    f"Resolve manually before upgrading: {labels}"
+                )
+            if incumbent is not None and target_module_id != manifest_module_id:
+                incumbent_name = incumbent.get("name") if isinstance(incumbent.get("name"), str) else target_module_id
+                print(f"[install] adopt  {target_module_id} ({incumbent_name}) <- manifest {manifest_module_id}")
             status, payload = api_call(
                 "POST",
-                f"{base_url}/studio2/modules/{urlparse.quote(module_id, safe='')}/install",
+                f"{base_url}/studio2/modules/{urlparse.quote(target_module_id, safe='')}/install",
                 token=token,
                 workspace_id=workspace_id,
                 body={"manifest": item.manifest},
                 timeout=240,
             )
             if status < 400 and is_ok(payload):
-                if not _module_installed(base_url, token, workspace_id, module_id):
+                if not _module_installed(base_url, token, workspace_id, target_module_id):
                     raise SystemExit(
-                        f"Install reported success for {module_id}, but it is not present in /studio2/modules for workspace {workspace_id or 'default'}"
+                        f"Install reported success for {target_module_id}, but it is not present in /studio2/modules for workspace {workspace_id or 'default'}"
                     )
                 progress = True
                 continue
             codes = set(error_codes(payload))
             if "MODULE_DEPENDENCY_MISSING" in codes and round_index < max_rounds:
-                print(f"[install] defer  {module_id} waiting for dependency registration")
+                print(f"[install] defer  {manifest_module_id} waiting for dependency registration")
                 next_pending.append(item)
                 continue
-            raise SystemExit(f"Install failed for {module_id}: {collect_error_text(payload)}")
+            raise SystemExit(f"Install failed for {manifest_module_id}: {collect_error_text(payload)}")
         if dry_run:
             break
         if not next_pending:

@@ -8,10 +8,14 @@ function trimOrigin(value) {
 function resolveProviderOauthOrigin(origin, providerKey) {
   const baseOrigin = trimOrigin(origin);
   const normalizedProviderKey = String(providerKey || "").trim().toLowerCase();
-  if (normalizedProviderKey === "xero") {
-    const explicitRedirectUri = trimOrigin(import.meta.env.VITE_XERO_OAUTH_REDIRECT_URI || "");
+  if (normalizedProviderKey === "xero" || normalizedProviderKey === "shopify") {
+    const explicitRedirectUri = trimOrigin(
+      normalizedProviderKey === "xero"
+        ? (import.meta.env.VITE_XERO_OAUTH_REDIRECT_URI || "")
+        : (import.meta.env.VITE_SHOPIFY_OAUTH_REDIRECT_URI || ""),
+    );
     if (explicitRedirectUri) {
-      return explicitRedirectUri.replace(/\/integrations\/oauth\/xero\/callback$/i, "");
+      return explicitRedirectUri.replace(/\/integrations\/oauth\/[a-z0-9_-]+\/callback$/i, "");
     }
     const configuredApiUrl = trimOrigin(import.meta.env.VITE_API_URL || "");
     if (/^https?:\/\//i.test(configuredApiUrl) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(configuredApiUrl)) {
@@ -26,8 +30,8 @@ export function buildIntegrationOauthRedirectUri(origin, providerKey, connection
   const baseOrigin = resolveProviderOauthOrigin(origin, providerKey);
   const normalizedProviderKey = String(providerKey || "").trim().toLowerCase();
   if (!baseOrigin) return "";
-  if (normalizedProviderKey === "xero") {
-    return `${baseOrigin}/integrations/oauth/xero/callback`;
+  if (normalizedProviderKey === "xero" || normalizedProviderKey === "shopify") {
+    return `${baseOrigin}/integrations/oauth/${normalizedProviderKey}/callback`;
   }
   if (connectionId) {
     return `${baseOrigin}/integrations/connections/${connectionId}`;

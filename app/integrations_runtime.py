@@ -175,6 +175,8 @@ def _provider_default_client_id(provider_key: str) -> str:
     normalized = str(provider_key or "").strip().lower()
     if normalized == "xero":
         return os.getenv("OCTO_XERO_CLIENT_ID", "").strip() or os.getenv("XERO_CLIENT_ID", "").strip()
+    if normalized == "shopify":
+        return os.getenv("OCTO_SHOPIFY_CLIENT_ID", "").strip() or os.getenv("SHOPIFY_CLIENT_ID", "").strip()
     return ""
 
 
@@ -182,6 +184,25 @@ def _provider_default_client_secret(provider_key: str) -> str:
     normalized = str(provider_key or "").strip().lower()
     if normalized == "xero":
         return os.getenv("OCTO_XERO_CLIENT_SECRET", "").strip() or os.getenv("XERO_CLIENT_SECRET", "").strip()
+    if normalized == "shopify":
+        return os.getenv("OCTO_SHOPIFY_CLIENT_SECRET", "").strip() or os.getenv("SHOPIFY_CLIENT_SECRET", "").strip()
+    return ""
+
+
+def _normalize_shopify_shop_domain(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    if "://" in raw:
+        try:
+            raw = str(httpx.URL(raw).host or "").strip().lower()
+        except Exception:
+            raw = raw.split("://", 1)[1].split("/", 1)[0].strip().lower()
+    raw = raw.strip().strip("/")
+    if raw.endswith(".myshopify.com"):
+        return raw
+    if "." not in raw:
+        return f"{raw}.myshopify.com"
     return ""
 
 
@@ -752,6 +773,205 @@ class XeroProvider(GenericRestProvider):
 _XERO_PROVIDER = XeroProvider()
 
 
+class ShopifyProvider(GenericRestProvider):
+    key = "shopify"
+
+    def _shop_domain(self, connection: dict) -> str:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        shop_domain = _normalize_shopify_shop_domain(config.get("shop_domain"))
+        if not shop_domain:
+            raise IntegrationProviderError("Shopify shop_domain is required and must be a valid *.myshopify.com domain")
+        return shop_domain
+
+    def _api_version(self, connection: dict) -> str:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        value = str(config.get("api_version") or "").strip()
+        return value or "2026-01"
+
+    def _admin_base_url(self, connection: dict) -> str:
+        return f"https://{self._shop_domain(connection)}/admin/api/{self._api_version(connection)}"
+
+    def _build_url(self, connection: dict, request_config: dict) -> str:
+        absolute_url = str(request_config.get("url") or "").strip()
+        if absolute_url:
+            return absolute_url
+        path = str(request_config.get("path") or "").strip() or "/shop.json"
+        path = path if path.startswith("/") else f"/{path}"
+        return f"{self._admin_base_url(connection)}{path}"
+
+    def build_authorize_url(self, connection: dict, redirect_uri: str, state: str | None = None) -> dict:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        client_id = str(config.get("client_id") or "").strip() or _provider_default_client_id(provider_key_for_connection(connection))
+        if not client_id:
+            raise IntegrationProviderError("client_id is required")
+        redirect = self._oauth_redirect_uri(connection, redirect_uri)
+        oauth_state = state or str(uuid.uuid4())
+        params: dict[str, Any] = {
+            "client_id": client_id,
+            "redirect_uri": redirect,
+            "state": oauth_state,
+        }
+        scope = str(config.get("oauth_scope") or "").strip()
+        if scope:
+            params["scope"] = scope
+        extra = _coerce_object(config.get("oauth_extra_authorize_params"), "oauth_extra_authorize_params")
+        params.update({k: v for k, v in extra.items() if v not in (None, "")})
+        authorize_url = f"https://{self._shop_domain(connection)}/admin/oauth/authorize?{urlencode(params, doseq=True)}"
+        return {
+            "authorize_url": authorize_url,
+            "state": oauth_state,
+            "redirect_uri": redirect,
+        }
+
+    def _token_url(self, connection: dict) -> str:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        configured = str(config.get("token_url") or "").strip()
+        if configured:
+            return configured
+        return f"https://{self._shop_domain(connection)}/admin/oauth/access_token"
+
+    def exchange_authorization_code(self, connection: dict, org_id: str, *, code: str, redirect_uri: str) -> dict:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        client_id = str(config.get("client_id") or "").strip() or _provider_default_client_id(provider_key_for_connection(connection))
+        if not client_id:
+            raise IntegrationProviderError("client_id is required")
+        try:
+            client_secret = resolve_connection_secret(
+                str(connection.get("id") or "") or None,
+                org_id,
+                secret_key="client_secret",
+                legacy_secret_ref=connection.get("secret_ref"),
+            )
+        except Exception:
+            client_secret = None
+        if not client_secret:
+            client_secret = _provider_default_client_secret(provider_key_for_connection(connection)) or None
+        if not client_secret:
+            raise IntegrationProviderError("client_secret is required")
+        payload = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+        }
+        with httpx.Client(timeout=float(config.get("timeout_seconds") or 30)) as client:
+            response = client.post(
+                self._token_url(connection),
+                json=payload,
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+        try:
+            body = response.json()
+        except Exception as exc:
+            raise IntegrationProviderError(f"Shopify token endpoint returned non-JSON response: {response.text[:300]}") from exc
+        if response.status_code >= 400:
+            if isinstance(body, dict):
+                error_message = body.get("error_description") or body.get("error") or body.get("message")
+            else:
+                error_message = None
+            raise IntegrationProviderError(f"Shopify token request failed: {error_message or f'HTTP {response.status_code}'}")
+        if not isinstance(body, dict):
+            raise IntegrationProviderError("Shopify token response must be a JSON object")
+        updated_connection = self._store_oauth_token_response(connection, org_id, body)
+        return {
+            "ok": True,
+            "stored_secret_keys": ["access_token"] if isinstance(body.get("access_token"), str) and body.get("access_token").strip() else [],
+            "token_response": {
+                "scope": body.get("scope"),
+            },
+            "connection": updated_connection,
+        }
+
+    def refresh_oauth_tokens(self, connection: dict, org_id: str) -> dict:
+        raise IntegrationProviderError("Shopify access tokens are long-lived for this app flow and do not support refresh.")
+
+    def _fetch_shop_metadata(self, connection: dict, access_token: str) -> dict[str, Any]:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        timeout = float(config.get("timeout_seconds") or 30)
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(
+                f"{self._admin_base_url(connection)}/shop.json",
+                headers={
+                    "Accept": "application/json",
+                    "X-Shopify-Access-Token": access_token,
+                },
+            )
+        try:
+            body = response.json()
+        except Exception as exc:
+            raise IntegrationProviderError(f"Shopify shop lookup returned non-JSON response: {response.text[:300]}") from exc
+        if response.status_code >= 400:
+            error_message = None
+            if isinstance(body, dict):
+                error_message = body.get("error_description") or body.get("error") or body.get("message")
+            raise IntegrationProviderError(f"Shopify shop lookup failed: {error_message or f'HTTP {response.status_code}'}")
+        shop = body.get("shop") if isinstance(body, dict) and isinstance(body.get("shop"), dict) else {}
+        return {
+            "shopify_shop_id": shop.get("id"),
+            "shopify_shop_name": shop.get("name"),
+            "shopify_shop_email": shop.get("email"),
+            "shopify_shop_domain": shop.get("domain"),
+            "shopify_myshopify_domain": shop.get("myshopify_domain") or self._shop_domain(connection),
+            "shopify_shop_currency": shop.get("currency"),
+        }
+
+    def _store_oauth_token_response(self, connection: dict, org_id: str, token_body: dict) -> dict:
+        next_connection = connection
+        access_token = token_body.get("access_token")
+        if isinstance(access_token, str) and access_token.strip():
+            next_connection = _upsert_connection_secret(next_connection, org_id, secret_key="access_token", value=access_token.strip())
+        next_connection = _update_connection_config(
+            next_connection,
+            {
+                "oauth_access_token_expires_at": None,
+                "oauth_last_token_refresh_at": _isoformat(_now_dt()),
+                "oauth_token_response": {
+                    "scope": token_body.get("scope"),
+                },
+            },
+        )
+        if isinstance(access_token, str) and access_token.strip():
+            try:
+                next_connection = _update_connection_config(
+                    next_connection,
+                    self._fetch_shop_metadata(next_connection, access_token.strip()),
+                )
+            except Exception as exc:
+                next_connection = _update_connection_config(
+                    next_connection,
+                    {"shopify_shop_sync_error": str(exc)},
+                )
+        return next_connection
+
+    def _build_auth(self, connection: dict, org_id: str) -> tuple[dict[str, str], dict[str, Any]]:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        headers = dict(_coerce_object(config.get("default_headers"), "default_headers"))
+        try:
+            access_token = resolve_connection_secret(
+                str(connection.get("id") or "") or None,
+                org_id,
+                secret_key="access_token",
+                legacy_secret_ref=connection.get("secret_ref"),
+            )
+        except SecretStoreError as exc:
+            raise IntegrationProviderError(f"Shopify access token unavailable: {exc}") from exc
+        headers.setdefault("Accept", "application/json")
+        headers.setdefault("X-Shopify-Access-Token", access_token)
+        return headers, {}
+
+    def test_connection(self, connection: dict, org_id: str) -> dict:
+        config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+        request_config = config.get("test_request") if isinstance(config.get("test_request"), dict) else {}
+        if not request_config:
+            request_config = {
+                "method": "GET",
+                "path": "/shop.json",
+            }
+        return self.execute_request(connection, request_config, org_id)
+
+
+_SHOPIFY_PROVIDER = ShopifyProvider()
+
+
 class GenericWebhookProvider:
     key = "generic_webhook"
 
@@ -850,6 +1070,8 @@ def get_integration_provider(connection: dict) -> GenericRestProvider:
         return _GENERIC_REST_PROVIDER
     if provider_key == "xero":
         return _XERO_PROVIDER
+    if provider_key == "shopify":
+        return _SHOPIFY_PROVIDER
     if provider_key == "generic_webhook":
         return _GENERIC_WEBHOOK_PROVIDER
     raise IntegrationProviderError(f"Unsupported integration provider: {provider_key or 'unknown'}")

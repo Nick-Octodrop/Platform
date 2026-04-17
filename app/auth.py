@@ -32,6 +32,7 @@ _PUBLIC_PATHS = {
     "/ext/v1/guide.md",
     "/ext/v1/events.md",
     "/integrations/oauth/xero/callback",
+    "/integrations/oauth/shopify/callback",
 }
 
 

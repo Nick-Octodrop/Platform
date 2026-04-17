@@ -668,6 +668,15 @@ Out of scope:
 7. Build `xero_refresh_invoice_payment_state`.
 8. Confirm payment updates flow back into Octodrop without manual finance edits.
 
+### Open follow-up items from the phase-1 trial
+
+- Xero tax code must be tenant-specific.
+  - The placeholder/default `OUTPUT` tax type is not correct for the current NLight BV tenant setup.
+  - Before wider rollout, confirm the live sales tax codes in that tenant and republish the workspace setup with the correct default tax type and mapping.
+- Invoice header totals must stay aligned with exported line totals.
+  - Trial runs showed Xero correctly following summed invoice lines while older Octodrop header totals could still reflect snapshot formulas.
+  - Keep Octodrop invoice totals line-driven whenever invoice lines exist so the operational record and exported finance payload cannot drift.
+
 ## Product Positioning For Luke
 
 For Luke, the message should be:
@@ -679,5 +688,6 @@ For Luke, the message should be:
 - We are deliberately starting with low-risk invoice posting before any wider sync
 
 That is the safest implementation path and the easiest one to defend if finance data quality is questioned later.
+
 
 

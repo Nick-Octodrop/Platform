@@ -106,6 +106,42 @@
           "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 }
         },
         {
+          "id": "te_product.compare_at_price",
+          "type": "number",
+          "label": "Compare-At Price",
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_product.sales_currency", "precision": 2 },
+          "help_text": "Use this when the live sell price is discounted from a higher list price. Leave 0 when no sale framing is needed."
+        },
+        {
+          "id": "te_product.is_on_sale",
+          "type": "bool",
+          "label": "On Sale",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "and",
+              "args": [
+                {
+                  "op": "gt",
+                  "args": [
+                    { "ref": "$current.te_product.compare_at_price" },
+                    0
+                  ]
+                },
+                {
+                  "op": "lt",
+                  "args": [
+                    { "ref": "$current.te_product.retail_price" },
+                    { "ref": "$current.te_product.compare_at_price" }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "te_product.buy_currency",
           "type": "enum",
           "label": "Buy Currency",
@@ -480,7 +516,29 @@
           }
         },
         { "id": "te_product.shopify_handle", "type": "string", "label": "Shopify Handle" },
+        {
+          "id": "te_product.shopify_description_html",
+          "type": "text",
+          "label": "Shopify Description",
+          "help_text": "Customer-facing product copy sent to Shopify. Keep internal notes separate."
+        },
+        {
+          "id": "te_product.shopify_image_attachments",
+          "type": "attachments",
+          "label": "Shopify Product Images",
+          "help_text": "Use this for storefront product images intended for Shopify media sync."
+        },
         { "id": "te_product.shopify_product_url", "type": "string", "label": "Shopify URL" },
+        { "id": "te_product.shopify_product_id", "type": "string", "label": "Shopify Product ID", "readonly": true },
+        { "id": "te_product.shopify_variant_id", "type": "string", "label": "Shopify Variant ID", "readonly": true },
+        { "id": "te_product.shopify_inventory_item_id", "type": "string", "label": "Shopify Inventory Item ID", "readonly": true },
+        { "id": "te_product.shopify_status", "type": "string", "label": "Shopify Product Status" },
+        { "id": "te_product.shopify_last_sync_status", "type": "string", "label": "Shopify Sync Status", "readonly": true },
+        { "id": "te_product.shopify_last_sync_at", "type": "string", "label": "Shopify Last Sync At", "readonly": true },
+        { "id": "te_product.shopify_last_sync_error", "type": "text", "label": "Shopify Sync Error", "readonly": true },
+        { "id": "te_product.shopify_inventory_last_sync_status", "type": "string", "label": "Shopify Inventory Sync Status", "readonly": true },
+        { "id": "te_product.shopify_inventory_last_sync_at", "type": "string", "label": "Shopify Inventory Last Sync At", "readonly": true },
+        { "id": "te_product.shopify_inventory_last_sync_error", "type": "text", "label": "Shopify Inventory Sync Error", "readonly": true },
         {
           "id": "te_product.attachments",
           "type": "attachments",
@@ -560,6 +618,22 @@
       "entity_id": "entity.te_product",
       "label": "Archive",
       "patch": { "te_product.status": "archived" },
+      "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_product.status", "value": "archived" } }
+    },
+    {
+      "id": "action.te_product_push_shopify",
+      "kind": "update_record",
+      "entity_id": "entity.te_product",
+      "label": "Push To Shopify",
+      "patch": { "te_product.shopify_last_sync_status": "queued" },
+      "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_product.status", "value": "archived" } }
+    },
+    {
+      "id": "action.te_product_push_shopify_inventory",
+      "kind": "update_record",
+      "entity_id": "entity.te_product",
+      "label": "Push Stock To Shopify",
+      "patch": { "te_product.shopify_inventory_last_sync_status": "queued" },
       "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_product.status", "value": "archived" } }
     }
   ],
@@ -757,7 +831,9 @@
           "columns": 2,
           "fields": [
             "te_product.sales_currency",
-            "te_product.retail_price"
+            "te_product.retail_price",
+            "te_product.compare_at_price",
+            "te_product.is_on_sale"
           ]
         },
         {
@@ -801,7 +877,19 @@
           "columns": 2,
           "fields": [
             "te_product.shopify_handle",
-            "te_product.shopify_product_url"
+            "te_product.shopify_description_html",
+            "te_product.shopify_image_attachments",
+            "te_product.shopify_product_url",
+            "te_product.shopify_product_id",
+            "te_product.shopify_variant_id",
+            "te_product.shopify_inventory_item_id",
+            "te_product.shopify_status",
+            "te_product.shopify_last_sync_status",
+            "te_product.shopify_last_sync_at",
+            "te_product.shopify_last_sync_error",
+            "te_product.shopify_inventory_last_sync_status",
+            "te_product.shopify_inventory_last_sync_at",
+            "te_product.shopify_inventory_last_sync_error"
           ]
         },
         { "id": "notes", "title": "Notes", "fields": ["te_product.notes", "te_product.attachments"] }
@@ -813,6 +901,8 @@
           { "action_id": "action.te_product_activate" }
         ],
         "secondary_actions": [
+          { "action_id": "action.te_product_push_shopify" },
+          { "action_id": "action.te_product_push_shopify_inventory" },
           { "action_id": "action.te_product_discontinue" },
           { "action_id": "action.te_product_archive" }
         ],
@@ -839,6 +929,7 @@
           "te_product.uom",
           "te_product.status",
           "te_product.retail_price",
+          "te_product.compare_at_price",
           "te_product.buy_currency",
           "te_product.buy_price",
           "te_product.buy_fx_rate_to_nzd",
@@ -847,6 +938,11 @@
           "te_product.stock_reserved",
           "te_product.reorder_point",
           "te_product.reorder_qty",
+          "te_product.shopify_handle",
+          "te_product.shopify_description_html",
+          "te_product.shopify_status",
+          "te_product.shopify_last_sync_status",
+          "te_product.shopify_inventory_last_sync_status",
           "te_product.retail_stock_value_nzd",
           "te_product.available_retail_value_nzd",
           "te_product.stock_gross_profit_value_nzd"

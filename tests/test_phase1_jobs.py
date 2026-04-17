@@ -44,6 +44,14 @@ class TestPhase1Jobs(unittest.TestCase):
         )
         self.assertEqual(out, "A,B,C")
 
+    def test_template_render_supports_slugify_and_tojson_filters(self) -> None:
+        out = render_template(
+            '{{ sku | slugify | tojson }}',
+            {"sku": "TE Sleep+ Support / 60 Caps"},
+            strict=True,
+        )
+        self.assertEqual(out, '"te-sleep-support-60-caps"')
+
     def test_secret_env_fallback(self) -> None:
         os.environ["APP_ENV"] = "dev"
         os.environ["POSTMARK_API_TOKEN"] = "tok_test"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Any, Iterable, Tuple
 
 from jinja2 import TemplateSyntaxError, UndefinedError, meta
@@ -17,6 +19,7 @@ _ALLOWED_FILTERS = {
     "length",
     "int",
     "float",
+    "tojson",
 }
 
 _ALLOWED_TESTS = {
@@ -45,6 +48,17 @@ class _LockedSandbox(ImmutableSandboxedEnvironment):
         return False
 
 
+def _slugify(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    lowered = ascii_text.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    return slug
+
+
 def _env(strict: bool) -> _LockedSandbox:
     if strict:
         from jinja2 import StrictUndefined
@@ -55,6 +69,7 @@ def _env(strict: bool) -> _LockedSandbox:
     env = _LockedSandbox(autoescape=False, undefined=undefined_cls)
     env.globals = {"range": range}
     env.filters = {key: val for key, val in env.filters.items() if key in _ALLOWED_FILTERS}
+    env.filters["slugify"] = _slugify
     env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
     return env
 

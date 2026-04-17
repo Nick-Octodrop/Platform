@@ -470,6 +470,12 @@ const XERO_READONLY_SETUP_FIELDS = new Set([
   "xero_tenant_id",
 ]);
 
+const SHOPIFY_READONLY_SETUP_FIELDS = new Set([
+  "shopify_shop_name",
+  "shopify_myshopify_domain",
+  "shopify_shop_currency",
+]);
+
 function SimpleModal({ title, subtitle = "", children, onClose, maxWidthClass = "max-w-xl" }) {
   return (
     <div className="modal modal-open">
@@ -650,6 +656,7 @@ export default function IntegrationConnectionPage() {
   const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
   const [webhookDrawerOpen, setWebhookDrawerOpen] = useState(false);
   const [xeroConnectionDrawerOpen, setXeroConnectionDrawerOpen] = useState(false);
+  const [shopifyConnectionDrawerOpen, setShopifyConnectionDrawerOpen] = useState(false);
 
   async function load() {
     if (!connectionId) return;
@@ -730,12 +737,13 @@ export default function IntegrationConnectionPage() {
     }
     const oauthStatus = params.get("oauth");
     const oauthMessage = params.get("message");
+    const providerLabel = resolvedProviderKey ? `${resolvedProviderKey.charAt(0).toUpperCase()}${resolvedProviderKey.slice(1)}` : "Provider";
     if (oauthStatus === "connected") {
-      setNotice("Xero connected successfully.");
+      setNotice(`${providerLabel} connected successfully.`);
       setOauthAuthorizeResult(null);
       void load();
     } else if (oauthStatus === "error") {
-      setError(oauthMessage || "Xero connection failed.");
+      setError(oauthMessage || `${providerLabel} connection failed.`);
       setOauthAuthorizeResult(null);
     }
     if (oauthStatus === "connected" || oauthStatus === "error" || returnedCode) {
@@ -759,7 +767,11 @@ export default function IntegrationConnectionPage() {
   const providerKey = providerKeyFromType(item?.type);
   const provider = providerIndex.get(providerKey) || null;
   const isXeroProvider = providerKey === "xero";
+  const isShopifyProvider = providerKey === "shopify";
+  const isDrawerManagedProvider = isXeroProvider || isShopifyProvider;
+  const isManagedOauthProvider = providerKey === "xero" || providerKey === "shopify";
   const xeroConnected = isXeroProvider && Boolean(config?.xero_tenant_id);
+  const shopifyConnected = isShopifyProvider && Boolean(config?.shopify_myshopify_domain || config?.shopify_shop_name);
   const latestTestLog = useMemo(
     () => (Array.isArray(requestLogs) ? requestLogs.find((row) => row?.source === "test_connection") || null : null),
     [requestLogs],
@@ -790,7 +802,7 @@ export default function IntegrationConnectionPage() {
   const setupFields = Array.isArray(providerManifest?.setup_schema?.fields) ? providerManifest.setup_schema.fields : [];
   const syncFields = Array.isArray(providerManifest?.sync_schema?.fields) ? providerManifest.sync_schema.fields : [];
   const secretKeys = Array.isArray(providerManifest?.secret_keys) ? providerManifest.secret_keys : [];
-  const requiresManualSecrets = !isXeroProvider && secretKeys.length > 0;
+  const requiresManualSecrets = !isManagedOauthProvider && secretKeys.length > 0;
   const mappingProvider = mappingCatalog?.provider || { resources: [] };
   const mappingEntities = Array.isArray(mappingCatalog?.entities) ? mappingCatalog.entities : [];
   const mappingResources = Array.isArray(mappingProvider?.resources) ? mappingProvider.resources : [];
@@ -895,6 +907,10 @@ export default function IntegrationConnectionPage() {
       ])
       .filter(([, fields]) => fields.length),
     [groupedSetupFields, isXeroProvider],
+  );
+  const shopifyDrawerSetupGroups = useMemo(
+    () => visibleSetupGroups.filter(([groupKey]) => groupKey === "connection" || groupKey === "advanced"),
+    [visibleSetupGroups],
   );
   const syncConfig = config?.sync || {};
   const selectedSyncResourceKey = String(syncConfig?.resource_key || "").trim();
@@ -1212,31 +1228,72 @@ export default function IntegrationConnectionPage() {
     }
   }
 
+  async function persistCurrentConnectionDraft({ successMessage = "", shouldLoad = true } = {}) {
+    if (!item?.id) return null;
+    const nextConfig = safeJsonParse(configText, config);
+    const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, {
+      method: "PATCH",
+      body: {
+        name: name.trim(),
+        status,
+        config: nextConfig,
+        secret_refs: secretRefs,
+      },
+    });
+    setItem(res?.connection || null);
+    setConfig(res?.connection?.config || nextConfig);
+    setConfigText(prettyJson(res?.connection?.config || nextConfig));
+    if (successMessage) setNotice(successMessage);
+    if (shouldLoad) await load();
+    return res?.connection || null;
+  }
+
   async function save() {
     if (!item?.id || saving) return;
     setSaving(true);
     setError("");
     setNotice("");
     try {
-      const nextConfig = safeJsonParse(configText, config);
-      const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, {
-        method: "PATCH",
-        body: {
-          name: name.trim(),
-          status,
-          config: nextConfig,
-          secret_refs: secretRefs,
-        },
-      });
-      setItem(res?.connection || null);
-      setConfig(res?.connection?.config || nextConfig);
-      setConfigText(prettyJson(res?.connection?.config || nextConfig));
-      setNotice(detailT("notices.connection_saved"));
-      await load();
+      await persistCurrentConnectionDraft({ successMessage: detailT("notices.connection_saved") });
     } catch (err) {
       setError(err?.message || detailT("errors.save_failed"));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function connectShopify() {
+    if (!item?.id || authorizingOAuth || !oauthRedirectUri.trim()) return;
+    setAuthorizingOAuth(true);
+    setError("");
+    setNotice("");
+    try {
+      await persistCurrentConnectionDraft({ shouldLoad: false });
+      const body = {
+        redirect_uri: oauthRedirectUri.trim(),
+        return_origin: typeof window !== "undefined" ? window.location.origin : "",
+      };
+      const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/oauth/authorize-url`, {
+        method: "POST",
+        body,
+      });
+      const result = res?.result || null;
+      setOauthAuthorizeResult(result);
+      if (result?.authorize_url && typeof window !== "undefined") {
+        window.location.assign(result.authorize_url);
+        return;
+      }
+      setNotice("Shopify authorize URL generated.");
+    } catch (err) {
+      setOauthAuthorizeResult(null);
+      const rawMessage = String(err?.message || "Failed to connect Shopify.");
+      setError(
+        rawMessage.includes("Unsupported integration provider: shopify")
+          ? `${rawMessage}. The API deployment behind this workspace is still running an older build. Deploy the API/backend that includes Shopify provider support, then try again.`
+          : rawMessage,
+      );
+    } finally {
+      setAuthorizingOAuth(false);
     }
   }
 
@@ -1393,7 +1450,7 @@ export default function IntegrationConnectionPage() {
     setNotice("");
     try {
       const body = { redirect_uri: oauthRedirectUri.trim() };
-      if (isXeroProvider) {
+      if (isManagedOauthProvider) {
         body.return_origin = typeof window !== "undefined" ? window.location.origin : "";
       } else {
         body.state = encodeIntegrationOauthState({
@@ -1408,7 +1465,7 @@ export default function IntegrationConnectionPage() {
       });
       const result = res?.result || null;
       setOauthAuthorizeResult(result);
-      if (isXeroProvider && result?.authorize_url && typeof window !== "undefined") {
+      if (isManagedOauthProvider && result?.authorize_url && typeof window !== "undefined") {
         window.location.assign(result.authorize_url);
         return;
       }
@@ -1478,7 +1535,8 @@ export default function IntegrationConnectionPage() {
       setOauthCode("");
       setTestResult(null);
       setXeroConnectionDrawerOpen(false);
-      setNotice(isXeroProvider ? "Xero disconnected." : detailT("notices.connection_saved"));
+      setShopifyConnectionDrawerOpen(false);
+      setNotice(isManagedOauthProvider ? `${provider?.name || providerKey || "Provider"} disconnected.` : detailT("notices.connection_saved"));
       await load();
       if (res?.connection) {
         setItem(res.connection);
@@ -1486,7 +1544,7 @@ export default function IntegrationConnectionPage() {
         setConfigText(prettyJson(res.connection.config || {}));
       }
     } catch (err) {
-      setError(err?.message || (isXeroProvider ? "Failed to disconnect Xero." : detailT("errors.save_failed")));
+      setError(err?.message || (isManagedOauthProvider ? `Failed to disconnect ${provider?.name || providerKey || "provider"}.` : detailT("errors.save_failed")));
     } finally {
       setDisconnectingOAuth(false);
     }
@@ -1750,7 +1808,8 @@ export default function IntegrationConnectionPage() {
     const label = field.label || fieldId.replaceAll("_", " ");
     const help = field.help || "";
     const placeholder = field.placeholder || "";
-    const readOnly = isXeroProvider && XERO_READONLY_SETUP_FIELDS.has(fieldId);
+    const readOnly = (isXeroProvider && XERO_READONLY_SETUP_FIELDS.has(fieldId))
+      || (isShopifyProvider && SHOPIFY_READONLY_SETUP_FIELDS.has(fieldId));
     const showWhen = field.show_when;
     if (showWhen && typeof showWhen === "object") {
       const actualValue = config?.[showWhen.field];
@@ -1826,6 +1885,61 @@ export default function IntegrationConnectionPage() {
           </label>
           {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
         </label>
+      );
+    }
+    if (isShopifyProvider && fieldId === "client_id") {
+      return (
+        <div key={fieldId} className="form-control gap-3">
+          <label className="form-control">
+            <span className="label-text text-sm">{label}</span>
+            <input
+              className="input input-bordered"
+              value={config?.[fieldId] || ""}
+              onChange={(e) => updateConfigField(fieldId, e.target.value)}
+              disabled={saving || readOnly}
+              readOnly={readOnly}
+              placeholder={placeholder}
+            />
+            {help ? <span className="label-text-alt opacity-70 mt-1">{help}</span> : null}
+          </label>
+
+          <div className="rounded-box border border-base-300 bg-base-200/50 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">Client secret</div>
+                <div className="mt-1 text-xs opacity-70">
+                  Store the Shopify app client secret in Secrets and link it here for OAuth.
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => openCreateSecretModal("client_secret")}>
+                Create client secret
+              </button>
+            </div>
+            <label className="form-control mt-3">
+              <span className="label-text text-sm">Stored client secret</span>
+              <AppSelect
+                className="select select-bordered"
+                value={secretRefs?.client_secret || ""}
+                onChange={(e) => updateSecretRef("client_secret", e.target.value)}
+              >
+                <option value="">No secret selected</option>
+                {secretsForSlot("client_secret").map((secret) => (
+                  <option key={secret.id} value={secret.id}>
+                    {secret.name || secret.id}
+                    {secret.provider_key || secret.secret_key
+                      ? ` • ${[secret.provider_key, secret.secret_key].filter(Boolean).join(" / ")}`
+                      : ""}
+                  </option>
+                ))}
+              </AppSelect>
+              <span className="label-text-alt opacity-70 mt-1">
+                {selectedShopifyClientSecret
+                  ? `Linked secret: ${selectedShopifyClientSecret.name || selectedShopifyClientSecret.id}`
+                  : "Create or select a stored secret for the Shopify app client secret."}
+              </span>
+            </label>
+          </div>
+        </div>
       );
     }
     return (
@@ -1958,6 +2072,10 @@ export default function IntegrationConnectionPage() {
     }
     return map;
   }, [secrets]);
+  const selectedShopifyClientSecret = useMemo(
+    () => secretsById.get(secretRefs?.client_secret) || null,
+    [secretsById, secretRefs],
+  );
   const linkedSecretCount = useMemo(
     () => (requiresManualSecrets ? secretKeys.filter((secretKey) => Boolean(secretRefs?.[secretKey])).length : 0),
     [requiresManualSecrets, secretKeys, secretRefs],
@@ -1986,6 +2104,17 @@ export default function IntegrationConnectionPage() {
           onAction: () => setXeroConnectionDrawerOpen(true),
           complete: Boolean(config?.xero_tenant_id),
         });
+      } else if (isShopifyProvider) {
+        steps.push({
+          icon: KeyRound,
+          title: "Connect the Shopify store",
+          description: shopifyConnected
+            ? `Connected to ${config?.shopify_shop_name || config?.shopify_myshopify_domain || "the selected Shopify store"}. Use Connection in the page header to reconnect, refresh tokens, or review the connection.`
+            : "Use Connection in the page header to save the app credentials, link the client secret, and authorize this store.",
+          actionLabel: "Open Connection",
+          onAction: () => setShopifyConnectionDrawerOpen(true),
+          complete: shopifyConnected,
+        });
       } else {
         steps.push({
           icon: KeyRound,
@@ -2003,18 +2132,20 @@ export default function IntegrationConnectionPage() {
         title: detailT("setup.guide.test_title"),
         description: isXeroProvider && !config?.xero_tenant_id
           ? "Open Connection in the page header, connect Xero, then run the connection test from that drawer."
+          : isShopifyProvider && !shopifyConnected
+            ? "Open Connection in the page header, connect Shopify, then run the connection test from that drawer."
           : hasTestedConnection
             ? (isXeroProvider
               ? `${detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })} Use Connection in the page header to run it again.`
               : detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) }))
             : detailT("setup.guide.test_description"),
-        actionLabel: isXeroProvider ? "Open Connection" : (isXeroProvider && !config?.xero_tenant_id ? "" : detailT("setup.guide.test_now")),
-        onAction: isXeroProvider ? (() => setXeroConnectionDrawerOpen(true)) : (isXeroProvider && !config?.xero_tenant_id ? null : runTest),
+        actionLabel: isXeroProvider ? "Open Connection" : (isShopifyProvider && !shopifyConnected ? "Open Connection" : detailT("setup.guide.test_now")),
+        onAction: isXeroProvider ? (() => setXeroConnectionDrawerOpen(true)) : (isShopifyProvider && !shopifyConnected ? (() => setShopifyConnectionDrawerOpen(true)) : runTest),
         complete: Boolean(item?.health_status && item.health_status !== "error" && hasTestedConnection),
       });
       return steps;
     },
-    [config, detailT, hasTestedConnection, isXeroProvider, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length, t],
+    [config, detailT, hasTestedConnection, isShopifyProvider, isXeroProvider, item?.health_status, item?.last_tested_at, linkedSecretCount, name, secretKeys, setupFields.length, shopifyConnected, t],
   );
 
   function secretsForSlot(secretKey) {
@@ -2724,6 +2855,150 @@ export default function IntegrationConnectionPage() {
     </div>
   );
 
+  const shopifyConnectionDrawerContent = (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            onClick={connectShopify}
+            disabled={authorizingOAuth || !oauthRedirectUri.trim() || refreshingOAuth || disconnectingOAuth || testing}
+          >
+            {authorizingOAuth ? "Opening Shopify..." : shopifyConnected ? "Reconnect Shopify" : "Save & Connect Shopify"}
+          </button>
+          {shopifyConnected ? (
+            <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id || disconnectingOAuth || refreshingOAuth}>
+              {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
+            </button>
+          ) : null}
+          <button className="btn btn-outline btn-sm" type="button" onClick={refreshOauthTokens} disabled={!shopifyConnected || refreshingOAuth || disconnectingOAuth || testing}>
+            {refreshingOAuth ? detailT("setup.refreshing") : "Refresh Shopify tokens"}
+          </button>
+          <button className="btn btn-outline btn-error btn-sm" type="button" onClick={disconnectOauthConnection} disabled={!shopifyConnected || disconnectingOAuth || refreshingOAuth || testing}>
+            {disconnectingOAuth ? "Disconnecting Shopify..." : "Disconnect Shopify"}
+          </button>
+        </div>
+
+        <Section
+          title={detailT("setup.connection_setup_title")}
+          help="Keep the Shopify app credentials, saved secret, OAuth connect, and runtime settings together here."
+        >
+          <div className="space-y-3">
+            <label className="form-control">
+              <span className="label-text text-sm">{detailT("setup.connection_name")}</span>
+              <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} disabled={saving} />
+            </label>
+
+            <label className="form-control">
+              <span className="label-text text-sm">{t("common.status")}</span>
+              <AppSelect className="select select-bordered" value={status} onChange={(e) => setStatus(e.target.value)} disabled={saving}>
+                <option value="active">{detailT("setup.status_active")}</option>
+                <option value="disabled">{detailT("setup.status_disabled")}</option>
+              </AppSelect>
+            </label>
+
+            {shopifyDrawerSetupGroups
+              .filter(([groupKey]) => groupKey !== "advanced")
+              .map(([groupKey, fields]) => (
+                <Section
+                  key={groupKey}
+                  title={groupKey === "connection" ? detailT("setup.provider_settings") : titleCase(groupKey)}
+                  help={
+                    groupKey === "connection"
+                      ? detailT("setup.provider_settings_help")
+                      : detailT("setup.group_help")
+                  }
+                >
+                  <div className="space-y-3">{fields.map((field) => renderSetupField(field))}</div>
+                </Section>
+              ))}
+
+            {shopifyDrawerSetupGroups.some(([groupKey]) => groupKey === "advanced") ? (
+              <details className="collapse collapse-arrow border border-base-300 bg-base-100">
+                <summary className="collapse-title text-sm font-medium">{detailT("setup.advanced_config_title")}</summary>
+                <div className="collapse-content">
+                  <div className="mb-4 space-y-3">
+                    <div className="text-sm opacity-70">{detailT("setup.advanced_config_help")}</div>
+                    {shopifyDrawerSetupGroups
+                      .filter(([groupKey]) => groupKey === "advanced")
+                      .flatMap(([, fields]) => fields)
+                      .map((field) => renderSetupField(field))}
+                  </div>
+                </div>
+              </details>
+            ) : null}
+          </div>
+        </Section>
+
+        <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">{shopifyConnected ? `Connected to ${config?.shopify_shop_name || config?.shopify_myshopify_domain || "your Shopify store"}` : "Connect to Shopify"}</div>
+              <div className="mt-1 opacity-80">
+                {shopifyConnected ? "This integration is ready to use." : "Save the Shopify app settings, link the client secret, then authorize this store connection."}
+              </div>
+            </div>
+            <div className={`rounded-full px-3 py-1 text-xs font-medium ${shopifyConnected ? "border border-success/30 bg-success/10 text-success" : "border border-base-300 bg-base-100 text-base-content/70"}`}>
+              {shopifyConnected ? "Connected" : "Not connected"}
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Shop domain</div>
+              <div className="mt-1 break-words">{config?.shop_domain || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Connected shop</div>
+              <div className="mt-1 break-words">{config?.shopify_shop_name || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Connected myshopify domain</div>
+              <div className="mt-1 break-all">{config?.shopify_myshopify_domain || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Shop currency</div>
+              <div className="mt-1">{config?.shopify_shop_currency || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
+              <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Access token expiry</div>
+              <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Last token refresh</div>
+              <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Client secret</div>
+              <div className="mt-1 break-words">{selectedShopifyClientSecret?.name || "Not linked"}</div>
+            </div>
+          </div>
+        </div>
+
+        {latestTestResult ? (
+          <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">Latest test result</div>
+                <div className="mt-1 opacity-70">
+                  {formatDateTime(latestTestedAt, "Just now")}
+                </div>
+              </div>
+              <div className={`rounded-full px-3 py-1 text-xs font-medium ${latestTestResult?.ok ? "border border-success/30 bg-success/10 text-success" : "border border-error/30 bg-error/10 text-error"}`}>
+                {latestTestResult?.ok ? "Passed" : "Failed"}
+              </div>
+            </div>
+            <pre className="mt-3 rounded-box bg-base-100 p-3 text-xs overflow-auto">{JSON.stringify(latestTestResult, null, 2)}</pre>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
   return (
     <TabbedPaneShell
       title={connectionTitle}
@@ -2743,6 +3018,11 @@ export default function IntegrationConnectionPage() {
         <div className="flex items-center gap-2">
           {isXeroProvider ? (
             <button className={SOFT_BUTTON_SM} type="button" onClick={() => setXeroConnectionDrawerOpen(true)}>
+              Connection
+            </button>
+          ) : null}
+          {isShopifyProvider ? (
+            <button className={SOFT_BUTTON_SM} type="button" onClick={() => setShopifyConnectionDrawerOpen(true)}>
               Connection
             </button>
           ) : null}
@@ -3092,6 +3372,21 @@ export default function IntegrationConnectionPage() {
             </Section>
 
             <Section title={detailT("setup.connection_setup_title")} help={detailT("setup.connection_setup_help")}>
+              {isShopifyProvider ? (
+                <div className="space-y-3">
+                  <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
+                    <div className="font-medium">Use the Connection drawer for Shopify</div>
+                    <div className="mt-1 opacity-80">
+                      Keep the Shopify app credentials, linked client secret, OAuth connect flow, and connection testing together in the Connection drawer.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="btn btn-primary btn-sm" type="button" onClick={() => setShopifyConnectionDrawerOpen(true)}>
+                      Open Connection
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="space-y-3">
                 <label className="form-control">
                   <span className="label-text text-sm">{detailT("setup.connection_name")}</span>
@@ -3150,19 +3445,19 @@ export default function IntegrationConnectionPage() {
                         </div>
                       </>
 
-                      {oauthAuthorizeResult?.authorize_url && !isXeroProvider ? (
+                      {oauthAuthorizeResult?.authorize_url && !isManagedOauthProvider ? (
                         <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
                           <div className="text-sm font-medium">{detailT("setup.authorize_url")}</div>
                           <textarea className="textarea textarea-bordered min-h-[7rem] w-full text-xs" readOnly value={oauthAuthorizeResult.authorize_url} />
                           <div className="flex flex-wrap gap-2">
                             <a className="btn btn-sm btn-primary" href={oauthAuthorizeResult.authorize_url} target="_blank" rel="noreferrer">
-                              {isXeroProvider ? "Open Xero login" : detailT("setup.open_provider_login")}
+                              {detailT("setup.open_provider_login")}
                             </a>
                           </div>
                         </div>
                       ) : null}
 
-                      {!isXeroProvider ? (
+                      {!isManagedOauthProvider ? (
                         <>
                           <label className="form-control">
                             <span className="label-text text-sm">{detailT("setup.authorization_code")}</span>
@@ -3231,6 +3526,7 @@ export default function IntegrationConnectionPage() {
                   </div>
                 ) : null}
               </div>
+              )}
             </Section>
 
             <Section title={detailT("setup.summary_title")} help={detailT("setup.summary_help")} tone="muted">
@@ -3246,7 +3542,7 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            {!isXeroProvider ? (
+            {!isDrawerManagedProvider ? (
               <Section title={detailT("setup.latest_test_result_title")} help={detailT("setup.latest_test_result_help")} tone="muted">
                 {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("setup.no_test_result")}</div>}
               </Section>
@@ -3294,6 +3590,16 @@ export default function IntegrationConnectionPage() {
         zIndexClass="z-[240]"
       >
         {xeroConnectionDrawerContent}
+      </ResponsiveDrawer>
+
+      <ResponsiveDrawer
+        open={shopifyConnectionDrawerOpen}
+        onClose={() => setShopifyConnectionDrawerOpen(false)}
+        title="Shopify connection"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+        zIndexClass="z-[240]"
+      >
+        {shopifyConnectionDrawerContent}
       </ResponsiveDrawer>
 
       {showCreateSecretModal ? (

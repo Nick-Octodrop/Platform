@@ -37815,7 +37815,14 @@ def _integration_provider_env_defaults(provider_key: str) -> dict[str, Any]:
     if normalized == "xero":
         client_id = os.getenv("OCTO_XERO_CLIENT_ID", "").strip() or os.getenv("XERO_CLIENT_ID", "").strip()
         return {"client_id": client_id} if client_id else {}
+    if normalized == "shopify":
+        client_id = os.getenv("OCTO_SHOPIFY_CLIENT_ID", "").strip() or os.getenv("SHOPIFY_CLIENT_ID", "").strip()
+        return {"client_id": client_id} if client_id else {}
     return {}
+
+
+def _provider_uses_managed_oauth_callback(provider_key: str) -> bool:
+    return str(provider_key or "").strip().lower() in {"xero", "shopify"}
 
 
 @app.post("/integrations/connections")
@@ -37878,7 +37885,7 @@ async def get_integration_connection(request: Request, connection_id: str) -> di
     return _ok_response({"connection": item})
 
 
-_DEFAULT_XERO_RETURN_ORIGIN = "https://app.octodrop.com"
+_DEFAULT_OAUTH_RETURN_ORIGIN = "https://app.octodrop.com"
 
 
 def _integration_oauth_state_secret() -> bytes:
@@ -37910,23 +37917,58 @@ def _integration_oauth_state_decode(token: str) -> dict[str, Any]:
     return payload
 
 
-def _safe_return_origin(origin: Any) -> str:
+def _configured_web_base_url() -> str:
+    for key in ("OCTO_WEB_BASE_URL", "APP_PUBLIC_WEB_URL", "APP_PUBLIC_APP_URL", "APP_BASE_URL"):
+        value = str(os.getenv(key) or "").strip().rstrip("/")
+        if not value:
+            continue
+        parsed = urllib.parse.urlparse(value)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return value
+    return ""
+
+
+def _configured_api_base_url(request: Request | None = None) -> str:
+    configured = (
+        str(os.getenv("OCTO_BASE_URL") or "").strip().rstrip("/")
+        or str(os.getenv("APP_PUBLIC_API_URL") or "").strip().rstrip("/")
+    )
+    if configured:
+        return configured
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return ""
+
+
+def _oauth_default_return_origin(request: Request | None = None) -> str:
+    configured_web = _configured_web_base_url()
+    if configured_web:
+        return configured_web
+    api_base = _configured_api_base_url(request)
+    if api_base and api_base != _DEFAULT_OAUTH_RETURN_ORIGIN:
+        return api_base
+    return _DEFAULT_OAUTH_RETURN_ORIGIN
+
+
+def _safe_return_origin(origin: Any, request: Request | None = None) -> str:
+    fallback = _oauth_default_return_origin(request)
     candidate = str(origin or "").strip().rstrip("/")
     if not candidate:
-        return _DEFAULT_XERO_RETURN_ORIGIN
+        return fallback
     parsed = urllib.parse.urlparse(candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return _DEFAULT_XERO_RETURN_ORIGIN
+        return fallback
+    api_base = _configured_api_base_url(request)
+    if api_base and candidate == api_base:
+        configured_web = _configured_web_base_url()
+        if configured_web and configured_web != api_base:
+            return configured_web
     return candidate
 
 
 def _integration_provider_callback_uri(request: Request, provider_key: str) -> str:
     normalized = str(provider_key or "").strip().lower()
-    configured_base = (
-        str(os.getenv("OCTO_BASE_URL") or "").strip().rstrip("/")
-        or str(os.getenv("APP_PUBLIC_API_URL") or "").strip().rstrip("/")
-    )
-    base = configured_base or str(request.base_url).rstrip("/")
+    base = _configured_api_base_url(request)
     if normalized == "xero":
         return f"{base}/integrations/oauth/xero/callback"
     return f"{base}/integrations/oauth/{normalized or 'callback'}/callback"
@@ -38098,14 +38140,14 @@ async def integration_connection_oauth_authorize_url(request: Request, connectio
     provider_key = _integration_provider_key(item)
     redirect_uri = body.get("redirect_uri")
     state = body.get("state")
-    if provider_key == "xero":
+    if _provider_uses_managed_oauth_callback(provider_key):
         redirect_uri = _integration_provider_callback_uri(request, provider_key)
         state = _integration_oauth_state_encode(
             {
                 "provider_key": provider_key,
                 "connection_id": connection_id,
                 "workspace_id": actor.get("workspace_id") if isinstance(actor, dict) else "default",
-                "return_origin": _safe_return_origin(body.get("return_origin")),
+                "return_origin": _safe_return_origin(body.get("return_origin"), request),
                 "created_at": _now(),
             }
         )
@@ -38167,8 +38209,7 @@ async def integration_connection_oauth_exchange(request: Request, connection_id:
     return _ok_response({"result": result})
 
 
-@app.get("/integrations/oauth/xero/callback", include_in_schema=False)
-async def integration_xero_oauth_callback(request: Request) -> Response:
+async def _integration_managed_oauth_callback(request: Request, provider_key: str) -> Response:
     params = request.query_params
     provider_error = str(params.get("error") or "").strip()
     provider_error_description = str(params.get("error_description") or "").strip()
@@ -38182,7 +38223,7 @@ async def integration_xero_oauth_callback(request: Request) -> Response:
 
     connection_id = str(state.get("connection_id") or "").strip()
     workspace_id = str(state.get("workspace_id") or "default").strip() or "default"
-    return_origin = _safe_return_origin(state.get("return_origin"))
+    return_origin = _safe_return_origin(state.get("return_origin"), request)
     destination_base = f"{return_origin}/integrations/connections/{urllib.parse.quote(connection_id)}"
 
     if provider_error:
@@ -38201,13 +38242,13 @@ async def integration_xero_oauth_callback(request: Request) -> Response:
     token = set_org_id(workspace_id)
     try:
         item = connection_store.get(connection_id)
-        if not item or not _is_integration_type(item.get("type")) or _integration_provider_key(item) != "xero":
-            message = "Connection not found for Xero OAuth callback"
+        if not item or not _is_integration_type(item.get("type")) or _integration_provider_key(item) != provider_key:
+            message = f"Connection not found for {provider_key.title()} OAuth callback"
             return RedirectResponse(
                 f"{destination_base}?oauth=error&message={urllib.parse.quote(message)}",
                 status_code=302,
             )
-        redirect_uri = _integration_provider_callback_uri(request, "xero")
+        redirect_uri = _integration_provider_callback_uri(request, provider_key)
         try:
             exchange_connection_oauth_code(item, workspace_id, code=code, redirect_uri=redirect_uri)
             _log_integration_request(connection_id, {"ok": True, "method": "POST", "url": (item.get("config") or {}).get("token_url")}, source="oauth_exchange")
@@ -38233,6 +38274,16 @@ async def integration_xero_oauth_callback(request: Request) -> Response:
         reset_org_id(token)
 
     return RedirectResponse(f"{destination_base}?oauth=connected", status_code=302)
+
+
+@app.get("/integrations/oauth/xero/callback", include_in_schema=False)
+async def integration_xero_oauth_callback(request: Request) -> Response:
+    return await _integration_managed_oauth_callback(request, "xero")
+
+
+@app.get("/integrations/oauth/shopify/callback", include_in_schema=False)
+async def integration_shopify_oauth_callback(request: Request) -> Response:
+    return await _integration_managed_oauth_callback(request, "shopify")
 
 
 @app.post("/integrations/connections/{connection_id}/oauth/refresh")
@@ -38306,6 +38357,18 @@ async def integration_connection_oauth_disconnect(request: Request, connection_i
                 "xero_tenant_id": None,
                 "xero_tenant_name": None,
                 "xero_tenants": [],
+            }
+        )
+    if provider_key == "shopify":
+        config_updates.update(
+            {
+                "shopify_shop_id": None,
+                "shopify_shop_name": None,
+                "shopify_shop_email": None,
+                "shopify_shop_domain": None,
+                "shopify_myshopify_domain": None,
+                "shopify_shop_currency": None,
+                "shopify_shop_sync_error": None,
             }
         )
     next_config = {**config, **config_updates}
