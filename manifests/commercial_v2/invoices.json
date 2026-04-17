@@ -386,6 +386,52 @@
           "label_key": "invoices.entities.biz_invoice.fields.invoice_manual_total.label"
         },
         {
+          "id": "biz_invoice.line_count",
+          "type": "number",
+          "label": "Line Count",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice_line",
+              "where": {
+                "op": "eq",
+                "field": "biz_invoice_line.invoice_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_invoice.lines_total",
+          "type": "number",
+          "label": "Lines Total",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_invoice.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_invoice_line",
+              "field": "biz_invoice_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "biz_invoice_line.invoice_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
           "id": "biz_invoice.invoice_total",
           "type": "number",
           "label": "Invoice Total",
@@ -402,65 +448,57 @@
               "condition": {
                 "op": "eq",
                 "field": "biz_invoice.invoice_type",
-                "value": "deposit"
+                "value": "credit_note"
               },
               "then": {
-                "op": "round",
-                "args": [
-                  {
-                    "op": "mul",
-                    "args": [
-                      {
-                        "ref": "$current.biz_invoice.source_order_total_snapshot"
-                      },
-                      {
-                        "op": "div",
-                        "args": [
-                          {
-                            "ref": "$current.biz_invoice.deposit_percent_snapshot"
-                          },
-                          100
-                        ]
-                      }
-                    ]
-                  },
-                  2
-                ]
+                "op": "if",
+                "condition": {
+                  "op": "gt",
+                  "args": [
+                    {
+                      "ref": "$current.biz_invoice.line_count"
+                    },
+                    0
+                  ]
+                },
+                "then": {
+                  "op": "neg",
+                  "args": [
+                    {
+                      "op": "abs",
+                      "args": [
+                        {
+                          "ref": "$current.biz_invoice.lines_total"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "else": {
+                  "op": "neg",
+                  "args": [
+                    {
+                      "ref": "$current.biz_invoice.invoice_manual_total"
+                    }
+                  ]
+                }
               },
               "else": {
                 "op": "if",
                 "condition": {
-                  "op": "eq",
-                  "field": "biz_invoice.invoice_type",
-                  "value": "final"
+                  "op": "gt",
+                  "args": [
+                    {
+                      "ref": "$current.biz_invoice.line_count"
+                    },
+                    0
+                  ]
                 },
                 "then": {
                   "op": "round",
                   "args": [
                     {
-                      "op": "sub",
-                      "args": [
-                        {
-                          "ref": "$current.biz_invoice.source_order_total_snapshot"
-                        },
-                        {
-                          "op": "mul",
-                          "args": [
-                            {
-                              "ref": "$current.biz_invoice.source_order_total_snapshot"
-                            },
-                            {
-                              "op": "div",
-                              "args": [
-                                {
-                                  "ref": "$current.biz_invoice.deposit_percent_snapshot"
-                                },
-                                100
-                              ]
-                            }
-                          ]
-                        }
-                      ]
+                      "ref": "$current.biz_invoice.lines_total"
                     },
                     2
                   ]
@@ -470,18 +508,72 @@
                   "condition": {
                     "op": "eq",
                     "field": "biz_invoice.invoice_type",
-                    "value": "credit_note"
+                    "value": "deposit"
                   },
                   "then": {
-                    "op": "neg",
+                    "op": "round",
                     "args": [
                       {
-                        "ref": "$current.biz_invoice.invoice_manual_total"
-                      }
+                        "op": "mul",
+                        "args": [
+                          {
+                            "ref": "$current.biz_invoice.source_order_total_snapshot"
+                          },
+                          {
+                            "op": "div",
+                            "args": [
+                              {
+                                "ref": "$current.biz_invoice.deposit_percent_snapshot"
+                              },
+                              100
+                            ]
+                          }
+                        ]
+                      },
+                      2
                     ]
                   },
                   "else": {
-                    "ref": "$current.biz_invoice.invoice_manual_total"
+                    "op": "if",
+                    "condition": {
+                      "op": "eq",
+                      "field": "biz_invoice.invoice_type",
+                      "value": "final"
+                    },
+                    "then": {
+                      "op": "round",
+                      "args": [
+                        {
+                          "op": "sub",
+                          "args": [
+                            {
+                              "ref": "$current.biz_invoice.source_order_total_snapshot"
+                            },
+                            {
+                              "op": "mul",
+                              "args": [
+                                {
+                                  "ref": "$current.biz_invoice.source_order_total_snapshot"
+                                },
+                                {
+                                  "op": "div",
+                                  "args": [
+                                    {
+                                      "ref": "$current.biz_invoice.deposit_percent_snapshot"
+                                    },
+                                    100
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        2
+                      ]
+                    },
+                    "else": {
+                      "ref": "$current.biz_invoice.invoice_manual_total"
+                    }
                   }
                 }
               }
@@ -532,6 +624,36 @@
             }
           },
           "label_key": "invoices.entities.biz_invoice.fields.balance_due.label"
+        },
+        {
+          "id": "biz_invoice.xero_invoice_id",
+          "type": "string",
+          "label": "Xero Invoice ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_invoice.xero_credit_note_id",
+          "type": "string",
+          "label": "Xero Credit Note ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_invoice.xero_last_sync_status",
+          "type": "string",
+          "label": "Xero Sync Status",
+          "readonly": true
+        },
+        {
+          "id": "biz_invoice.xero_last_sync_at",
+          "type": "datetime",
+          "label": "Xero Last Sync At",
+          "readonly": true
+        },
+        {
+          "id": "biz_invoice.xero_last_sync_error",
+          "type": "text",
+          "label": "Xero Sync Error",
+          "readonly": true
         }
       ],
       "label_key": "invoices.entities.biz_invoice.label"
@@ -1409,6 +1531,19 @@
           "section_title_key": "invoices.views.form.sections.related.title"
         },
         {
+          "id": "xero",
+          "title": "Xero Link",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_invoice.xero_invoice_id",
+            "biz_invoice.xero_credit_note_id",
+            "biz_invoice.xero_last_sync_status",
+            "biz_invoice.xero_last_sync_at",
+            "biz_invoice.xero_last_sync_error"
+          ]
+        },
+        {
           "id": "lines",
           "title": "Invoice Lines",
           "line_editor": {
@@ -1594,6 +1729,13 @@
               "sections": [
                 "related"
               ]
+            },
+            {
+              "id": "xero",
+              "label": "Xero Link",
+              "sections": [
+                "xero"
+              ]
             }
           ]
         }
@@ -1615,6 +1757,11 @@
           "biz_invoice.invoice_total",
           "biz_invoice.amount_paid",
           "biz_invoice.balance_due",
+          "biz_invoice.xero_invoice_id",
+          "biz_invoice.xero_credit_note_id",
+          "biz_invoice.xero_last_sync_status",
+          "biz_invoice.xero_last_sync_at",
+          "biz_invoice.xero_last_sync_error",
           "biz_invoice.credit_note_id",
           "biz_invoice.cancellation_reason",
           "biz_invoice.notes"

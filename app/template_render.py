@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Tuple
 
 from jinja2 import TemplateSyntaxError, UndefinedError, meta
+from jinja2.runtime import LoopContext
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 _ALLOWED_FILTERS = {
@@ -28,6 +29,16 @@ _ALLOWED_TESTS = {
 
 class _LockedSandbox(ImmutableSandboxedEnvironment):
     def is_safe_attribute(self, obj, attr, value) -> bool:
+        if isinstance(obj, LoopContext) and attr in {
+            "index",
+            "index0",
+            "revindex",
+            "revindex0",
+            "first",
+            "last",
+            "length",
+        }:
+            return True
         return False
 
     def is_safe_callable(self, obj) -> bool:

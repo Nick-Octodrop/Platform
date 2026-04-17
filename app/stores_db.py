@@ -1580,6 +1580,56 @@ class DbGenericRecordStore:
             items.append({"record_id": str(row.get("id")), "record": record})
         return items
 
+    def list_by_field_value(
+        self,
+        entity_id: str,
+        field_id: str,
+        value: Any,
+        tenant_id: str | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[dict]:
+        tenant_id = tenant_id or get_org_id()
+        if not isinstance(field_id, str) or not field_id.strip():
+            return []
+        scalar: str | None
+        if value is None:
+            scalar = None
+        elif isinstance(value, bool):
+            scalar = "true" if value else "false"
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            scalar = str(value)
+        elif isinstance(value, str):
+            scalar = value
+        else:
+            return []
+        params: list[Any] = [tenant_id, entity_id, field_id.strip()]
+        where = "where tenant_id=%s and entity_id=%s and data ->> %s = %s"
+        if scalar is None:
+            where = "where tenant_id=%s and entity_id=%s and data -> %s = 'null'::jsonb"
+        else:
+            params.append(scalar)
+        params.extend([limit, offset])
+        with get_conn() as conn:
+            rows = fetch_all(
+                conn,
+                f"""
+                select id, data
+                from records_generic
+                {where}
+                order by updated_at desc
+                limit %s offset %s
+                """,
+                params,
+                query_name="records_generic.list_by_field_value",
+            )
+        items: list[dict] = []
+        for row in rows:
+            record = _deepcopy(row.get("data") or {})
+            record["id"] = str(row.get("id"))
+            items.append({"record_id": str(row.get("id")), "record": record})
+        return items
+
     def list_lookup(
         self,
         entity_id: str,

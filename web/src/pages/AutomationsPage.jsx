@@ -168,7 +168,8 @@ export default function AutomationsPage() {
     () => items.map((item) => ({
       id: item.id,
       name: item.name || "",
-      status: item.status ? t(`common.${item.status}`, {}, { defaultValue: item.status }) : t("common.draft"),
+      status: item.status || "draft",
+      status_label: item.status ? t(`common.${item.status}`, {}, { defaultValue: item.status }) : t("common.draft"),
       updated_at: item.updated_at || "—",
       description: item.description || "",
     })),
@@ -179,6 +180,7 @@ export default function AutomationsPage() {
     () => ({
       "automation.name": { id: "automation.name", label: t("common.name") },
       "automation.status": { id: "automation.status", label: t("common.status") },
+      "automation.status_label": { id: "automation.status_label", label: t("common.status") },
       "automation.updated_at": { id: "automation.updated_at", label: t("common.updated") },
       "automation.description": { id: "automation.description", label: t("common.description") },
     }),
@@ -192,7 +194,7 @@ export default function AutomationsPage() {
       columns: [
         { field_id: "automation.name" },
         { field_id: "automation.description" },
-        { field_id: "automation.status" },
+        { field_id: "automation.status_label" },
         { field_id: "automation.updated_at" },
       ],
     }),
@@ -204,6 +206,7 @@ export default function AutomationsPage() {
     record: {
       "automation.name": row.name,
       "automation.status": row.status,
+      "automation.status_label": row.status_label,
       "automation.updated_at": row.updated_at,
       "automation.description": row.description,
     },
@@ -238,9 +241,9 @@ export default function AutomationsPage() {
   );
 
   const selectedRows = useMemo(() => {
-    const map = new Map(automationRows.map((row) => [row.id, row]));
+    const map = new Map(items.map((item) => [item.id, item]));
     return selectedIds.map((id) => map.get(id)).filter(Boolean);
-  }, [automationRows, selectedIds]);
+  }, [items, selectedIds]);
 
   const singleSelected = selectedRows.length === 1 ? selectedRows[0] : null;
   const selectedPublishedCount = useMemo(

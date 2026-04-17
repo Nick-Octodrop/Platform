@@ -1,11 +1,116 @@
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from app.stores import MemoryAutomationStore, MemoryJobStore
-from app.worker import _run_automation
+from app.worker import _emit_automation_event, _handle_system_action, _run_automation
 
 
 class TestAutomationRuntime(unittest.TestCase):
+    def test_emit_automation_event_uses_sha256_manifest_hash(self):
+        captured: dict[str, object] = {}
+
+        def fake_handle(event):
+            captured["event"] = event
+
+        def fake_webhook(event_type, payload, meta):
+            captured["webhook"] = {
+                "event_type": event_type,
+                "payload": payload,
+                "meta": meta,
+            }
+
+        app_main = SimpleNamespace(
+            _handle_automation_event=fake_handle,
+            _emit_external_webhook_subscriptions=fake_webhook,
+        )
+
+        with (
+            patch("app.worker._get_app_main", return_value=app_main),
+            patch("app.worker.get_org_id", return_value="org_test"),
+        ):
+            _emit_automation_event("record.updated", {"record_id": "r1"})
+
+        event = captured["event"]
+        self.assertEqual(event["meta"]["manifest_hash"], "sha256:automation")
+        self.assertEqual(event["meta"]["actor"]["roles"], ["system"])
+        self.assertEqual(captured["webhook"]["meta"]["manifest_hash"], "sha256:automation")
+
+    def test_query_records_uses_direct_get_for_id_filter(self):
+        store = SimpleNamespace(
+            get=lambda entity_id, record_id: {
+                "record_id": record_id,
+                "record": {
+                    "id": record_id,
+                    "biz_contact.name": "Test Contact",
+                    "biz_contact.xero_contact_id": "xero_123",
+                },
+            },
+            list=lambda *args, **kwargs: self.fail("list should not be used for direct id lookups"),
+        )
+
+        with patch("app.worker.DbGenericRecordStore", return_value=store):
+            result = _handle_system_action(
+                "system.query_records",
+                {
+                    "entity_id": "entity.biz_contact",
+                    "filter_expr": {
+                        "op": "eq",
+                        "field": "biz_contact.id",
+                        "value": "contact_123",
+                    },
+                },
+                {},
+                None,
+            )
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["first"]["record_id"], "contact_123")
+        self.assertEqual(result["first"]["record"]["biz_contact"]["id"], "contact_123")
+        self.assertEqual(result["first"]["record"]["biz_contact"]["name"], "Test Contact")
+        self.assertEqual(result["first"]["record"]["biz_contact"]["xero_contact_id"], "xero_123")
+
+    def test_query_records_uses_field_lookup_for_simple_eq_filter(self):
+        store = SimpleNamespace(
+            get=lambda *args, **kwargs: self.fail("get should not be used for non-id eq lookups"),
+            list=lambda *args, **kwargs: self.fail("list should not be used for simple eq lookups"),
+            list_by_field_value=lambda entity_id, field_id, value, limit=200, offset=0: [
+                {
+                    "record_id": "line_123",
+                    "record": {
+                        "id": "line_123",
+                        "biz_invoice_line.invoice_id": "invoice_123",
+                        "biz_invoice_line.description": "Manual line",
+                        "biz_invoice_line.quantity": 1,
+                        "biz_invoice_line.unit_price": 1210,
+                    },
+                }
+            ]
+            if entity_id == "entity.biz_invoice_line" and field_id == "biz_invoice_line.invoice_id" and value == "invoice_123"
+            else [],
+        )
+
+        with patch("app.worker.DbGenericRecordStore", return_value=store):
+            result = _handle_system_action(
+                "system.query_records",
+                {
+                    "entity_id": "entity.biz_invoice_line",
+                    "filter_expr": {
+                        "op": "eq",
+                        "field": "biz_invoice_line.invoice_id",
+                        "value": "invoice_123",
+                    },
+                },
+                {},
+                None,
+            )
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["first"]["record_id"], "line_123")
+        self.assertEqual(result["first"]["record"]["biz_invoice_line"]["id"], "line_123")
+        self.assertEqual(result["first"]["record"]["biz_invoice_line"]["invoice_id"], "invoice_123")
+        self.assertEqual(result["first"]["record"]["biz_invoice_line"]["description"], "Manual line")
+
     def test_delay_reschedules(self):
         store = MemoryAutomationStore()
         job_store = MemoryJobStore()

@@ -36,6 +36,14 @@ class TestPhase1Jobs(unittest.TestCase):
         out = render_template("Hello {{record.name}}", {"record": {"name": "Ada"}}, strict=True)
         self.assertEqual(out, "Hello Ada")
 
+    def test_template_render_allows_safe_loop_metadata(self) -> None:
+        out = render_template(
+            "{% for value in items %}{{ value }}{% if not loop.last %},{% endif %}{% endfor %}",
+            {"items": ["A", "B", "C"]},
+            strict=True,
+        )
+        self.assertEqual(out, "A,B,C")
+
     def test_secret_env_fallback(self) -> None:
         os.environ["APP_ENV"] = "dev"
         os.environ["POSTMARK_API_TOKEN"] = "tok_test"

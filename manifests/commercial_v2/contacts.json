@@ -117,6 +117,16 @@
           "label": "Country"
         },
         {
+          "id": "biz_contact.tax_number",
+          "type": "string",
+          "label": "Tax Number"
+        },
+        {
+          "id": "biz_contact.company_number",
+          "type": "string",
+          "label": "Company Number"
+        },
+        {
           "id": "biz_contact.currency_preference",
           "type": "enum",
           "label_key": "contacts.fields.currency_preference",
@@ -226,6 +236,30 @@
           "type": "text",
           "label_key": "contacts.fields.notes",
           "label": "Notes"
+        },
+        {
+          "id": "biz_contact.xero_contact_id",
+          "type": "string",
+          "label": "Xero Contact ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_contact.xero_last_sync_status",
+          "type": "string",
+          "label": "Xero Sync Status",
+          "readonly": true
+        },
+        {
+          "id": "biz_contact.xero_last_sync_at",
+          "type": "datetime",
+          "label": "Xero Last Sync At",
+          "readonly": true
+        },
+        {
+          "id": "biz_contact.xero_last_sync_error",
+          "type": "text",
+          "label": "Xero Sync Error",
+          "readonly": true
         },
         {
           "id": "biz_contact.is_active",
@@ -388,6 +422,8 @@
             "biz_contact.name",
             "biz_contact.contact_type",
             "biz_contact.country",
+            "biz_contact.tax_number",
+            "biz_contact.company_number",
             "biz_contact.currency_preference",
             "biz_contact.email",
             "biz_contact.phone",
@@ -424,6 +460,18 @@
             "biz_contact.company_entity_scope",
             "biz_contact.notes"
           ]
+        },
+        {
+          "id": "xero",
+          "title": "Xero Link",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_contact.xero_contact_id",
+            "biz_contact.xero_last_sync_status",
+            "biz_contact.xero_last_sync_at",
+            "biz_contact.xero_last_sync_error"
+          ]
         }
       ],
       "header": {
@@ -434,7 +482,43 @@
           {
             "action_id": "action.contact_deactivate"
           }
-        ]
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "main"
+              ]
+            },
+            {
+              "id": "addresses",
+              "label": "Addresses",
+              "sections": [
+                "addresses"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            },
+            {
+              "id": "xero",
+              "label": "Xero Link",
+              "sections": [
+                "xero"
+              ]
+            }
+          ]
+        }
       },
       "activity": {
         "enabled": true,
@@ -449,6 +533,8 @@
           "biz_contact.phone",
           "biz_contact.website",
           "biz_contact.country",
+          "biz_contact.tax_number",
+          "biz_contact.company_number",
           "biz_contact.currency_preference",
           "biz_contact.billing_street",
           "biz_contact.billing_street2",
@@ -463,6 +549,10 @@
           "biz_contact.shipping_postcode",
           "biz_contact.shipping_country",
           "biz_contact.notes",
+          "biz_contact.xero_contact_id",
+          "biz_contact.xero_last_sync_status",
+          "biz_contact.xero_last_sync_at",
+          "biz_contact.xero_last_sync_error",
           "biz_contact.is_active"
         ]
       }

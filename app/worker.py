@@ -742,8 +742,10 @@ def _emit_automation_event(event_type: str, payload: dict) -> None:
     app_main = _get_app_main()
     meta = {
         "module_id": "__automation__",
-        "manifest_hash": "automation",
-        "actor": {"id": "system", "name": "System"},
+        # Automation-emitted follow-up events do not come from a real manifest
+        # snapshot, but the event bus still requires a sha256-prefixed hash.
+        "manifest_hash": "sha256:automation",
+        "actor": {"id": "system", "name": "System", "roles": ["system"]},
         "org_id": get_org_id(),
         "trace_id": None,
     }
@@ -780,6 +782,84 @@ def _mapping_allows_usage(mapping: dict, usage: str) -> bool:
     if normalized == "automation":
         return scope in {"automation_only", "sync_and_automation"}
     return True
+
+
+def _query_records_direct_id_lookup(entity_id: str, filter_expr: dict | None) -> str | None:
+    if not isinstance(filter_expr, dict):
+        return None
+    if str(filter_expr.get("op") or "").strip().lower() != "eq":
+        return None
+    field = str(filter_expr.get("field") or "").strip()
+    entity_key = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+    if field not in {"id", f"{entity_key}.id"}:
+        return None
+    value = filter_expr.get("value")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
+
+
+def _query_records_simple_eq_filter(entity_id: str, filter_expr: dict | None) -> tuple[str, object] | None:
+    if not isinstance(filter_expr, dict):
+        return None
+    if str(filter_expr.get("op") or "").strip().lower() != "eq":
+        return None
+    field = str(filter_expr.get("field") or "").strip()
+    if not field:
+        return None
+    entity_key = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+    if field in {"id", f"{entity_key}.id"}:
+        return None
+    value = filter_expr.get("value")
+    if isinstance(value, str):
+        if not value.strip():
+            return None
+        value = value.strip()
+    elif value is None or isinstance(value, (bool, int, float)):
+        pass
+    else:
+        return None
+    return field, value
+
+
+def _automation_query_record_shape(entity_id: str, row: dict | None) -> dict | None:
+    if not isinstance(row, dict):
+        return row
+    record = row.get("record")
+    if not isinstance(record, dict):
+        return row
+    entity_key = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+    nested = record.get(entity_key)
+    nested_out = dict(nested) if isinstance(nested, dict) else {}
+    record_id = row.get("record_id") if isinstance(row.get("record_id"), str) else None
+    if isinstance(record.get("id"), str) and record.get("id").strip():
+        nested_out.setdefault("id", record.get("id"))
+    elif record_id:
+        nested_out.setdefault("id", record_id)
+    for key, value in record.items():
+        if not isinstance(key, str) or "." not in key:
+            continue
+        prefix, remainder = key.split(".", 1)
+        if prefix != entity_key or not remainder:
+            continue
+        current = nested_out
+        parts = [part for part in remainder.split(".") if part]
+        if not parts:
+            continue
+        for part in parts[:-1]:
+            next_value = current.get(part)
+            if not isinstance(next_value, dict):
+                next_value = {}
+                current[part] = next_value
+            current = next_value
+        current[parts[-1]] = value
+    if not nested_out:
+        return row
+    shaped_record = dict(record)
+    shaped_record[entity_key] = nested_out
+    shaped_row = dict(row)
+    shaped_row["record"] = shaped_record
+    return shaped_row
 
 
 def _apply_connection_mappings(connection: dict, *, resource_key: str | None, items: list, source: str) -> dict:
@@ -1244,13 +1324,66 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         search_fields = inputs.get("search_fields")
         if isinstance(search_fields, str):
             search_fields = [part.strip() for part in search_fields.split(",") if part.strip()]
-        records = store.list(entity_id, limit=limit, offset=offset, q=q if isinstance(q, str) else None, search_fields=search_fields if isinstance(search_fields, list) else None)
         filter_expr = inputs.get("filter_expr")
         if isinstance(filter_expr, str) and filter_expr.strip():
             try:
                 filter_expr = json.loads(filter_expr)
             except Exception as exc:
                 raise RuntimeError("filter_expr must be valid JSON object") from exc
+        direct_record_id = _query_records_direct_id_lookup(entity_id, filter_expr if isinstance(filter_expr, dict) else None)
+        if direct_record_id:
+            record = _automation_query_record_shape(entity_id, store.get(entity_id, direct_record_id))
+            records = [record] if isinstance(record, dict) else []
+            return {
+                "entity_id": entity_id,
+                "count": len(records),
+                "records": records,
+                "first": records[0] if records else None,
+            }
+        simple_eq_filter = (
+            _query_records_simple_eq_filter(entity_id, filter_expr if isinstance(filter_expr, dict) else None)
+            if not q and not search_fields
+            else None
+        )
+        if simple_eq_filter:
+            field_id, field_value = simple_eq_filter
+            records = [
+                shaped
+                for shaped in (
+                    _automation_query_record_shape(entity_id, row)
+                    for row in store.list_by_field_value(
+                        entity_id,
+                        field_id,
+                        field_value,
+                        limit=limit,
+                        offset=offset,
+                    )
+                )
+                if isinstance(shaped, dict)
+            ]
+            return {
+                "entity_id": entity_id,
+                "count": len(records),
+                "records": records,
+                "first": records[0] if records else None,
+            }
+        records = [
+            shaped
+            for shaped in (
+                _automation_query_record_shape(
+                    entity_id,
+                    row,
+                )
+                for row in store.list(
+                    entity_id,
+                    limit=limit,
+                    offset=offset,
+                    q=q if isinstance(q, str) else None,
+                    search_fields=search_fields if isinstance(search_fields, list) else None,
+                )
+            )
+            if isinstance(shaped, dict)
+        ]
         if isinstance(filter_expr, dict):
             filtered = []
             for row in records:

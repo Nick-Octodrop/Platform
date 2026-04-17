@@ -315,12 +315,13 @@ function singularLabel(value) {
   return label;
 }
 
-function buildXeroReadPreset({ id, label, path, help, query = {}, targetLabel = "" }) {
+function buildXeroReadPreset({ id, label, path, url, help, query = {}, targetLabel = "" }) {
   return {
     id,
     label,
     method: "GET",
     path,
+    url,
     targetLabel: targetLabel || label,
     help,
     headersText: prettyJson({ Accept: "application/json" }),
@@ -335,7 +336,7 @@ function buildXeroRequestPresets(resources = []) {
     buildXeroReadPreset({
       id: "connections:list",
       label: "List connections",
-      path: "/connections",
+      url: "https://api.xero.com/connections",
       targetLabel: "Connections",
       help: "Check which Xero organisation links are available for this connection.",
     }),
