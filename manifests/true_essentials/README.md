@@ -33,6 +33,12 @@
 - Home dashboard focused on company funds available, owner balances owed, unreimbursed spend, and contributions
 - Receipt/proof attachments and activity enabled
 
+### `te_sales.json`
+- Customer-facing sales orders with a clean split between order header state and sales order lines
+- Built to receive Shopify-originated orders into a real operational entity instead of overloading catalog or sync tables
+- Tracks customer/shipping snapshots, line totals, paid/balance-due visibility, and gross margin against catalog cost snapshots
+- Links order lines back to `te_product` so imported Shopify orders can still roll into product-level operational reporting later
+
 ## Assumptions made
 
 - The suite is intended to be installed together for the same workspace.
@@ -48,11 +54,10 @@
   - stat cards on module home pages
   - typed lookups and domains
 - I did not invent unsupported action kinds for email/document sending. The suite leaves room for those later where the platform/runtime contract is clearer.
+- TE form design rule: when a record uses a statusbar, keep that statusbar in the form header and above tabs. Do not repeat the same workflow status field again inside the tab body unless there is a specific operational reason.
 
 ## Recommended next modules later
 
-- `te_sales`
-  - Shopify order operations, customer orders, fulfilment state, margin visibility
 - `te_inventory`
   - Receiving, stock on hand automation, adjustments, and simple inventory movement history
 - `te_documents`

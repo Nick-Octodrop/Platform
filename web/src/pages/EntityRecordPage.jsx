@@ -247,6 +247,7 @@ export default function EntityRecordPage() {
                 onSave={handleSave}
                 readonly={!canWriteRecords}
                 showValidation={showValidation}
+                header={viewForm.header || null}
               />
             </div>
           )}

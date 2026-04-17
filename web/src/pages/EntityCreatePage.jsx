@@ -189,6 +189,7 @@ export default function EntityCreatePage({ entityId }) {
                 readonly={false}
                 showValidation={showValidation}
                 applyDefaults={true}
+                header={viewForm.header || null}
               />
             </div>
           )}

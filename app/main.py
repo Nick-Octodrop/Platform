@@ -260,6 +260,7 @@ _PUBLIC_EXT_DOC_PATHS = {
     "/ext/v1/guide.md",
     "/ext/v1/events.md",
     "/integrations/oauth/xero/callback",
+    "/integrations/oauth/shopify/callback",
 }
 
 _APP_ENV_FOR_SECURITY = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"

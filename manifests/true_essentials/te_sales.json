@@ -1,0 +1,765 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_sales",
+    "key": "te_sales",
+    "name": "Sales",
+    "version": "1.0.0",
+    "description": "Customer sales orders for True Essentials with Shopify-facing order intake, line totals, fulfilment visibility, and gross margin tracking.",
+    "category": "True Essentials",
+    "icon_key": "lucide:ShoppingBag"
+  },
+  "depends_on": {
+    "required": [
+      { "module": "te_catalog", "version": ">=1.0.0" }
+    ]
+  },
+  "app": {
+    "home": "page:te_sales_order.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_sales_order.list_page",
+      "entity_form_page": "page:te_sales_order.form_page",
+      "entities": {
+        "entity.te_sales_order": {
+          "entity_home_page": "page:te_sales_order.list_page",
+          "entity_form_page": "page:te_sales_order.form_page"
+        },
+        "entity.te_sales_order_line": {
+          "entity_home_page": "page:te_sales_order_line.list_page",
+          "entity_form_page": "page:te_sales_order_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Sales",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_sales_order.home_page" },
+          { "label": "Orders", "to": "page:te_sales_order.list_page" },
+          { "label": "Open Orders", "to": "page:te_sales_order.open_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_sales_order",
+      "label": "Sales Order",
+      "display_field": "te_sales_order.order_number",
+      "fields": [
+        { "id": "te_sales_order.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_sales_order.order_number", "type": "string", "label": "Order Number", "required": true },
+        {
+          "id": "te_sales_order.channel",
+          "type": "enum",
+          "label": "Channel",
+          "default": "shopify",
+          "options": [
+            { "value": "shopify", "label": "Shopify" },
+            { "value": "manual", "label": "Manual" }
+          ]
+        },
+        {
+          "id": "te_sales_order.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "open",
+          "options": [
+            { "value": "open", "label": "Open" },
+            { "value": "paid", "label": "Paid" },
+            { "value": "fulfilled", "label": "Fulfilled" },
+            { "value": "refunded", "label": "Refunded" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_sales_order.financial_status",
+          "type": "enum",
+          "label": "Financial Status",
+          "default": "pending",
+          "options": [
+            { "value": "pending", "label": "Pending" },
+            { "value": "paid", "label": "Paid" },
+            { "value": "partially_refunded", "label": "Partially Refunded" },
+            { "value": "refunded", "label": "Refunded" },
+            { "value": "voided", "label": "Voided" }
+          ]
+        },
+        {
+          "id": "te_sales_order.fulfillment_status",
+          "type": "enum",
+          "label": "Fulfilment Status",
+          "default": "unfulfilled",
+          "options": [
+            { "value": "unfulfilled", "label": "Unfulfilled" },
+            { "value": "partial", "label": "Partial" },
+            { "value": "fulfilled", "label": "Fulfilled" },
+            { "value": "restocked", "label": "Restocked" }
+          ]
+        },
+        { "id": "te_sales_order.order_date", "type": "date", "label": "Order Date", "required": true },
+        {
+          "id": "te_sales_order.currency",
+          "type": "enum",
+          "label": "Currency",
+          "default": "NZD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "te_sales_order.shopify_order_id", "type": "string", "label": "Shopify Order ID", "readonly": true },
+        { "id": "te_sales_order.shopify_order_name", "type": "string", "label": "Shopify Order Name", "readonly": true },
+        { "id": "te_sales_order.shopify_order_admin_url", "type": "string", "label": "Shopify Admin URL", "readonly": true },
+        { "id": "te_sales_order.customer_name", "type": "string", "label": "Customer Name" },
+        { "id": "te_sales_order.customer_email", "type": "string", "label": "Customer Email" },
+        { "id": "te_sales_order.customer_phone", "type": "string", "label": "Customer Phone" },
+        { "id": "te_sales_order.shipping_name", "type": "string", "label": "Shipping Name" },
+        { "id": "te_sales_order.shipping_address_1", "type": "string", "label": "Shipping Address 1" },
+        { "id": "te_sales_order.shipping_address_2", "type": "string", "label": "Shipping Address 2" },
+        { "id": "te_sales_order.shipping_city", "type": "string", "label": "Shipping City" },
+        { "id": "te_sales_order.shipping_region", "type": "string", "label": "Shipping Region" },
+        { "id": "te_sales_order.shipping_postcode", "type": "string", "label": "Shipping Postcode" },
+        { "id": "te_sales_order.shipping_country", "type": "string", "label": "Shipping Country" },
+        {
+          "id": "te_sales_order.line_items_total",
+          "type": "number",
+          "label": "Line Items Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_sales_order_line",
+              "field": "te_sales_order_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order_line.sales_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "te_sales_order.discount_total",
+          "type": "number",
+          "label": "Discount Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_sales_order_line",
+              "field": "te_sales_order_line.line_discount_total",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order_line.sales_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "te_sales_order.tax_total",
+          "type": "number",
+          "label": "Tax Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_sales_order_line",
+              "field": "te_sales_order_line.line_tax_total",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order_line.sales_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        { "id": "te_sales_order.shipping_amount", "type": "number", "label": "Shipping Amount", "default": 0, "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 } },
+        {
+          "id": "te_sales_order.order_total",
+          "type": "number",
+          "label": "Order Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    { "ref": "$current.te_sales_order.line_items_total" },
+                    { "ref": "$current.te_sales_order.tax_total" },
+                    { "ref": "$current.te_sales_order.shipping_amount" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_sales_order.total_paid", "type": "number", "label": "Total Paid", "default": 0, "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 } },
+        {
+          "id": "te_sales_order.balance_due",
+          "type": "number",
+          "label": "Balance Due",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order.currency", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "max",
+              "args": [
+                {
+                  "op": "round",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        { "ref": "$current.te_sales_order.order_total" },
+                        { "ref": "$current.te_sales_order.total_paid" }
+                      ]
+                    },
+                    2
+                  ]
+                },
+                0
+              ]
+            }
+          }
+        },
+        {
+          "id": "te_sales_order.total_cost_nzd",
+          "type": "number",
+          "label": "Total Cost (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_sales_order_line",
+              "field": "te_sales_order_line.line_cost_total",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order_line.sales_order_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "te_sales_order.gross_margin_nzd",
+          "type": "number",
+          "label": "Gross Margin (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.te_sales_order.order_total" },
+                    { "ref": "$current.te_sales_order.total_cost_nzd" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_sales_order.shopify_last_sync_at", "type": "datetime", "label": "Last Shopify Sync At", "readonly": true },
+        { "id": "te_sales_order.shopify_last_sync_status", "type": "string", "label": "Shopify Sync Status" },
+        { "id": "te_sales_order.shopify_last_sync_error", "type": "text", "label": "Shopify Sync Error" },
+        { "id": "te_sales_order.customer_note", "type": "text", "label": "Customer Note" },
+        { "id": "te_sales_order.notes", "type": "text", "label": "Internal Notes" }
+      ]
+    },
+    {
+      "id": "entity.te_sales_order_line",
+      "label": "Sales Order Line",
+      "display_field": "te_sales_order_line.description",
+      "fields": [
+        { "id": "te_sales_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_sales_order_line.sales_order_id", "type": "lookup", "label": "Sales Order", "entity": "entity.te_sales_order", "display_field": "te_sales_order.order_number", "required": true },
+        { "id": "te_sales_order_line.product_id", "type": "lookup", "label": "Product", "entity": "entity.te_product", "display_field": "te_product.title" },
+        { "id": "te_sales_order_line.shopify_line_item_id", "type": "string", "label": "Shopify Line Item ID", "readonly": true },
+        { "id": "te_sales_order_line.shopify_product_id", "type": "string", "label": "Shopify Product ID", "readonly": true },
+        { "id": "te_sales_order_line.shopify_variant_id", "type": "string", "label": "Shopify Variant ID", "readonly": true },
+        { "id": "te_sales_order_line.sku_snapshot", "type": "string", "label": "SKU" },
+        { "id": "te_sales_order_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "te_sales_order_line.uom_snapshot", "type": "string", "label": "UOM", "default": "EA" },
+        { "id": "te_sales_order_line.currency_snapshot", "type": "string", "label": "Currency Snapshot", "default": "NZD" },
+        { "id": "te_sales_order_line.quantity", "type": "number", "label": "Quantity", "default": 1 },
+        { "id": "te_sales_order_line.fulfillable_quantity", "type": "number", "label": "Fulfillable Quantity", "default": 0 },
+        { "id": "te_sales_order_line.unit_price", "type": "number", "label": "Unit Price", "default": 0, "format": { "kind": "currency", "currency_field": "te_sales_order_line.currency_snapshot", "precision": 2 } },
+        {
+          "id": "te_sales_order_line.line_subtotal",
+          "type": "number",
+          "label": "Line Subtotal",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order_line.currency_snapshot", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_sales_order_line.quantity" },
+                    { "ref": "$current.te_sales_order_line.unit_price" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_sales_order_line.line_discount_total", "type": "number", "label": "Discount Total", "default": 0, "format": { "kind": "currency", "currency_field": "te_sales_order_line.currency_snapshot", "precision": 2 } },
+        { "id": "te_sales_order_line.line_tax_total", "type": "number", "label": "Tax Total", "default": 0, "format": { "kind": "currency", "currency_field": "te_sales_order_line.currency_snapshot", "precision": 2 } },
+        {
+          "id": "te_sales_order_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency_field": "te_sales_order_line.currency_snapshot", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    { "ref": "$current.te_sales_order_line.line_subtotal" },
+                    { "ref": "$current.te_sales_order_line.line_discount_total" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        { "id": "te_sales_order_line.unit_cost_snapshot", "type": "number", "label": "Unit Cost Snapshot (NZD)", "default": 0, "format": { "kind": "currency", "currency": "NZD", "precision": 2 } },
+        {
+          "id": "te_sales_order_line.line_cost_total",
+          "type": "number",
+          "label": "Line Cost Total (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_sales_order_line.quantity" },
+                    { "ref": "$current.te_sales_order_line.unit_cost_snapshot" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_sales_order_new", "kind": "open_form", "label": "New Sales Order", "target": "te_sales_order.form" }
+  ],
+  "views": [
+    {
+      "id": "te_sales_order.list",
+      "kind": "list",
+      "entity": "entity.te_sales_order",
+      "columns": [
+        { "field_id": "te_sales_order.order_number" },
+        { "field_id": "te_sales_order.status" },
+        { "field_id": "te_sales_order.financial_status" },
+        { "field_id": "te_sales_order.fulfillment_status" },
+        { "field_id": "te_sales_order.order_date" },
+        { "field_id": "te_sales_order.customer_name" },
+        { "field_id": "te_sales_order.order_total" },
+        { "field_id": "te_sales_order.balance_due" }
+      ],
+      "default_sort": [{ "field": "te_sales_order.order_date", "direction": "desc" }],
+      "open_record_target": "page:te_sales_order.form_page",
+      "filters": {
+        "default": "open",
+        "items": [
+          { "id": "all", "label": "All" },
+          { "id": "open", "label": "Open", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "open" } },
+          { "id": "fulfilled", "label": "Fulfilled", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "fulfilled" } },
+          { "id": "cancelled", "label": "Cancelled", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "cancelled" } }
+        ]
+      }
+    },
+    {
+      "id": "te_sales_order.form",
+      "kind": "form",
+      "entity": "entity.te_sales_order",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Sales Order",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_sales_order.order_number",
+            "te_sales_order.channel",
+            "te_sales_order.financial_status",
+            "te_sales_order.fulfillment_status",
+            "te_sales_order.order_date",
+            "te_sales_order.currency",
+            "te_sales_order.shopify_order_name",
+            "te_sales_order.shopify_order_id",
+            "te_sales_order.customer_name",
+            "te_sales_order.customer_email",
+            "te_sales_order.customer_phone"
+          ]
+        },
+        {
+          "id": "shipping",
+          "title": "Shipping",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_sales_order.shipping_name",
+            "te_sales_order.shipping_country",
+            "te_sales_order.shipping_address_1",
+            "te_sales_order.shipping_address_2",
+            "te_sales_order.shipping_city",
+            "te_sales_order.shipping_region",
+            "te_sales_order.shipping_postcode",
+            "te_sales_order.shipping_amount"
+          ]
+        },
+        {
+          "id": "line_items",
+          "title": "Line Items",
+          "line_editor": {
+            "entity_id": "entity.te_sales_order_line",
+            "parent_field": "te_sales_order_line.sales_order_id",
+            "item_lookup_field": "te_sales_order_line.product_id",
+            "item_lookup_entity": "entity.te_product",
+            "item_lookup_display_field": "te_product.title",
+            "item_field_map": {
+              "te_sales_order_line.sku_snapshot": "te_product.sku",
+              "te_sales_order_line.description": "te_product.title",
+              "te_sales_order_line.uom_snapshot": "te_product.uom",
+              "te_sales_order_line.unit_price": "te_product.retail_price",
+              "te_sales_order_line.unit_cost_snapshot": "te_product.effective_cost_nzd"
+            },
+            "parent_field_map": {
+              "te_sales_order_line.currency_snapshot": "te_sales_order.currency"
+            },
+            "defaults": {
+              "te_sales_order_line.uom_snapshot": "EA",
+              "te_sales_order_line.quantity": 1,
+              "te_sales_order_line.unit_price": 0,
+              "te_sales_order_line.unit_cost_snapshot": 0
+            },
+            "custom_line_defaults": {
+              "te_sales_order_line.uom_snapshot": "EA",
+              "te_sales_order_line.quantity": 1,
+              "te_sales_order_line.unit_price": 0,
+              "te_sales_order_line.unit_cost_snapshot": 0
+            },
+            "description_field": "te_sales_order_line.description",
+            "columns": [
+              { "field_id": "te_sales_order_line.product_id", "label": "Product", "width": 220 },
+              { "field_id": "te_sales_order_line.description", "label": "Description", "width": 300 },
+              { "field_id": "te_sales_order_line.sku_snapshot", "label": "SKU", "width": 150 },
+              { "field_id": "te_sales_order_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
+              { "field_id": "te_sales_order_line.unit_price", "label": "Unit Price", "type": "number", "width": 140, "align": "right", "currency_field": "te_sales_order_line.currency_snapshot" },
+              { "field_id": "te_sales_order_line.line_discount_total", "label": "Discount", "type": "number", "width": 120, "align": "right", "currency_field": "te_sales_order_line.currency_snapshot" },
+              { "field_id": "te_sales_order_line.line_tax_total", "label": "Tax", "type": "number", "width": 120, "align": "right", "currency_field": "te_sales_order_line.currency_snapshot" },
+              { "field_id": "te_sales_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 150, "align": "right", "currency_field": "te_sales_order_line.currency_snapshot" }
+            ]
+          }
+        },
+        {
+          "id": "financials",
+          "title": "Financials",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_sales_order.line_items_total",
+            "te_sales_order.discount_total",
+            "te_sales_order.tax_total",
+            "te_sales_order.order_total",
+            "te_sales_order.total_paid",
+            "te_sales_order.balance_due",
+            "te_sales_order.total_cost_nzd",
+            "te_sales_order.gross_margin_nzd"
+          ]
+        },
+        {
+          "id": "shopify_sync",
+          "title": "Shopify Sync",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_sales_order.shopify_order_admin_url",
+            "te_sales_order.shopify_last_sync_at",
+            "te_sales_order.shopify_last_sync_status",
+            "te_sales_order.shopify_last_sync_error",
+            "te_sales_order.customer_note",
+            "te_sales_order.notes"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_sales_order.status" },
+        "auto_state_actions": false,
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "line_items", "label": "Line Items", "sections": ["line_items"] },
+            { "id": "shipping", "label": "Shipping", "sections": ["shipping"] },
+            { "id": "financials", "label": "Financials", "sections": ["financials"] },
+            { "id": "shopify_sync", "label": "Shopify Sync", "sections": ["shopify_sync"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_sales_order.order_number",
+          "te_sales_order.status",
+          "te_sales_order.financial_status",
+          "te_sales_order.fulfillment_status",
+          "te_sales_order.order_total",
+          "te_sales_order.total_paid",
+          "te_sales_order.balance_due",
+          "te_sales_order.shopify_last_sync_status"
+        ]
+      }
+    },
+    {
+      "id": "te_sales_order_line.list",
+      "kind": "list",
+      "entity": "entity.te_sales_order_line",
+      "columns": [
+        { "field_id": "te_sales_order_line.sales_order_id" },
+        { "field_id": "te_sales_order_line.product_id" },
+        { "field_id": "te_sales_order_line.description" },
+        { "field_id": "te_sales_order_line.sku_snapshot" },
+        { "field_id": "te_sales_order_line.quantity" },
+        { "field_id": "te_sales_order_line.unit_price" },
+        { "field_id": "te_sales_order_line.line_total" },
+        { "field_id": "te_sales_order_line.line_cost_total" }
+      ],
+      "default_sort": [{ "field": "te_sales_order_line.description", "direction": "asc" }],
+      "open_record_target": "page:te_sales_order_line.form_page"
+    },
+    {
+      "id": "te_sales_order_line.form",
+      "kind": "form",
+      "entity": "entity.te_sales_order_line",
+      "sections": [
+        {
+          "id": "line_summary",
+          "title": "Sales Order Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_sales_order_line.sales_order_id",
+            "te_sales_order_line.product_id",
+            "te_sales_order_line.shopify_line_item_id",
+            "te_sales_order_line.shopify_product_id",
+            "te_sales_order_line.shopify_variant_id",
+            "te_sales_order_line.sku_snapshot",
+            "te_sales_order_line.description",
+            "te_sales_order_line.uom_snapshot",
+            "te_sales_order_line.currency_snapshot",
+            "te_sales_order_line.quantity",
+            "te_sales_order_line.fulfillable_quantity",
+            "te_sales_order_line.unit_price",
+            "te_sales_order_line.line_subtotal",
+            "te_sales_order_line.line_discount_total",
+            "te_sales_order_line.line_tax_total",
+            "te_sales_order_line.line_total",
+            "te_sales_order_line.unit_cost_snapshot",
+            "te_sales_order_line.line_cost_total"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_sales_order.home_page",
+      "title": "Sales",
+      "layout": "single",
+      "header": { "variant": "none", "actions": [{ "kind": "navigate", "label": "New Sales Order", "target": "page:te_sales_order.form_page" }] },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "open_orders", "label": "Open Orders", "entity_id": "entity.te_sales_order", "measure": "count", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "open" }, "format": "number" },
+            { "id": "paid_orders", "label": "Paid Orders", "entity_id": "entity.te_sales_order", "measure": "count", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "paid" }, "format": "number" },
+            { "id": "fulfilled_orders", "label": "Fulfilled", "entity_id": "entity.te_sales_order", "measure": "count", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "fulfilled" }, "format": "number" },
+            { "id": "open_revenue", "label": "Open Revenue", "entity_id": "entity.te_sales_order", "measure": "sum:te_sales_order.order_total", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "open" }, "format": "currency" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_sales_order",
+              "default_mode": "list",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_sales_order.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_sales_order.list_page",
+      "title": "Sales Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_sales_order",
+              "default_mode": "list",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_sales_order.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_sales_order.open_page",
+      "title": "Open Sales Orders",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_sales_order",
+              "default_mode": "list",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_sales_order.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_sales_order.form_page",
+      "title": "Sales Order",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_sales_order",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_sales_order.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_sales_order", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_sales_order_line.list_page",
+      "title": "Sales Order Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_sales_order_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:te_sales_order_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_sales_order_line.form_page",
+      "title": "Sales Order Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_sales_order_line",
+          "record_id_query": "record",
+          "content": [
+            { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_sales_order_line.form" }] }
+          ]
+        }
+      ]
+    }
+  ]
+}

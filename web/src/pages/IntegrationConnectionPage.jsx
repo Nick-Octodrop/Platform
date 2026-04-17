@@ -771,7 +771,15 @@ export default function IntegrationConnectionPage() {
   const isDrawerManagedProvider = isXeroProvider || isShopifyProvider;
   const isManagedOauthProvider = providerKey === "xero" || providerKey === "shopify";
   const xeroConnected = isXeroProvider && Boolean(config?.xero_tenant_id);
+  const oauthTokenBound = Boolean(
+    secretRefs?.access_token ||
+    secretRefs?.refresh_token ||
+    config?.oauth_access_token_expires_at ||
+    (config?.oauth_token_response && Object.keys(config.oauth_token_response || {}).length > 0),
+  );
   const shopifyConnected = isShopifyProvider && Boolean(config?.shopify_myshopify_domain || config?.shopify_shop_name);
+  const shopifyOauthBound = isShopifyProvider && oauthTokenBound;
+  const shopifyReady = shopifyConnected || shopifyOauthBound;
   const latestTestLog = useMemo(
     () => (Array.isArray(requestLogs) ? requestLogs.find((row) => row?.source === "test_connection") || null : null),
     [requestLogs],
@@ -2865,17 +2873,17 @@ export default function IntegrationConnectionPage() {
             onClick={connectShopify}
             disabled={authorizingOAuth || !oauthRedirectUri.trim() || refreshingOAuth || disconnectingOAuth || testing}
           >
-            {authorizingOAuth ? "Opening Shopify..." : shopifyConnected ? "Reconnect Shopify" : "Save & Connect Shopify"}
+            {authorizingOAuth ? "Opening Shopify..." : shopifyReady ? "Reconnect Shopify" : "Save & Connect Shopify"}
           </button>
           {shopifyConnected ? (
             <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id || disconnectingOAuth || refreshingOAuth}>
               {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
             </button>
           ) : null}
-          <button className="btn btn-outline btn-sm" type="button" onClick={refreshOauthTokens} disabled={!shopifyConnected || refreshingOAuth || disconnectingOAuth || testing}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={refreshOauthTokens} disabled={!shopifyOauthBound || refreshingOAuth || disconnectingOAuth || testing}>
             {refreshingOAuth ? detailT("setup.refreshing") : "Refresh Shopify tokens"}
           </button>
-          <button className="btn btn-outline btn-error btn-sm" type="button" onClick={disconnectOauthConnection} disabled={!shopifyConnected || disconnectingOAuth || refreshingOAuth || testing}>
+          <button className="btn btn-outline btn-error btn-sm" type="button" onClick={disconnectOauthConnection} disabled={!shopifyOauthBound || disconnectingOAuth || refreshingOAuth || testing}>
             {disconnectingOAuth ? "Disconnecting Shopify..." : "Disconnect Shopify"}
           </button>
         </div>
@@ -2934,13 +2942,23 @@ export default function IntegrationConnectionPage() {
         <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="font-medium">{shopifyConnected ? `Connected to ${config?.shopify_shop_name || config?.shopify_myshopify_domain || "your Shopify store"}` : "Connect to Shopify"}</div>
+              <div className="font-medium">
+                {shopifyConnected
+                  ? `Connected to ${config?.shopify_shop_name || config?.shopify_myshopify_domain || "your Shopify store"}`
+                  : shopifyOauthBound
+                    ? "Shopify authorised"
+                    : "Connect to Shopify"}
+              </div>
               <div className="mt-1 opacity-80">
-                {shopifyConnected ? "This integration is ready to use." : "Save the Shopify app settings, link the client secret, then authorize this store connection."}
+                {shopifyConnected
+                  ? "This integration is ready to use."
+                  : shopifyOauthBound
+                    ? "OAuth tokens are linked, but Shopify store metadata is missing. You can disconnect and reconnect this store cleanly."
+                    : "Save the Shopify app settings, link the client secret, then authorize this store connection."}
               </div>
             </div>
-            <div className={`rounded-full px-3 py-1 text-xs font-medium ${shopifyConnected ? "border border-success/30 bg-success/10 text-success" : "border border-base-300 bg-base-100 text-base-content/70"}`}>
-              {shopifyConnected ? "Connected" : "Not connected"}
+            <div className={`rounded-full px-3 py-1 text-xs font-medium ${shopifyConnected ? "border border-success/30 bg-success/10 text-success" : shopifyOauthBound ? "border border-warning/30 bg-warning/10 text-warning" : "border border-base-300 bg-base-100 text-base-content/70"}`}>
+              {shopifyConnected ? "Connected" : shopifyOauthBound ? "Authorised" : "Not connected"}
             </div>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
