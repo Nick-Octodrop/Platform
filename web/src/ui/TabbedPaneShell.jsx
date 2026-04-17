@@ -69,7 +69,7 @@ export default function TabbedPaneShell({
           {hasHeaderContent ? (
             <div className="shrink-0 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                {title ? <div className="text-base font-semibold truncate">{title}</div> : null}
+                {title ? <div className="text-lg font-semibold truncate">{title}</div> : null}
                 {subtitle ? <div className="text-sm opacity-70 mt-1">{subtitle}</div> : null}
                 {hasMobilePrimaryActions ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">

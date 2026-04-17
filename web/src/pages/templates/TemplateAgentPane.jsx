@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccessContext } from "../../access.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../../components/ProviderSecretModal.jsx";
@@ -9,7 +9,29 @@ import ScopedAiAssistantPane from "../../components/ScopedAiAssistantPane.jsx";
 import { apiFetch } from "../../api.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
-export default function TemplateAgentPane({ disabled, initialMessage, agentKind, user, recordId, draft, setDraft, setValidationState }) {
+function formatValidationLines(items = []) {
+  return items
+    .map((item) => {
+      if (!item) return "";
+      if (typeof item === "string") return item;
+      const loc = item.line ? ` (line ${item.line}${item.col ? `, col ${item.col}` : ""})` : "";
+      return `${item.message || item.code || "Issue"}${loc}`.trim();
+    })
+    .filter(Boolean);
+}
+
+export default function TemplateAgentPane({
+  disabled,
+  initialMessage,
+  agentKind,
+  user,
+  recordId,
+  draft,
+  setDraft,
+  setValidationState,
+  validationState,
+  onFixHandlerChange,
+}) {
   const { hasCapability, isSuperadmin } = useAccessContext();
   const { t } = useI18n();
   const { providers, loading, reload } = useWorkspaceProviderStatus(["openai"]);
@@ -35,19 +57,37 @@ export default function TemplateAgentPane({ disabled, initialMessage, agentKind,
     return "";
   }, [agentKind, recordId]);
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || submitting || disabled || !endpoint || !draft) return;
+  const buildTemplateAiRepairPrompt = useCallback((validation, summary) => {
+    const errors = formatValidationLines(validation?.errors || []);
+    const warnings = formatValidationLines([
+      ...(validation?.warnings || []),
+      ...((validation?.undefined || []).map((item) => `Undefined: ${item}`)),
+      ...((validation?.possible_undefined || []).map((item) => `Undefined: ${item}`)),
+    ]);
+    const sections = [`Fix this ${templateLabel} draft so it passes validation.`];
+    if (summary) sections.push(`Current goal: ${summary}`);
+    if (errors.length > 0) sections.push(`Errors:\n- ${errors.join("\n- ")}`);
+    if (warnings.length > 0) sections.push(`Warnings:\n- ${warnings.join("\n- ")}`);
+    sections.push("Return a corrected draft that preserves the intended change.");
+    return sections.join("\n\n");
+  }, [templateLabel]);
+
+  const runTemplateAiPlan = useCallback(async (rawText, draftOverride = null) => {
+    const text = String(rawText || "").trim();
+    const nextDraft = draftOverride || draft;
+    if (!text || submitting || disabled || !endpoint || !nextDraft) return;
     setProposal(null);
     setMessages((prev) => [...prev, { role: "user", text }]);
-    setInput("");
+    if (!draftOverride) {
+      setInput("");
+    }
     setSubmitting(true);
     try {
       const res = await apiFetch(endpoint, {
         method: "POST",
         body: {
           prompt: text,
-          draft,
+          draft: nextDraft,
         },
       });
       setProposal({
@@ -63,6 +103,18 @@ export default function TemplateAgentPane({ disabled, initialMessage, agentKind,
     } finally {
       setSubmitting(false);
     }
+  }, [disabled, draft, endpoint, submitting]);
+
+  const runTemplateAiFix = useCallback(async ({ draft: repairDraft = null, validation = null, summary = "" } = {}) => {
+    const nextValidation = validation || proposal?.validation || validationState;
+    const nextDraft = repairDraft || proposal?.draft || draft;
+    if (!nextDraft || !nextValidation) return;
+    const repairPrompt = buildTemplateAiRepairPrompt(nextValidation, summary || proposal?.summary || "");
+    return runTemplateAiPlan(repairPrompt, nextDraft);
+  }, [buildTemplateAiRepairPrompt, draft, proposal, runTemplateAiPlan, validationState]);
+
+  async function handleSend() {
+    await runTemplateAiPlan(input);
   }
 
   function applyProposal() {
@@ -111,6 +163,29 @@ export default function TemplateAgentPane({ disabled, initialMessage, agentKind,
     }
     setProposal(null);
   }
+
+  useEffect(() => {
+    if (typeof onFixHandlerChange !== "function") return undefined;
+    if (!openAiConnected) {
+      onFixHandlerChange(null);
+      return undefined;
+    }
+    const hasIssues = ((validationState?.errors || []).length > 0)
+      || ((validationState?.warnings || []).length > 0)
+      || ((validationState?.undefined || []).length > 0)
+      || ((validationState?.possible_undefined || []).length > 0);
+    if (!hasIssues || !draft) {
+      onFixHandlerChange(null);
+      return undefined;
+    }
+    const handler = () => runTemplateAiFix({
+      draft,
+      validation: validationState,
+      summary: draft?.name || `${templateLabel} draft`,
+    });
+    onFixHandlerChange(() => handler);
+    return () => onFixHandlerChange(null);
+  }, [draft, onFixHandlerChange, openAiConnected, runTemplateAiFix, templateLabel, validationState]);
 
   if (!isSuperadmin) {
     return (
@@ -191,13 +266,21 @@ export default function TemplateAgentPane({ disabled, initialMessage, agentKind,
           <ArtifactAiStageCard
             title="Template Plan"
             summary={proposal.summary}
-            stageLabel="Ready to Apply"
-            stageTone="primary"
+            stageLabel={proposal?.validation?.compiled_ok === false ? "Needs Fix" : "Ready to Apply"}
+            stageTone={proposal?.validation?.compiled_ok === false ? "danger" : "primary"}
             assumptions={proposal.assumptions}
             warnings={proposal.warnings}
             validation={proposal.validation}
             actions={[
-              { label: "Apply draft", onClick: applyProposal, primary: true, disabled: !proposal?.draft },
+              { label: "Apply draft", onClick: applyProposal, primary: true, disabled: !proposal?.draft || proposal?.validation?.compiled_ok === false },
+              ...(proposal?.validation?.compiled_ok === false ? [{
+                label: "Fix with AI",
+                onClick: () => runTemplateAiFix({
+                  draft: proposal?.draft,
+                  validation: proposal?.validation,
+                  summary: proposal?.summary,
+                }),
+              }] : []),
               { label: "Discard", onClick: discardProposal },
             ]}
           />

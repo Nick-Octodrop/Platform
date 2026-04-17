@@ -39036,6 +39036,10 @@ def _artifact_ai_automation_editor_settings() -> dict:
         },
         "integration_request": {
             "method_options": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+            "notes": [
+                "Use a saved request template when the provider request shape should be reused across automations.",
+                "Overrides may safely replace method, path, url, headers, query, json, body, or timeout_seconds.",
+            ],
         },
         "condition": {
             "operator_options": ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "in", "not_in", "exists", "not_exists", "and", "or", "not"],
@@ -39303,11 +39307,13 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
             {
                 "action_id": "system.integration_request",
                 "required_inputs": ["connection_id"],
-                "optional_inputs": ["method", "path", "url", "headers", "query", "body", "store_as"],
+                "optional_inputs": ["template_id", "method", "path", "url", "headers", "query", "json", "body", "timeout_seconds", "store_as"],
                 "notes": [
                     "Use connection_id from meta.connections.",
+                    "Use template_id from the selected connection config.request_templates when you want to reuse a tested provider request.",
                     "Use method from meta.editor_settings.integration_request.method_options.",
-                    "Use either path relative to the selected connection or a full url override.",
+                    "Use either template_id or provide path/url directly.",
+                    "headers and query overrides merge with the saved template values when template_id is used.",
                 ],
             },
         ],
@@ -41534,6 +41540,17 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                         )
                         if not has_source_record:
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "source_record required for apply_integration_mapping", f"{step_path}.inputs.source_record"))
+                    if kind == "action" and action_id == "system.integration_request":
+                        connection_id = inputs.get("connection_id")
+                        if not isinstance(connection_id, str) or not connection_id.strip():
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "connection_id required for integration_request", f"{step_path}.inputs.connection_id"))
+                        has_template = isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip()
+                        has_target = (
+                            (isinstance(inputs.get("path"), str) and inputs.get("path").strip())
+                            or (isinstance(inputs.get("url"), str) and inputs.get("url").strip())
+                        )
+                        if not has_template and not has_target:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "template_id or path/url required for integration_request", f"{step_path}.inputs"))
                     if kind == "condition":
                         if not isinstance(step.get("expr"), dict):
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "expr required", f"{step_path}.expr"))

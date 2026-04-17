@@ -2347,6 +2347,37 @@ function buildPreviewManifest() {
   );
 
   const userLabel = user?.email || "User";
+  const pendingStudioPlanInvalid = pendingAgentPlan?.validation?.status === "error";
+
+  const runStudioAiFix = useCallback(async ({ draftTextOverride = "", validationOverride = null, summary = "" } = {}) => {
+    if (draftError) {
+      prepareFixJson();
+      return;
+    }
+    const nextValidation = validationOverride || validation;
+    const nextDraftText = draftTextOverride || draftText;
+    const formatLine = (item, fallback = "Issue") => {
+      if (!item) return "";
+      const loc = item.line ? ` (line ${item.line}${item.col ? `, col ${item.col}` : ""})` : "";
+      const ptr = item.json_pointer ? ` [${item.json_pointer}]` : "";
+      return `${item.code || fallback}: ${item.message || fallback}${ptr}${loc}`;
+    };
+    const errorLines = [
+      ...(nextValidation?.errors || []).map((err) => formatLine(err, "ERR")),
+      ...((nextValidation?.strictErrors || nextValidation?.strict_errors || []).map((err) => formatLine(err, "STRICT"))),
+      ...((nextValidation?.completenessErrors || nextValidation?.completeness_errors || []).map((err) => formatLine(err, "INCOMPLETE"))),
+    ].filter(Boolean);
+    const warningLines = [
+      ...(nextValidation?.warnings || []).map((warn) => formatLine(warn, "WARN")),
+      ...((nextValidation?.designWarnings || nextValidation?.design_warnings || []).map((warn) => formatLine(warn, "WARN"))),
+    ].filter(Boolean);
+    const sections = ["Fix validation issues in this Studio module draft."];
+    if (summary) sections.push(`Current goal: ${summary}`);
+    if (errorLines.length > 0) sections.push(`Errors:\n${errorLines.join("\n")}`);
+    if (warningLines.length > 0) sections.push(`Warnings:\n${warningLines.join("\n")}`);
+    if (nextDraftText) sections.push(`Draft manifest JSON:\n${nextDraftText}`);
+    await runAgentDraftFlow(sections.join("\n\n"));
+  }, [draftError, draftText, prepareFixJson, runAgentDraftFlow, validation]);
 
   const renderLeftPane = useMemo(() => () => {
     if (providerStatusLoading) {
@@ -2414,15 +2445,23 @@ function buildPreviewManifest() {
               <ArtifactAiStageCard
                 title="Studio Plan"
                 summary={pendingAgentPlan.summary}
-                stageLabel="Ready to Apply"
-                stageTone="primary"
+                stageLabel={pendingStudioPlanInvalid ? "Needs Fix" : "Ready to Apply"}
+                stageTone={pendingStudioPlanInvalid ? "error" : "primary"}
                 detailsTitle="Planned Changes"
                 details={pendingAgentPlan.changes?.length ? pendingAgentPlan.changes : studioPlanProgressItems}
                 warnings={pendingAgentPlan.warnings}
                 validation={pendingAgentPlan.validation}
                 actions={[
-                  { label: "Apply draft", onClick: () => applyPendingAgentPlan(), primary: true, disabled: !pendingAgentPlan?.draftText },
-                  { label: "Apply + Preview", onClick: () => applyPendingAgentPlan({ openPreview: true }), disabled: !pendingAgentPlan?.draftText },
+                  { label: "Apply draft", onClick: () => applyPendingAgentPlan(), primary: true, disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid },
+                  { label: "Apply + Preview", onClick: () => applyPendingAgentPlan({ openPreview: true }), disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid },
+                  ...(pendingStudioPlanInvalid ? [{
+                    label: "Fix with AI",
+                    onClick: () => runStudioAiFix({
+                      draftTextOverride: pendingAgentPlan?.draftText,
+                      validationOverride: pendingAgentPlan?.validation,
+                      summary: pendingAgentPlan?.summary,
+                    }),
+                  }] : []),
                   { label: "Discard", onClick: discardPendingAgentPlan },
                 ]}
               />
@@ -2447,7 +2486,9 @@ function buildPreviewManifest() {
     discardPendingAgentPlan,
     handleAgentChat,
     pendingAgentPlan,
+    pendingStudioPlanInvalid,
     progressEvents,
+    runStudioAiFix,
     studioPlanningStatusItems,
     studioPlanProgressItems,
     routeModuleId,
@@ -2487,7 +2528,7 @@ function buildPreviewManifest() {
               if (warningLines.length > 0) {
                 sections.push(`Warnings:\n${warningLines.join("\n")}`);
               }
-              runAgentDraftFlow(`Fix validation issues:\n${sections.join("\n")}`);
+              runStudioAiFix({ summary: activeModuleName, validationOverride: validation });
             }}
           >
             Fix with AI
@@ -2586,8 +2627,9 @@ function buildPreviewManifest() {
     draftError,
     isSuperadmin,
     lastChanges,
+    activeModuleName,
     prepareFixJson,
-    runAgentDraftFlow,
+    runStudioAiFix,
     strictErrors,
     validation,
     validationErrors,

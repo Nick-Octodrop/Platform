@@ -52,6 +52,7 @@ export default function TemplateStudioShell({
   const [renderSample, setRenderSample] = useState({ entity_id: "", record_id: "" });
   const [utilityDrawer, setUtilityDrawer] = useState("");
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [aiFixHandler, setAiFixHandler] = useState(null);
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const lastAutoPreviewRef = useRef("");
@@ -304,6 +305,8 @@ export default function TemplateStudioShell({
         draft={draft}
         setDraft={setDraft}
         setValidationState={setValidationState}
+        validationState={validationState}
+        onFixHandlerChange={setAiFixHandler}
       />
     );
   const undefinedList = (validationState?.undefined && validationState.undefined.length > 0)
@@ -321,7 +324,8 @@ export default function TemplateStudioShell({
       idleMessage={t("settings.template_studio.validation_idle")}
       showSuccess={true}
       showFix={showFixWithAi && openAiConnected}
-      fixDisabled
+      fixDisabled={!aiFixHandler}
+      onFix={aiFixHandler || undefined}
     />
   );
 

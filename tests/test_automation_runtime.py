@@ -395,6 +395,85 @@ class TestAutomationRuntime(unittest.TestCase):
         run_after = store.get_run(run["id"])
         self.assertEqual(run_after["status"], "failed")
 
+    def test_integration_request_action_uses_saved_request_template_with_overrides(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Run Request Template",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["record.created"]},
+                "steps": [
+                    {
+                        "id": "call_xero",
+                        "kind": "action",
+                        "action_id": "system.integration_request",
+                        "store_as": "xero_result",
+                        "inputs": {
+                            "connection_id": "conn_xero",
+                            "template_id": "contacts_list",
+                            "query": {"where": "Status==\"ACTIVE\""},
+                            "headers": {"X-Test": "1"},
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "record.created",
+                "trigger_payload": {"record_id": "r1"},
+            }
+        )
+        captured: dict[str, object] = {}
+
+        def fake_execute(connection, request_config, org_id):
+            captured["connection"] = connection
+            captured["request_config"] = request_config
+            captured["org_id"] = org_id
+            return {
+                "ok": True,
+                "status_code": 200,
+                "method": request_config.get("method"),
+                "url": request_config.get("path"),
+                "headers": {},
+                "body_json": {"Contacts": []},
+                "body_text": None,
+            }
+
+        with (
+            patch("app.worker.DbConnectionStore.get", return_value={
+                "id": "conn_xero",
+                "name": "Xero Demo",
+                "config": {
+                    "request_templates": [
+                        {
+                            "id": "contacts_list",
+                            "name": "List contacts",
+                            "method": "GET",
+                            "path": "/Contacts",
+                            "headers": {"Accept": "application/json"},
+                            "query": {"page": 1},
+                        }
+                    ]
+                },
+            }),
+            patch("app.worker.execute_connection_request", side_effect=fake_execute),
+            patch("app.worker.DbIntegrationRequestLogStore.create"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded")
+        self.assertEqual(captured["request_config"]["method"], "GET")
+        self.assertEqual(captured["request_config"]["path"], "/Contacts")
+        self.assertEqual(captured["request_config"]["headers"]["Accept"], "application/json")
+        self.assertEqual(captured["request_config"]["headers"]["X-Test"], "1")
+        self.assertEqual(captured["request_config"]["query"]["page"], 1)
+        self.assertEqual(captured["request_config"]["query"]["where"], "Status==\"ACTIVE\"")
+
 
 if __name__ == "__main__":
     unittest.main()

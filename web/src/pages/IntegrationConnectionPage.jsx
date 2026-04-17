@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Circle, KeyRound, Plus, ShieldCheck, TestTube2 } from "lucide-react";
 import { apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
+import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -26,6 +27,46 @@ function safeJsonParse(text, fallback) {
 
 function prettyJson(value) {
   return JSON.stringify(value || {}, null, 2);
+}
+
+function makeClientId(prefix = "item") {
+  const stamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 8);
+  return `${prefix}_${stamp}_${random}`;
+}
+
+function normalizeRequestTemplate(raw, index = 0) {
+  const template = raw && typeof raw === "object" ? raw : {};
+  return {
+    id: String(template.id || `request_template_${index + 1}`),
+    name: String(template.name || `Request template ${index + 1}`),
+    method: String(template.method || "GET").trim().toUpperCase() || "GET",
+    path: String(template.path || ""),
+    url: String(template.url || ""),
+    headers: template.headers && typeof template.headers === "object" && !Array.isArray(template.headers) ? template.headers : {},
+    query: template.query && typeof template.query === "object" && !Array.isArray(template.query) ? template.query : {},
+    json: template.json,
+    body: typeof template.body === "string" ? template.body : "",
+    updated_at: typeof template.updated_at === "string" ? template.updated_at : "",
+  };
+}
+
+function requestTemplateToRequestForm(template) {
+  const normalized = normalizeRequestTemplate(template);
+  return {
+    method: normalized.method || "GET",
+    path: normalized.path || "",
+    url: normalized.url || "",
+    headersText: prettyJson(normalized.headers || {}),
+    queryText: prettyJson(normalized.query || {}),
+    jsonText: prettyJson(normalized.json || {}),
+    bodyText: normalized.body || "",
+  };
+}
+
+function requestTemplateSummaryTarget(template) {
+  const normalized = normalizeRequestTemplate(template);
+  return normalized.path || normalized.url || "/";
 }
 
 function defaultNewMappingState() {
@@ -258,6 +299,144 @@ function xeroSyncPreset(resourceKey) {
   };
 }
 
+function buildXeroRequestJsonTemplate(resource) {
+  if (!resource || typeof resource !== "object") return {};
+  const key = String(resource.key || "").trim();
+  const sample = resource.sample_record && typeof resource.sample_record === "object" ? resource.sample_record : null;
+  if (!key || !sample) return {};
+  return { [key]: [sample] };
+}
+
+function singularLabel(value) {
+  const label = String(value || "").trim();
+  if (!label) return "record";
+  if (/ies$/i.test(label)) return `${label.slice(0, -3)}y`;
+  if (/s$/i.test(label)) return label.slice(0, -1);
+  return label;
+}
+
+function buildXeroReadPreset({ id, label, path, help, query = {}, targetLabel = "" }) {
+  return {
+    id,
+    label,
+    method: "GET",
+    path,
+    targetLabel: targetLabel || label,
+    help,
+    headersText: prettyJson({ Accept: "application/json" }),
+    queryText: prettyJson(query || {}),
+    jsonText: "{}",
+    bodyText: "",
+  };
+}
+
+function buildXeroRequestPresets(resources = []) {
+  const presets = [
+    buildXeroReadPreset({
+      id: "connections:list",
+      label: "List connections",
+      path: "/connections",
+      targetLabel: "Connections",
+      help: "Check which Xero organisation links are available for this connection.",
+    }),
+    buildXeroReadPreset({
+      id: "organisation:get",
+      label: "Get organisation",
+      path: "/Organisation",
+      targetLabel: "Organisation",
+      help: "Load the connected organisation details from Xero.",
+    }),
+    buildXeroReadPreset({
+      id: "accounts:list",
+      label: "List accounts",
+      path: "/Accounts",
+      targetLabel: "Accounts",
+      help: "Browse the chart of accounts available in Xero.",
+    }),
+    buildXeroReadPreset({
+      id: "branding-themes:list",
+      label: "List branding themes",
+      path: "/BrandingThemes",
+      targetLabel: "Branding themes",
+      help: "Review the branding themes available for invoices and documents.",
+    }),
+    buildXeroReadPreset({
+      id: "currencies:list",
+      label: "List currencies",
+      path: "/Currencies",
+      targetLabel: "Currencies",
+      help: "See which currencies are enabled for the connected organisation.",
+    }),
+    buildXeroReadPreset({
+      id: "tax-rates:list",
+      label: "List tax rates",
+      path: "/TaxRates",
+      targetLabel: "Tax rates",
+      help: "Inspect the tax rates configured in Xero.",
+    }),
+    buildXeroReadPreset({
+      id: "tracking-categories:list",
+      label: "List tracking categories",
+      path: "/TrackingCategories",
+      targetLabel: "Tracking categories",
+      help: "Review available tracking categories and their options.",
+    }),
+    buildXeroReadPreset({
+      id: "users:list",
+      label: "List users",
+      path: "/Users",
+      targetLabel: "Users",
+      help: "See users available in the connected Xero organisation.",
+    }),
+  ];
+  for (const resource of Array.isArray(resources) ? resources : []) {
+    const key = String(resource?.key || "").trim();
+    if (!key) continue;
+    const label = String(resource?.label || key).trim() || key;
+    presets.push(
+      buildXeroReadPreset({
+        id: `${key}:list`,
+        label: `List ${label}`,
+        path: `/${key}`,
+        targetLabel: label,
+        help: `Fetch ${label.toLowerCase()} from Xero using this connection.`,
+      }),
+    );
+    presets.push(
+      buildXeroReadPreset({
+        id: `${key}:search`,
+        label: `Search ${label}`,
+        path: `/${key}`,
+        targetLabel: label,
+        help: `Start with a filtered ${label.toLowerCase()} request and refine the query JSON as needed.`,
+        query: {
+          page: 1,
+          order: "UpdatedDateUTC DESC",
+          where: "",
+        },
+      }),
+    );
+    if (resource?.sample_record && typeof resource.sample_record === "object") {
+      presets.push({
+        id: `${key}:create`,
+        label: `Create ${singularLabel(label)}`,
+        method: "POST",
+        path: `/${key}`,
+        targetLabel: label,
+        help: `Start a write request for ${singularLabel(label).toLowerCase()} records with a sample JSON wrapper.`,
+        headersText: prettyJson({
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        }),
+        queryText: "{}",
+        jsonText: prettyJson(buildXeroRequestJsonTemplate(resource)),
+        bodyText: "",
+      });
+    }
+  }
+  return presets;
+}
+
 function SummaryStat({ label, value }) {
   return (
     <div>
@@ -447,6 +626,11 @@ export default function IntegrationConnectionPage() {
     jsonText: "{}",
     bodyText: "",
   });
+  const [requestTemplateName, setRequestTemplateName] = useState("");
+  const [editingRequestTemplateId, setEditingRequestTemplateId] = useState("");
+  const [savingRequestTemplate, setSavingRequestTemplate] = useState(false);
+  const [deletingRequestTemplateId, setDeletingRequestTemplateId] = useState("");
+  const [selectedRequestPresetId, setSelectedRequestPresetId] = useState("");
   const [newMapping, setNewMapping] = useState(defaultNewMappingState);
   const [mappingDrawerOpen, setMappingDrawerOpen] = useState(false);
   const [editingMappingId, setEditingMappingId] = useState("");
@@ -461,6 +645,10 @@ export default function IntegrationConnectionPage() {
     config_json_text: "{}",
   });
   const [creatingWebhook, setCreatingWebhook] = useState(false);
+  const [requestDrawerOpen, setRequestDrawerOpen] = useState(false);
+  const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
+  const [webhookDrawerOpen, setWebhookDrawerOpen] = useState(false);
+  const [xeroConnectionDrawerOpen, setXeroConnectionDrawerOpen] = useState(false);
 
   async function load() {
     if (!connectionId) return;
@@ -571,6 +759,29 @@ export default function IntegrationConnectionPage() {
   const provider = providerIndex.get(providerKey) || null;
   const isXeroProvider = providerKey === "xero";
   const xeroConnected = isXeroProvider && Boolean(config?.xero_tenant_id);
+  const latestTestLog = useMemo(
+    () => (Array.isArray(requestLogs) ? requestLogs.find((row) => row?.source === "test_connection") || null : null),
+    [requestLogs],
+  );
+  const latestTestResult = useMemo(() => {
+    if (testResult) return testResult;
+    if (!latestTestLog) return null;
+    return {
+      ok: typeof latestTestLog.ok === "boolean" ? latestTestLog.ok : latestTestLog.response_status < 400,
+      status_code: latestTestLog.response_status ?? null,
+      url: latestTestLog.url || null,
+      method: latestTestLog.method || null,
+      headers: latestTestLog.response_headers_json || {},
+      body_json: latestTestLog.response_body_json ?? null,
+      body_text: latestTestLog.response_body_text ?? null,
+      error_message: latestTestLog.error_message || null,
+    };
+  }, [latestTestLog, testResult]);
+  const latestTestedAt = latestTestLog?.created_at || item?.last_tested_at || null;
+  const requestTemplates = useMemo(
+    () => (Array.isArray(config?.request_templates) ? config.request_templates : []).map((template, index) => normalizeRequestTemplate(template, index)),
+    [config],
+  );
   const providerManifest = provider?.manifest_json || {};
   const providerCapabilities = Array.isArray(providerManifest?.capabilities) ? providerManifest.capabilities : [];
   const providerSupportsSync = providerCapabilities.includes("sync.poll");
@@ -582,6 +793,15 @@ export default function IntegrationConnectionPage() {
   const mappingProvider = mappingCatalog?.provider || { resources: [] };
   const mappingEntities = Array.isArray(mappingCatalog?.entities) ? mappingCatalog.entities : [];
   const mappingResources = Array.isArray(mappingProvider?.resources) ? mappingProvider.resources : [];
+  const xeroRequestPresets = useMemo(() => (isXeroProvider ? buildXeroRequestPresets(mappingResources) : []), [isXeroProvider, mappingResources]);
+  const filteredXeroRequestPresets = useMemo(
+    () => xeroRequestPresets.filter((preset) => String(preset?.method || "").trim().toUpperCase() === String(requestForm.method || "GET").trim().toUpperCase()),
+    [requestForm.method, xeroRequestPresets],
+  );
+  const selectedXeroRequestPreset = useMemo(
+    () => xeroRequestPresets.find((preset) => preset.id === selectedRequestPresetId) || null,
+    [selectedRequestPresetId, xeroRequestPresets],
+  );
   const selectedResource = useMemo(
     () => mappingResources.find((resource) => resource?.key === newMapping.resource_key) || null,
     [mappingResources, newMapping.resource_key],
@@ -609,6 +829,12 @@ export default function IntegrationConnectionPage() {
     () => uniquePathOptions((selectedTargetEntity?.fields || []).map((field) => ({ value: field.id, label: field.label || field.id, type: field.type || "", options: field.options || [] }))),
     [selectedTargetEntity],
   );
+
+  useEffect(() => {
+    if (!selectedRequestPresetId) return;
+    if (filteredXeroRequestPresets.some((preset) => preset.id === selectedRequestPresetId)) return;
+    setSelectedRequestPresetId("");
+  }, [filteredXeroRequestPresets, selectedRequestPresetId]);
   const sourceFieldOptionMap = useMemo(
     () => new Map(sourceFieldOptions.map((field) => [field.value, field])),
     [sourceFieldOptions],
@@ -692,7 +918,7 @@ export default function IntegrationConnectionPage() {
   );
   const canSaveConnection = Boolean(item?.id && name.trim()) && !loading && !saving;
   const saveActionLabel = saving ? t("common.saving") : t("common.save");
-
+  const connectionTitle = item?.name || provider?.name || "Integration";
   const tabs = useMemo(
     () => [
       { id: "setup", label: t("settings.integrations.detail.tabs.setup") },
@@ -796,6 +1022,143 @@ export default function IntegrationConnectionPage() {
     });
   }
 
+  function openNewRequestTemplateDrawer() {
+    setEditingRequestTemplateId("");
+    setRequestTemplateName("");
+    setSelectedRequestPresetId("");
+    setRequestForm({
+      method: "GET",
+      path: "/",
+      url: "",
+      headersText: "{}",
+      queryText: "{}",
+      jsonText: "{}",
+      bodyText: "",
+    });
+    setRequestDrawerOpen(true);
+  }
+
+  function openRequestTemplateDrawer(template) {
+    const normalized = normalizeRequestTemplate(template);
+    setEditingRequestTemplateId(normalized.id);
+    setRequestTemplateName(normalized.name);
+    setSelectedRequestPresetId("");
+    setRequestForm(requestTemplateToRequestForm(normalized));
+    setRequestDrawerOpen(true);
+  }
+
+  function useRequestTemplate(template) {
+    const normalized = normalizeRequestTemplate(template);
+    setEditingRequestTemplateId(normalized.id);
+    setRequestTemplateName(normalized.name);
+    setSelectedRequestPresetId("");
+    setRequestForm(requestTemplateToRequestForm(normalized));
+  }
+
+  async function persistConnectionPatch(body, successMessage = "") {
+    if (!item?.id) return null;
+    const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}`, {
+      method: "PATCH",
+      body,
+    });
+    const nextConnection = res?.connection || null;
+    if (nextConnection) {
+      setItem(nextConnection);
+      setConfig(nextConnection.config || {});
+      setConfigText(prettyJson(nextConnection.config || {}));
+    }
+    if (successMessage) setNotice(successMessage);
+    return nextConnection;
+  }
+
+  async function saveRequestTemplate() {
+    if (!item?.id || savingRequestTemplate) return;
+    const nameValue = String(requestTemplateName || "").trim();
+    if (!nameValue) {
+      setError("Template name is required.");
+      return;
+    }
+    setSavingRequestTemplate(true);
+    setError("");
+    setNotice("");
+    try {
+      const nextTemplate = normalizeRequestTemplate(
+        {
+          id: editingRequestTemplateId || makeClientId("request_template"),
+          name: nameValue,
+          method: requestForm.method,
+          path: requestForm.path,
+          url: requestForm.url,
+          headers: safeJsonParse(requestForm.headersText, {}),
+          query: safeJsonParse(requestForm.queryText, {}),
+          json: safeJsonParse(requestForm.jsonText, {}),
+          body: requestForm.bodyText,
+          updated_at: new Date().toISOString(),
+        },
+        requestTemplates.length,
+      );
+      const nextTemplates = editingRequestTemplateId
+        ? requestTemplates.map((template) => (template.id === editingRequestTemplateId ? nextTemplate : template))
+        : [...requestTemplates, nextTemplate];
+      await persistConnectionPatch(
+        {
+          config: {
+            ...(config || {}),
+            request_templates: nextTemplates,
+          },
+        },
+        editingRequestTemplateId ? "Request template updated." : "Request template saved.",
+      );
+      setEditingRequestTemplateId(nextTemplate.id);
+      setRequestTemplateName(nextTemplate.name);
+    } catch (err) {
+      setError(err?.message || "Failed to save request template.");
+    } finally {
+      setSavingRequestTemplate(false);
+    }
+  }
+
+  async function deleteRequestTemplate(templateId) {
+    const normalized = String(templateId || "").trim();
+    if (!item?.id || !normalized || deletingRequestTemplateId) return;
+    setDeletingRequestTemplateId(normalized);
+    setError("");
+    setNotice("");
+    try {
+      const nextTemplates = requestTemplates.filter((template) => template.id !== normalized);
+      await persistConnectionPatch(
+        {
+          config: {
+            ...(config || {}),
+            request_templates: nextTemplates,
+          },
+        },
+        "Request template removed.",
+      );
+      if (editingRequestTemplateId === normalized) {
+        setEditingRequestTemplateId("");
+        setRequestTemplateName("");
+      }
+    } catch (err) {
+      setError(err?.message || "Failed to remove request template.");
+    } finally {
+      setDeletingRequestTemplateId("");
+    }
+  }
+
+  function applyRequestPreset(preset = {}) {
+    setRequestForm((prev) => ({
+      ...prev,
+      method: preset.method || "GET",
+      path: preset.path || "",
+      url: preset.url || "",
+      queryText: preset.queryText ?? "{}",
+      headersText: preset.headersText ?? "{}",
+      jsonText: preset.jsonText ?? "{}",
+      bodyText: preset.bodyText ?? "",
+    }));
+  }
+
   function openCreateSecretModal(secretKey = "") {
     setCreateSecretTargetKey(secretKey);
     setCreateSecretForm({
@@ -883,13 +1246,67 @@ export default function IntegrationConnectionPage() {
     setNotice("");
     try {
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/test`, { method: "POST" });
-      setTestResult(res?.result || null);
-      setNotice(detailT("notices.connection_test_completed"));
-      await load();
+      const result = res?.result || null;
+      const nowIso = new Date().toISOString();
+      setTestResult(result);
+      setItem((prev) => (
+        prev
+          ? {
+              ...prev,
+              health_status: result?.ok ? "ok" : "error",
+              last_tested_at: nowIso,
+              last_success_at: result?.ok ? nowIso : prev.last_success_at,
+              last_error: result?.ok ? null : `HTTP ${result?.status_code ?? "error"}`,
+            }
+          : prev
+      ));
+      setRequestLogs((prev) => ([
+        {
+          id: `test-${Date.now()}`,
+          created_at: nowIso,
+          source: "test_connection",
+          method: result?.method || null,
+          url: result?.url || null,
+          response_status: result?.status_code ?? null,
+          response_headers_json: result?.headers || {},
+          response_body_json: result?.body_json ?? null,
+          response_body_text: result?.body_text ?? null,
+          ok: result?.ok,
+          error_message: null,
+        },
+        ...(Array.isArray(prev) ? prev.filter((row) => row?.source !== "test_connection" || row?.created_at !== nowIso) : []),
+      ]));
     } catch (err) {
-      setTestResult(null);
-      setError(err?.message || detailT("errors.connection_test_failed"));
-      await load();
+      const errorMessage = err?.message || detailT("errors.connection_test_failed");
+      const nowIso = new Date().toISOString();
+      setTestResult({ ok: false, error_message: errorMessage });
+      setItem((prev) => (
+        prev
+          ? {
+              ...prev,
+              health_status: "error",
+              last_tested_at: nowIso,
+              last_error: errorMessage,
+            }
+          : prev
+      ));
+      setRequestLogs((prev) => ([
+        {
+          id: `test-${Date.now()}`,
+          created_at: nowIso,
+          source: "test_connection",
+          method: null,
+          url: null,
+          response_status: null,
+          response_headers_json: {},
+          response_body_json: null,
+          response_body_text: null,
+          ok: false,
+          error_message: errorMessage,
+        },
+        ...(Array.isArray(prev) ? prev.filter((row) => row?.source !== "test_connection" || row?.created_at !== nowIso) : []),
+      ]));
+      setError(errorMessage);
     } finally {
       setTesting(false);
     }
@@ -901,26 +1318,44 @@ export default function IntegrationConnectionPage() {
     setError("");
     setNotice("");
     try {
+      const method = String(requestForm.method || "GET").trim().toUpperCase();
+      const allowsRequestBody = !["GET", "DELETE", "HEAD"].includes(method);
       const payload = {
-        method: requestForm.method,
+        method,
         path: requestForm.path || undefined,
         url: requestForm.url || undefined,
         headers: safeJsonParse(requestForm.headersText, {}),
         query: safeJsonParse(requestForm.queryText, {}),
       };
       if (requestForm.bodyText.trim()) payload.body = requestForm.bodyText;
-      else payload.json = safeJsonParse(requestForm.jsonText, {});
+      else if (allowsRequestBody) payload.json = safeJsonParse(requestForm.jsonText, {});
       const res = await apiFetch(`/integrations/connections/${encodeURIComponent(item.id)}/request`, {
         method: "POST",
         body: payload,
       });
-      setRequestResult(res?.result || null);
+      const result = res?.result || null;
+      const nowIso = new Date().toISOString();
+      setRequestResult(result);
+      setRequestLogs((prev) => ([
+        {
+          id: `request-${Date.now()}`,
+          created_at: nowIso,
+          source: "manual_request",
+          method: result?.method || method,
+          url: result?.url || payload.url || payload.path || null,
+          response_status: result?.status_code ?? null,
+          response_headers_json: result?.headers || {},
+          response_body_json: result?.body_json ?? null,
+          response_body_text: result?.body_text ?? null,
+          ok: result?.ok,
+          error_message: result?.ok ? null : `HTTP ${result?.status_code ?? "error"}`,
+        },
+        ...(Array.isArray(prev) ? prev : []),
+      ]));
       setNotice(detailT("notices.request_completed"));
-      await load();
     } catch (err) {
       setRequestResult(null);
       setError(err?.message || detailT("errors.request_failed"));
-      await load();
     } finally {
       setRunningRequest(false);
     }
@@ -1041,6 +1476,7 @@ export default function IntegrationConnectionPage() {
       setOauthAuthorizeResult(null);
       setOauthCode("");
       setTestResult(null);
+      setXeroConnectionDrawerOpen(false);
       setNotice(isXeroProvider ? "Xero disconnected." : detailT("notices.connection_saved"));
       await load();
       if (res?.connection) {
@@ -1277,6 +1713,7 @@ export default function IntegrationConnectionPage() {
         signing_secret_id: "",
         config_json_text: "{}",
       });
+      setWebhookDrawerOpen(false);
       setNotice(detailT("notices.webhook_added"));
       await load();
     } catch (err) {
@@ -1542,10 +1979,10 @@ export default function IntegrationConnectionPage() {
           icon: KeyRound,
           title: "Connect the workspace to Xero",
           description: config?.xero_tenant_id
-            ? `Connected to ${config?.xero_tenant_name || "the selected Xero organisation"}.`
-            : "Use the shared Octodrop Xero app to sign in and approve this workspace. No manual client secret or code paste is required here.",
-          actionLabel: "",
-          onAction: null,
+            ? `Connected to ${config?.xero_tenant_name || "the selected Xero organisation"}. Use Connection in the page header to reconnect, refresh tokens, or review the connection.`
+            : "Use Connection in the page header to sign in to Xero and finish setup for this workspace.",
+          actionLabel: "Open Connection",
+          onAction: () => setXeroConnectionDrawerOpen(true),
           complete: Boolean(config?.xero_tenant_id),
         });
       } else {
@@ -1564,12 +2001,14 @@ export default function IntegrationConnectionPage() {
         icon: TestTube2,
         title: detailT("setup.guide.test_title"),
         description: isXeroProvider && !config?.xero_tenant_id
-          ? "Connect Xero first, then run a connection test once the tenant is attached."
+          ? "Open Connection in the page header, connect Xero, then run the connection test from that drawer."
           : hasTestedConnection
-            ? detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })
+            ? (isXeroProvider
+              ? `${detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) })} Use Connection in the page header to run it again.`
+              : detailT("setup.guide.last_tested", { value: formatDateTime(item?.last_tested_at, detailT("setup.guide.recently")) }))
             : detailT("setup.guide.test_description"),
-        actionLabel: isXeroProvider && !config?.xero_tenant_id ? "" : detailT("setup.guide.test_now"),
-        onAction: isXeroProvider && !config?.xero_tenant_id ? null : runTest,
+        actionLabel: isXeroProvider ? "Open Connection" : (isXeroProvider && !config?.xero_tenant_id ? "" : detailT("setup.guide.test_now")),
+        onAction: isXeroProvider ? (() => setXeroConnectionDrawerOpen(true)) : (isXeroProvider && !config?.xero_tenant_id ? null : runTest),
         complete: Boolean(item?.health_status && item.health_status !== "error" && hasTestedConnection),
       });
       return steps;
@@ -1717,14 +2156,6 @@ export default function IntegrationConnectionPage() {
 
       <Section title={detailT("mappings.field_mappings_title")} help={detailT("mappings.field_mappings_help")}>
         <div className="space-y-3">
-          <div className="rounded-box border border-base-300 bg-base-200/50 p-3 text-sm">
-            <div className="font-medium">How field selection works</div>
-            <div className="mt-1 opacity-80">
-              This is where you choose the exact field pairs, such as
-              <span className="font-medium"> Xero EmailAddress {"->"} OCTO contact.email</span>.
-              Sync does not pick raw fields separately. Sync runs the mapping profiles you enable, and each profile applies the field pairs defined here.
-            </div>
-          </div>
           <div className="flex flex-wrap gap-2">
             <button
               className="btn btn-sm btn-outline"
@@ -2039,10 +2470,262 @@ export default function IntegrationConnectionPage() {
     </div>
   );
 
+  const requestDrawerContent = (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <label className="form-control">
+          <span className="label-text text-sm">Template name</span>
+          <input
+            className="input input-bordered"
+            value={requestTemplateName}
+            onChange={(e) => setRequestTemplateName(e.target.value)}
+            placeholder="Create Xero invoice"
+          />
+        </label>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="btn btn-outline btn-sm" type="button" onClick={saveRequestTemplate} disabled={savingRequestTemplate}>
+            {savingRequestTemplate ? "Saving template..." : (editingRequestTemplateId ? "Update template" : "Save as template")}
+          </button>
+        </div>
+      </div>
+
+      {isXeroProvider ? (
+        <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+          <div className="font-medium">Request presets</div>
+          <div className="mt-1 opacity-80">Choose a common Xero request for the current method, then adjust the fields below if needed.</div>
+          <label className="form-control mt-3">
+            <span className="label-text text-sm">Preset</span>
+            <AppSelect
+              className="select select-bordered"
+              value={selectedRequestPresetId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedRequestPresetId(nextId);
+                const preset = filteredXeroRequestPresets.find((item) => item.id === nextId);
+                if (preset) applyRequestPreset(preset);
+              }}
+            >
+              <option value="">Choose a {requestForm.method} request</option>
+              {filteredXeroRequestPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </AppSelect>
+          </label>
+          <div className="mt-3 rounded-box border border-base-300 bg-base-100 px-4 py-3">
+            {selectedXeroRequestPreset ? (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">{selectedXeroRequestPreset.label}</div>
+                <div className="text-xs uppercase tracking-wide opacity-60">
+                  {selectedXeroRequestPreset.method} • {selectedXeroRequestPreset.path || selectedXeroRequestPreset.url || "/"}
+                </div>
+                <div className="text-sm opacity-80">{selectedXeroRequestPreset.help}</div>
+              </div>
+            ) : (
+              <div className="text-sm opacity-70">
+                {filteredXeroRequestPresets.length
+                  ? `Available ${requestForm.method} presets are ready to load into the explorer.`
+                  : `No ${requestForm.method} presets are available yet for this connection.`}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="space-y-3">
+        <label className="form-control">
+          <span className="label-text text-sm">{detailT("request.method")}</span>
+          <AppSelect className="select select-bordered" value={requestForm.method} onChange={(e) => setRequestForm((prev) => ({ ...prev, method: e.target.value }))}>
+            {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+              <option key={method} value={method}>
+                {method}
+              </option>
+            ))}
+          </AppSelect>
+        </label>
+        <label className="form-control">
+          <span className="label-text text-sm">{detailT("request.path")}</span>
+          <input className="input input-bordered" value={requestForm.path} onChange={(e) => setRequestForm((prev) => ({ ...prev, path: e.target.value }))} placeholder={detailT("request.path_placeholder")} />
+        </label>
+        <label className="form-control">
+          <span className="label-text text-sm">Custom URL</span>
+          <input className="input input-bordered" value={requestForm.url} onChange={(e) => setRequestForm((prev) => ({ ...prev, url: e.target.value }))} placeholder={detailT("request.url_placeholder")} />
+        </label>
+        <JsonField label={detailT("request.headers")} value={requestForm.headersText} onChange={(text) => setRequestForm((prev) => ({ ...prev, headersText: text }))} minHeight="7rem" />
+        <JsonField label={detailT("request.query")} value={requestForm.queryText} onChange={(text) => setRequestForm((prev) => ({ ...prev, queryText: text }))} minHeight="7rem" />
+        <JsonField label={detailT("request.json_body")} value={requestForm.jsonText} onChange={(text) => setRequestForm((prev) => ({ ...prev, jsonText: text }))} minHeight="8rem" />
+        <label className="form-control">
+          <span className="label-text text-sm">{detailT("request.raw_body")}</span>
+          <textarea className="textarea textarea-bordered min-h-[7rem]" value={requestForm.bodyText} onChange={(e) => setRequestForm((prev) => ({ ...prev, bodyText: e.target.value }))} />
+        </label>
+      </div>
+    </div>
+  );
+
+  const syncDrawerContent = (
+    <div className="space-y-4">
+      <Section title={detailT("sync.title")}>
+        <div className="space-y-3">
+          {syncFields.length === 0 ? (
+            <div className="text-sm opacity-60">{detailT("sync.no_schema")}</div>
+          ) : (
+            syncFields.map((field) => renderSyncField(field))
+          )}
+          {isXeroProvider && selectedSyncResource ? (
+            <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+              <div className="font-medium">Mapping profiles used by this sync</div>
+              <div className="mt-1 opacity-70">
+                Choose the saved mapping profiles this sync is allowed to run for {selectedSyncResource.label || selectedSyncResource.key}.
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedSyncMappings.length ? selectedSyncMappings.map((mapping) => {
+                  const mappingId = String(mapping?.id || "").trim();
+                  const selected = selectedSyncMappingIds.includes(mappingId);
+                  return (
+                    <button
+                      key={mappingId}
+                      className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
+                      type="button"
+                      onClick={() => toggleSyncMapping(mappingId)}
+                    >
+                      {mapping?.name || mappingId}
+                    </button>
+                  );
+                }) : <div className="opacity-60">No sync-capable mappings exist for this resource yet.</div>}
+              </div>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary btn-sm" type="button" onClick={runSync} disabled={runningSync}>
+              {runningSync ? detailT("sync.running") : detailT("sync.run_now")}
+            </button>
+          </div>
+        </div>
+      </Section>
+    </div>
+  );
+
+  const webhookDrawerContent = (
+    <div className="space-y-4">
+      <Section title={detailT("webhooks.title")}>
+        <div className="space-y-3">
+          <label className="form-control">
+            <span className="label-text text-sm">{detailT("webhooks.direction")}</span>
+            <AppSelect className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
+              <option value="inbound">{detailT("webhooks.direction_inbound")}</option>
+              <option value="outbound">{detailT("webhooks.direction_outbound")}</option>
+            </AppSelect>
+          </label>
+          <label className="form-control">
+            <span className="label-text text-sm">{detailT("webhooks.event_key")}</span>
+            <input className="input input-bordered" value={newWebhook.event_key} onChange={(e) => setNewWebhook((prev) => ({ ...prev, event_key: e.target.value }))} placeholder={detailT("webhooks.event_key_placeholder")} />
+          </label>
+          <label className="form-control">
+            <span className="label-text text-sm">{detailT("webhooks.endpoint_path")}</span>
+            <input className="input input-bordered" value={newWebhook.endpoint_path} onChange={(e) => setNewWebhook((prev) => ({ ...prev, endpoint_path: e.target.value }))} placeholder={detailT("webhooks.endpoint_path_placeholder")} />
+          </label>
+          <label className="form-control">
+            <span className="label-text text-sm">{detailT("webhooks.signing_secret")}</span>
+            <AppSelect className="select select-bordered" value={newWebhook.signing_secret_id} onChange={(e) => setNewWebhook((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
+              <option value="">{detailT("webhooks.no_signing_secret")}</option>
+              {(secrets || []).map((secret) => (
+                <option key={secret.id} value={secret.id}>
+                  {secret.name || secret.id}
+                </option>
+              ))}
+            </AppSelect>
+          </label>
+          <JsonField label={detailT("webhooks.config")} value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary btn-sm" type="button" onClick={createWebhook} disabled={creatingWebhook || !newWebhook.event_key.trim()}>
+              {creatingWebhook ? detailT("webhooks.adding") : detailT("webhooks.add")}
+            </button>
+          </div>
+        </div>
+      </Section>
+    </div>
+  );
+
+  const xeroConnectionDrawerContent = (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="btn btn-primary btn-sm" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim() || refreshingOAuth || disconnectingOAuth || testing}>
+            {authorizingOAuth ? "Opening Xero..." : xeroConnected ? "Reconnect Xero" : "Connect to Xero"}
+          </button>
+          {xeroConnected ? (
+            <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id || disconnectingOAuth || refreshingOAuth}>
+              {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
+            </button>
+          ) : null}
+          <button className="btn btn-outline btn-sm" type="button" onClick={refreshOauthTokens} disabled={!xeroConnected || refreshingOAuth || disconnectingOAuth || testing}>
+            {refreshingOAuth ? detailT("setup.refreshing") : "Refresh Xero tokens"}
+          </button>
+          <button className="btn btn-outline btn-error btn-sm" type="button" onClick={disconnectOauthConnection} disabled={!xeroConnected || disconnectingOAuth || refreshingOAuth || testing}>
+            {disconnectingOAuth ? "Disconnecting Xero..." : "Disconnect Xero"}
+          </button>
+        </div>
+
+        <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">{xeroConnected ? `Connected to ${config?.xero_tenant_name || "your Xero account"}` : "Connect to Xero"}</div>
+              <div className="mt-1 opacity-80">
+                {xeroConnected ? "This integration is ready to use." : "Sign in to Xero and approve access to finish setup for this workspace."}
+              </div>
+            </div>
+            <div className={`rounded-full px-3 py-1 text-xs font-medium ${xeroConnected ? "border border-success/30 bg-success/10 text-success" : "border border-base-300 bg-base-100 text-base-content/70"}`}>
+              {xeroConnected ? "Connected" : "Not connected"}
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Organisation</div>
+              <div className="mt-1 break-words">{config?.xero_tenant_name || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Organisation ID</div>
+              <div className="mt-1 break-all">{config?.xero_tenant_id || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
+              <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Access token expiry</div>
+              <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
+            </div>
+            <div className="rounded-box bg-base-100 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide opacity-60">Last token refresh</div>
+              <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
+            </div>
+          </div>
+        </div>
+
+        {latestTestResult ? (
+          <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">Latest test result</div>
+                <div className="mt-1 opacity-70">
+                  {formatDateTime(latestTestedAt, "Just now")}
+                </div>
+              </div>
+              <div className={`rounded-full px-3 py-1 text-xs font-medium ${latestTestResult?.ok ? "border border-success/30 bg-success/10 text-success" : "border border-error/30 bg-error/10 text-error"}`}>
+                {latestTestResult?.ok ? "Passed" : "Failed"}
+              </div>
+            </div>
+            <pre className="mt-3 rounded-box bg-base-100 p-3 text-xs overflow-auto">{JSON.stringify(latestTestResult, null, 2)}</pre>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
   return (
     <TabbedPaneShell
-      title=""
-      subtitle=""
+      title={connectionTitle}
       tabs={tabs}
       activeTabId={activeTab}
       onTabChange={setActiveTab}
@@ -2051,13 +2734,18 @@ export default function IntegrationConnectionPage() {
           label: saveActionLabel,
           onClick: save,
           disabled: !canSaveConnection,
-          className: "btn btn-primary btn-sm",
+          className: PRIMARY_BUTTON_SM,
         },
       ]}
       mobileOverflowActions={[]}
       rightActions={(
         <div className="flex items-center gap-2">
-          <button className="btn btn-primary btn-sm" type="button" onClick={save} disabled={!canSaveConnection}>
+          {isXeroProvider ? (
+            <button className={SOFT_BUTTON_SM} type="button" onClick={() => setXeroConnectionDrawerOpen(true)}>
+              Connection
+            </button>
+          ) : null}
+          <button className={PRIMARY_BUTTON_SM} type="button" onClick={save} disabled={!canSaveConnection}>
             {saveActionLabel}
           </button>
         </div>
@@ -2065,14 +2753,6 @@ export default function IntegrationConnectionPage() {
     >
       {error ? <div className="alert alert-error text-sm mb-4">{error}</div> : null}
       {notice ? <div className="alert alert-success text-sm mb-4">{notice}</div> : null}
-      {xeroConnected ? (
-        <div className="alert alert-success text-sm mb-4">
-          <div>
-            <div className="font-medium">{`Connected to ${config?.xero_tenant_name || "your Xero organisation"}`}</div>
-            <div className="mt-1 opacity-80">Tokens are stored automatically in Octodrop Secrets and linked to this integration.</div>
-          </div>
-        </div>
-      ) : null}
 
       <div className="space-y-4">
         {loading ? (
@@ -2159,185 +2839,113 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "request" ? (
           <div className="space-y-4">
-            <Section title={detailT("request.title")} help={detailT("request.help")}>
-              <div className="space-y-3">
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("request.method")}</span>
-                  <AppSelect className="select select-bordered" value={requestForm.method} onChange={(e) => setRequestForm((prev) => ({ ...prev, method: e.target.value }))}>
-                    {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
-                      <option key={method} value={method}>
-                        {method}
-                      </option>
-                    ))}
-                  </AppSelect>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("request.path")}</span>
-                  <input className="input input-bordered" value={requestForm.path} onChange={(e) => setRequestForm((prev) => ({ ...prev, path: e.target.value }))} placeholder={detailT("request.path_placeholder")} />
-                  <span className="label-text-alt opacity-70 mt-1">{detailT("request.path_help")}</span>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("request.url_override")}</span>
-                  <input className="input input-bordered" value={requestForm.url} onChange={(e) => setRequestForm((prev) => ({ ...prev, url: e.target.value }))} placeholder={detailT("request.url_placeholder")} />
-                </label>
-                <JsonField label={detailT("request.headers")} value={requestForm.headersText} onChange={(text) => setRequestForm((prev) => ({ ...prev, headersText: text }))} minHeight="7rem" />
-                <JsonField label={detailT("request.query")} value={requestForm.queryText} onChange={(text) => setRequestForm((prev) => ({ ...prev, queryText: text }))} minHeight="7rem" />
-                <JsonField label={detailT("request.json_body")} value={requestForm.jsonText} onChange={(text) => setRequestForm((prev) => ({ ...prev, jsonText: text }))} minHeight="8rem" help={detailT("request.json_help")} />
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("request.raw_body")}</span>
-                  <textarea className="textarea textarea-bordered min-h-[7rem]" value={requestForm.bodyText} onChange={(e) => setRequestForm((prev) => ({ ...prev, bodyText: e.target.value }))} />
-                </label>
-                <div>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={runRequest} disabled={runningRequest}>
-                    {runningRequest ? detailT("request.running") : detailT("request.run")}
-                  </button>
-                </div>
+            <Section title="API explorer" help="Run one-off requests with this connection and review the response here.">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <SummaryStat label={detailT("request.method")} value={requestForm.method} />
+                <SummaryStat label="Path" value={requestForm.path || "Not set"} />
+                <SummaryStat label="Custom URL" value={requestForm.url || "Using provider base URL"} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary btn-sm" type="button" onClick={() => setRequestDrawerOpen(true)}>
+                  Open API explorer
+                </button>
+                <button className="btn btn-outline btn-sm" type="button" onClick={runRequest} disabled={runningRequest}>
+                  {runningRequest ? detailT("request.running") : detailT("request.run")}
+                </button>
               </div>
             </Section>
 
-            <Section title={detailT("request.latest_response_title")} help={detailT("request.latest_response_help")} tone="muted">
+            <Section title="Saved request templates" tone="muted">
+              {requestTemplates.length ? (
+                <TableList
+                  emptyLabel="No request templates saved yet."
+                  columns={[
+                    { key: "name", label: "Name" },
+                    { key: "method", label: "Method" },
+                    { key: "target", label: "Target", render: (row) => requestTemplateSummaryTarget(row) },
+                    { key: "updated_at", label: "Updated", render: (row) => formatDateTime(row.updated_at, "—") },
+                    {
+                      key: "actions",
+                      label: "",
+                      render: (row) => (
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => useRequestTemplate(row)}>
+                            Use
+                          </button>
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => openRequestTemplateDrawer(row)}>
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-xs text-error"
+                            type="button"
+                            onClick={() => deleteRequestTemplate(row.id)}
+                            disabled={deletingRequestTemplateId === row.id}
+                          >
+                            {deletingRequestTemplateId === row.id ? "Removing..." : "Delete"}
+                          </button>
+                        </div>
+                      ),
+                    },
+                  ]}
+                  rows={requestTemplates}
+                />
+              ) : (
+                <div className="text-sm opacity-60">No request templates saved yet.</div>
+              )}
+            </Section>
+
+            <Section title="Recent requests" tone="muted">
+              <TableList
+                emptyLabel={detailT("logs.request_none")}
+                columns={[
+                  { key: "created_at", label: detailT("logs.when"), render: (row) => formatDateTime(row.created_at, "—") },
+                  { key: "method", label: detailT("logs.method") },
+                  { key: "url", label: detailT("logs.url") },
+                  { key: "response_status", label: t("common.status") },
+                ]}
+                rows={requestLogs.slice(0, 8)}
+              />
+            </Section>
+
+            <Section title="Latest response" tone="muted">
               {requestResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(requestResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("request.no_response")}</div>}
             </Section>
           </div>
         ) : activeTab === "sync" ? (
           <div className="space-y-4">
-            <Section title={detailT("sync.title")} help={detailT("sync.help")}>
-              <div className="space-y-3">
-                {isXeroProvider ? (
-                  <div className="space-y-3">
-                    <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
-                      <div className="font-medium">How Xero sync works today</div>
-                      <div className="mt-1 opacity-80">
-                        Current live sync mode is
-                        <span className="font-medium"> Xero {"->"} OCTO</span>.
-                        Octodrop fetches a Xero resource, then applies any saved mappings for that resource into OCTO records.
-                      </div>
-                      <div className="mt-2 opacity-70">
-                        That means the effective source of truth for synced fields is currently
-                        <span className="font-medium"> Xero</span>.
-                        Bidirectional sync governance like OCTO-wins, Xero-wins, newest-wins, or per-field ownership is not wired yet.
-                      </div>
-                    </div>
-                    {selectedSyncResource ? (
-                      <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
-                        <div className="font-medium">Selected sync resource</div>
-                        <div className="mt-1 opacity-80">
-                          {selectedSyncResource.label || selectedSyncResource.key} {"->"} {(selectedSyncResource.suggested_target_entity || "OCTO records")}
-                        </div>
-                        <div className="mt-2 opacity-70">
-                          {selectedSyncMappings.length
-                            ? `${selectedSyncMappings.length} saved mapping profile${selectedSyncMappings.length === 1 ? "" : "s"} will be eligible for this resource during sync.`
-                            : "No saved mapping profiles currently target this resource yet, so sync can fetch records but will not translate them into OCTO records until you add a mapping."}
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
-                      <div className="font-medium">Current sync governance</div>
-                      <div className="mt-1 opacity-80">
-                        Sync chooses the
-                        <span className="font-medium"> resource </span>
-                        and which saved
-                        <span className="font-medium"> mapping profiles </span>
-                        are allowed to run. Each mapping profile then decides the exact field pairs, such as Xero Name {"->"} OCTO contact.name.
-                      </div>
-                      <div className="mt-2 opacity-70">
-                        Best practice is to keep
-                        <span className="font-medium"> sync mappings </span>
-                        for records you want imported or updated by sync, and keep
-                        <span className="font-medium"> automation-only mappings </span>
-                        for payload shaping inside workflows where you do not want scheduled sync to touch them.
-                      </div>
-                    </div>
-                    {selectedSyncResource ? (
-                      <div className="rounded-box border border-base-300 bg-base-100 p-4 text-sm">
-                        <div className="font-medium">Mapping profiles used by this sync</div>
-                        <div className="mt-1 opacity-70">
-                          Leave this empty to run every sync-capable mapping for {selectedSyncResource.label || selectedSyncResource.key}. Or choose a smaller set if only some mappings should run during scheduled/manual sync.
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {selectedSyncMappings.length ? selectedSyncMappings.map((mapping) => {
-                            const mappingId = String(mapping?.id || "").trim();
-                            const selected = selectedSyncMappingIds.includes(mappingId);
-                            return (
-                              <button
-                                key={mappingId}
-                                className={`btn btn-xs ${selected ? "btn-primary" : "btn-outline"}`}
-                                type="button"
-                                onClick={() => toggleSyncMapping(mappingId)}
-                              >
-                                {mapping?.name || mappingId}
-                              </button>
-                            );
-                          }) : <div className="opacity-60">No sync-capable mappings exist for this resource yet.</div>}
-                        </div>
-                        {selectedSyncMappings.length ? (
-                          <div className="mt-2 text-xs opacity-60">
-                            {selectedSyncMappingIds.length
-                              ? `${selectedSyncMappingIds.length} mapping profile${selectedSyncMappingIds.length === 1 ? "" : "s"} explicitly selected for sync.`
-                              : "No explicit selection yet. Sync will run all eligible sync-capable mappings for this resource by default."}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {syncFields.length === 0 ? (
-                  <div className="text-sm opacity-60">{detailT("sync.no_schema")}</div>
-                ) : (
-                  syncFields.map((field) => renderSyncField(field))
-                )}
-                <div>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={runSync} disabled={runningSync}>
-                    {runningSync ? detailT("sync.running") : detailT("sync.run_now")}
-                  </button>
-                </div>
+            <Section title={detailT("sync.title")}>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <SummaryStat label="Resource" value={selectedSyncResource?.label || selectedSyncResourceKey || "Not configured"} />
+                <SummaryStat label="Source of truth" value={String(config?.sync?.source_of_truth || "provider").replaceAll("_", " ")} />
+                <SummaryStat label="Conflict policy" value={String(config?.sync?.conflict_policy || "source_of_truth").replaceAll("_", " ")} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary btn-sm" type="button" onClick={() => setSyncDrawerOpen(true)}>
+                  Configure sync
+                </button>
+                <button className="btn btn-outline btn-sm" type="button" onClick={runSync} disabled={runningSync}>
+                  {runningSync ? detailT("sync.running") : detailT("sync.run_now")}
+                </button>
               </div>
             </Section>
 
-            <Section title={detailT("sync.latest_result_title")} help={detailT("sync.latest_result_help")} tone="muted">
+            <Section title={detailT("sync.latest_result_title")} tone="muted">
               {syncResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(syncResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("sync.no_result")}</div>}
             </Section>
           </div>
         ) : activeTab === "webhooks" ? (
           <div className="space-y-4">
-            <Section title={detailT("webhooks.title")} help={detailT("webhooks.help")}>
-              <div className="rounded-box border border-base-300 bg-base-200 p-3 text-sm">
-                <div className="font-medium">{detailT("webhooks.signing_model_title")}</div>
-                <div className="mt-1 opacity-80">{detailT("webhooks.signing_model_help")}</div>
+            <Section title={detailT("webhooks.title")}>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <SummaryStat label="Inbound webhooks" value={String(webhooks.filter((row) => row?.direction === "inbound").length)} />
+                <SummaryStat label="Outbound webhooks" value={String(webhooks.filter((row) => row?.direction === "outbound").length)} />
+                <SummaryStat label="Signed webhooks" value={String(webhooks.filter((row) => row?.signing_secret_id).length)} />
               </div>
-              <div className="space-y-3">
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("webhooks.direction")}</span>
-                  <AppSelect className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
-                    <option value="inbound">{detailT("webhooks.direction_inbound")}</option>
-                    <option value="outbound">{detailT("webhooks.direction_outbound")}</option>
-                  </AppSelect>
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("webhooks.event_key")}</span>
-                  <input className="input input-bordered" value={newWebhook.event_key} onChange={(e) => setNewWebhook((prev) => ({ ...prev, event_key: e.target.value }))} placeholder={detailT("webhooks.event_key_placeholder")} />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("webhooks.endpoint_path")}</span>
-                  <input className="input input-bordered" value={newWebhook.endpoint_path} onChange={(e) => setNewWebhook((prev) => ({ ...prev, endpoint_path: e.target.value }))} placeholder={detailT("webhooks.endpoint_path_placeholder")} />
-                </label>
-                <label className="form-control">
-                  <span className="label-text text-sm">{detailT("webhooks.signing_secret")}</span>
-                  <AppSelect className="select select-bordered" value={newWebhook.signing_secret_id} onChange={(e) => setNewWebhook((prev) => ({ ...prev, signing_secret_id: e.target.value }))}>
-                    <option value="">{detailT("webhooks.no_signing_secret")}</option>
-                    {(secrets || []).map((secret) => (
-                      <option key={secret.id} value={secret.id}>
-                        {secret.name || secret.id}
-                      </option>
-                    ))}
-                  </AppSelect>
-                </label>
-                <JsonField label={detailT("webhooks.config")} value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
-                <div>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={createWebhook} disabled={creatingWebhook || !newWebhook.event_key.trim()}>
-                    {creatingWebhook ? detailT("webhooks.adding") : detailT("webhooks.add")}
-                  </button>
-                </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary btn-sm" type="button" onClick={() => setWebhookDrawerOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  New webhook
+                </button>
               </div>
             </Section>
 
@@ -2363,49 +2971,14 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "mappings" ? (
           <div className="space-y-4">
-            <Section title={detailT("mappings.title")} help={detailT("mappings.help")}>
-              <div className="space-y-3">
-                <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
-                  <div className="font-medium">What this mapping does</div>
-                  <div className="mt-1 opacity-80">
-                    This profile translates one provider record into OCTO field values. For Xero, that means things like
-                    <span className="font-medium"> Xero Contact Email </span>
-                    mapping into
-                    <span className="font-medium"> OCTO Contact Email</span>.
-                    Sync uses these profiles directly, and automations can now reuse them with
-                    <span className="font-medium"> Apply integration mapping</span>.
-                  </div>
-                  <div className="mt-2 opacity-70">
-                    Current direction here is
-                    <span className="font-medium"> provider {"->"} OCTO</span>.
-                    This is an inbound translation layer, not a two-way export mapper yet.
-                  </div>
-                  <div className="mt-3 rounded-box border border-base-300 bg-base-100 p-3">
-                    <div className="font-medium">You can have multiple mapping profiles</div>
-                    <div className="mt-1 opacity-80">
-                      One profile should represent one reusable recipe, usually
-                      <span className="font-medium"> one resource + one purpose + one direction</span>.
-                    </div>
-                    <div className="mt-2 text-xs opacity-70">
-                      Good examples: <span className="font-medium">Xero Contacts Import</span>, <span className="font-medium">Xero Contacts Automation Normalize</span>, <span className="font-medium">Xero Invoices Import</span>.
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button className="btn btn-primary btn-sm" type="button" onClick={openNewMappingDrawer}>
-                    <Plus className="h-4 w-4" />
-                    New mapping profile
-                  </button>
-                </div>
+            <Section title={detailT("mappings.title")}>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn btn-primary btn-sm" type="button" onClick={openNewMappingDrawer}>
+                  <Plus className="h-4 w-4" />
+                  New mapping profile
+                </button>
               </div>
             </Section>
-
-            <div className="rounded-box border border-base-300 bg-base-200/50 p-4 text-sm">
-              <div className="font-medium">{`Saved mapping profiles${mappings.length ? ` (${mappings.length})` : ""}`}</div>
-              <div className="mt-1 opacity-70">
-                Each row below is a separate saved mapping profile for this integration. Sync and automations can reuse these by name.
-              </div>
-            </div>
 
             <TableList
               emptyLabel={detailT("mappings.none")}
@@ -2459,7 +3032,6 @@ export default function IntegrationConnectionPage() {
               open={mappingDrawerOpen}
               onClose={closeMappingDrawer}
               title={mappingDrawerTitle}
-              description="Edit one mapping profile at a time. This follows the same object-focused flow as automations."
               mobileHeightClass="h-[92dvh] max-h-[92dvh]"
               zIndexClass="z-[240]"
             >
@@ -2468,7 +3040,7 @@ export default function IntegrationConnectionPage() {
           </div>
         ) : activeTab === "logs" ? (
           <div className="space-y-4">
-            <Section title={detailT("logs.request_title")} help={detailT("logs.request_help")} tone="muted">
+            <Section title="Requests" tone="muted">
               <TableList
                 emptyLabel={detailT("logs.request_none")}
                 columns={[
@@ -2482,7 +3054,7 @@ export default function IntegrationConnectionPage() {
               />
             </Section>
 
-            <Section title={detailT("logs.webhook_events_title")} help={detailT("logs.webhook_events_help")} tone="muted">
+            <Section title="Webhook events" tone="muted">
               <TableList
                 emptyLabel={detailT("logs.webhook_events_none")}
                 columns={[
@@ -2495,7 +3067,7 @@ export default function IntegrationConnectionPage() {
               />
             </Section>
 
-            <Section title={detailT("logs.sync_checkpoints_title")} help={detailT("logs.sync_checkpoints_help")} tone="muted">
+            <Section title="Sync activity" tone="muted">
               <TableList
                 emptyLabel={detailT("logs.sync_checkpoints_none")}
                 columns={[
@@ -2533,40 +3105,6 @@ export default function IntegrationConnectionPage() {
                   </AppSelect>
                 </label>
 
-                {isXeroProvider ? (
-                  <Section
-                    title="Xero connection"
-                    help="This workspace uses the shared Octodrop Xero app. The only required step here is approving access in Xero, then Octodrop stores the tokens and tenant automatically."
-                  >
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">OAuth app</div>
-                        <div className="mt-1">Shared Octodrop Xero app</div>
-                      </div>
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
-                        <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
-                      </div>
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">Scopes</div>
-                        <div className="mt-1 break-words">{String(config?.oauth_scope || "").trim() || "—"}</div>
-                      </div>
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">Selected tenant</div>
-                        <div className="mt-1">{config?.xero_tenant_name || "Not connected yet"}</div>
-                      </div>
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">Connection status</div>
-                        <div className="mt-1">{xeroConnected ? "Connected" : "Waiting for Xero approval"}</div>
-                      </div>
-                      <div className="rounded-box bg-base-200 px-3 py-2 text-sm">
-                        <div className="text-xs uppercase tracking-wide opacity-60">Token storage</div>
-                        <div className="mt-1">Managed automatically in Octodrop Secrets</div>
-                      </div>
-                    </div>
-                  </Section>
-                ) : null}
-
                 {visibleSetupGroups
                   .filter(([groupKey]) => groupKey !== "advanced")
                   .map(([groupKey, fields]) => (
@@ -2583,76 +3121,33 @@ export default function IntegrationConnectionPage() {
                     </Section>
                   ))}
 
-                {authMode === "oauth2" ? (
+                {authMode === "oauth2" && !isXeroProvider ? (
                   <Section
-                    title={isXeroProvider ? "Connect to Xero" : detailT("setup.oauth_title")}
-                    help={isXeroProvider ? "Open the Xero login, approve access for this workspace, and the callback will complete the token exchange automatically." : detailT("setup.oauth_help")}
+                    title={detailT("setup.oauth_title")}
+                    help={detailT("setup.oauth_help")}
                   >
                     <div className="space-y-3">
-                      {isXeroProvider ? (
-                        <>
-                          <div className="rounded-box border border-base-300 bg-base-200/60 p-4 text-sm">
-                            <div className="font-medium">{xeroConnected ? "Xero is connected for this workspace" : "Connect this workspace to Xero"}</div>
-                            <div className="mt-2 opacity-80">
-                              {xeroConnected
-                                ? `Octodrop is connected to ${config?.xero_tenant_name || "the selected Xero organisation"}. Tokens are stored automatically in Octodrop Secrets and linked to this integration.`
-                                : "Click the button below, sign in to Xero, and approve access. Octodrop will exchange the code, store the tokens in Secrets, link them to this integration, and bring you back here automatically."}
-                            </div>
-                            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                              <div className="rounded-box bg-base-100 px-3 py-2">
-                                <div className="text-xs uppercase tracking-wide opacity-60">Redirect URI</div>
-                                <div className="mt-1 break-all">{oauthRedirectUri || "—"}</div>
-                              </div>
-                              <div className="rounded-box bg-base-100 px-3 py-2">
-                                <div className="text-xs uppercase tracking-wide opacity-60">Access token expiry</div>
-                                <div className="mt-1">{formatDateTime(config?.oauth_access_token_expires_at, "—")}</div>
-                              </div>
-                              <div className="rounded-box bg-base-100 px-3 py-2">
-                                <div className="text-xs uppercase tracking-wide opacity-60">Last token refresh</div>
-                                <div className="mt-1">{formatDateTime(config?.oauth_last_token_refresh_at, "—")}</div>
-                              </div>
-                            </div>
-                          </div>
+                      <>
+                        <label className="form-control">
+                          <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
+                          <input
+                            className="input input-bordered"
+                            value={oauthRedirectUri}
+                            onChange={(e) => setOauthRedirectUri(e.target.value)}
+                            placeholder={detailT("setup.redirect_uri_placeholder")}
+                          />
+                          <span className="label-text-alt opacity-70 mt-1">{detailT("setup.redirect_uri_help")}</span>
+                        </label>
 
-                          <div className="flex flex-wrap gap-2">
-                            <button className="btn btn-sm btn-primary" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
-                              {authorizingOAuth ? "Opening Xero..." : xeroConnected ? "Reconnect Xero" : "Connect to Xero"}
-                            </button>
-                            {xeroConnected ? (
-                              <>
-                                <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth || disconnectingOAuth}>
-                                  {refreshingOAuth ? detailT("setup.refreshing") : "Refresh Xero tokens"}
-                                </button>
-                                <button className="btn btn-sm btn-outline btn-error" type="button" onClick={disconnectOauthConnection} disabled={disconnectingOAuth || refreshingOAuth}>
-                                  {disconnectingOAuth ? "Disconnecting Xero..." : "Disconnect Xero"}
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <label className="form-control">
-                            <span className="label-text text-sm">{detailT("setup.redirect_uri")}</span>
-                            <input
-                              className="input input-bordered"
-                              value={oauthRedirectUri}
-                              onChange={(e) => setOauthRedirectUri(e.target.value)}
-                              placeholder={detailT("setup.redirect_uri_placeholder")}
-                            />
-                            <span className="label-text-alt opacity-70 mt-1">{detailT("setup.redirect_uri_help")}</span>
-                          </label>
-
-                          <div className="flex flex-wrap gap-2">
-                            <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
-                              {authorizingOAuth ? detailT("setup.generating") : detailT("setup.generate_authorize_url")}
-                            </button>
-                            <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
-                              {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
-                            </button>
-                          </div>
-                        </>
-                      )}
+                        <div className="flex flex-wrap gap-2">
+                          <button className="btn btn-sm btn-outline" type="button" onClick={generateOauthAuthorizeUrl} disabled={authorizingOAuth || !oauthRedirectUri.trim()}>
+                            {authorizingOAuth ? detailT("setup.generating") : detailT("setup.generate_authorize_url")}
+                          </button>
+                          <button className="btn btn-sm btn-outline" type="button" onClick={refreshOauthTokens} disabled={refreshingOAuth}>
+                            {refreshingOAuth ? detailT("setup.refreshing") : detailT("setup.refresh_tokens")}
+                          </button>
+                        </div>
+                      </>
 
                       {oauthAuthorizeResult?.authorize_url && !isXeroProvider ? (
                         <div className="space-y-2 rounded-box border border-base-300 bg-base-200/60 p-3">
@@ -2727,13 +3222,13 @@ export default function IntegrationConnectionPage() {
                   </details>
                 ) : null}
 
-                <div className="flex flex-wrap gap-2">
-                  {!isXeroProvider || xeroConnected ? (
+                {!isXeroProvider ? (
+                  <div className="flex flex-wrap gap-2">
                     <button className="btn btn-outline btn-sm" type="button" onClick={runTest} disabled={loading || testing || !item?.id || disconnectingOAuth}>
                       {testing ? detailT("setup.testing") : detailT("setup.test_connection")}
                     </button>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
             </Section>
 
@@ -2750,12 +3245,55 @@ export default function IntegrationConnectionPage() {
               </div>
             </Section>
 
-            <Section title={detailT("setup.latest_test_result_title")} help={detailT("setup.latest_test_result_help")} tone="muted">
-              {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("setup.no_test_result")}</div>}
-            </Section>
+            {!isXeroProvider ? (
+              <Section title={detailT("setup.latest_test_result_title")} help={detailT("setup.latest_test_result_help")} tone="muted">
+                {testResult ? <pre className="rounded-box bg-base-200 p-3 text-xs overflow-auto">{JSON.stringify(testResult, null, 2)}</pre> : <div className="text-sm opacity-60">{detailT("setup.no_test_result")}</div>}
+              </Section>
+            ) : null}
           </div>
         )}
       </div>
+
+      <ResponsiveDrawer
+        open={requestDrawerOpen}
+        onClose={() => setRequestDrawerOpen(false)}
+        title="API explorer"
+        description="Set up and run a one-off request with this connection."
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+        zIndexClass="z-[240]"
+      >
+        {requestDrawerContent}
+      </ResponsiveDrawer>
+
+      <ResponsiveDrawer
+        open={syncDrawerOpen}
+        onClose={() => setSyncDrawerOpen(false)}
+        title="Configure sync"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+        zIndexClass="z-[240]"
+      >
+        {syncDrawerContent}
+      </ResponsiveDrawer>
+
+      <ResponsiveDrawer
+        open={webhookDrawerOpen}
+        onClose={() => setWebhookDrawerOpen(false)}
+        title="New webhook"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+        zIndexClass="z-[240]"
+      >
+        {webhookDrawerContent}
+      </ResponsiveDrawer>
+
+      <ResponsiveDrawer
+        open={xeroConnectionDrawerOpen}
+        onClose={() => setXeroConnectionDrawerOpen(false)}
+        title="Xero connection"
+        mobileHeightClass="h-[92dvh] max-h-[92dvh]"
+        zIndexClass="z-[240]"
+      >
+        {xeroConnectionDrawerContent}
+      </ResponsiveDrawer>
 
       {showCreateSecretModal ? (
         <SimpleModal

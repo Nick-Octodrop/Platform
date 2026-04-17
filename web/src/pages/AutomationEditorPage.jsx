@@ -33,6 +33,17 @@ function coerceStringArray(value) {
   return [String(value)];
 }
 
+function normalizeIntegrationRequestTemplate(template, index = 0) {
+  const raw = template && typeof template === "object" ? template : {};
+  return {
+    id: String(raw.id || `request_template_${index + 1}`),
+    name: String(raw.name || `Request template ${index + 1}`),
+    method: String(raw.method || "GET").trim().toUpperCase() || "GET",
+    path: String(raw.path || ""),
+    url: String(raw.url || ""),
+  };
+}
+
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
   const [options, setOptions] = useState([]);
   const [search, setSearch] = useState("");
@@ -1566,6 +1577,28 @@ export default function AutomationEditorPage({ user }) {
     [connectionOptions]
   );
 
+  const integrationRequestTemplatesByConnection = useMemo(() => {
+    const map = new Map();
+    for (const connection of integrationConnectionOptions) {
+      const rawTemplates = Array.isArray(connection?.config?.request_templates) ? connection.config.request_templates : [];
+      map.set(
+        connection.id,
+        rawTemplates.map((template, index) => normalizeIntegrationRequestTemplate(template, index))
+      );
+    }
+    return map;
+  }, [integrationConnectionOptions]);
+
+  const integrationRequestTemplateById = useMemo(() => {
+    const map = new Map();
+    for (const [connectionId, templates] of integrationRequestTemplatesByConnection.entries()) {
+      for (const template of templates) {
+        map.set(`${connectionId}:${template.id}`, template);
+      }
+    }
+    return map;
+  }, [integrationRequestTemplatesByConnection]);
+
   const integrationMappingOptions = useMemo(() => {
     if (!Array.isArray(meta.integration_mappings)) return [];
     return meta.integration_mappings
@@ -1906,6 +1939,10 @@ export default function AutomationEditorPage({ user }) {
     }
     if (step.action_id === "system.integration_request") {
       const connectionName = connectionOptions.find((conn) => conn.id === step.inputs?.connection_id)?.name || step.inputs?.connection_id || t("settings.automation_editor.choose_connection");
+      const template = integrationRequestTemplateById.get(`${step.inputs?.connection_id || ""}:${step.inputs?.template_id || ""}`);
+      if (template) {
+        return `${connectionName} • ${template.name}`;
+      }
       const method = step.inputs?.method || "GET";
       const target = step.inputs?.path || step.inputs?.url || "/";
       return `${connectionName} • ${method} ${target}`;
@@ -3356,6 +3393,8 @@ export default function AutomationEditorPage({ user }) {
           (() => {
             const headerRows = readEditorDraftRows(index, "headers", objectEntriesForEditor(step.inputs?.headers));
             const queryRows = readEditorDraftRows(index, "query", objectEntriesForEditor(step.inputs?.query));
+            const selectedConnectionId = step.inputs?.connection_id || "";
+            const requestTemplateOptions = integrationRequestTemplatesByConnection.get(selectedConnectionId) || [];
             return (
               <div className="space-y-4">
                 <div className={sectionCardClass}>
@@ -3376,6 +3415,26 @@ export default function AutomationEditorPage({ user }) {
                           </option>
                         ))}
                       </AppSelect>
+                    </label>
+                    <label className="form-control">
+                      <span className="label-text">Request template</span>
+                      <AppSelect
+                        className="select select-bordered"
+                        value={step.inputs?.template_id || ""}
+                        onChange={(e) => updateStepInput(index, "template_id", e.target.value)}
+                      >
+                        <option value="">No template</option>
+                        {requestTemplateOptions.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.name}
+                          </option>
+                        ))}
+                      </AppSelect>
+                      <span className="label-text-alt mt-1 block opacity-50">
+                        {requestTemplateOptions.length
+                          ? "Use a saved integration request, then override any fields below if needed."
+                          : "No saved request templates exist for this connection yet."}
+                      </span>
                     </label>
                     <label className="form-control">
                       <span className="label-text">{t("settings.automation_editor.method")}</span>

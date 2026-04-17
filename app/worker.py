@@ -505,6 +505,65 @@ def _resolve_integration_mapping_source(inputs: dict, ctx: dict) -> object:
     return source_value
 
 
+def _normalize_request_template(template: object, index: int = 0) -> dict:
+    raw = template if isinstance(template, dict) else {}
+    headers = raw.get("headers") if isinstance(raw.get("headers"), dict) else {}
+    query = raw.get("query") if isinstance(raw.get("query"), dict) else {}
+    return {
+        "id": str(raw.get("id") or f"request_template_{index + 1}").strip(),
+        "name": str(raw.get("name") or f"Request template {index + 1}").strip(),
+        "method": str(raw.get("method") or "GET").strip().upper() or "GET",
+        "path": raw.get("path"),
+        "url": raw.get("url"),
+        "headers": headers,
+        "query": query,
+        "json": raw.get("json"),
+        "body": raw.get("body"),
+        "timeout_seconds": raw.get("timeout_seconds"),
+    }
+
+
+def _list_connection_request_templates(connection: dict | None) -> list[dict]:
+    config = connection.get("config") if isinstance(connection, dict) and isinstance(connection.get("config"), dict) else {}
+    raw_templates = config.get("request_templates")
+    if not isinstance(raw_templates, list):
+        return []
+    return [_normalize_request_template(template, index) for index, template in enumerate(raw_templates)]
+
+
+def _resolve_connection_request_template(connection: dict | None, template_id: object) -> dict | None:
+    normalized_id = str(template_id or "").strip()
+    if not normalized_id:
+        return None
+    for template in _list_connection_request_templates(connection):
+        if template.get("id") == normalized_id:
+            return template
+    return None
+
+
+def _build_integration_request_config(connection: dict, inputs: dict) -> dict:
+    template = _resolve_connection_request_template(connection, inputs.get("template_id"))
+    if inputs.get("template_id") and not template:
+        raise RuntimeError("Request template not found")
+    template_headers = template.get("headers") if isinstance(template, dict) and isinstance(template.get("headers"), dict) else {}
+    template_query = template.get("query") if isinstance(template, dict) and isinstance(template.get("query"), dict) else {}
+    override_headers = inputs.get("headers") if isinstance(inputs.get("headers"), dict) else {}
+    override_query = inputs.get("query") if isinstance(inputs.get("query"), dict) else {}
+    request_config = {
+        "method": inputs.get("method") or (template.get("method") if isinstance(template, dict) else None) or "GET",
+        "path": inputs.get("path") if "path" in inputs else (template.get("path") if isinstance(template, dict) else None),
+        "url": inputs.get("url") if "url" in inputs else (template.get("url") if isinstance(template, dict) else None),
+        "headers": {**template_headers, **override_headers},
+        "query": {**template_query, **override_query},
+        "json": inputs.get("json") if "json" in inputs else (template.get("json") if isinstance(template, dict) else None),
+        "body": inputs.get("body") if "body" in inputs else (template.get("body") if isinstance(template, dict) else None),
+        "timeout_seconds": inputs.get("timeout_seconds") if "timeout_seconds" in inputs else (template.get("timeout_seconds") if isinstance(template, dict) else None),
+    }
+    if inputs.get("template_id") and not request_config.get("path") and not request_config.get("url"):
+        raise RuntimeError("Request template is missing a path or url")
+    return request_config
+
+
 def _coerce_iteration_items(value: object) -> list:
     if isinstance(value, list):
         return value
@@ -1453,16 +1512,7 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         connection = DbConnectionStore().get(connection_id)
         if not connection:
             raise RuntimeError("Connection not found")
-        request_config = {
-            "method": inputs.get("method") or "GET",
-            "path": inputs.get("path"),
-            "url": inputs.get("url"),
-            "headers": inputs.get("headers") or {},
-            "query": inputs.get("query") or {},
-            "json": inputs.get("json"),
-            "body": inputs.get("body"),
-            "timeout_seconds": inputs.get("timeout_seconds"),
-        }
+        request_config = _build_integration_request_config(connection, inputs)
         try:
             result = execute_connection_request(connection, request_config, get_org_id())
         except Exception as exc:
@@ -1503,6 +1553,8 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         )
         if not result.get("ok"):
             raise RuntimeError(f"Integration request failed with status {result.get('status_code')}")
+        if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+            result = {**result, "template_id": inputs.get("template_id").strip()}
         return result
 
     if action_id == "system.integration_sync":
