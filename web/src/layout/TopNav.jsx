@@ -4,6 +4,7 @@ import { ChevronLeft, Menu, X } from "lucide-react";
 import UserMenu from "../components/UserMenu.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 import { apiFetch, getManifest, listStudio2Modules } from "../api.js";
+import { useAccessContext } from "../access.js";
 import { appendOctoAiFrameParams, buildTargetRoute } from "../apps/appShellUtils.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { localizeManifest } from "../i18n/manifest.js";
@@ -140,6 +141,7 @@ function buildRecordLabel(record, { preferredFields = [], entity = null, fallbac
 
 export default function TopNav({ user, onSignOut, frameMode = false }) {
   const { t, locale, version, workspaceKey, workspacePrefs } = useI18n();
+  const { context: accessContext } = useAccessContext();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
   const { moduleId } = useParams();
@@ -787,10 +789,24 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     if (!leafLabel || leafLabel === appLabel) return appLabel;
     return `${appLabel} / ${leafLabel}`;
   }, [appName, currentPageDef?.title, isAppRoute, isRecordPage, recordCrumbLabel]);
+  const activeWorkspace = useMemo(() => {
+    const workspaces = Array.isArray(accessContext?.workspaces) ? accessContext.workspaces : [];
+    const activeKey = String(workspaceKey || "").trim();
+    if (!activeKey) return null;
+    return workspaces.find((workspace) => {
+      const candidateId = String(workspace?.workspace_id || workspace?.id || "").trim();
+      return candidateId && candidateId === activeKey;
+    }) || null;
+  }, [accessContext?.workspaces, workspaceKey]);
   const workspaceDisplayName = useMemo(() => {
-    const raw = workspacePrefs?.workspace_name || workspacePrefs?.name || workspacePrefs?.title || "";
+    const raw = activeWorkspace?.workspace_name
+      || activeWorkspace?.name
+      || workspacePrefs?.workspace_name
+      || workspacePrefs?.name
+      || workspacePrefs?.title
+      || "";
     return String(raw).trim() || "Octodrop";
-  }, [workspacePrefs]);
+  }, [activeWorkspace, workspacePrefs]);
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
       return mobileAppBreadcrumb || appName || t("common.app");

@@ -41,6 +41,7 @@ export default function ShellLayout({ user, onSignOut, children }) {
 
   const isHome = location.pathname === "/";
   const hideTopNav = isEmbedMode;
+  const shellHeightClass = isMobile ? "h-[100dvh]" : "h-screen";
   const baseMainClass = isEmbedMode || isHome
     ? "flex-1 min-h-0 overflow-hidden p-0"
     : isFrameMode && isMobile
@@ -57,11 +58,11 @@ export default function ShellLayout({ user, onSignOut, children }) {
   const mainClass = baseMainClass;
 
   if (!user) {
-    return <LoadingSpinner className="h-screen" />;
+    return <LoadingSpinner className={shellHeightClass} />;
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className={`flex ${shellHeightClass} flex-col overflow-hidden`}>
       {hideTopNav ? null : <TopNav user={user} onSignOut={onSignOut} frameMode={isFrameMode} />}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <main className={`${mainClass} ${isEmbedMode ? "h-full w-full" : ""}`}>{children || <Outlet />}</main>
