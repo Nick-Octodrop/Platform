@@ -1547,14 +1547,14 @@ function buildPreviewManifest() {
     pushToast("success", t("settings.studio.notices.json_fixed"));
   }
 
-  async function sendAgentMessage(userMessage) {
+  async function sendAgentMessage(userMessage, options = {}) {
     if (!routeModuleId || !userMessage.trim()) return;
     setPendingAgentPlan(null);
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setChatLoading(true);
     try {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-      const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history);
+      const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history, false, options?.focus || null);
       const payload = res.data || {};
       applyAgentPayload(payload, null, payload.diagnostics || null);
     } catch (err) {
@@ -1592,7 +1592,7 @@ function buildPreviewManifest() {
       })
       .join("\n");
     const message = `Fix this PatchSet to satisfy validation errors.\nErrors:\n${errors}\nCurrent PatchSet JSON:\n${patchsetText}`;
-    await sendAgentMessage(message);
+    await sendAgentMessage(message, { focus: "validation" });
   }
 
   async function generatePatchsetFromDraft() {
@@ -1748,7 +1748,7 @@ function buildPreviewManifest() {
     setPendingAgentPlan(null);
   }
 
-  async function runAgentDraftFlow(userMessage) {
+  async function runAgentDraftFlow(userMessage, options = {}) {
     if (!routeModuleId) return;
     setPendingAgentPlan(null);
     setChatLoading(true);
@@ -1763,6 +1763,7 @@ function buildPreviewManifest() {
         moduleId: routeModuleId,
         message: userMessage,
         chatHistory: history,
+        focus: options?.focus || null,
         onEvent: (evt) => {
           setProgressEvents((prev) => {
             const next = [...prev, evt].slice(-200);
@@ -1792,7 +1793,7 @@ function buildPreviewManifest() {
       }
       try {
         const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-        const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history, true);
+        const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history, true, options?.focus || null);
         const payload = res.data || {};
         if (Array.isArray(payload.progress)) {
           setProgressEvents(payload.progress.slice(-200));
@@ -2348,6 +2349,26 @@ function buildPreviewManifest() {
 
   const userLabel = user?.email || "User";
   const pendingStudioPlanInvalid = pendingAgentPlan?.validation?.status === "error";
+  const studioQuickActions = useMemo(() => ([
+    {
+      id: "improve-ux",
+      label: "Improve UX",
+      prompt: "Improve the UX, page hierarchy, navigation clarity, and field grouping of this module while preserving its business intent.",
+      focus: "design",
+    },
+    {
+      id: "tighten-copy",
+      label: "Tighten copy",
+      prompt: "Improve labels, helper text, action wording, and empty-state copy in this module while keeping the schema and workflows stable.",
+      focus: "content",
+    },
+    {
+      id: "improve-logic",
+      label: "Improve logic",
+      prompt: "Improve workflows, actions, and business-rule logic in this module while preserving the intended data model and user-facing experience.",
+      focus: "logic",
+    },
+  ]), []);
 
   const runStudioAiFix = useCallback(async ({ draftTextOverride = "", validationOverride = null, summary = "" } = {}) => {
     if (draftError) {
@@ -2367,16 +2388,12 @@ function buildPreviewManifest() {
       ...((nextValidation?.strictErrors || nextValidation?.strict_errors || []).map((err) => formatLine(err, "STRICT"))),
       ...((nextValidation?.completenessErrors || nextValidation?.completeness_errors || []).map((err) => formatLine(err, "INCOMPLETE"))),
     ].filter(Boolean);
-    const warningLines = [
-      ...(nextValidation?.warnings || []).map((warn) => formatLine(warn, "WARN")),
-      ...((nextValidation?.designWarnings || nextValidation?.design_warnings || []).map((warn) => formatLine(warn, "WARN"))),
-    ].filter(Boolean);
     const sections = ["Fix validation issues in this Studio module draft."];
     if (summary) sections.push(`Current goal: ${summary}`);
     if (errorLines.length > 0) sections.push(`Errors:\n${errorLines.join("\n")}`);
-    if (warningLines.length > 0) sections.push(`Warnings:\n${warningLines.join("\n")}`);
+    sections.push("Preserve the existing structure, UX, and business behavior unless a targeted change is required to make the module valid.");
     if (nextDraftText) sections.push(`Draft manifest JSON:\n${nextDraftText}`);
-    await runAgentDraftFlow(sections.join("\n\n"));
+    await runAgentDraftFlow(sections.join("\n\n"), { focus: "validation" });
   }, [draftError, draftText, prepareFixJson, runAgentDraftFlow, validation]);
 
   const renderLeftPane = useMemo(() => () => {
@@ -2472,6 +2489,21 @@ function buildPreviewManifest() {
             inputDisabled={!routeModuleId || chatLoading}
             inputPlaceholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
             minRows={4}
+            composerExtras={studioQuickActions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {studioQuickActions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="btn btn-xs btn-outline"
+                    disabled={!routeModuleId || chatLoading}
+                    onClick={() => runAgentDraftFlow(action.prompt, { focus: action.focus })}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           />
         </div>
       </div>
@@ -2488,9 +2520,11 @@ function buildPreviewManifest() {
     pendingAgentPlan,
     pendingStudioPlanInvalid,
     progressEvents,
+    runAgentDraftFlow,
     runStudioAiFix,
     studioPlanningStatusItems,
     studioPlanProgressItems,
+    studioQuickActions,
     routeModuleId,
     canManageSettings,
     isSuperadmin,
@@ -2503,30 +2537,13 @@ function buildPreviewManifest() {
     <div className="pb-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold">Validation</div>
-        {studioAiEnabled && (validation.status === "error" || validationWarnings.length > 0) && (
+        {studioAiEnabled && (draftError || baseErrors.length > 0 || strictErrors.length > 0 || completenessErrors.length > 0) && (
           <button
             className="btn btn-sm btn-primary"
             onClick={() => {
               if (draftError) {
                 prepareFixJson();
                 return;
-              }
-              const errorLines = validationErrors.map((err) => {
-                const loc = err.line ? ` (line ${err.line}${err.col ? `, col ${err.col}` : ""})` : "";
-                const ptr = err.json_pointer ? ` [${err.json_pointer}]` : "";
-                return `${err.code || "ERR"}: ${err.message}${ptr}${loc}`;
-              });
-              const warningLines = validationWarnings.map((warn) => {
-                const loc = warn.line ? ` (line ${warn.line}${warn.col ? `, col ${warn.col}` : ""})` : "";
-                const ptr = warn.json_pointer ? ` [${warn.json_pointer}]` : "";
-                return `${warn.code || "WARN"}: ${warn.message}${ptr}${loc}`;
-              });
-              const sections = [];
-              if (errorLines.length > 0) {
-                sections.push(`Errors:\n${errorLines.join("\n")}`);
-              }
-              if (warningLines.length > 0) {
-                sections.push(`Warnings:\n${warningLines.join("\n")}`);
               }
               runStudioAiFix({ summary: activeModuleName, validationOverride: validation });
             }}

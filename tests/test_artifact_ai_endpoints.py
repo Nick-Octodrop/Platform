@@ -162,6 +162,309 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertIn("compiled_ok", validation)
 
+    def test_email_template_ai_plan_context_includes_validation_and_entity_guidance(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Quote Approval",
+                    "description": "",
+                    "subject": "Quote {{ record.quote_number }} approved",
+                    "body_html": "<p>Hello {{ record.quote_number }}</p>",
+                    "body_text": "",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        captured: dict[str, object] = {}
+        fake_entities = [
+            {
+                "id": "entity.quote",
+                "label": "Quote",
+                "fields": [
+                    {"id": "quote.number", "label": "Quote Number", "type": "string"},
+                    {"id": "quote.customer_email", "label": "Customer Email", "type": "email"},
+                    {"id": "quote.total", "label": "Total", "type": "currency"},
+                ],
+            }
+        ]
+
+        def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+            captured["messages"] = messages
+            return _fake_response(
+                {
+                    "summary": "Improved the email template.",
+                    "draft": {
+                        "name": "Quote Approval",
+                        "description": "Customer approval notice.",
+                        "subject": "Quote {{ record['quote.number'] }} approved",
+                        "body_html": "<p>Quote {{ record['quote.number'] }} is approved.</p>",
+                        "body_text": "Quote {{ record['quote.number'] }} is approved.",
+                    },
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            )
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main, "_artifact_ai_entities", lambda _request: fake_entities),
+            patch.object(main, "_openai_chat_completion", fake_openai),
+            patch.object(main, "_openai_configured", lambda: True),
+        ):
+            res = client.post(
+                f"/email/templates/{template_id}/ai/plan",
+                json={
+                    "prompt": "Rewrite this as a polished quote approval email.",
+                    "draft": created["template"],
+                    "focus": "design",
+                    "sample": {"entity_id": "entity.quote"},
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        messages = captured.get("messages") or []
+        context_messages = [
+            item.get("content")
+            for item in messages
+            if isinstance(item, dict) and isinstance(item.get("content"), str) and item.get("content", "").startswith("context.json")
+        ]
+        self.assertEqual(len(context_messages), 1)
+        context_text = context_messages[0]
+        self.assertIn("\"current_validation\"", context_text)
+        self.assertIn("\"requested_focus\": \"design\"", context_text)
+        self.assertIn("\"selected_entity_summary\"", context_text)
+        self.assertIn("\"safe_jinja_examples\"", context_text)
+        self.assertIn("\"design_playbook\"", context_text)
+        self.assertIn("\"design_principles\"", context_text)
+        self.assertIn("\"component_priority\"", context_text)
+        self.assertIn("\"adaptation_rules\"", context_text)
+        self.assertIn("\"design_signals\"", context_text)
+        self.assertIn("\"quote.number\"", context_text)
+        self.assertIn("\"field_ids_by_type\"", context_text)
+        self.assertIn("\"record_field_example\"", context_text)
+
+    def test_email_template_ai_plan_derives_plain_text_when_model_omits_it(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Welcome",
+                    "description": "",
+                    "subject": "Hello",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Improved the welcome email.",
+                        "draft": {
+                            "name": "Welcome",
+                            "description": "Welcome email.",
+                            "subject": "Welcome aboard",
+                            "body_html": "<div><p>Hello <strong>Customer</strong></p><p>Your account is ready.</p></div>",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/email/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Improve the welcome email.",
+                        "draft": created["template"],
+                    },
+                )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        self.assertEqual(body.get("draft", {}).get("body_text"), "Hello Customer Your account is ready.")
+
+    def test_document_template_normalizer_applies_safe_defaults(self) -> None:
+        normalized = main._artifact_ai_normalize_doc_template_draft(
+            {},
+            {
+                "name": "Service Report",
+                "description": "Customer-facing document.",
+                "html": "<h1>Service Report</h1>",
+                "paper_size": "Legal",
+                "margin_top": "",
+                "margin_right": None,
+                "margin_bottom": " ",
+                "margin_left": "",
+                "filename_pattern": "",
+            },
+        )
+
+        self.assertEqual(normalized.get("filename_pattern"), "Service Report")
+        self.assertEqual(normalized.get("paper_size"), "A4")
+        self.assertEqual(normalized.get("margin_top"), "12mm")
+        self.assertEqual(normalized.get("margin_right"), "12mm")
+        self.assertEqual(normalized.get("margin_bottom"), "12mm")
+        self.assertEqual(normalized.get("margin_left"), "12mm")
+
+    def test_template_ai_system_prompts_require_design_playbook(self) -> None:
+        email_prompt = main._artifact_ai_system_prompt("email_template")
+        document_prompt = main._artifact_ai_system_prompt("document_template")
+
+        self.assertIn("context.design_playbook", email_prompt)
+        self.assertIn("soft guidance", email_prompt.lower())
+        self.assertIn("component_priority", email_prompt)
+        self.assertIn("context.design_signals", email_prompt)
+        self.assertIn("context.requested_focus", email_prompt)
+        self.assertIn("If context.requested_focus is validation", email_prompt)
+        self.assertIn("preserve it unless the user clearly asks for a redesign", email_prompt)
+        self.assertIn("context.design_playbook", document_prompt)
+        self.assertIn("soft guidance", document_prompt.lower())
+        self.assertIn("component_priority", document_prompt)
+        self.assertIn("context.design_signals", document_prompt)
+        self.assertIn("context.requested_focus", document_prompt)
+        self.assertIn("If context.requested_focus is validation", document_prompt)
+        self.assertIn("preserve it unless the user clearly asks for a redesign", document_prompt)
+
+    def test_automation_ai_plan_context_includes_requested_focus_and_validation(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Reminder",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+        captured: dict[str, object] = {}
+
+        def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+            captured["messages"] = messages
+            return _fake_response(
+                {
+                    "summary": "Improved the notification copy.",
+                    "draft": {
+                        "name": "Reminder",
+                        "description": "",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.notify",
+                                "inputs": {
+                                    "recipient_user_id": "user-1",
+                                    "title": "Reminder",
+                                    "body": "Please review this record.",
+                                },
+                            }
+                        ],
+                        "status": "draft",
+                    },
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            )
+
+        with (
+            patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: {"event_catalog": [], "entities": []}),
+            patch.object(main, "_openai_chat_completion", fake_openai),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+        ):
+            res = client.post(
+                f"/automations/{automation_id}/ai/plan",
+                json={
+                    "prompt": "Tighten the notification wording.",
+                    "focus": "content",
+                    "draft": created["automation"],
+                },
+            )
+
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        context_text = next(
+            (
+                msg.get("content", "")
+                for msg in captured.get("messages", [])
+                if isinstance(msg, dict) and isinstance(msg.get("content"), str) and msg.get("content", "").startswith("context.json")
+            ),
+            "",
+        )
+        self.assertIn("\"requested_focus\": \"content\"", context_text)
+        self.assertIn("\"current_validation\"", context_text)
+
+    def test_automation_ai_system_prompt_includes_requested_focus_guidance(self) -> None:
+        automation_prompt = main._artifact_ai_system_prompt("automation")
+
+        self.assertIn("context.current_validation", automation_prompt)
+        self.assertIn("context.requested_focus", automation_prompt)
+        self.assertIn("If context.requested_focus is validation", automation_prompt)
+        self.assertIn("If context.requested_focus is logic", automation_prompt)
+        self.assertIn("If context.requested_focus is content", automation_prompt)
+
+    def test_ai_artifact_plan_result_infers_focus_for_scoped_automation_prompt(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+            captured["messages"] = messages
+            return _fake_response(
+                {
+                    "summary": "Fixed the validation issue.",
+                    "draft": {
+                        "name": "Reminder",
+                        "description": "",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                        "steps": [self._seed_automation_step()],
+                        "status": "draft",
+                    },
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            )
+
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "auto-1",
+            "name": "Reminder",
+            "description": "",
+            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+            "steps": [self._seed_automation_step()],
+            "status": "draft",
+        }
+
+        with (
+            patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: {"event_catalog": [], "entities": []}),
+            patch.object(main, "_openai_chat_completion", fake_openai),
+        ):
+            result = main._ai_artifact_plan_result(
+                "automation",
+                "auto-1",
+                "Fix validation errors in this automation while keeping the behavior the same.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        context_text = next(
+            (
+                msg.get("content", "")
+                for msg in captured.get("messages", [])
+                if isinstance(msg, dict) and isinstance(msg.get("content"), str) and msg.get("content", "").startswith("context.json")
+            ),
+            "",
+        )
+        self.assertIn("\"requested_focus\": \"validation\"", context_text)
+        self.assertEqual((result.get("planner_state") or {}).get("requested_focus"), "validation")
+
     def test_automation_ai_plan_returns_validated_draft(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):

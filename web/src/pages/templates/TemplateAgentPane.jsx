@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccessContext } from "../../access.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../../components/ProviderSecretModal.jsx";
@@ -20,31 +20,85 @@ function formatValidationLines(items = []) {
     .filter(Boolean);
 }
 
+function hasValidationErrors(validation) {
+  return Array.isArray(validation?.errors) && validation.errors.length > 0;
+}
+
 export default function TemplateAgentPane({
   disabled,
   initialMessage,
   agentKind,
   user,
   recordId,
+  sample,
   draft,
   setDraft,
   setValidationState,
   validationState,
-  onFixHandlerChange,
+  autoFixToken = 0,
+  onAutoFixHandled,
+  input,
+  setInput,
+  messages,
+  setMessages,
+  proposal,
+  setProposal,
 }) {
-  const { hasCapability, isSuperadmin } = useAccessContext();
+  const { hasCapability } = useAccessContext();
   const { t } = useI18n();
   const { providers, loading, reload } = useWorkspaceProviderStatus(["openai"]);
-  const [input, setInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [proposal, setProposal] = useState(null);
   const message = initialMessage || t("settings.template_studio.default_agent_message");
   const templateLabel = agentKind === "document" ? "document template" : "email template";
   const openAiConnected = Boolean(providers?.openai?.connected);
+  const canUseTemplateAi = hasCapability("templates.manage");
   const canManageSettings = hasCapability("workspace.manage_settings");
   const userLabel = user?.email || t("common.you");
+  const lastAutoFixTokenRef = useRef(0);
+  const quickActions = useMemo(() => (
+    agentKind === "document"
+      ? [
+          {
+            id: "improve-design",
+            label: "Improve layout",
+            prompt: "Improve the layout, hierarchy, and print readability of this document template while preserving its intent, variables, and overall structure unless a clearer layout change is needed.",
+            focus: "design",
+          },
+          {
+            id: "tighten-copy",
+            label: "Tighten copy",
+            prompt: "Improve the clarity, labels, and wording in this document template while preserving its structure and variables.",
+            focus: "content",
+          },
+          {
+            id: "apply-branding",
+            label: "Use branding",
+            prompt: "Apply workspace branding more effectively to this document template while keeping it clean, printable, and consistent with the existing structure.",
+            focus: "design",
+          },
+        ]
+      : [
+          {
+            id: "improve-design",
+            label: "Improve design",
+            prompt: "Improve the design, hierarchy, and scannability of this email template while preserving its intent, variables, and overall structure unless a clearer layout change is needed.",
+            focus: "design",
+          },
+          {
+            id: "tighten-copy",
+            label: "Tighten copy",
+            prompt: "Improve the subject, CTA wording, and overall copy clarity of this email template while preserving its structure and variables.",
+            focus: "content",
+          },
+          {
+            id: "apply-branding",
+            label: "Use branding",
+            prompt: "Apply workspace branding more effectively to this email template while keeping it production-ready and consistent with the existing structure.",
+            focus: "design",
+          },
+        ]
+  ), [agentKind]);
   const planningStatusItems = useMemo(() => ([
     `Reviewing the current ${templateLabel} draft`,
     "Checking structure, placeholders, and editable content",
@@ -59,23 +113,21 @@ export default function TemplateAgentPane({
 
   const buildTemplateAiRepairPrompt = useCallback((validation, summary) => {
     const errors = formatValidationLines(validation?.errors || []);
-    const warnings = formatValidationLines([
-      ...(validation?.warnings || []),
-      ...((validation?.undefined || []).map((item) => `Undefined: ${item}`)),
-      ...((validation?.possible_undefined || []).map((item) => `Undefined: ${item}`)),
-    ]);
-    const sections = [`Fix this ${templateLabel} draft so it passes validation.`];
+    if (!errors.length) return "";
+    const sections = [`Fix only the validation errors in this ${templateLabel} draft.`];
     if (summary) sections.push(`Current goal: ${summary}`);
     if (errors.length > 0) sections.push(`Errors:\n- ${errors.join("\n- ")}`);
-    if (warnings.length > 0) sections.push(`Warnings:\n- ${warnings.join("\n- ")}`);
-    sections.push("Return a corrected draft that preserves the intended change.");
+    sections.push("Preserve the existing structure, copy, and visual design unless a validation error requires a targeted change.");
+    sections.push("Do not do extra redesign, copy cleanup, or non-validation improvements.");
+    sections.push("Return the smallest corrected draft that preserves the intended change.");
     return sections.join("\n\n");
   }, [templateLabel]);
 
-  const runTemplateAiPlan = useCallback(async (rawText, draftOverride = null) => {
+  const runTemplateAiPlan = useCallback(async (rawText, draftOverride = null, options = null) => {
     const text = String(rawText || "").trim();
     const nextDraft = draftOverride || draft;
     if (!text || submitting || disabled || !endpoint || !nextDraft) return;
+    const focus = options?.focus || null;
     setProposal(null);
     setMessages((prev) => [...prev, { role: "user", text }]);
     if (!draftOverride) {
@@ -88,6 +140,8 @@ export default function TemplateAgentPane({
         body: {
           prompt: text,
           draft: nextDraft,
+          focus,
+          sample: sample?.entity_id ? { entity_id: sample.entity_id, record_id: sample.record_id || "" } : null,
         },
       });
       setProposal({
@@ -103,18 +157,24 @@ export default function TemplateAgentPane({
     } finally {
       setSubmitting(false);
     }
-  }, [disabled, draft, endpoint, submitting]);
+  }, [disabled, draft, endpoint, sample, submitting]);
 
   const runTemplateAiFix = useCallback(async ({ draft: repairDraft = null, validation = null, summary = "" } = {}) => {
     const nextValidation = validation || proposal?.validation || validationState;
     const nextDraft = repairDraft || proposal?.draft || draft;
-    if (!nextDraft || !nextValidation) return;
+    if (!nextDraft || !nextValidation || !hasValidationErrors(nextValidation)) return;
     const repairPrompt = buildTemplateAiRepairPrompt(nextValidation, summary || proposal?.summary || "");
-    return runTemplateAiPlan(repairPrompt, nextDraft);
+    if (!repairPrompt) return;
+    return runTemplateAiPlan(repairPrompt, nextDraft, { focus: "validation" });
   }, [buildTemplateAiRepairPrompt, draft, proposal, runTemplateAiPlan, validationState]);
 
   async function handleSend() {
     await runTemplateAiPlan(input);
+  }
+
+  async function handleQuickAction(action) {
+    if (!action || submitting || disabled || !draft) return;
+    await runTemplateAiPlan(action.prompt, draft, { focus: action.focus });
   }
 
   function applyProposal() {
@@ -122,8 +182,11 @@ export default function TemplateAgentPane({
     if (typeof setDraft === "function") {
       setDraft(proposal.draft);
     }
-    if (proposal.validation && typeof setValidationState === "function") {
-      setValidationState(proposal.validation);
+    if (typeof setValidationState === "function") {
+      setValidationState((prev) => ({
+        ...(prev || {}),
+        status: "checking",
+      }));
     }
     setMessages((prev) => [
       ...prev,
@@ -165,36 +228,29 @@ export default function TemplateAgentPane({
   }
 
   useEffect(() => {
-    if (typeof onFixHandlerChange !== "function") return undefined;
-    if (!openAiConnected) {
-      onFixHandlerChange(null);
-      return undefined;
+    if (!openAiConnected) return;
+    if (!autoFixToken) return;
+    if (!hasValidationErrors(validationState) || !draft) return;
+    if (autoFixToken === lastAutoFixTokenRef.current) return;
+    lastAutoFixTokenRef.current = autoFixToken;
+    if (typeof onAutoFixHandled === "function") {
+      onAutoFixHandled();
     }
-    const hasIssues = ((validationState?.errors || []).length > 0)
-      || ((validationState?.warnings || []).length > 0)
-      || ((validationState?.undefined || []).length > 0)
-      || ((validationState?.possible_undefined || []).length > 0);
-    if (!hasIssues || !draft) {
-      onFixHandlerChange(null);
-      return undefined;
-    }
-    const handler = () => runTemplateAiFix({
+    runTemplateAiFix({
       draft,
       validation: validationState,
       summary: draft?.name || `${templateLabel} draft`,
     });
-    onFixHandlerChange(() => handler);
-    return () => onFixHandlerChange(null);
-  }, [draft, onFixHandlerChange, openAiConnected, runTemplateAiFix, templateLabel, validationState]);
+  }, [autoFixToken, draft, onAutoFixHandled, openAiConnected, runTemplateAiFix, templateLabel, validationState]);
 
-  if (!isSuperadmin) {
+  if (!canUseTemplateAi) {
     return (
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 overflow-auto space-y-4">
           <div className="chat chat-start">
             <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
             <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
-              Studio AI is currently limited to superadmins.
+              You need template management access to use template AI.
             </div>
           </div>
         </div>
@@ -291,6 +347,24 @@ export default function TemplateAgentPane({
         inputDisabled={disabled || submitting || !endpoint || !draft}
         inputPlaceholder={t("settings.template_studio.describe_template_change")}
         minRows={4}
+        composerExtras={draft ? (
+          <div className="space-y-2">
+            <div className="text-[10px] uppercase tracking-wide opacity-60">Quick actions</div>
+            <div className="flex flex-wrap gap-2">
+              {quickActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => handleQuickAction(action)}
+                  disabled={disabled || submitting || !endpoint || !draft}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       />
       <ProviderSecretModal
         open={modalOpen}

@@ -25,6 +25,35 @@ Primary object:
 
 Depending on route/runtime, other objects may or may not exist. Do **not** assume they exist unless tested.
 
+Common helper objects:
+- `formatted`
+- `formatted_nested`
+- `lines`
+- `line_items`
+- `formatted_line_items`
+
+Branding objects commonly available:
+- `workspace`
+- `company`
+- `branding`
+
+Common branding fields:
+- `workspace.name`
+- `workspace.logo_url`
+- `workspace.colors.primary`
+- `workspace.colors.secondary`
+- `workspace.colors.accent`
+- `branding.primary_color`
+- `branding.secondary_color`
+- `branding.accent_color`
+
+For entities with child rows such as invoices and purchase orders, OCTO may also provide:
+- `lines`
+- `line_items`
+- `formatted_line_items`
+
+These are the preferred collections for repeating tables. Do not guess `record['lines']` unless the preview context actually includes it.
+
 Safe access pattern:
 
 ```jinja
@@ -44,6 +73,13 @@ Safe access pattern:
 
 4. Prefer direct safe expressions over chained assumptions.
 
+5. Use the selected entity’s real field ids. If the template is for `entity.te_purchase_order`, prefer ids like `te_purchase_order.po_number`, not invented aliases like `po_number` unless the preview confirms they exist.
+
+6. For line item tables, prefer the provided helper collections:
+   - `lines`
+   - `line_items`
+   - `formatted_line_items`
+
 ---
 
 ## 4) Document Template Recommended Structure
@@ -60,29 +96,35 @@ Optional:
 
 ---
 
-## 5) Style/Branding Requirements (Octodrop)
+## 5) Style/Branding Requirements
 
-- Brand color: `#e97026`
+- Prefer workspace branding from render context when available
 - Keep output professional, clean, readable in print/PDF
 - Use inline styles only (email/PDF-safe)
 - Avoid external CSS/JS
+- Default to strong design quality without extra prompting: clear masthead, good spacing, readable hierarchy, disciplined tables, and realistic production copy
 
 ### Logo usage
 
 Preferred:
 - `workspace.logo_url` (if available in render context)
 
-Fallback (current Octodrop logo):
-- `https://ippalsmyourhiqihvqmf.supabase.co/storage/v1/object/public/branding/1c346031-9227-4d58-b4c2-625d111bdb41/35ce088789faee626b7766b65445c9ab11912799b674917e757a636f97675d70_Octodrop-Horizontal-RGB-medium-orange-png.png`
-
 Safe logo snippet:
 
 ```jinja
-{% set logo_url =
-  (workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else
-  'https://ippalsmyourhiqihvqmf.supabase.co/storage/v1/object/public/branding/1c346031-9227-4d58-b4c2-625d111bdb41/35ce088789faee626b7766b65445c9ab11912799b674917e757a636f97675d70_Octodrop-Horizontal-RGB-medium-orange-png.png')
+{% set logo_url = workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else '' %}
+{% if logo_url %}
+  <img src="{{ logo_url }}" alt="{{ workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'Company' }}" style="height:34px; width:auto;" />
+{% endif %}
+```
+
+Safe primary color snippet:
+
+```jinja
+{% set brand_primary =
+  (branding.primary_color if branding is defined and branding and branding.primary_color is defined and branding.primary_color else
+  (workspace.colors.primary if workspace is defined and workspace and workspace.colors is defined and workspace.colors and workspace.colors.primary is defined and workspace.colors.primary else '#1f2937'))
 %}
-<img src="{{ logo_url }}" alt="Octodrop" style="height:34px; width:auto;" />
 ```
 
 ---
@@ -128,7 +170,7 @@ Constraints:
   2) header_html
   3) footer_html
   4) body_html
-- Brand color is #e97026 (Octodrop).
+- Use workspace branding from `workspace`, `company`, and `branding` when available.
 - Keep layout professional and print-friendly.
 - Use only inline styles.
 
@@ -156,6 +198,7 @@ Entity fields available:
 Before saving:
 - Template validates with zero compile errors
 - Preview renders for a real sample record
+- Repeating tables use real helper collections or confirmed entity fields
 - Header/footer render correctly on multipage output
 - Filename pattern returns non-empty value
 - No unsupported filters/functions

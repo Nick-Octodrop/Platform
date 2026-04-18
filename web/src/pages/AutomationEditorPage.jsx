@@ -1755,13 +1755,29 @@ export default function AutomationEditorPage({ user }) {
     return [
       `Fix the current automation draft for ${summaryLine}.`,
       messages.length ? `Resolve these validation issues exactly:\n- ${messages.join("\n- ")}` : "Resolve the current validation issues.",
-      "Keep the intended behavior, but return a valid automation draft.",
+      "Keep the intended behavior and make the smallest change needed to return a valid automation draft.",
     ].join("\n\n");
   }, []);
 
-  const runAutomationAiPlan = useCallback(async (rawText, draftOverride = null) => {
+  const automationQuickActions = useMemo(() => ([
+    {
+      id: "improve-logic",
+      label: "Improve logic",
+      prompt: "Improve the trigger accuracy, branching, and step logic of this automation while preserving the intended business outcome.",
+      focus: "logic",
+    },
+    {
+      id: "tighten-messages",
+      label: "Tighten messages",
+      prompt: "Improve the human-facing notification and email wording in this automation while preserving the trigger logic and step structure.",
+      focus: "content",
+    },
+  ]), []);
+
+  const runAutomationAiPlan = useCallback(async (rawText, draftOverride = null, options = null) => {
     const prompt = String(rawText || "").trim();
     if (!prompt || !automationId || chatLoading) return;
+    const focus = options?.focus || null;
     setPendingAiPlan(null);
     setChatMessages((prev) => [...prev, { role: "user", text: prompt }]);
     setChatInput("");
@@ -1772,6 +1788,7 @@ export default function AutomationEditorPage({ user }) {
         body: {
           prompt,
           draft: draftOverride && typeof draftOverride === "object" ? draftOverride : buildAutomationDefinition(),
+          focus,
         },
       });
       setPendingAiPlan({
@@ -1805,7 +1822,7 @@ export default function AutomationEditorPage({ user }) {
       ? options.summary.trim()
       : "the current automation";
     const repairPrompt = buildAutomationAiRepairPrompt(validation, summary);
-    return runAutomationAiPlan(repairPrompt, draft);
+    return runAutomationAiPlan(repairPrompt, draft, { focus: "validation" });
   }, [buildAutomationAiRepairPrompt, buildAutomationDefinition, runAutomationAiPlan, validationPanelErrors]);
 
   const triggerSummaryText = useMemo(() => {
@@ -2203,6 +2220,21 @@ export default function AutomationEditorPage({ user }) {
           inputDisabled={chatLoading}
           inputPlaceholder={t("settings.automation_editor.describe_change")}
           minRows={4}
+          composerExtras={automationQuickActions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {automationQuickActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="btn btn-xs btn-outline"
+                  disabled={chatLoading}
+                  onClick={() => runAutomationAiPlan(action.prompt, null, { focus: action.focus })}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         />
       ) : (
         providerStatusLoading ? (
@@ -2219,7 +2251,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiFix, runAutomationAiPlan, t, userLabel]);
+  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, automationQuickActions, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiFix, runAutomationAiPlan, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {

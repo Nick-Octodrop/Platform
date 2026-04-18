@@ -24,6 +24,7 @@ export default function NotificationBell() {
     return path.startsWith("/automations") || path.startsWith("/automation-runs");
   }, [location.pathname]);
   const hasNotifications = items.length > 0;
+  const panelTitle = hasNotifications ? t("common.notifications.title") : t("common.notifications.empty");
 
   async function loadCount() {
     try {
@@ -184,7 +185,7 @@ export default function NotificationBell() {
         <div className="absolute right-0 mt-2 w-80 card bg-base-100 shadow z-50">
           <div className="card-body p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="font-semibold">{t("common.notifications.title")}</div>
+              <div className="font-semibold">{panelTitle}</div>
               {hasNotifications ? (
                 <div className="dropdown dropdown-end">
                   <button
@@ -211,7 +212,6 @@ export default function NotificationBell() {
               ) : null}
             </div>
             <div className="mt-2 space-y-2 max-h-80 overflow-auto">
-              {items.length === 0 && <div className="text-xs opacity-60">{t("common.notifications.empty")}</div>}
               {items.map((n) => (
                 <button
                   key={n.id}
@@ -238,7 +238,7 @@ export default function NotificationBell() {
           <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-base-100 border-t border-base-300 shadow-2xl p-4">
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="font-semibold">{t("common.notifications.title")}</div>
+              <div className="font-semibold">{panelTitle}</div>
               {hasNotifications ? (
                 <div className="dropdown dropdown-end">
                   <button
@@ -265,7 +265,6 @@ export default function NotificationBell() {
               ) : null}
             </div>
             <div className="space-y-2 max-h-[60vh] overflow-auto">
-              {items.length === 0 && <div className="text-sm opacity-60 px-2 py-4">{t("common.notifications.empty")}</div>}
               {items.map((n) => (
                 <button
                   key={n.id}

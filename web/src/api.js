@@ -896,7 +896,8 @@ export async function studio2AgentChat(
   errors = null,
   draftManifestJson = null,
   chatHistory = null,
-  includeProgress = false
+  includeProgress = false,
+  focus = null
 ) {
   return apiFetch("/studio2/agent/chat", {
     method: "POST",
@@ -908,6 +909,7 @@ export async function studio2AgentChat(
       draft_manifest_json: draftManifestJson,
       chat_history: chatHistory,
       include_progress: includeProgress,
+      focus,
     },
     timeoutMs: 60000,
   });

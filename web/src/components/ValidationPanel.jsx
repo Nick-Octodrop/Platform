@@ -11,6 +11,7 @@ function formatItem(item) {
 
 export default function ValidationPanel({
   title,
+  status = "idle",
   errors = [],
   warnings = [],
   idleMessage,
@@ -28,8 +29,9 @@ export default function ValidationPanel({
   const hasErrors = errors.length > 0;
   const hasWarnings = warnings.length > 0;
   const hasIssues = hasErrors || hasWarnings;
-  const showIdle = !hasIssues && !showSuccess && idleMessage;
-  const showOk = !hasIssues && showSuccess && resolvedSuccessMessage;
+  const isChecking = status === "checking";
+  const showIdle = !isChecking && !hasIssues && !showSuccess && idleMessage;
+  const showOk = !isChecking && !hasIssues && showSuccess && resolvedSuccessMessage;
 
   return (
     <div className="mb-3">
@@ -45,6 +47,11 @@ export default function ValidationPanel({
               {resolvedFixLabel}
             </button>
           )}
+        </div>
+      )}
+      {isChecking && (
+        <div className="alert text-xs mt-2">
+          {t("validation.checking", {}, { defaultValue: "Checking..." })}
         </div>
       )}
       {showIdle && <div className="text-xs opacity-60 mt-2">{idleMessage}</div>}

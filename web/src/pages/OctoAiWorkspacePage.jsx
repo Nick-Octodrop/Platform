@@ -48,6 +48,19 @@ function StatusChip({ label, tone = "ghost" }) {
   return <span className={className}>{label}</span>;
 }
 
+function humanizeArtifactType(artifactType) {
+  if (typeof artifactType !== "string" || !artifactType.trim() || artifactType === "none") return "";
+  return artifactType.replace(/_/g, " ").trim();
+}
+
+function humanizeArtifactKey(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const text = value.trim();
+  if (/^[0-9a-f-]{24,}$/i.test(text)) return text;
+  const tail = text.split(".").pop() || text;
+  return tail.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function humanizePlanStatus(status) {
   if (typeof status !== "string" || !status.trim()) return "planned";
   return status.replace(/_/g, " ");
@@ -566,6 +579,113 @@ export default function OctoAiWorkspacePage() {
     }
     return [];
   }, [structuredPlan, t]);
+  const selectedArtifactContext = useMemo(() => {
+    const artifactType = typeof data.session?.selected_artifact_type === "string" ? data.session.selected_artifact_type : "none";
+    const artifactKey = typeof data.session?.selected_artifact_key === "string" ? data.session.selected_artifact_key : "";
+    if (!artifactType || artifactType === "none") {
+      return { type: "none", key: "", label: "", typeLabel: "" };
+    }
+    const typeLabel = humanizeArtifactType(artifactType);
+    const plannedArtifacts = Array.isArray(structuredPlan?.artifacts) ? structuredPlan.artifacts : [];
+    const matchedArtifact = plannedArtifacts.find(
+      (item) => item?.artifact_type === artifactType && item?.artifact_id === artifactKey,
+    );
+    const artifactLabel =
+      (typeof matchedArtifact?.artifact_label === "string" && matchedArtifact.artifact_label.trim())
+      || humanizeArtifactKey(artifactKey)
+      || artifactKey;
+    return {
+      type: artifactType,
+      key: artifactKey,
+      label: artifactLabel,
+      typeLabel,
+    };
+  }, [data.session?.selected_artifact_key, data.session?.selected_artifact_type, structuredPlan?.artifacts]);
+  const artifactFocusActions = useMemo(() => {
+    const label = selectedArtifactContext.label || "selected artifact";
+    if (selectedArtifactContext.type === "automation") {
+      return [
+        {
+          id: "fix-validation",
+          label: "Fix validation",
+          prompt: `Fix validation errors in the selected automation "${label}" and keep the existing behavior unless a targeted fix is required.`,
+        },
+        {
+          id: "improve-logic",
+          label: "Improve logic",
+          prompt: `Improve the trigger logic, branching, and step flow in the selected automation "${label}" while preserving the intended business outcome.`,
+        },
+        {
+          id: "tighten-messages",
+          label: "Tighten messages",
+          prompt: `Improve the human-facing notification and email wording in the selected automation "${label}" while keeping its trigger logic and structure stable.`,
+        },
+      ];
+    }
+    if (selectedArtifactContext.type === "email_template") {
+      return [
+        {
+          id: "fix-validation",
+          label: "Fix validation",
+          prompt: `Fix validation errors in the selected email template "${label}" and preserve the current structure, copy, and design unless a targeted fix is required.`,
+        },
+        {
+          id: "improve-design",
+          label: "Improve design",
+          prompt: `Improve the design, hierarchy, and scannability of the selected email template "${label}" while preserving its intent and valid dynamic fields.`,
+        },
+        {
+          id: "tighten-copy",
+          label: "Tighten copy",
+          prompt: `Improve the subject line, CTA wording, and overall copy clarity in the selected email template "${label}" while preserving its structure and variables.`,
+        },
+      ];
+    }
+    if (selectedArtifactContext.type === "document_template") {
+      return [
+        {
+          id: "fix-validation",
+          label: "Fix validation",
+          prompt: `Fix validation errors in the selected document template "${label}" and preserve the current structure, copy, and design unless a targeted fix is required.`,
+        },
+        {
+          id: "improve-design",
+          label: "Improve design",
+          prompt: `Improve the layout, hierarchy, and print readability of the selected document template "${label}" while preserving its intent and valid dynamic fields.`,
+        },
+        {
+          id: "tighten-copy",
+          label: "Tighten copy",
+          prompt: `Improve the labels, section wording, and overall copy clarity in the selected document template "${label}" while preserving its structure and variables.`,
+        },
+      ];
+    }
+    if (selectedArtifactContext.type === "module") {
+      return [
+        {
+          id: "fix-validation",
+          label: "Fix validation",
+          prompt: `Fix validation errors in the selected module "${label}" and preserve the current structure, UX, and business behavior unless a targeted fix is required.`,
+        },
+        {
+          id: "improve-ux",
+          label: "Improve UX",
+          prompt: `Improve the UX, page hierarchy, navigation clarity, and field grouping in the selected module "${label}" while preserving its business intent.`,
+        },
+        {
+          id: "tighten-copy",
+          label: "Tighten copy",
+          prompt: `Improve labels, helper text, action wording, and empty-state copy in the selected module "${label}" while keeping its schema and workflows stable.`,
+        },
+        {
+          id: "improve-logic",
+          label: "Improve logic",
+          prompt: `Improve workflows, actions, and business-rule logic in the selected module "${label}" while preserving its intended data model and user-facing experience.`,
+        },
+      ];
+    }
+    return [];
+  }, [selectedArtifactContext.label, selectedArtifactContext.type]);
 
   async function refreshSession(options = {}) {
     if (!sessionId) return;
@@ -622,8 +742,8 @@ export default function OctoAiWorkspacePage() {
     }
   }
 
-  async function sendMessage() {
-    const text = message.trim();
+  async function submitChatRequest(rawText, options = {}) {
+    const text = typeof rawText === "string" ? rawText.trim() : "";
     if (!text || streaming || busy) return;
     if (!openAiConnected) {
       if (canManageSettings) {
@@ -633,7 +753,7 @@ export default function OctoAiWorkspacePage() {
       }
       return;
     }
-    const bypassPendingQuestion = hasPendingQuestion && chatTextLooksLikeNewRequest(text);
+    const bypassPendingQuestion = options?.forceNewRequest === true || (hasPendingQuestion && chatTextLooksLikeNewRequest(text));
     if (hasPendingQuestion && !bypassPendingQuestion) {
       const hints = activeQuestionMeta?.kind === "field_spec"
         ? {
@@ -643,7 +763,7 @@ export default function OctoAiWorkspacePage() {
           }
         : undefined;
       await submitQuestionAnswer("custom", { text, hints });
-      setMessage("");
+      if (options?.clearInput !== false) setMessage("");
       return;
     }
     setStreaming(true);
@@ -652,7 +772,7 @@ export default function OctoAiWorkspacePage() {
     setPendingAssistantState(octoT("pending.planning_change"));
     try {
       await sendOctoAiChatMessage(sessionId, { message: text });
-      setMessage("");
+      if (options?.clearInput !== false) setMessage("");
       await refreshSession({ showLoading: false });
     } catch (err) {
       if (err?.code === "OPENAI_NOT_CONFIGURED" || (err?.message || "").includes("OpenAI")) {
@@ -669,6 +789,15 @@ export default function OctoAiWorkspacePage() {
       setPendingAssistantState("");
       setStreaming(false);
     }
+  }
+
+  async function sendMessage() {
+    await submitChatRequest(message, { clearInput: true });
+  }
+
+  async function sendFocusedIntent(action) {
+    if (!action?.prompt) return;
+    await submitChatRequest(action.prompt, { forceNewRequest: true, clearInput: true });
   }
 
   async function doEnsureSandbox() {
@@ -1078,6 +1207,29 @@ export default function OctoAiWorkspacePage() {
               <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
                 <div className="text-xs font-medium uppercase tracking-wide opacity-60">{octoT("chat.needs_input")}</div>
                 <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
+              </div>
+            ) : null}
+            {artifactFocusActions.length > 0 ? (
+              <div className="rounded-lg border border-base-300 bg-base-100 px-3 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-xs font-medium uppercase tracking-wide opacity-60">Focused intents</div>
+                  <span className="badge badge-outline badge-sm">
+                    {selectedArtifactContext.typeLabel || "artifact"}{selectedArtifactContext.label ? `: ${selectedArtifactContext.label}` : ""}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {artifactFocusActions.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className="btn btn-xs btn-outline"
+                      disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
+                      onClick={() => sendFocusedIntent(action)}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
             {actionStripActions.length > 0 ? (

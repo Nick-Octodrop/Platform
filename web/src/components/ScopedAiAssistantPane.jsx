@@ -26,6 +26,7 @@ export default function ScopedAiAssistantPane({
   inputDisabled = false,
   inputPlaceholder = "",
   minRows = 4,
+  composerExtras = null,
 }) {
   const internalScrollRef = useRef(null);
   const activeScrollRef = scrollRef || internalScrollRef;
@@ -81,6 +82,11 @@ export default function ScopedAiAssistantPane({
             <div className="max-h-[40vh] overflow-y-auto pr-1">
               {stageCard}
             </div>
+          </div>
+        ) : null}
+        {composerExtras ? (
+          <div className="mb-3">
+            {composerExtras}
           </div>
         ) : null}
         <AgentChatInput

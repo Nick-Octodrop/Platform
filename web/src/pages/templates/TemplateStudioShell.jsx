@@ -12,6 +12,79 @@ import ResponsiveDrawer from "../../ui/ResponsiveDrawer.jsx";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 const DEFAULT_SAMPLE = { entity_id: "", record_id: "" };
+const EMPTY_VALIDATION = {
+  status: "idle",
+  compiled_ok: null,
+  errors: [],
+  warnings: [],
+  undefined: [],
+  possible_undefined: [],
+  validated_at: null,
+  draft_signature: "",
+};
+
+function collectValidationWarnings(validationState) {
+  const undefinedList = (validationState?.undefined && validationState.undefined.length > 0)
+    ? validationState.undefined
+    : (validationState?.possible_undefined || []);
+  return [
+    ...(validationState?.warnings || []),
+    ...undefinedList.map((item) => `Undefined: ${item}`),
+  ];
+}
+
+function deriveValidationStatus(validationState) {
+  if (!validationState) return "idle";
+  if (validationState.status === "checking") return "checking";
+  if ((validationState?.errors || []).length > 0) return "error";
+  if (collectValidationWarnings(validationState).length > 0) return "warning";
+  if (validationState.validated_at || validationState.compiled_ok === true) return "success";
+  return "idle";
+}
+
+function hasValidationErrors(validationState) {
+  return Array.isArray(validationState?.errors) && validationState.errors.length > 0;
+}
+
+function normalizeValidationState(result, draftSignature) {
+  const base = {
+    ...EMPTY_VALIDATION,
+    ...(result && typeof result === "object" ? result : {}),
+    errors: Array.isArray(result?.errors) ? result.errors : [],
+    warnings: Array.isArray(result?.warnings) ? result.warnings : [],
+    undefined: Array.isArray(result?.undefined) ? result.undefined : [],
+    possible_undefined: Array.isArray(result?.possible_undefined) ? result.possible_undefined : [],
+    validated_at: result?.validated_at || null,
+    draft_signature: draftSignature || "",
+  };
+  return {
+    ...base,
+    status: deriveValidationStatus(base),
+  };
+}
+
+function buildCheckingValidationState(previous, draftSignature) {
+  return {
+    ...EMPTY_VALIDATION,
+    ...(previous && typeof previous === "object" ? previous : {}),
+    status: "checking",
+    draft_signature: draftSignature || "",
+  };
+}
+
+function buildValidationErrorState(message, draftSignature) {
+  return normalizeValidationState(
+    {
+      compiled_ok: false,
+      errors: [{ message, line: 1, col: 1 }],
+      warnings: [],
+      undefined: [],
+      possible_undefined: [],
+      validated_at: null,
+    },
+    draftSignature,
+  );
+}
 
 export default function TemplateStudioShell({
   title,
@@ -36,9 +109,10 @@ export default function TemplateStudioShell({
 }) {
   const { t } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const { isSuperadmin } = useAccessContext();
+  const { hasCapability } = useAccessContext();
   const { providers: aiProviders } = useWorkspaceProviderStatus(["openai"]);
-  const openAiConnected = isSuperadmin && Boolean(aiProviders?.openai?.connected);
+  const canUseTemplateAi = hasCapability("templates.manage");
+  const openAiConnected = canUseTemplateAi && Boolean(aiProviders?.openai?.connected);
   const [record, setRecord] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -48,17 +122,23 @@ export default function TemplateStudioShell({
   const [previewState, setPreviewState] = useState(null);
   const [entities, setEntities] = useState([]);
   const [sample, setSample] = useState(DEFAULT_SAMPLE);
+  const [sampleRecord, setSampleRecord] = useState(null);
   const [renderModalOpen, setRenderModalOpen] = useState(false);
   const [renderSample, setRenderSample] = useState({ entity_id: "", record_id: "" });
   const [utilityDrawer, setUtilityDrawer] = useState("");
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
-  const [aiFixHandler, setAiFixHandler] = useState(null);
+  const [requestedAiFixToken, setRequestedAiFixToken] = useState(0);
+  const [agentInput, setAgentInput] = useState("");
+  const [agentMessages, setAgentMessages] = useState([]);
+  const [agentProposal, setAgentProposal] = useState(null);
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const lastAutoPreviewRef = useRef("");
   const validateDebounceRef = useRef(null);
   const lastValidateSigRef = useRef("");
+  const validationRequestIdRef = useRef(0);
   const loadRecordRef = useRef(loadRecord);
+  const sampleRecordCacheRef = useRef({});
   const sampleStorageKey = useMemo(() => {
     return `template-studio-sample:${profile?.kind || "template"}`;
   }, [profile?.kind]);
@@ -123,6 +203,42 @@ export default function TemplateStudioShell({
   }, [sample?.entity_id]);
 
   useEffect(() => {
+    const entityId = sample?.entity_id || "";
+    const recordId = sample?.record_id || "";
+    if (!entityId || !recordId) {
+      setSampleRecord(null);
+      return undefined;
+    }
+    const cacheKey = `${entityId}:${recordId}`;
+    const cached = sampleRecordCacheRef.current[cacheKey];
+    if (cached) {
+      setSampleRecord(cached);
+      return undefined;
+    }
+    let cancelled = false;
+    setSampleRecord(null);
+    async function loadSampleRecord() {
+      try {
+        const res = await apiFetch(`/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}`);
+        const nextRecord = res?.record && typeof res.record === "object" ? res.record : null;
+        if (!nextRecord) return;
+        sampleRecordCacheRef.current[cacheKey] = nextRecord;
+        if (!cancelled) {
+          setSampleRecord(nextRecord);
+        }
+      } catch {
+        if (!cancelled) {
+          setSampleRecord(null);
+        }
+      }
+    }
+    loadSampleRecord();
+    return () => {
+      cancelled = true;
+    };
+  }, [sample?.entity_id, sample?.record_id]);
+
+  useEffect(() => {
     loadRecordRef.current = loadRecord;
   }, [loadRecord]);
 
@@ -130,13 +246,20 @@ export default function TemplateStudioShell({
     let mounted = true;
     async function load() {
       if (!recordId || !loadRecordRef.current) return;
+      validationRequestIdRef.current += 1;
+      setRecord(null);
+      setDraft(null);
+      setValidationState(null);
+      setPreviewState(null);
       const res = await loadRecordRef.current(recordId);
       if (!mounted) return;
       setRecord(res);
       setDraft(res);
       setSaveStatus("saved");
-      setValidationState(null);
-      setPreviewState(null);
+      setSampleRecord(null);
+      setAgentInput("");
+      setAgentMessages([]);
+      setAgentProposal(null);
     }
     load();
     return () => {
@@ -201,60 +324,67 @@ export default function TemplateStudioShell({
     setSaving(false);
   }
 
-  async function runValidate() {
+  function buildSamplePayload(sampleOverride = null) {
+    const nextSample = sampleOverride || sample || DEFAULT_SAMPLE;
+    if (!nextSample || typeof nextSample !== "object") return DEFAULT_SAMPLE;
+    const payload = { ...nextSample };
+    if (
+      sampleRecord
+      && payload.entity_id
+      && payload.record_id
+      && payload.entity_id === sample?.entity_id
+      && payload.record_id === sample?.record_id
+      && !payload.placeholder
+    ) {
+      payload.record = sampleRecord;
+    }
+    return payload;
+  }
+
+  async function runValidate(sampleOverride = null, signatureOverride = null) {
     if (!validate) return;
+    const samplePayload = buildSamplePayload(sampleOverride);
+    const draftSignature = signatureOverride || JSON.stringify({
+      draft: draft || null,
+      sample: samplePayload || null,
+    });
+    const requestId = validationRequestIdRef.current + 1;
+    validationRequestIdRef.current = requestId;
+    setValidationState((prev) => buildCheckingValidationState(prev, draftSignature));
     try {
-        const res = await validate(recordId, { sample });
-        setValidationState(res);
+      const res = await validate(recordId, { sample: samplePayload });
+      if (validationRequestIdRef.current !== requestId) return res;
+      const nextState = normalizeValidationState(res, draftSignature);
+      setValidationState(nextState);
+      return nextState;
     } catch (err) {
-      setValidationState({
-        compiled_ok: false,
-        errors: [{ message: err?.message || t("settings.template_studio.validation_failed"), line: 1, col: 1 }],
-        undefined: [],
-        warnings: [],
-        validated_at: null,
-      });
+      if (validationRequestIdRef.current !== requestId) return null;
+      const nextState = buildValidationErrorState(
+        err?.message || t("settings.template_studio.validation_failed"),
+        draftSignature,
+      );
+      setValidationState(nextState);
+      return nextState;
     }
   }
 
   async function runPreview(sampleOverride = null) {
     if (!preview) return;
     try {
-      const res = await preview(recordId, { sample: sampleOverride || sample });
+      const res = await preview(recordId, { sample: buildSamplePayload(sampleOverride) });
       setPreviewState(res);
-      setValidationState((prev) => ({
-        ...(prev || {}),
-        errors: [],
-      }));
+      return res;
     } catch (err) {
       setPreviewState({ error: err?.message || t("settings.template_studio.preview_failed") });
-      setValidationState({
-        compiled_ok: false,
-        errors: [{ message: err?.message || t("settings.template_studio.preview_failed"), line: 1, col: 1 }],
-        undefined: [],
-        warnings: [],
-        validated_at: null,
-      });
+      return null;
     }
   }
 
   async function runPreviewOnce(sampleOverride) {
     if (!preview) return null;
     try {
-      const res = await preview(recordId, { sample: sampleOverride || sample });
-      setValidationState((prev) => ({
-        ...(prev || {}),
-        errors: [],
-      }));
-      return res;
+      return await preview(recordId, { sample: buildSamplePayload(sampleOverride) });
     } catch (err) {
-      setValidationState({
-        compiled_ok: false,
-        errors: [{ message: err?.message || t("settings.template_studio.preview_failed"), line: 1, col: 1 }],
-        undefined: [],
-        warnings: [],
-        validated_at: null,
-      });
       return null;
     }
   }
@@ -262,6 +392,11 @@ export default function TemplateStudioShell({
   function openRenderModal() {
     setRenderSample({ entity_id: sample?.entity_id || "", record_id: "" });
     setRenderModalOpen(true);
+  }
+
+  function requestAiFix() {
+    setUtilityDrawer("agent");
+    setRequestedAiFixToken((prev) => prev + 1);
   }
 
   const ctx = {
@@ -286,6 +421,7 @@ export default function TemplateStudioShell({
     renderSample,
     setRenderSample,
     openRenderModal,
+    requestAiFix,
     ...extraContext,
   };
 
@@ -302,42 +438,40 @@ export default function TemplateStudioShell({
         agentKind={profile?.kind}
         user={user}
         recordId={recordId}
+        sample={sample}
         draft={draft}
         setDraft={setDraft}
         setValidationState={setValidationState}
         validationState={validationState}
-        onFixHandlerChange={setAiFixHandler}
+        autoFixToken={requestedAiFixToken}
+        onAutoFixHandled={() => setRequestedAiFixToken(0)}
+        input={agentInput}
+        setInput={setAgentInput}
+        messages={agentMessages}
+        setMessages={setAgentMessages}
+        proposal={agentProposal}
+        setProposal={setAgentProposal}
       />
     );
-  const undefinedList = (validationState?.undefined && validationState.undefined.length > 0)
-    ? validationState.undefined
-    : (validationState?.possible_undefined || []);
-  const mergedWarnings = [
-    ...(validationState?.warnings || []),
-    ...undefinedList.map((item) => `Undefined: ${item}`),
-  ];
+  const mergedWarnings = collectValidationWarnings(validationState);
+  const validationStatus = deriveValidationStatus(validationState);
+  const canRunAiFix = showFixWithAi && openAiConnected && hasValidationErrors(validationState);
   const validationContent = renderValidationPanel ? renderValidationPanel(ctx) : (
     <ValidationPanel
       title=""
+      status={validationStatus}
       errors={validationState?.errors || []}
       warnings={mergedWarnings}
       idleMessage={t("settings.template_studio.validation_idle")}
       showSuccess={true}
-      showFix={showFixWithAi && openAiConnected}
-      fixDisabled={!aiFixHandler}
-      onFix={aiFixHandler || undefined}
+      showFix={canRunAiFix}
+      fixDisabled={!canRunAiFix}
+      onFix={canRunAiFix ? requestAiFix : undefined}
     />
   );
 
   const primaryAction = actions.find((action) => action.kind === "primary") || null;
   const secondaryActions = actions.filter((action) => action !== primaryAction);
-  const validationStatus = validationState
-    ? ((validationState?.errors || []).length > 0
-      ? "error"
-      : mergedWarnings.length > 0
-        ? "warning"
-        : "success")
-    : "idle";
   const validationButtonClass = validationStatus === "success"
     ? "btn btn-outline btn-sm btn-success"
     : validationStatus === "warning"
@@ -345,7 +479,9 @@ export default function TemplateStudioShell({
       : validationStatus === "error"
         ? "btn btn-outline btn-sm btn-error"
         : SOFT_BUTTON_SM;
-  const validationButtonLabel = validationStatus === "success"
+  const validationButtonLabel = validationStatus === "checking"
+    ? t("validation.checking", {}, { defaultValue: "Checking..." })
+    : validationStatus === "success"
     ? t("settings.template_studio.validated")
     : validationStatus === "warning"
       ? t("settings.template_studio.warning")
@@ -353,7 +489,7 @@ export default function TemplateStudioShell({
         ? t("common.error")
         : t("settings.template_studio.validation");
   const utilityButtons = [
-    ...(isSuperadmin ? [{ id: "agent", label: t("common.ai"), icon: MessageSquare }] : []),
+    ...(canUseTemplateAi ? [{ id: "agent", label: t("common.ai"), icon: MessageSquare }] : []),
     { id: "validation", label: validationButtonLabel, icon: ShieldCheck },
   ];
   const utilityDrawerTitle = utilityDrawer === "agent" ? t("settings.template_studio.ai_assistant") : t("settings.template_studio.validation");
@@ -369,13 +505,16 @@ export default function TemplateStudioShell({
   useEffect(() => {
     if (!validate) return;
     if (!draft || !recordId) return;
-    const sig = JSON.stringify(draft);
+    const sig = JSON.stringify({
+      draft,
+      sample: buildSamplePayload(),
+    });
     if (sig === lastValidateSigRef.current) return;
     if (validateDebounceRef.current) {
       clearTimeout(validateDebounceRef.current);
     }
     validateDebounceRef.current = setTimeout(() => {
-      runValidate();
+      runValidate(null, sig);
       lastValidateSigRef.current = sig;
     }, 700);
     return () => {
@@ -383,14 +522,18 @@ export default function TemplateStudioShell({
         clearTimeout(validateDebounceRef.current);
       }
     };
-  }, [draft, validate, recordId]);
+  }, [draft, validate, recordId, sample, sampleRecord]);
 
   useEffect(() => {
     if (!profile?.autoPreview) return;
     if (activeTabId !== "preview") return;
     if (!sample?.entity_id) return;
     if (!draft) return;
-    const sig = JSON.stringify({ entity_id: sample.entity_id, draft });
+    const mode = profile?.autoPreviewMode || "sample";
+    const previewSample = mode === "placeholder"
+      ? { entity_id: sample.entity_id, placeholder: true }
+      : buildSamplePayload();
+    const sig = JSON.stringify({ previewSample, draft });
     if (sig === lastAutoPreviewRef.current) {
       return;
     }
@@ -398,10 +541,6 @@ export default function TemplateStudioShell({
       clearTimeout(previewDebounceRef.current);
     }
     previewDebounceRef.current = setTimeout(() => {
-      const mode = profile?.autoPreviewMode || "sample";
-      const previewSample = mode === "placeholder"
-        ? { entity_id: sample.entity_id, placeholder: true }
-        : sample;
       runPreview(previewSample);
       lastAutoPreviewRef.current = sig;
     }, 900);
@@ -410,7 +549,7 @@ export default function TemplateStudioShell({
         clearTimeout(previewDebounceRef.current);
       }
     };
-  }, [draft, sample, activeTabId, profile?.autoPreview, profile?.autoPreviewMode]);
+  }, [draft, sample, sampleRecord, activeTabId, profile?.autoPreview, profile?.autoPreviewMode]);
 
   if (isMobile) {
     return (
