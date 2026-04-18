@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
+import base64
 
 
 def _canonical_signature_input(payload: bytes, timestamp: str | None = None) -> bytes:
@@ -54,7 +55,10 @@ def verify_webhook_signature(
         return hmac.compare_digest(candidate, digest), None if hmac.compare_digest(candidate, digest) else "Invalid webhook signature"
 
     if allow_legacy_payload_only:
-        digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-        return hmac.compare_digest(candidate, digest), None if hmac.compare_digest(candidate, digest) else "Invalid webhook signature"
+        raw_digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).digest()
+        hex_digest = raw_digest.hex()
+        b64_digest = base64.b64encode(raw_digest).decode("ascii")
+        valid = hmac.compare_digest(candidate, hex_digest) or hmac.compare_digest(candidate, b64_digest)
+        return valid, None if valid else "Invalid webhook signature"
 
     return False, "Missing webhook timestamp"

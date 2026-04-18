@@ -34,6 +34,17 @@ _PUBLIC_PATHS = {
     "/integrations/oauth/xero/callback",
     "/integrations/oauth/shopify/callback",
 }
+_PUBLIC_PATH_PATTERNS = (
+    re.compile(r"^/integrations/webhooks/[^/]+/ingest$"),
+)
+
+
+def _is_public_path(path: str | None) -> bool:
+    if not isinstance(path, str):
+        return False
+    if path in _PUBLIC_PATHS:
+        return True
+    return any(pattern.match(path) for pattern in _PUBLIC_PATH_PATTERNS)
 
 
 def _is_prod_env() -> bool:
@@ -124,7 +135,7 @@ class SupabaseAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.method == "OPTIONS":
             return await call_next(request)
-        if request.url.path in _PUBLIC_PATHS:
+        if _is_public_path(request.url.path):
             return await call_next(request)
 
         if request.url.path.startswith("/ext/"):

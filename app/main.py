@@ -262,13 +262,20 @@ _PUBLIC_EXT_DOC_PATHS = {
     "/integrations/oauth/xero/callback",
     "/integrations/oauth/shopify/callback",
 }
+_PUBLIC_PATH_PATTERNS = (
+    re.compile(r"^/integrations/webhooks/[^/]+/ingest$"),
+)
 
 _APP_ENV_FOR_SECURITY = os.getenv("APP_ENV", os.getenv("ENV", "dev")).strip().lower() or "dev"
 _IS_PROD_ENV = _APP_ENV_FOR_SECURITY in {"prod", "production"}
 
 
 def _is_public_path(path: str | None) -> bool:
-    return isinstance(path, str) and path in _PUBLIC_EXT_DOC_PATHS
+    if not isinstance(path, str):
+        return False
+    if path in _PUBLIC_EXT_DOC_PATHS:
+        return True
+    return any(pattern.match(path) for pattern in _PUBLIC_PATH_PATTERNS)
 
 
 _LOCAL_CORS_ORIGINS = {
@@ -37747,7 +37754,12 @@ async def ingest_integration_webhook(request: Request, webhook_id: str) -> Respo
     if webhook.get("signing_secret_id"):
         try:
             secret_value = resolve_secret(str(webhook.get("signing_secret_id")), org_id)
-            provided = headers_json.get("x-octo-signature") or headers_json.get("x-signature") or headers_json.get("x-hub-signature-256")
+            provided = (
+                headers_json.get("x-octo-signature")
+                or headers_json.get("x-signature")
+                or headers_json.get("x-hub-signature-256")
+                or headers_json.get("x-shopify-hmac-sha256")
+            )
             provided_timestamp = headers_json.get("x-octo-timestamp") or headers_json.get("x-signature-timestamp")
             signature_valid = _verify_webhook_signature(raw_body, secret_value, provided, provided_timestamp=provided_timestamp)
             if not signature_valid:
@@ -41834,34 +41846,37 @@ async def test_automation_trigger(request: Request, automation_id: str) -> dict:
     if payload_in is not None and not isinstance(payload_in, dict):
         return _error_response("PAYLOAD_INVALID", "payload must be an object", "payload", status=400)
     payload = dict(payload_in or {})
-    payload["event"] = event_type
+    trigger_payload: dict[str, Any] = {"event": event_type}
 
     if event_type == "integration.webhook.received" or event_type.startswith("integration.webhook."):
         headers = body.get("headers")
         if headers is not None and not isinstance(headers, dict):
             return _error_response("HEADERS_INVALID", "headers must be an object", "headers", status=400)
         if headers is not None:
-            payload["headers"] = headers
+            trigger_payload["headers"] = headers
         if "connection_id" in body:
             if body.get("connection_id") not in (None, "") and not isinstance(body.get("connection_id"), str):
                 return _error_response("CONNECTION_INVALID", "connection_id must be a string", "connection_id", status=400)
             if isinstance(body.get("connection_id"), str) and body.get("connection_id").strip():
-                payload["connection_id"] = body.get("connection_id").strip()
+                trigger_payload["connection_id"] = body.get("connection_id").strip()
         if "webhook_id" in body:
             if body.get("webhook_id") not in (None, "") and not isinstance(body.get("webhook_id"), str):
                 return _error_response("WEBHOOK_ID_INVALID", "webhook_id must be a string", "webhook_id", status=400)
             if isinstance(body.get("webhook_id"), str) and body.get("webhook_id").strip():
-                payload["webhook_id"] = body.get("webhook_id").strip()
+                trigger_payload["webhook_id"] = body.get("webhook_id").strip()
         if "provider_event_id" in body:
             if body.get("provider_event_id") not in (None, "") and not isinstance(body.get("provider_event_id"), str):
                 return _error_response("PROVIDER_EVENT_ID_INVALID", "provider_event_id must be a string", "provider_event_id", status=400)
             if isinstance(body.get("provider_event_id"), str) and body.get("provider_event_id").strip():
-                payload["provider_event_id"] = body.get("provider_event_id").strip()
+                trigger_payload["provider_event_id"] = body.get("provider_event_id").strip()
         if "event_key" in body:
             if body.get("event_key") not in (None, "") and not isinstance(body.get("event_key"), str):
                 return _error_response("EVENT_KEY_INVALID", "event_key must be a string", "event_key", status=400)
             if isinstance(body.get("event_key"), str) and body.get("event_key").strip():
-                payload["event_key"] = body.get("event_key").strip()
+                trigger_payload["event_key"] = body.get("event_key").strip()
+        trigger_payload["payload"] = payload
+    else:
+        trigger_payload.update(payload)
 
     run = automation_store.create_run(
         {
@@ -41870,7 +41885,7 @@ async def test_automation_trigger(request: Request, automation_id: str) -> dict:
             "trigger_event_id": None,
             "trigger_type": event_type,
             "trigger_payload": {
-                **payload,
+                **trigger_payload,
                 "source": "test_trigger",
                 "tested_by": (actor or {}).get("user_id"),
                 "tested_at": _now(),

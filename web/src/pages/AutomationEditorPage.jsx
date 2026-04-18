@@ -6687,10 +6687,14 @@ export default function AutomationEditorPage({ user }) {
       const rawHeaders = webhookTestHeadersText.trim();
       const payload = rawPayload ? JSON.parse(rawPayload) : {};
       const headers = rawHeaders ? JSON.parse(rawHeaders) : {};
+      const webhookTestEventType =
+        typeof selectedTriggerEventId === "string" && selectedTriggerEventId.startsWith("integration.webhook.")
+          ? selectedTriggerEventId
+          : "integration.webhook.received";
       const res = await apiFetch(`/automations/${automationId}/test-trigger`, {
         method: "POST",
         body: {
-          event_type: "integration.webhook.received",
+          event_type: webhookTestEventType,
           connection_id: webhookTestConnectionId || undefined,
           event_key: webhookTestEventKey || undefined,
           provider_event_id: webhookTestProviderEventId || undefined,
