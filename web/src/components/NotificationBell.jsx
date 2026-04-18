@@ -23,6 +23,7 @@ export default function NotificationBell() {
     const path = location.pathname || "";
     return path.startsWith("/automations") || path.startsWith("/automation-runs");
   }, [location.pathname]);
+  const hasNotifications = items.length > 0;
 
   async function loadCount() {
     try {
@@ -184,28 +185,30 @@ export default function NotificationBell() {
           <div className="card-body p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="font-semibold">{t("common.notifications.title")}</div>
-              <div className="dropdown dropdown-end">
-                <button
-                  type="button"
-                  tabIndex={0}
-                  className={SOFT_BUTTON_XS}
-                  aria-label={t("common.notifications.actions")}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-                <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-                  <li>
-                    <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
-                      {t("common.notifications.mark_all")}
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
-                      {t("common.notifications.clear_all")}
-                    </button>
-                  </li>
-                </ul>
-              </div>
+              {hasNotifications ? (
+                <div className="dropdown dropdown-end">
+                  <button
+                    type="button"
+                    tabIndex={0}
+                    className={SOFT_BUTTON_XS}
+                    aria-label={t("common.notifications.actions")}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                  <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                    <li>
+                      <button type="button" onClick={markAllSeen}>
+                        {t("common.notifications.mark_all")}
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="text-error" onClick={() => setShowClearModal(true)}>
+                        {t("common.notifications.clear_all")}
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              ) : null}
             </div>
             <div className="mt-2 space-y-2 max-h-80 overflow-auto">
               {items.length === 0 && <div className="text-xs opacity-60">{t("common.notifications.empty")}</div>}
@@ -236,28 +239,30 @@ export default function NotificationBell() {
             <div className="mx-auto mb-4 h-1.5 w-24 rounded-full bg-base-300" />
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="font-semibold">{t("common.notifications.title")}</div>
-              <div className="dropdown dropdown-end">
-                <button
-                  type="button"
-                  tabIndex={0}
-                  className={SOFT_BUTTON_XS}
-                  aria-label={t("common.notifications.actions")}
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-                <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
-                  <li>
-                    <button type="button" onClick={markAllSeen} disabled={items.length === 0}>
-                      {t("common.notifications.mark_all")}
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" className="text-error" onClick={() => setShowClearModal(true)} disabled={items.length === 0}>
-                      {t("common.notifications.clear_all")}
-                    </button>
-                  </li>
-                </ul>
-              </div>
+              {hasNotifications ? (
+                <div className="dropdown dropdown-end">
+                  <button
+                    type="button"
+                    tabIndex={0}
+                    className={SOFT_BUTTON_XS}
+                    aria-label={t("common.notifications.actions")}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                  <ul tabIndex={0} className="dropdown-content menu z-[240] mt-2 w-44 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                    <li>
+                      <button type="button" onClick={markAllSeen}>
+                        {t("common.notifications.mark_all")}
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="text-error" onClick={() => setShowClearModal(true)}>
+                        {t("common.notifications.clear_all")}
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              ) : null}
             </div>
             <div className="space-y-2 max-h-[60vh] overflow-auto">
               {items.length === 0 && <div className="text-sm opacity-60 px-2 py-4">{t("common.notifications.empty")}</div>}
