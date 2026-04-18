@@ -5,8 +5,8 @@
     "key": "te_purchasing",
     "name": "Purchasing",
     "name_key": "te_purchasing.module.name",
-    "version": "1.0.0",
-    "description": "Operational purchase ordering for True Essentials.",
+    "version": "1.1.0",
+    "description": "Operational supplier ordering for True Essentials.",
     "description_key": "te_purchasing.module.description",
     "category": "True Essentials",
     "icon_key": "lucide:ShoppingCart"
@@ -41,8 +41,8 @@
         "mode": "inline",
         "items": [
           { "label": "Home", "to": "page:te_purchase_order.home_page", "menu_label_key": "te_purchasing.navigation.home_page" },
-          { "label": "Purchase Orders", "to": "page:te_purchase_order.list_page", "menu_label_key": "te_purchasing.navigation.list_page" },
-          { "label": "Open Orders", "to": "page:te_purchase_order.open_page", "menu_label_key": "te_purchasing.navigation.open_page" }
+          { "label": "Supplier Orders", "to": "page:te_purchase_order.list_page", "menu_label_key": "te_purchasing.navigation.list_page" },
+          { "label": "Open Supplier Orders", "to": "page:te_purchase_order.open_page", "menu_label_key": "te_purchasing.navigation.open_page" }
         ]
       }
     ]
@@ -50,16 +50,16 @@
   "entities": [
     {
       "id": "entity.te_purchase_order",
-      "label": "Purchase Order",
+      "label": "Supplier Order",
       "display_field": "te_purchase_order.po_number",
       "fields": [
         { "id": "te_purchase_order.id", "type": "uuid", "label": "ID", "readonly": true },
         {
           "id": "te_purchase_order.po_number",
           "type": "string",
-          "label": "Purchase Order Number",
+          "label": "Supplier Order Number",
           "readonly": true,
-          "help_text": "Use settings-driven numbering for formal purchase orders. Do not hardcode numbering formats into module logic."
+          "help_text": "Use settings-driven numbering for internal supplier orders. Do not hardcode numbering formats into module logic."
         },
         {
           "id": "te_purchase_order.status",
@@ -68,7 +68,8 @@
           "default": "draft",
           "options": [
             { "value": "draft", "label": "Draft" },
-            { "value": "placed", "label": "Placed" },
+            { "value": "placed", "label": "Ordered" },
+            { "value": "partially_received", "label": "Partially Received" },
             { "value": "received", "label": "Received" },
             { "value": "cancelled", "label": "Cancelled" }
           ],
@@ -99,8 +100,22 @@
           },
           "help_text": "This list is filtered to contacts for the selected supplier."
         },
+        {
+          "id": "te_purchase_order.order_method",
+          "type": "enum",
+          "label": "Order Method",
+          "default": "website",
+          "options": [
+            { "value": "website", "label": "Website" },
+            { "value": "portal", "label": "Supplier Portal" },
+            { "value": "email", "label": "Email" },
+            { "value": "phone", "label": "Phone" },
+            { "value": "manual_po", "label": "Formal PO" }
+          ],
+          "help_text": "Use the method that matches how the order was actually placed with the supplier."
+        },
         { "id": "te_purchase_order.order_date", "type": "date", "label": "Order Date", "required": true },
-        { "id": "te_purchase_order.expected_date", "type": "date", "label": "Expected Date" },
+        { "id": "te_purchase_order.expected_date", "type": "date", "label": "Expected Delivery Date" },
         { "id": "te_purchase_order.received_date", "type": "date", "label": "Received Date", "required_when": { "op": "eq", "field": "te_purchase_order.status", "value": "received" } },
         {
           "id": "te_purchase_order.currency",
@@ -112,11 +127,25 @@
             { "value": "USD", "label": "USD" }
           ]
         },
+        {
+          "id": "te_purchase_order.external_order_ref",
+          "type": "string",
+          "label": "External Order Reference",
+          "help_text": "Store the supplier website order number, portal reference, or emailed confirmation ID here."
+        },
+        {
+          "id": "te_purchase_order.order_url",
+          "type": "string",
+          "label": "Supplier Order URL",
+          "help_text": "Link back to the supplier page or portal order when the order was placed online."
+        },
         { "id": "te_purchase_order.supplier_reference", "type": "string", "label": "Supplier Reference" },
+        { "id": "te_purchase_order.tracking_number", "type": "string", "label": "Tracking Number" },
+        { "id": "te_purchase_order.tracking_url", "type": "string", "label": "Tracking URL" },
         {
           "id": "te_purchase_order.po_total",
           "type": "number",
-          "label": "PO Total",
+          "label": "Order Total",
           "readonly": true,
           "default": 0,
           "format": { "kind": "currency", "currency_field": "te_purchase_order.currency", "precision": 2 },
@@ -163,7 +192,7 @@
             }
           }
         },
-        { "id": "te_purchase_order.supplier_documents", "type": "attachments", "label": "Supplier Documents / Proformas" },
+        { "id": "te_purchase_order.supplier_documents", "type": "attachments", "label": "Supplier Files / Screenshots" },
         {
           "id": "te_purchase_order.cancellation_reason",
           "type": "text",
@@ -176,14 +205,14 @@
     },
     {
       "id": "entity.te_purchase_order_line",
-      "label": "Purchase Order Line",
+      "label": "Supplier Order Line",
       "display_field": "te_purchase_order_line.description",
       "fields": [
         { "id": "te_purchase_order_line.id", "type": "uuid", "label": "ID", "readonly": true },
         {
           "id": "te_purchase_order_line.purchase_order_id",
           "type": "lookup",
-          "label": "Purchase Order",
+          "label": "Supplier Order",
           "entity": "entity.te_purchase_order",
           "display_field": "te_purchase_order.po_number",
           "required": true
@@ -220,6 +249,15 @@
             ]
           },
           "help_text": "Only active supplier-linked products for the selected supplier are available here."
+        },
+        {
+          "id": "te_purchase_order_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.te_product",
+          "display_field": "te_product.title",
+          "readonly": true,
+          "help_text": "This is pulled from the selected supplier offer so stock and replenishment reporting stay product-centric."
         },
         { "id": "te_purchase_order_line.description", "type": "string", "label": "Description", "required": true },
         {
@@ -344,46 +382,63 @@
       "status_field": "te_purchase_order.status",
       "states": [
         { "id": "draft", "label": "Draft", "order": 1, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.currency"] },
-        { "id": "placed", "label": "Placed", "order": 2, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.order_date"] },
-        { "id": "received", "label": "Received", "order": 3, "required_fields": ["te_purchase_order.received_date"] },
-        { "id": "cancelled", "label": "Cancelled", "order": 4, "required_fields": ["te_purchase_order.cancellation_reason"] }
+        { "id": "placed", "label": "Ordered", "order": 2, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.order_date", "te_purchase_order.order_method"] },
+        { "id": "partially_received", "label": "Partially Received", "order": 3, "required_fields": ["te_purchase_order.supplier_id", "te_purchase_order.order_date", "te_purchase_order.order_method"] },
+        { "id": "received", "label": "Received", "order": 4, "required_fields": ["te_purchase_order.received_date"] },
+        { "id": "cancelled", "label": "Cancelled", "order": 5, "required_fields": ["te_purchase_order.cancellation_reason"] }
       ],
       "transitions": [
-        { "from": "draft", "to": "placed", "label": "Place Order" },
+        { "from": "draft", "to": "placed", "label": "Mark Ordered" },
+        { "from": "placed", "to": "partially_received", "label": "Mark Partially Received" },
         { "from": "placed", "to": "received", "label": "Mark Received" },
+        { "from": "partially_received", "to": "received", "label": "Mark Fully Received" },
         { "from": "draft", "to": "cancelled", "label": "Cancel" },
-        { "from": "placed", "to": "cancelled", "label": "Cancel" }
+        { "from": "placed", "to": "cancelled", "label": "Cancel" },
+        { "from": "partially_received", "to": "cancelled", "label": "Cancel" }
       ]
     }
   ],
   "actions": [
-    { "id": "action.te_purchase_order_new", "kind": "open_form", "label": "New Purchase Order", "target": "te_purchase_order.form" },
+    { "id": "action.te_purchase_order_new", "kind": "open_form", "label": "New Supplier Order", "target": "te_purchase_order.form" },
     {
       "id": "action.te_purchase_order_place",
       "kind": "update_record",
       "entity_id": "entity.te_purchase_order",
-      "label": "Place Order",
+      "label": "Mark Ordered",
       "patch": { "te_purchase_order.status": "placed" },
       "confirm": {
-        "title": "Place purchase order?",
-        "body": "Use this when the supplier-facing order is ready to send."
+        "title": "Mark supplier order as ordered?",
+        "body": "Use this after the order has actually been placed with the supplier site, portal, email, phone workflow, or formal PO."
       },
       "visible_when": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" },
       "enabled_when": {
         "op": "and",
         "conditions": [
           { "op": "exists", "field": "te_purchase_order.supplier_id" },
+          { "op": "exists", "field": "te_purchase_order.order_method" },
           { "op": "gt", "field": "te_purchase_order.po_total", "value": 0 }
         ]
       }
     },
     {
+      "id": "action.te_purchase_order_partial_receive",
+      "kind": "update_record",
+      "entity_id": "entity.te_purchase_order",
+      "label": "Mark Partially Received",
+      "patch": { "te_purchase_order.status": "partially_received" },
+      "visible_when": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }
+    },
+    {
       "id": "action.te_purchase_order_receive",
       "kind": "update_record",
       "entity_id": "entity.te_purchase_order",
-      "label": "Mark Received",
+      "label": "Mark Fully Received",
       "patch": { "te_purchase_order.status": "received" },
-      "visible_when": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" },
+      "visible_when": {
+        "op": "in",
+        "field": "te_purchase_order.status",
+        "value": ["placed", "partially_received"]
+      },
       "enabled_when": { "op": "exists", "field": "te_purchase_order.received_date" }
     },
     {
@@ -395,7 +450,7 @@
       "visible_when": {
         "op": "in",
         "field": "te_purchase_order.status",
-        "value": ["draft", "placed"]
+        "value": ["draft", "placed", "partially_received"]
       }
     }
   ],
@@ -408,6 +463,8 @@
         { "field_id": "te_purchase_order.po_number" },
         { "field_id": "te_purchase_order.order_date" },
         { "field_id": "te_purchase_order.supplier_id" },
+        { "field_id": "te_purchase_order.order_method" },
+        { "field_id": "te_purchase_order.external_order_ref" },
         { "field_id": "te_purchase_order.currency" },
         { "field_id": "te_purchase_order.po_total" },
         { "field_id": "te_purchase_order.status" }
@@ -417,8 +474,8 @@
         "open_record_target": "page:te_purchase_order.form_page",
         "search": {
           "enabled": true,
-          "placeholder": "Search purchase orders...",
-          "fields": ["te_purchase_order.po_number", "te_purchase_order.supplier_reference"]
+          "placeholder": "Search supplier orders...",
+          "fields": ["te_purchase_order.po_number", "te_purchase_order.external_order_ref", "te_purchase_order.supplier_reference"]
         },
         "filters": [
           {
@@ -427,11 +484,12 @@
             "domain": {
               "op": "in",
               "field": "te_purchase_order.status",
-              "value": ["draft", "placed"]
+              "value": ["draft", "placed", "partially_received"]
             }
           },
           { "id": "draft", "label": "Draft", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" } },
-          { "id": "placed", "label": "Placed", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" } },
+          { "id": "placed", "label": "Ordered", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" } },
+          { "id": "partially_received", "label": "Partially Received", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "partially_received" } },
           { "id": "received", "label": "Received", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "received" } },
           { "id": "cancelled", "label": "Cancelled", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "cancelled" } }
         ]
@@ -444,7 +502,7 @@
       "sections": [
         {
           "id": "summary",
-          "title": "Purchase Order",
+          "title": "Supplier Order",
           "layout": "columns",
           "columns": 2,
           "fields": [
@@ -452,11 +510,16 @@
             "te_purchase_order.status",
             "te_purchase_order.supplier_id",
             "te_purchase_order.supplier_contact_id",
+            "te_purchase_order.order_method",
             "te_purchase_order.order_date",
             "te_purchase_order.expected_date",
             "te_purchase_order.received_date",
             "te_purchase_order.currency",
-            "te_purchase_order.supplier_reference"
+            "te_purchase_order.external_order_ref",
+            "te_purchase_order.supplier_reference",
+            "te_purchase_order.order_url",
+            "te_purchase_order.tracking_number",
+            "te_purchase_order.tracking_url"
           ]
         },
         {
@@ -487,6 +550,7 @@
               ]
             },
             "item_field_map": {
+              "te_purchase_order_line.product_id": "te_supplier_product.product_id",
               "te_purchase_order_line.description": "te_supplier_product.supplier_item_name",
               "te_purchase_order_line.order_uom": "te_supplier_product.order_uom",
               "te_purchase_order_line.unit_cost": "te_supplier_product.unit_cost"
@@ -508,6 +572,7 @@
             "description_field": "te_purchase_order_line.description",
             "columns": [
               { "field_id": "te_purchase_order_line.supplier_product_id", "label": "Supplier Item", "readonly": true, "width": 220 },
+              { "field_id": "te_purchase_order_line.product_id", "label": "Product", "readonly": true, "width": 220 },
               { "field_id": "te_purchase_order_line.description", "label": "Description", "width": 320 },
               {
                 "field_id": "te_purchase_order_line.order_uom",
@@ -543,6 +608,7 @@
         "auto_state_actions": false,
         "primary_actions": [
           { "action_id": "action.te_purchase_order_place" },
+          { "action_id": "action.te_purchase_order_partial_receive" },
           { "action_id": "action.te_purchase_order_receive" }
         ],
         "secondary_actions": [
@@ -569,9 +635,14 @@
           "te_purchase_order.status",
           "te_purchase_order.supplier_id",
           "te_purchase_order.supplier_contact_id",
+          "te_purchase_order.order_method",
           "te_purchase_order.order_date",
           "te_purchase_order.expected_date",
           "te_purchase_order.received_date",
+          "te_purchase_order.external_order_ref",
+          "te_purchase_order.order_url",
+          "te_purchase_order.tracking_number",
+          "te_purchase_order.tracking_url",
           "te_purchase_order.po_total",
           "te_purchase_order.freight_estimate",
           "te_purchase_order.landed_total",
@@ -617,6 +688,7 @@
       "entity": "entity.te_purchase_order_line",
       "columns": [
         { "field_id": "te_purchase_order_line.supplier_product_id" },
+        { "field_id": "te_purchase_order_line.product_id" },
         { "field_id": "te_purchase_order_line.description" },
         { "field_id": "te_purchase_order_line.order_uom" },
         { "field_id": "te_purchase_order_line.quantity" },
@@ -630,7 +702,7 @@
         "open_record_target": "page:te_purchase_order_line.form_page",
         "search": {
           "enabled": true,
-          "placeholder": "Search purchase order lines...",
+          "placeholder": "Search supplier order lines...",
           "fields": ["te_purchase_order_line.description", "te_purchase_order_line.notes"]
         }
       }
@@ -642,13 +714,14 @@
       "sections": [
         {
           "id": "line_summary",
-          "title": "Purchase Order Line",
+          "title": "Supplier Order Line",
           "layout": "columns",
           "columns": 2,
           "fields": [
             "te_purchase_order_line.purchase_order_id",
             "te_purchase_order_line.supplier_id_snapshot",
             "te_purchase_order_line.supplier_product_id",
+            "te_purchase_order_line.product_id",
             "te_purchase_order_line.currency_snapshot",
             "te_purchase_order_line.description",
             "te_purchase_order_line.order_uom",
@@ -672,7 +745,7 @@
   "modals": [
     {
       "id": "modal.te_purchase_order_cancel",
-      "title": "Cancel Purchase Order",
+      "title": "Cancel Supplier Order",
       "description": "Capture why this supplier order is being cancelled.",
       "entity_id": "entity.te_purchase_order",
       "fields": [
@@ -682,7 +755,7 @@
         {
           "kind": "update_record",
           "entity_id": "entity.te_purchase_order",
-          "label": "Cancel Purchase Order",
+          "label": "Cancel Supplier Order",
           "patch": {
             "te_purchase_order.status": "cancelled",
             "te_purchase_order.cancellation_reason": { "ref": "$record.te_purchase_order.cancellation_reason" }
@@ -704,7 +777,7 @@
       "header": {
         "variant": "none",
         "actions": [
-          { "kind": "navigate", "label": "New Purchase Order", "target": "page:te_purchase_order.form_page" }
+          { "kind": "navigate", "label": "New Supplier Order", "target": "page:te_purchase_order.form_page" }
         ]
       },
       "content": [
@@ -713,9 +786,9 @@
           "columns": 4,
           "cards": [
             { "id": "draft_orders", "label": "Draft Orders", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "draft" }, "format": "number" },
-            { "id": "placed_orders", "label": "Placed Orders", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }, "format": "number" },
-            { "id": "received_orders", "label": "Received", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "received" }, "format": "number" },
-            { "id": "open_value", "label": "Open Value", "entity_id": "entity.te_purchase_order", "measure": "sum:te_purchase_order.po_total", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }, "format": "currency" }
+            { "id": "placed_orders", "label": "Ordered", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "placed" }, "format": "number" },
+            { "id": "partial_orders", "label": "Partially Received", "entity_id": "entity.te_purchase_order", "measure": "count", "domain": { "op": "eq", "field": "te_purchase_order.status", "value": "partially_received" }, "format": "number" },
+            { "id": "open_value", "label": "Open Value", "entity_id": "entity.te_purchase_order", "measure": "sum:te_purchase_order.po_total", "domain": { "op": "in", "field": "te_purchase_order.status", "value": ["placed", "partially_received"] }, "format": "currency" }
           ]
         },
         {
@@ -740,7 +813,7 @@
     },
     {
       "id": "te_purchase_order.list_page",
-      "title": "Purchase Orders",
+      "title": "Supplier Orders",
       "layout": "single",
       "header": { "variant": "none" },
       "content": [
@@ -766,7 +839,7 @@
     },
     {
       "id": "te_purchase_order.open_page",
-      "title": "Open Purchase Orders",
+      "title": "Open Supplier Orders",
       "layout": "single",
       "header": { "variant": "none" },
       "content": [
@@ -790,7 +863,7 @@
     },
     {
       "id": "te_purchase_order.form_page",
-      "title": "Purchase Order",
+      "title": "Supplier Order",
       "layout": "single",
       "header": { "variant": "none" },
       "content": [
@@ -824,7 +897,7 @@
     },
     {
       "id": "te_purchase_order_line.list_page",
-      "title": "Purchase Order Lines",
+      "title": "Supplier Order Lines",
       "layout": "single",
       "header": { "variant": "none" },
       "content": [
@@ -846,7 +919,7 @@
     },
     {
       "id": "te_purchase_order_line.form_page",
-      "title": "Purchase Order Line",
+      "title": "Supplier Order Line",
       "layout": "single",
       "header": { "variant": "none" },
       "content": [

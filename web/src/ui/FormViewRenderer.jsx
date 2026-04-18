@@ -1839,10 +1839,10 @@ function collectRecordRefs(node, acc) {
   if (typeof node.field === "string" && node.field.startsWith("record.")) {
     acc.add(node.field.slice("record.".length));
   }
-  if (node.left) collectRecordRefs(node.left, acc);
-  if (node.right) collectRecordRefs(node.right, acc);
-  if (node.condition) collectRecordRefs(node.condition, acc);
-  if (Array.isArray(node.conditions)) node.conditions.forEach((c) => collectRecordRefs(c, acc));
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "ref" || key === "field") continue;
+    collectRecordRefs(value, acc);
+  }
 }
 
 function buildRecordContext(domain, record) {

@@ -5,7 +5,7 @@
 ### `te_catalog.json`
 - Product master records for the Shopify-facing catalog
 - Product forms designed as operational work surfaces with clean pricing, Shopify, notes, and activity structure
-- Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, manual stock controls, Shopify compare-at pricing, storefront description fields, and a dedicated Shopify image attachment field
+- Products now support retail sell pricing in NZD alongside separate buy-side pricing, FX conversion into NZD, landed-cost overrides, gross margin visibility, manual stock controls, stock-on-order visibility, Shopify-sales reservations, Shopify compare-at pricing, storefront description fields, and a dedicated Shopify image attachment field
 - Catalog navigation now includes dedicated pricing-review and stock-watch pages, plus graph and pivot analysis on the main products page
 - Supplier-linked product pricing now lives in `te_sourcing` to keep module installs clean and avoid circular dependencies
 - Catalog records are intended to be the source of truth for product title, handle, storefront description, storefront image selection, sell price, compare-at price, and stock-tracking intent before data is pushed into Shopify
@@ -21,9 +21,9 @@
 - Created as a small support module to avoid circular dependencies between `te_catalog` and `te_suppliers`
 
 ### `te_purchasing.json`
-- Purchase orders with a real statusbar workflow: `draft -> placed -> received / cancelled`
-- Supplier-aware purchase order lines filtered to compatible supplier-linked products
-- Purchase order lines now support ordered, received, and open quantity tracking for a cleaner operational bridge into stock control
+- Supplier orders with a real statusbar workflow: `draft -> ordered -> partially received -> received / cancelled`
+- Supplier-aware order lines filtered to compatible supplier-linked products, with a direct product reference carried onto each line for stock reporting
+- Supplier orders now support website, portal, email, phone, and formal-PO ordering methods plus external references, order URLs, and tracking details
 - Line items in their own tab, notes/documents in their own tab, activity enabled, cancellation modal included
 - Currency-aware totals and landed-cost estimate
 
@@ -75,6 +75,7 @@
 
 1. Install or reinstall the suite:
    - `python manifests/true_essentials/install_all.py`
+   - Or on Windows PowerShell: `powershell -ExecutionPolicy Bypass -File manifests/true_essentials/install_update_all.ps1`
 2. Create and authorize a Shopify integration connection in Octodrop.
    - Recommended scopes:
      - `read_products,write_products,read_inventory,write_inventory,read_orders,read_all_orders,read_customers,read_locations`
@@ -87,7 +88,7 @@ The phase-1 Shopify setup currently creates two manual actions on `te_product` r
 
 The product push sends the catalog master into Shopify using GraphQL `productSet`, writes back Shopify product, variant, inventory-item, status, and URL fields onto the same Octodrop product record, and then syncs any linked `te_product.shopify_image_attachments` into Shopify product media.
 
-The stock push sends `stock_available` into one configured Shopify location using GraphQL `inventorySetQuantities`. It expects the product to have already been pushed once so that the Shopify inventory item ID is known.
+The stock push sends `stock_available` into one configured Shopify location using GraphQL `inventorySetQuantities`. It does not use `stock_on_order`, so inbound purchasing visibility can be improved without changing the Shopify stock contract. `stock_available` now subtracts both manual reserved stock and Shopify-driven sales reservations from linked sales-order lines. It expects the product to have already been pushed once so that the Shopify inventory item ID is known.
 
 ## Shopify import-first workflow
 
@@ -148,6 +149,7 @@ The order importer:
 - links line items back to `te_product` by Shopify variant ID first, then by unique SKU
 - links orders back to `te_customer` by Shopify customer ID first, then by unique email when customer records already exist
 - snapshots quantity, sell price, discounts, taxes, and current NZD cost onto each sales-order line
+- writes `fulfillable_quantity` onto each sales-order line so catalog `stock_available` can reflect open Shopify demand through `te_product.stock_reserved_sales`
 - patches imported order fields instead of replacing the whole record, so local ERP notes and other non-Shopify fields are preserved
 
 ## Sales to finance income sync
