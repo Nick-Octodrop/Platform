@@ -139,7 +139,7 @@ function buildRecordLabel(record, { preferredFields = [], entity = null, fallbac
 }
 
 export default function TopNav({ user, onSignOut, frameMode = false }) {
-  const { t, locale, version, workspaceKey } = useI18n();
+  const { t, locale, version, workspaceKey, workspacePrefs } = useI18n();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
   const { moduleId } = useParams();
@@ -787,6 +787,10 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     if (!leafLabel || leafLabel === appLabel) return appLabel;
     return `${appLabel} / ${leafLabel}`;
   }, [appName, currentPageDef?.title, isAppRoute, isRecordPage, recordCrumbLabel]);
+  const workspaceDisplayName = useMemo(() => {
+    const raw = workspacePrefs?.workspace_name || workspacePrefs?.name || workspacePrefs?.title || "";
+    return String(raw).trim() || "Octodrop";
+  }, [workspacePrefs]);
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
       return mobileAppBreadcrumb || appName || t("common.app");
@@ -800,7 +804,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     if (isOctoAi) return t("navigation.octo_ai");
     if (isIntegrations) return integrationConnectionIdParam ? (integrationConnectionCrumbLabel || t("common.connection")) : t("navigation.integrations");
     if (isOps) return t("navigation.ops");
-    return "Octodrop";
+    return workspaceDisplayName;
   }, [
     appName,
     currentPageDef?.title,
@@ -824,6 +828,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     recordCrumbLabel,
     settingsLeafLabel,
     studioModuleName,
+    workspaceDisplayName,
   ]);
   const mobileSubtitle = useMemo(() => {
     if (isAppRoute) return "";
@@ -1116,27 +1121,36 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         </ul>
       </div>
     )
-  ) : isHome && isMobile ? (
-    <div className="min-w-0 flex items-center gap-2">
-      <button
-        className="btn btn-ghost btn-sm btn-square shrink-0"
-        type="button"
-        aria-label={t("common.menu")}
-        onClick={() => setMobileHomeMenuOpen(true)}
-      >
-        <Menu className="w-4 h-4" />
-      </button>
-      <div className="text-sm font-semibold truncate">{mobileTitle}</div>
-    </div>
+  ) : isHome ? (
+    isMobile ? (
+      <div className="min-w-0 flex items-center gap-2">
+        <button
+          className="btn btn-ghost btn-sm btn-square shrink-0"
+          type="button"
+          aria-label={t("common.menu")}
+          onClick={() => setMobileHomeMenuOpen(true)}
+        >
+          <Menu className="w-4 h-4" />
+        </button>
+        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+      </div>
+    ) : (
+      <div className="min-w-0">
+        <div className="text-sm font-semibold truncate">{workspaceDisplayName}</div>
+      </div>
+    )
   ) : (
     !isHome && (
       <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← {t("navigation.home")}</Link>
     )
   );
 
+  const mobileHeaderClass = "min-h-16";
+  const mobileDrawerHeaderClass = `flex items-center justify-between px-4 py-4 border-b border-base-200 ${mobileHeaderClass}`;
+
   return (
     <div className="bg-base-100 shadow overflow-visible relative z-40">
-      <div className="navbar px-2 sm:px-4">
+      <div className={`navbar px-2 sm:px-4 ${isMobile ? mobileHeaderClass : ""}`}>
         <div className="flex-1 min-w-0 gap-2">
           {hideLeftChrome ? <div className="h-8" aria-hidden="true" /> : leftChromeContent}
         </div>
@@ -1232,7 +1246,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
             onClick={() => setMobileAppMenuOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 w-[82vw] max-w-sm bg-base-100 shadow-2xl border-r border-base-300 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-base-200">
+            <div className={mobileDrawerHeaderClass}>
               <div className="flex items-center gap-2 min-w-0">
                 <Link
                   to={appendOctoAiFrameParams("/home")}
@@ -1314,7 +1328,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
             onClick={() => setMobileHomeMenuOpen(false)}
           />
           <aside className="absolute inset-y-0 left-0 w-[82vw] max-w-sm bg-base-100 shadow-2xl border-r border-base-300 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-base-200">
+            <div className={mobileDrawerHeaderClass}>
               <div className="text-sm font-semibold">{t("common.menu")}</div>
               <button
                 type="button"

@@ -793,24 +793,22 @@ function StatCardsBlock({
   const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 6));
   const gridClass =
     columns >= 6
-      ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
+      ? "grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
       : columns === 5
-        ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-5"
+        ? "grid-cols-2 xl:grid-cols-5"
         : columns >= 4
-      ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4"
+      ? "grid-cols-2 xl:grid-cols-4"
       : columns === 3
-        ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+        ? "grid-cols-2 xl:grid-cols-3"
         : columns === 2
-          ? "grid-cols-1 sm:grid-cols-2"
+          ? "grid-cols-2"
           : "grid-cols-1";
-
-  if (isMobile) return null;
 
   return (
     <div className="space-y-3">
       {block?.title ? <div className="text-sm font-semibold">{block.title}</div> : null}
       {error ? <div className="alert alert-error">{error}</div> : null}
-      <div className={`grid ${gridClass} gap-4`}>
+      <div className={`grid ${gridClass} ${isMobile ? "gap-0" : "gap-4"}`}>
         {cards.map((card) => {
           const clickable = typeof card.target === "string" && card.target && typeof onNavigate === "function";
           const toneClass =
@@ -822,7 +820,7 @@ function StatCardsBlock({
                   ? "text-error"
                   : "text-primary";
           const content = (
-            <div className={`card bg-base-100 border border-base-300 shadow-sm ${isMobile ? "rounded-none" : "rounded-box"} h-full`}>
+            <div className={`card bg-base-100 shadow-sm ${isMobile ? "rounded-none border-0" : "rounded-box border border-base-300"} h-full`}>
               <div className="card-body gap-2 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

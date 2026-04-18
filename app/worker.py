@@ -1524,10 +1524,12 @@ def _emit_automation_event(event_type: str, payload: dict) -> None:
         "org_id": get_org_id(),
         "trace_id": None,
     }
-    emitted = make_event(event_type, {"event": event_type, **(payload or {})}, meta)
+    # Preserve the actual emitted event type even if the payload already
+    # carries a generic `event` field from an upstream bridge.
+    emitted = make_event(event_type, {**(payload or {}), "event": event_type}, meta)
     app_main._handle_automation_event(emitted)
     try:
-        app_main._emit_external_webhook_subscriptions(event_type, {"event": event_type, **(payload or {})}, meta)
+        app_main._emit_external_webhook_subscriptions(event_type, {**(payload or {}), "event": event_type}, meta)
     except Exception:
         pass
 

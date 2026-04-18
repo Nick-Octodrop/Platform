@@ -69,6 +69,122 @@ def list_automations(base_url: str, *, token: str, workspace_id: str) -> list[di
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
+def list_workspace_members(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
+    status, payload = api_call("GET", f"{base_url}/access/members", token=token, workspace_id=workspace_id)
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"list workspace members failed: {collect_error_text(payload)}")
+    rows = payload.get("members")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _normalize_member_token(value: str) -> str:
+    return "".join(str(value or "").strip().lower().split())
+
+
+def resolve_member_user_ids(
+    base_url: str,
+    recipients: list[str],
+    *,
+    token: str,
+    workspace_id: str,
+) -> list[str]:
+    members = list_workspace_members(base_url, token=token, workspace_id=workspace_id)
+    by_user_id: dict[str, str] = {}
+    by_email: dict[str, str] = {}
+    by_email_local: dict[str, str] = {}
+    by_name_token: dict[str, str] = {}
+    for member in members:
+        user_id = str(member.get("user_id") or "").strip()
+        if not user_id:
+            continue
+        email = str(member.get("email") or "").strip().lower()
+        name = str(member.get("name") or "").strip()
+        by_user_id[user_id] = user_id
+        if email:
+            by_email[email] = user_id
+            local = email.split("@", 1)[0].strip()
+            if local:
+                by_email_local[local] = user_id
+        if name:
+            by_name_token[_normalize_member_token(name)] = user_id
+
+    resolved: list[str] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for raw in recipients:
+        token_value = str(raw or "").strip()
+        if not token_value:
+            continue
+        lowered = token_value.lower()
+        normalized = _normalize_member_token(token_value)
+        user_id = by_user_id.get(token_value) or by_email.get(lowered) or by_email_local.get(lowered) or by_name_token.get(normalized)
+        if not isinstance(user_id, str) or not user_id:
+            missing.append(token_value)
+            continue
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        resolved.append(user_id)
+    if missing:
+        raise RuntimeError(f"Could not resolve workspace members: {', '.join(missing)}")
+    if not resolved:
+        raise RuntimeError("No notification recipients resolved")
+    return resolved
+
+
+def resolve_member_emails(
+    base_url: str,
+    recipients: list[str],
+    *,
+    token: str,
+    workspace_id: str,
+) -> list[str]:
+    members = list_workspace_members(base_url, token=token, workspace_id=workspace_id)
+    by_user_id: dict[str, str] = {}
+    by_email: dict[str, str] = {}
+    by_email_local: dict[str, str] = {}
+    by_name_token: dict[str, str] = {}
+    for member in members:
+        user_id = str(member.get("user_id") or "").strip()
+        email = str(member.get("email") or "").strip().lower()
+        name = str(member.get("name") or "").strip()
+        if email:
+            if user_id:
+                by_user_id[user_id] = email
+            by_email[email] = email
+            local = email.split("@", 1)[0].strip()
+            if local:
+                by_email_local[local] = email
+        if name and email:
+            by_name_token[_normalize_member_token(name)] = email
+
+    resolved: list[str] = []
+    missing: list[str] = []
+    seen: set[str] = set()
+    for raw in recipients:
+        token_value = str(raw or "").strip()
+        if not token_value:
+            continue
+        lowered = token_value.lower()
+        normalized = _normalize_member_token(token_value)
+        email = by_user_id.get(token_value) or by_email.get(lowered) or by_email_local.get(lowered) or by_name_token.get(normalized)
+        if not isinstance(email, str) or not email:
+            if "@" in lowered:
+                email = lowered
+            else:
+                missing.append(token_value)
+                continue
+        if email in seen:
+            continue
+        seen.add(email)
+        resolved.append(email)
+    if missing:
+        raise RuntimeError(f"Could not resolve workspace member emails: {', '.join(missing)}")
+    if not resolved:
+        raise RuntimeError("No order email recipients resolved")
+    return resolved
+
+
 def create_automation(base_url: str, definition: dict[str, Any], *, token: str, workspace_id: str) -> dict[str, Any]:
     status, payload = api_call("POST", f"{base_url}/automations", token=token, workspace_id=workspace_id, body=definition)
     if status >= 400 or not is_ok(payload):
@@ -123,10 +239,87 @@ def upsert_automation_by_name(base_url: str, definition: dict[str, Any], *, toke
     return "created", created
 
 
-def build_orders_consumer_automation(*, status: str) -> dict[str, Any]:
+def build_orders_consumer_automation(
+    *,
+    status: str,
+    notify_recipient_user_ids: list[str] | None = None,
+    email_recipients: list[str] | None = None,
+) -> dict[str, Any]:
+    steps: list[dict[str, Any]] = [
+        {
+            "id": "upsert_shopify_order",
+            "kind": "action",
+            "action_id": "system.shopify_upsert_order_webhook",
+            "inputs": {
+                "connection_id": {"var": "trigger.connection_id"},
+                "payload": {"var": "trigger.payload"},
+            },
+        }
+    ]
+    if notify_recipient_user_ids:
+        steps.append(
+            {
+                "id": "notify_new_shopify_order",
+                "kind": "condition",
+                "expr": {
+                    "op": "and",
+                    "conditions": [
+                        {
+                            "op": "eq",
+                            "left": {"var": "steps.upsert_shopify_order.action"},
+                            "right": {"literal": "created"},
+                        },
+                        {
+                            "op": "eq",
+                            "left": {"var": "trigger.event_key"},
+                            "right": {"literal": "shopify.orders.create"},
+                        },
+                    ],
+                },
+                "then_steps": [
+                    {
+                        "id": "send_order_notifications",
+                        "kind": "action",
+                        "action_id": "system.notify",
+                        "inputs": {
+                            "recipient_user_ids": notify_recipient_user_ids,
+                            "entity_id": "entity.te_sales_order",
+                            "record_id": {"var": "steps.upsert_shopify_order.order_record_id"},
+                            "title": "New Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}",
+                            "body": "{{ record.te_sales_order.customer_name or 'A customer' }} placed Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}.",
+                            "severity": "info",
+                            "link_mode": "trigger_record",
+                        },
+                    }
+                ]
+                + (
+                    [
+                        {
+                            "id": "send_order_email_alert",
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to": email_recipients,
+                                "entity_id": "entity.te_sales_order",
+                                "record_id": {"var": "steps.upsert_shopify_order.order_record_id"},
+                                "subject": "New Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}",
+                                "body_text": (
+                                    "{{ record.te_sales_order.customer_name or 'A customer' }} placed Shopify order "
+                                    "{{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}.\n"
+                                    "Total: {{ record.te_sales_order.order_total }} {{ record.te_sales_order.currency }}\n"
+                                    "Open in Octodrop: /data/te_sales_order/{{ steps.upsert_shopify_order.order_record_id }}"
+                                ),
+                            },
+                        }
+                    ]
+                    if email_recipients
+                    else []
+                ),
+            }
+        )
     return {
         "name": "Shopify Phase 2 - Orders Inbound",
-        "description": "Upsert TE sales orders and lines from inbound Shopify order webhooks.",
+        "description": "Upsert TE sales orders and lines from inbound Shopify order webhooks and notify the team for new Shopify orders.",
         "status": status,
         "trigger": {
             "kind": "event",
@@ -137,17 +330,7 @@ def build_orders_consumer_automation(*, status: str) -> dict[str, Any]:
             ],
             "filters": [],
         },
-        "steps": [
-            {
-                "id": "upsert_shopify_order",
-                "kind": "action",
-                "action_id": "system.shopify_upsert_order_webhook",
-                "inputs": {
-                    "connection_id": {"var": "trigger.connection_id"},
-                    "payload": {"var": "trigger.payload"},
-                },
-            }
-        ],
+        "steps": steps,
     }
 
 
@@ -229,10 +412,19 @@ def build_products_consumer_automation(*, status: str) -> dict[str, Any]:
     }
 
 
-def all_automation_definitions(*, publish: bool) -> list[dict[str, Any]]:
+def all_automation_definitions(
+    *,
+    publish: bool,
+    notify_recipient_user_ids: list[str] | None = None,
+    order_email_recipients: list[str] | None = None,
+) -> list[dict[str, Any]]:
     status = "published" if publish else "draft"
     return [
-        build_orders_consumer_automation(status=status),
+        build_orders_consumer_automation(
+            status=status,
+            notify_recipient_user_ids=notify_recipient_user_ids,
+            email_recipients=order_email_recipients,
+        ),
         build_refunds_consumer_automation(status=status),
         build_customers_consumer_automation(status=status),
         build_products_consumer_automation(status=status),
@@ -245,6 +437,28 @@ def main() -> int:
     parser.add_argument("--token", default=os.getenv("OCTO_API_TOKEN"))
     parser.add_argument("--workspace-id", default=os.getenv("OCTO_WORKSPACE_ID"))
     parser.add_argument("--publish", action="store_true", help="Publish the automations after create/update")
+    parser.add_argument(
+        "--order-notify-recipient",
+        dest="order_notify_recipients",
+        action="append",
+        help="Workspace user id, email, email local-part, or display name token to notify for new Shopify orders. Repeatable.",
+    )
+    parser.add_argument(
+        "--skip-order-notifications",
+        action="store_true",
+        help="Do not install the in-app new-order notification step on the orders inbound automation.",
+    )
+    parser.add_argument(
+        "--order-email-to",
+        dest="order_email_to",
+        action="append",
+        help="Email address, workspace user id, email local-part, or display name token to email for new Shopify orders. Repeatable.",
+    )
+    parser.add_argument(
+        "--skip-order-emails",
+        action="store_true",
+        help="Do not install the new-order email alert step on the orders inbound automation.",
+    )
     args = parser.parse_args()
 
     if not args.token:
@@ -253,7 +467,31 @@ def main() -> int:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
 
     base_url = args.base_url.rstrip("/")
-    for definition in all_automation_definitions(publish=args.publish):
+    notify_recipient_user_ids: list[str] | None = None
+    order_email_recipients: list[str] | None = None
+    if not args.skip_order_notifications:
+        requested_recipients = args.order_notify_recipients or ["nick", "kelly"]
+        notify_recipient_user_ids = resolve_member_user_ids(
+            base_url,
+            requested_recipients,
+            token=args.token,
+            workspace_id=args.workspace_id,
+        )
+        print(f"[automation] order notifications -> {', '.join(notify_recipient_user_ids)}")
+    if not args.skip_order_emails:
+        requested_email_recipients = args.order_email_to or args.order_notify_recipients or ["nick", "kelly"]
+        order_email_recipients = resolve_member_emails(
+            base_url,
+            requested_email_recipients,
+            token=args.token,
+            workspace_id=args.workspace_id,
+        )
+        print(f"[automation] order emails -> {', '.join(order_email_recipients)}")
+    for definition in all_automation_definitions(
+        publish=args.publish,
+        notify_recipient_user_ids=notify_recipient_user_ids,
+        order_email_recipients=order_email_recipients,
+    ):
         action, automation = upsert_automation_by_name(base_url, definition, token=args.token, workspace_id=args.workspace_id)
         print(f"[automation] {action} {definition['name']} -> {automation.get('id')}")
         if args.publish:

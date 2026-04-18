@@ -518,6 +518,8 @@ function buildDomain(activeFilter, clientFilters, recordDomain) {
 }
 
 function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCards = false, onMoveCard }) {
+  const isMobile = useMediaQuery("(max-width: 768px)");
+  const boardRef = useRef(null);
   const card = view.card || {};
   const titleField = card.title_field || entityDef?.display_field || "id";
   const subtitleFields = Array.isArray(card.subtitle_fields) ? card.subtitle_fields : [];
@@ -529,6 +531,7 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
   const [moveError, setMoveError] = useState("");
   const [lookupLabels, setLookupLabels] = useState({});
   const [memberLabels, setMemberLabels] = useState({});
+  const [mobileBoardHeight, setMobileBoardHeight] = useState(null);
   const fieldMap = useMemo(() => {
     const map = {};
     for (const field of entityDef?.fields || []) {
@@ -728,6 +731,27 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
     return [...optionOrder, ...remaining];
   }, [grouped, groupBy, entityDef]);
 
+  useLayoutEffect(() => {
+    if (!isMobile) {
+      setMobileBoardHeight(null);
+      return undefined;
+    }
+    const node = boardRef.current;
+    if (!node || typeof window === "undefined") return undefined;
+    const updateHeight = () => {
+      const rect = node.getBoundingClientRect();
+      const available = Math.floor(window.innerHeight - rect.top - 8);
+      setMobileBoardHeight(available > 240 ? available : 240);
+    };
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    window.addEventListener("orientationchange", updateHeight);
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      window.removeEventListener("orientationchange", updateHeight);
+    };
+  }, [isMobile, groupBy, records.length]);
+
   async function handleDrop(targetGroupKey) {
     if (!dragging || !canDragCards || typeof onMoveCard !== "function") return;
     if (dragging.groupKey === targetGroupKey) {
@@ -748,7 +772,11 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      ref={boardRef}
+      className="flex h-full min-h-0 flex-col"
+      style={isMobile && mobileBoardHeight ? { height: `${mobileBoardHeight}px` } : undefined}
+    >
       <div className="flex h-full min-h-0 flex-col">
         {moveError ? (
           <div className="alert alert-warning mb-3 py-2 text-sm">{moveError}</div>
@@ -2680,6 +2708,7 @@ export default function ViewModesBlock({
   const showGraphMeasure = activeMode === "graph" && measureOptions.length > 0;
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
   const hideRecordViewsWhileLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
+  const preserveMobileKanbanHeight = compactMobile && activeViewKind === "kanban" && showKanbanMode;
   const showMobileToolbarActions = isMobile && (
     showFilters
     || showSavedViews
@@ -3034,7 +3063,7 @@ export default function ViewModesBlock({
   return (
     <div
       className={
-        compactMobile
+        compactMobile && !preserveMobileKanbanHeight
           ? `flex min-w-0 flex-col ${compact ? "gap-3" : "gap-4"}`
           : `flex flex-col ${compact ? "gap-3" : "gap-4"} h-full min-h-0 overflow-hidden`
       }
