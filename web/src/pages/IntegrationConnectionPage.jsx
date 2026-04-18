@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Circle, KeyRound, Plus, ShieldCheck, TestTube2 } from "lucide-react";
-import { apiFetch } from "../api.js";
+import { API_URL, apiFetch } from "../api.js";
 import AppSelect from "../components/AppSelect.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
@@ -576,6 +576,12 @@ function TableList({ emptyLabel, columns, rows }) {
   );
 }
 
+function integrationWebhookEndpointUrl(webhook) {
+  if (!webhook?.id || webhook?.direction !== "inbound") return "";
+  const base = String(API_URL || "").replace(/\/+$/, "");
+  return `${base}/integrations/webhooks/${encodeURIComponent(webhook.id)}/ingest`;
+}
+
 export default function IntegrationConnectionPage() {
   const { connectionId } = useParams();
   const navigate = useNavigate();
@@ -651,6 +657,7 @@ export default function IntegrationConnectionPage() {
     signing_secret_id: "",
     config_json_text: "{}",
   });
+  const [editingWebhookId, setEditingWebhookId] = useState("");
   const [creatingWebhook, setCreatingWebhook] = useState(false);
   const [requestDrawerOpen, setRequestDrawerOpen] = useState(false);
   const [syncDrawerOpen, setSyncDrawerOpen] = useState(false);
@@ -835,9 +842,16 @@ export default function IntegrationConnectionPage() {
     () => (Array.isArray(mappings) ? mappings : []).find((mapping) => String(mapping?.id || "") === editingMappingId) || null,
     [editingMappingId, mappings],
   );
+  const selectedWebhook = useMemo(
+    () => (Array.isArray(webhooks) ? webhooks : []).find((webhook) => String(webhook?.id || "") === editingWebhookId) || null,
+    [editingWebhookId, webhooks],
+  );
   const mappingDrawerTitle = editingMappingId
     ? (selectedEditingMapping?.name ? `Edit ${selectedEditingMapping.name}` : "Edit mapping profile")
     : "New mapping profile";
+  const webhookDrawerTitle = selectedWebhook?.event_key
+    ? detailT("webhooks.edit_title", { event_key: selectedWebhook.event_key })
+    : detailT("webhooks.new_title");
   const sampleSourceFieldOptions = useMemo(
     () => uniquePathOptions(collectJsonPaths(safeJsonParse(newMapping.sample_source_text, {}))),
     [newMapping.sample_source_text],
@@ -1757,34 +1771,70 @@ export default function IntegrationConnectionPage() {
     }));
   }
 
-  async function createWebhook() {
+  function resetWebhookForm() {
+    setNewWebhook({
+      direction: "inbound",
+      event_key: "",
+      endpoint_path: "",
+      signing_secret_id: "",
+      config_json_text: "{}",
+    });
+    setEditingWebhookId("");
+  }
+
+  function openNewWebhookDrawer() {
+    resetWebhookForm();
+    setWebhookDrawerOpen(true);
+  }
+
+  function openWebhookDrawer(webhook) {
+    if (!webhook) return;
+    setEditingWebhookId(String(webhook.id || ""));
+    setNewWebhook({
+      direction: String(webhook.direction || "inbound"),
+      event_key: String(webhook.event_key || ""),
+      endpoint_path: String(webhook.endpoint_path || ""),
+      signing_secret_id: String(webhook.signing_secret_id || ""),
+      config_json_text: prettyJson(webhook.config_json || {}),
+    });
+    setWebhookDrawerOpen(true);
+  }
+
+  function closeWebhookDrawer() {
+    setWebhookDrawerOpen(false);
+    resetWebhookForm();
+  }
+
+  async function saveWebhook() {
     if (creatingWebhook || !item?.id) return;
     setCreatingWebhook(true);
     setError("");
     try {
-      await apiFetch("/integrations/webhooks", {
-        method: "POST",
-        body: {
-          connection_id: item.id,
-          direction: newWebhook.direction,
-          event_key: newWebhook.event_key.trim(),
-          endpoint_path: newWebhook.endpoint_path.trim() || null,
-          signing_secret_id: newWebhook.signing_secret_id || null,
-          config_json: safeJsonParse(newWebhook.config_json_text, {}),
-        },
-      });
-      setNewWebhook({
-        direction: "inbound",
-        event_key: "",
-        endpoint_path: "",
-        signing_secret_id: "",
-        config_json_text: "{}",
-      });
-      setWebhookDrawerOpen(false);
-      setNotice(detailT("notices.webhook_added"));
+      const body = {
+        connection_id: item.id,
+        direction: newWebhook.direction,
+        event_key: newWebhook.event_key.trim(),
+        endpoint_path: newWebhook.endpoint_path.trim() || null,
+        signing_secret_id: newWebhook.signing_secret_id || null,
+        config_json: safeJsonParse(newWebhook.config_json_text, {}),
+      };
+      if (editingWebhookId) {
+        await apiFetch(`/integrations/webhooks/${encodeURIComponent(editingWebhookId)}`, {
+          method: "PATCH",
+          body,
+        });
+        setNotice(detailT("notices.webhook_updated"));
+      } else {
+        await apiFetch("/integrations/webhooks", {
+          method: "POST",
+          body,
+        });
+        setNotice(detailT("notices.webhook_added"));
+      }
+      closeWebhookDrawer();
       await load();
     } catch (err) {
-      setError(err?.message || detailT("errors.create_webhook"));
+      setError(err?.message || (editingWebhookId ? detailT("errors.update_webhook") : detailT("errors.create_webhook")));
     } finally {
       setCreatingWebhook(false);
     }
@@ -1793,6 +1843,7 @@ export default function IntegrationConnectionPage() {
   async function deleteWebhook(webhookId) {
     try {
       await apiFetch(`/integrations/webhooks/${encodeURIComponent(webhookId)}`, { method: "DELETE" });
+      if (editingWebhookId && editingWebhookId === webhookId) closeWebhookDrawer();
       await load();
     } catch (err) {
       setError(err?.message || detailT("errors.delete_webhook"));
@@ -2750,6 +2801,14 @@ export default function IntegrationConnectionPage() {
     <div className="space-y-4">
       <Section title={detailT("webhooks.title")}>
         <div className="space-y-3">
+          {selectedWebhook ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <SummaryStat label={detailT("webhooks.webhook_id")} value={selectedWebhook.id} />
+              <SummaryStat label={detailT("webhooks.connection_id")} value={selectedWebhook.connection_id} />
+              <SummaryStat label={t("common.status")} value={selectedWebhook.status || "—"} />
+              <SummaryStat label={detailT("webhooks.endpoint")} value={integrationWebhookEndpointUrl(selectedWebhook) || selectedWebhook.endpoint_path || "—"} />
+            </div>
+          ) : null}
           <label className="form-control">
             <span className="label-text text-sm">{detailT("webhooks.direction")}</span>
             <AppSelect className="select select-bordered" value={newWebhook.direction} onChange={(e) => setNewWebhook((prev) => ({ ...prev, direction: e.target.value }))}>
@@ -2778,9 +2837,30 @@ export default function IntegrationConnectionPage() {
           </label>
           <JsonField label={detailT("webhooks.config")} value={newWebhook.config_json_text} onChange={(text) => setNewWebhook((prev) => ({ ...prev, config_json_text: text }))} minHeight="8rem" />
           <div className="flex flex-wrap gap-2">
-            <button className="btn btn-primary btn-sm" type="button" onClick={createWebhook} disabled={creatingWebhook || !newWebhook.event_key.trim()}>
-              {creatingWebhook ? detailT("webhooks.adding") : detailT("webhooks.add")}
+            <button className="btn btn-primary btn-sm" type="button" onClick={saveWebhook} disabled={creatingWebhook || !newWebhook.event_key.trim()}>
+              {creatingWebhook ? detailT("webhooks.saving") : (editingWebhookId ? detailT("webhooks.save") : detailT("webhooks.add"))}
             </button>
+            {selectedWebhook?.direction === "inbound" && integrationWebhookEndpointUrl(selectedWebhook) ? (
+              <button
+                className="btn btn-outline btn-sm"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(integrationWebhookEndpointUrl(selectedWebhook));
+                    setNotice(detailT("notices.webhook_endpoint_copied"));
+                  } catch {
+                    setError(detailT("errors.copy_webhook_endpoint"));
+                  }
+                }}
+              >
+                {detailT("webhooks.copy_endpoint")}
+              </button>
+            ) : null}
+            {selectedWebhook ? (
+              <button className="btn btn-ghost btn-sm text-error" type="button" onClick={() => deleteWebhook(selectedWebhook.id)}>
+                {t("common.delete")}
+              </button>
+            ) : null}
           </div>
         </div>
       </Section>
@@ -3241,9 +3321,9 @@ export default function IntegrationConnectionPage() {
                 <SummaryStat label="Signed webhooks" value={String(webhooks.filter((row) => row?.signing_secret_id).length)} />
               </div>
               <div className="flex flex-wrap gap-2">
-                <button className="btn btn-primary btn-sm" type="button" onClick={() => setWebhookDrawerOpen(true)}>
+                <button className="btn btn-primary btn-sm" type="button" onClick={openNewWebhookDrawer}>
                   <Plus className="h-4 w-4" />
-                  New webhook
+                  {detailT("webhooks.new_button")}
                 </button>
               </div>
             </Section>
@@ -3252,16 +3332,33 @@ export default function IntegrationConnectionPage() {
               emptyLabel={detailT("webhooks.none")}
               columns={[
                 { key: "direction", label: detailT("webhooks.direction") },
-                { key: "event_key", label: detailT("webhooks.event_key") },
+                {
+                  key: "event_key",
+                  label: detailT("webhooks.event_key"),
+                  render: (row) => (
+                    <button className="btn btn-ghost btn-xs px-0 normal-case" type="button" onClick={() => openWebhookDrawer(row)}>
+                      {row.event_key}
+                    </button>
+                  ),
+                },
                 { key: "status", label: t("common.status") },
-                { key: "endpoint_path", label: detailT("webhooks.endpoint") },
+                {
+                  key: "endpoint_path",
+                  label: detailT("webhooks.endpoint"),
+                  render: (row) => integrationWebhookEndpointUrl(row) || row.endpoint_path || "—",
+                },
                 {
                   key: "actions",
                   label: "",
                   render: (row) => (
-                    <button className="btn btn-ghost btn-xs text-error" type="button" onClick={() => deleteWebhook(row.id)}>
-                      {t("common.delete")}
-                    </button>
+                    <div className="flex flex-wrap gap-1">
+                      <button className="btn btn-ghost btn-xs" type="button" onClick={() => openWebhookDrawer(row)}>
+                        {detailT("webhooks.open")}
+                      </button>
+                      <button className="btn btn-ghost btn-xs text-error" type="button" onClick={() => deleteWebhook(row.id)}>
+                        {t("common.delete")}
+                      </button>
+                    </div>
                   ),
                 },
               ]}
@@ -3592,8 +3689,8 @@ export default function IntegrationConnectionPage() {
 
       <ResponsiveDrawer
         open={webhookDrawerOpen}
-        onClose={() => setWebhookDrawerOpen(false)}
-        title="New webhook"
+        onClose={closeWebhookDrawer}
+        title={webhookDrawerTitle}
         mobileHeightClass="h-[92dvh] max-h-[92dvh]"
         zIndexClass="z-[240]"
       >

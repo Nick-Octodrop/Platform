@@ -76,6 +76,12 @@ def _get_attachment_helpers():
     return store_bytes, read_bytes, delete_storage
 
 
+def _get_attachment_public_url_helpers():
+    from app.attachments import attachments_bucket, public_url, using_supabase_storage
+
+    return attachments_bucket, public_url, using_supabase_storage
+
+
 def _get_doc_render_helpers():
     from app.doc_render import normalize_margins, render_html, render_pdf
 
@@ -247,6 +253,775 @@ def _load_outbox_attachments(outbox: dict, org_id: str) -> list[dict]:
             }
         )
     return resolved
+
+
+def _shopify_media_alt_text(filename: str) -> str:
+    stem = Path(str(filename or "image")).stem.strip()
+    if not stem:
+        return "Product image"
+    return " ".join(part for part in stem.replace("-", " ").replace("_", " ").split() if part).strip() or "Product image"
+
+
+def _shopify_graphql_request(connection: dict, *, query: str, variables: dict) -> dict:
+    result = execute_connection_request(
+        connection,
+        {
+            "method": "POST",
+            "path": "/graphql.json",
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            "body": json.dumps({"query": query, "variables": variables}),
+        },
+        get_org_id(),
+    )
+    if not result.get("ok"):
+        raise RuntimeError(f"Shopify request failed with status {result.get('status_code')}")
+    body_json = result.get("body_json")
+    if not isinstance(body_json, dict):
+        raise RuntimeError("Shopify request failed: missing GraphQL body")
+    errors = body_json.get("errors")
+    if isinstance(errors, list) and errors:
+        messages = [str(item.get("message") or "GraphQL error") for item in errors if isinstance(item, dict)]
+        raise RuntimeError("; ".join(messages) or "Shopify GraphQL request failed")
+    return body_json
+
+
+def _to_number(value: object) -> float:
+    if value in (None, ""):
+        return 0.0
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _build_finance_income_values_from_sales_order(record_id: str, order: dict) -> dict | None:
+    financial_status = str(order.get("te_sales_order.financial_status") or "").strip().lower()
+    status = str(order.get("te_sales_order.status") or "").strip().lower()
+    source_currency = str(order.get("te_sales_order.currency") or "NZD").strip() or "NZD"
+    total_paid = round(_to_number(order.get("te_sales_order.total_paid")), 2)
+    order_total = round(_to_number(order.get("te_sales_order.order_total")), 2)
+    amount = total_paid if total_paid > 0 else (order_total if financial_status == "paid" else 0.0)
+    if financial_status != "paid" or amount <= 0:
+        return None
+    order_number = str(order.get("te_sales_order.order_number") or "").strip()
+    customer_name = str(order.get("te_sales_order.customer_name") or "").strip()
+    description = f"Sales income {order_number}".strip() if order_number else "Sales income"
+    if customer_name:
+        description = f"{description} - {customer_name}"
+    fx_rate = 1.0
+    if source_currency != "NZD" and amount > 0:
+        fx_rate = 1.0
+    entry_date = str(order.get("te_sales_order.order_date") or "").strip()[:10] or _now().date().isoformat()
+    return {
+        "te_finance_entry.status": "posted",
+        "te_finance_entry.entry_date": entry_date,
+        "te_finance_entry.entry_type": "company_income",
+        "te_finance_entry.paid_from": "company_funds",
+        "te_finance_entry.category": "sales",
+        "te_finance_entry.description": description,
+        "te_finance_entry.source_currency": source_currency,
+        "te_finance_entry.reporting_currency": "NZD",
+        "te_finance_entry.source_amount": amount,
+        "te_finance_entry.fx_rate_to_nzd": fx_rate,
+        "te_finance_entry.amount_nzd": amount,
+        "te_finance_entry.company_cash_effect_nzd": amount,
+        "te_finance_entry.member_owed_effect_nzd": 0,
+        "te_finance_entry.source_order_number": order_number,
+        "te_finance_entry.source_entity_id": "entity.te_sales_order",
+        "te_finance_entry.source_record_id": record_id,
+        "te_finance_entry.shopify_order_id": str(order.get("te_sales_order.shopify_order_id") or "").strip(),
+        "te_finance_entry.void_reason": "",
+    }
+
+
+def _shopify_normalize_id(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("gid://"):
+        return text.rsplit("/", 1)[-1].strip()
+    return text
+
+
+def _shopify_iso_date(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text[:10] if text else None
+
+
+def _shopify_map_product_status(shopify_status: object) -> str:
+    normalized = str(shopify_status or "").strip().upper()
+    if normalized == "ACTIVE":
+        return "active"
+    if normalized == "ARCHIVED":
+        return "archived"
+    return "draft"
+
+
+def _shopify_map_customer_status(shopify_state: object) -> str:
+    normalized = str(shopify_state or "").strip().lower()
+    if normalized in {"disabled", "declined"}:
+        return "inactive"
+    return "active"
+
+
+def _shopify_customer_id(customer: dict[str, object]) -> str:
+    return str(customer.get("admin_graphql_api_id") or customer.get("id") or "").strip()
+
+
+def _shopify_customer_name(customer: dict[str, object]) -> str:
+    first = str(customer.get("first_name") or "").strip()
+    last = str(customer.get("last_name") or "").strip()
+    combined = " ".join(part for part in [first, last] if part).strip()
+    if combined:
+        return combined
+    default_address = customer.get("default_address") if isinstance(customer.get("default_address"), dict) else {}
+    address_name = str(default_address.get("name") or "").strip()
+    if address_name:
+        return address_name
+    email = str(customer.get("email") or "").strip()
+    if email:
+        return email
+    return f"Shopify Customer {customer.get('id')}"
+
+
+def _shopify_map_financial_status(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"paid", "partially_paid", "refunded", "partially_refunded", "voided", "pending"}:
+        return normalized
+    return "pending"
+
+
+def _shopify_map_fulfillment_status(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"unfulfilled", "partial", "fulfilled", "restocked"}:
+        return normalized
+    return "unfulfilled"
+
+
+def _shopify_order_status(financial_status: str, fulfillment_status: str, cancelled_at: object) -> str:
+    if cancelled_at:
+        return "cancelled"
+    if financial_status in {"refunded", "partially_refunded"}:
+        return "refunded"
+    if fulfillment_status in {"fulfilled", "restocked"}:
+        return "fulfilled"
+    if financial_status in {"paid", "partially_paid"}:
+        return "paid"
+    return "open"
+
+
+def _shopify_shipping_amount(order: dict[str, object]) -> float:
+    total = 0.0
+    for line in order.get("shipping_lines") if isinstance(order.get("shipping_lines"), list) else []:
+        if not isinstance(line, dict):
+            continue
+        total += _to_number(line.get("discounted_price") if line.get("discounted_price") is not None else line.get("price"))
+    return round(total, 2)
+
+
+def _shopify_line_tax_total(line_item: dict[str, object]) -> float:
+    total = 0.0
+    for tax in line_item.get("tax_lines") if isinstance(line_item.get("tax_lines"), list) else []:
+        if isinstance(tax, dict):
+            total += _to_number(tax.get("price"))
+    return round(total, 2)
+
+
+def _shopify_line_description(line_item: dict[str, object]) -> str:
+    title = str(line_item.get("title") or "").strip()
+    variant_title = str(line_item.get("variant_title") or "").strip()
+    if variant_title and variant_title.lower() != "default title":
+        return f"{title} - {variant_title}" if title else variant_title
+    return title or str(line_item.get("name") or "").strip() or "Shopify line item"
+
+
+def _shopify_normalize_variant_name(value: object) -> str:
+    label = str(value or "").strip()
+    if not label or label.lower() == "default title":
+        return ""
+    return label
+
+
+def _shopify_admin_base_url(connection: dict) -> str | None:
+    config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+    shop_domain = str(config.get("shopify_myshopify_domain") or config.get("shop_domain") or "").strip()
+    if not shop_domain:
+        return None
+    if not shop_domain.startswith("http"):
+        shop_domain = f"https://{shop_domain}"
+    return f"{shop_domain.rstrip('/')}/admin"
+
+
+def _shopify_storefront_product_url(connection: dict, handle: str) -> str:
+    config = connection.get("config") if isinstance(connection.get("config"), dict) else {}
+    domain = str(config.get("shopify_shop_domain") or "").strip()
+    if not domain:
+        domain = str(config.get("shopify_myshopify_domain") or config.get("shop_domain") or "").strip()
+    if not domain or not handle:
+        return ""
+    if not domain.startswith("http"):
+        domain = f"https://{domain}"
+    return f"{domain.rstrip('/')}/products/{handle}"
+
+
+def _first_record_by_field(entity_id: str, field_id: str, value: object) -> dict | None:
+    rows = DbGenericRecordStore().list_by_field_value(entity_id, field_id, value, limit=2)
+    return rows[0] if rows else None
+
+
+def _shopify_upsert_customer_record(connection: dict, customer_payload: dict[str, object], *, prefer_existing_email: bool = True) -> dict | None:
+    customer_id = _shopify_customer_id(customer_payload)
+    email = str(customer_payload.get("email") or "").strip().lower()
+    imported = {
+        "name": _shopify_customer_name(customer_payload),
+        "email": str(customer_payload.get("email") or "").strip(),
+        "phone": str(customer_payload.get("phone") or ((customer_payload.get("default_address") or {}).get("phone") if isinstance(customer_payload.get("default_address"), dict) else "") or "").strip(),
+        "status": _shopify_map_customer_status(customer_payload.get("state")),
+        "accepts_email_marketing": str((((customer_payload.get("email_marketing_consent") or {}) if isinstance(customer_payload.get("email_marketing_consent"), dict) else {}).get("state")) or "").strip().lower() == "subscribed",
+        "accepts_sms_marketing": str((((customer_payload.get("sms_marketing_consent") or {}) if isinstance(customer_payload.get("sms_marketing_consent"), dict) else {}).get("state")) or "").strip().lower() == "subscribed",
+        "currency_preference": str(customer_payload.get("currency") or "NZD").strip() or "NZD",
+        "tags": str(customer_payload.get("tags") or "").strip(),
+        "shopify_customer_id": customer_id,
+        "shopify_customer_admin_url": f"{_shopify_admin_base_url(connection)}/customers/{customer_payload.get('id')}" if _shopify_admin_base_url(connection) and customer_payload.get("id") else "",
+        "shopify_state": str(customer_payload.get("state") or "").strip(),
+        "default_address_line_1": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("address1")) or "").strip(),
+        "default_address_line_2": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("address2")) or "").strip(),
+        "default_city": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("city")) or "").strip(),
+        "default_region": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("province")) or "").strip(),
+        "default_postcode": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("zip")) or "").strip(),
+        "default_country": str((((customer_payload.get("default_address") or {}) if isinstance(customer_payload.get("default_address"), dict) else {}).get("country")) or "").strip(),
+        "orders_count": int(customer_payload.get("orders_count") or 0),
+        "total_spent_nzd": round(_to_number(customer_payload.get("total_spent")), 2),
+        "last_order_name": str(customer_payload.get("last_order_name") or "").strip(),
+        "last_order_date": _shopify_iso_date(customer_payload.get("updated_at") or customer_payload.get("created_at")) or "",
+    }
+    existing = None
+    if customer_id:
+        existing = _first_record_by_field("entity.te_customer", "te_customer.shopify_customer_id", customer_id)
+    if existing is None and email and prefer_existing_email:
+        existing = _first_record_by_field("entity.te_customer", "te_customer.email", email)
+    existing_record = existing.get("record") if isinstance(existing, dict) else None
+    if isinstance(existing_record, dict):
+        values: dict[str, object] = {
+            "te_customer.status": imported["status"],
+            "te_customer.accepts_email_marketing": imported["accepts_email_marketing"],
+            "te_customer.accepts_sms_marketing": imported["accepts_sms_marketing"],
+            "te_customer.tags": imported["tags"],
+            "te_customer.shopify_customer_id": imported["shopify_customer_id"],
+            "te_customer.shopify_customer_admin_url": imported["shopify_customer_admin_url"],
+            "te_customer.shopify_state": imported["shopify_state"],
+            "te_customer.default_address_line_1": imported["default_address_line_1"],
+            "te_customer.default_address_line_2": imported["default_address_line_2"],
+            "te_customer.default_city": imported["default_city"],
+            "te_customer.default_region": imported["default_region"],
+            "te_customer.default_postcode": imported["default_postcode"],
+            "te_customer.default_country": imported["default_country"],
+            "te_customer.orders_count": imported["orders_count"],
+            "te_customer.total_spent_nzd": imported["total_spent_nzd"],
+            "te_customer.last_order_name": imported["last_order_name"],
+            "te_customer.last_order_date": imported["last_order_date"],
+            "te_customer.shopify_last_sync_status": "imported",
+            "te_customer.shopify_last_sync_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "te_customer.shopify_last_sync_error": "",
+        }
+        if not str(existing_record.get("te_customer.name") or "").strip():
+            values["te_customer.name"] = imported["name"]
+        if not str(existing_record.get("te_customer.email") or "").strip():
+            values["te_customer.email"] = imported["email"]
+        if not str(existing_record.get("te_customer.phone") or "").strip():
+            values["te_customer.phone"] = imported["phone"]
+        if not str(existing_record.get("te_customer.currency_preference") or "").strip():
+            values["te_customer.currency_preference"] = imported["currency_preference"]
+        return _run_generic_update_record(
+            {
+                "entity_id": "entity.te_customer",
+                "record_id": existing.get("record_id"),
+                "patch": values,
+            },
+            {},
+        )
+    values = {
+        "te_customer.name": imported["name"],
+        "te_customer.email": imported["email"],
+        "te_customer.phone": imported["phone"],
+        "te_customer.status": imported["status"],
+        "te_customer.accepts_email_marketing": imported["accepts_email_marketing"],
+        "te_customer.accepts_sms_marketing": imported["accepts_sms_marketing"],
+        "te_customer.currency_preference": imported["currency_preference"],
+        "te_customer.tags": imported["tags"],
+        "te_customer.shopify_customer_id": imported["shopify_customer_id"],
+        "te_customer.shopify_customer_admin_url": imported["shopify_customer_admin_url"],
+        "te_customer.shopify_state": imported["shopify_state"],
+        "te_customer.default_address_line_1": imported["default_address_line_1"],
+        "te_customer.default_address_line_2": imported["default_address_line_2"],
+        "te_customer.default_city": imported["default_city"],
+        "te_customer.default_region": imported["default_region"],
+        "te_customer.default_postcode": imported["default_postcode"],
+        "te_customer.default_country": imported["default_country"],
+        "te_customer.orders_count": imported["orders_count"],
+        "te_customer.total_spent_nzd": imported["total_spent_nzd"],
+        "te_customer.last_order_name": imported["last_order_name"],
+        "te_customer.last_order_date": imported["last_order_date"],
+        "te_customer.shopify_last_sync_status": "imported",
+        "te_customer.shopify_last_sync_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "te_customer.shopify_last_sync_error": "",
+    }
+    return _run_generic_create_record({"entity_id": "entity.te_customer", "values": values}, {})
+
+
+def _shopify_order_customer_payload(order: dict[str, object]) -> dict[str, object] | None:
+    customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
+    shipping = order.get("shipping_address") if isinstance(order.get("shipping_address"), dict) else {}
+    email = str(order.get("email") or customer.get("email") or "").strip()
+    customer_id = _shopify_customer_id(customer) if customer else ""
+    if not email and not customer_id:
+        return None
+    name = _shopify_customer_name(customer) if customer else ""
+    if not name:
+        name = str(shipping.get("name") or "").strip()
+    if not name:
+        name = email or f"Order Customer {order.get('id')}"
+    payload: dict[str, object] = {
+        **customer,
+        "email": email,
+        "phone": str(order.get("phone") or customer.get("phone") or shipping.get("phone") or "").strip(),
+        "first_name": str(customer.get("first_name") or "").strip(),
+        "last_name": str(customer.get("last_name") or "").strip(),
+        "state": str(customer.get("state") or "enabled").strip(),
+        "currency": str(order.get("currency") or "NZD").strip() or "NZD",
+        "orders_count": 1,
+        "total_spent": _to_number(order.get("current_total_price") if order.get("current_total_price") is not None else order.get("total_price")),
+        "last_order_name": str(order.get("name") or "").strip(),
+        "updated_at": order.get("updated_at") or order.get("created_at"),
+    }
+    if not payload.get("default_address") and shipping:
+        payload["default_address"] = shipping
+    if not payload.get("admin_graphql_api_id") and customer_id:
+        payload["admin_graphql_api_id"] = customer_id
+    if not payload.get("first_name") and name and " " in name:
+        payload["first_name"] = name.split(" ", 1)[0]
+        payload["last_name"] = name.split(" ", 1)[1]
+    return payload
+
+
+def _shopify_find_product_link_for_line(line_item: dict[str, object]) -> dict | None:
+    variant_id = str(line_item.get("variant_id") or "").strip()
+    if variant_id:
+        existing = _first_record_by_field("entity.te_product", "te_product.shopify_variant_id", variant_id)
+        if existing:
+            return existing
+        normalized = _shopify_normalize_id(variant_id)
+        if normalized:
+            rows = DbGenericRecordStore().list("entity.te_product", limit=5000)
+            for row in rows:
+                record = row.get("record") if isinstance(row, dict) else None
+                if isinstance(record, dict) and _shopify_normalize_id(record.get("te_product.shopify_variant_id")) == normalized:
+                    return row
+    sku = str(line_item.get("sku") or "").strip()
+    if sku:
+        return _first_record_by_field("entity.te_product", "te_product.sku", sku)
+    return None
+
+
+def _shopify_sync_product_images_to_record(record_id: str, product: dict[str, object]) -> dict[str, int]:
+    images = product.get("images") if isinstance(product.get("images"), list) else []
+    if not images:
+        return {"attached": 0, "skipped": 0, "errors": 0}
+    attach_store = DbAttachmentStore()
+    store_bytes, _, _ = _get_attachment_helpers()
+    existing_attachments = _resolve_linked_attachments(
+        attach_store,
+        entity_id="entity.te_product",
+        record_id=record_id,
+        purpose="field:te_product.shopify_image_attachments",
+    )
+    existing_filenames = {
+        str(item.get("filename") or "").strip().lower()
+        for item in existing_attachments
+        if isinstance(item, dict) and str(item.get("filename") or "").strip()
+    }
+    attached = 0
+    skipped = 0
+    errors = 0
+    base = str(product.get("handle") or product.get("title") or product.get("id") or "shopify-product").strip().lower()
+    base = "".join(ch if ch.isalnum() else "-" for ch in base).strip("-") or "shopify-product"
+    for idx, image in enumerate(images, start=1):
+        if not isinstance(image, dict):
+            continue
+        url = str(image.get("src") or image.get("url") or "").strip()
+        if not url:
+            continue
+        ext = Path(url.split("?", 1)[0]).suffix or ".jpg"
+        filename = f"{base}-{idx}{ext}"
+        if filename.lower() in existing_filenames:
+            skipped += 1
+            continue
+        try:
+            response = httpx.get(url, timeout=30.0)
+            response.raise_for_status()
+            stored = store_bytes(get_org_id(), filename, response.content, mime_type=(response.headers.get("content-type") or "application/octet-stream").split(";")[0].strip())
+            attachment = attach_store.create_attachment(
+                {
+                    "filename": filename,
+                    "mime_type": (response.headers.get("content-type") or "application/octet-stream").split(";")[0].strip(),
+                    "size": stored.get("size"),
+                    "storage_key": stored.get("storage_key"),
+                    "sha256": stored.get("sha256"),
+                    "created_by": "system",
+                    "source": "shopify_import",
+                }
+            )
+            attach_store.link(
+                {
+                    "attachment_id": attachment.get("id"),
+                    "entity_id": "entity.te_product",
+                    "record_id": record_id,
+                    "purpose": "field:te_product.shopify_image_attachments",
+                }
+            )
+            existing_filenames.add(filename.lower())
+            attached += 1
+        except Exception:
+            errors += 1
+    return {"attached": attached, "skipped": skipped, "errors": errors}
+
+
+def _shopify_gid(resource_type: str, value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("gid://"):
+        return text
+    return f"gid://shopify/{resource_type}/{text}"
+
+
+def _shopify_build_product_values(connection: dict, product: dict[str, object], variant: dict[str, object]) -> dict[str, object]:
+    status_text = str(product.get("status") or "").strip()
+    variant_title = _shopify_normalize_variant_name(variant.get("title"))
+    handle = str(product.get("handle") or "").strip()
+    return {
+        "sku": str(variant.get("sku") or "").strip(),
+        "title": str(product.get("title") or "").strip() or str(variant.get("sku") or "").strip(),
+        "variant_name": variant_title,
+        "status": _shopify_map_product_status(status_text),
+        "sales_currency": str(product.get("currency") or "NZD").strip() or "NZD",
+        "retail_price": _to_number(variant.get("price")),
+        "compare_at_price": _to_number(variant.get("compare_at_price")),
+        "track_stock": bool(variant.get("inventory_management")),
+        "shopify_handle": handle,
+        "shopify_description_html": str(product.get("body_html") or product.get("descriptionHtml") or "").strip(),
+        "shopify_product_url": _shopify_storefront_product_url(connection, handle),
+        "shopify_product_id": str(product.get("admin_graphql_api_id") or _shopify_gid("Product", product.get("id"))).strip(),
+        "shopify_variant_id": str(variant.get("admin_graphql_api_id") or _shopify_gid("ProductVariant", variant.get("id"))).strip(),
+        "shopify_inventory_item_id": str(_shopify_gid("InventoryItem", variant.get("inventory_item_id"))).strip(),
+        "shopify_status": status_text.upper() if status_text else "",
+    }
+
+
+def _shopify_find_product_match(imported: dict[str, object]) -> tuple[dict | None, bool]:
+    variant_id = str(imported.get("shopify_variant_id") or "").strip()
+    if variant_id:
+        existing = _first_record_by_field("entity.te_product", "te_product.shopify_variant_id", variant_id)
+        if existing:
+            return existing, False
+        normalized_variant_id = _shopify_normalize_id(variant_id)
+        if normalized_variant_id:
+            for row in DbGenericRecordStore().list("entity.te_product", limit=5000):
+                record = row.get("record") if isinstance(row, dict) else None
+                if isinstance(record, dict) and _shopify_normalize_id(record.get("te_product.shopify_variant_id")) == normalized_variant_id:
+                    return row, False
+    sku = str(imported.get("sku") or "").strip()
+    if not sku:
+        return None, False
+    rows = DbGenericRecordStore().list_by_field_value("entity.te_product", "te_product.sku", sku, limit=3)
+    if len(rows) > 1:
+        return None, True
+    return (rows[0], False) if rows else (None, False)
+
+
+def _shopify_build_product_create_values(imported: dict[str, object]) -> dict[str, object]:
+    values: dict[str, object] = {
+        "te_product.sku": imported["sku"],
+        "te_product.title": imported["title"],
+        "te_product.status": imported["status"],
+        "te_product.sales_currency": imported["sales_currency"],
+        "te_product.retail_price": imported["retail_price"],
+        "te_product.compare_at_price": imported["compare_at_price"],
+        "te_product.track_stock": imported["track_stock"],
+        "te_product.shopify_handle": imported["shopify_handle"],
+        "te_product.shopify_description_html": imported["shopify_description_html"],
+        "te_product.shopify_product_url": imported["shopify_product_url"],
+        "te_product.shopify_product_id": imported["shopify_product_id"],
+        "te_product.shopify_variant_id": imported["shopify_variant_id"],
+        "te_product.shopify_inventory_item_id": imported["shopify_inventory_item_id"],
+        "te_product.shopify_status": imported["shopify_status"],
+        "te_product.shopify_last_sync_status": "imported",
+        "te_product.shopify_last_sync_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "te_product.shopify_last_sync_error": "",
+    }
+    if imported.get("variant_name"):
+        values["te_product.variant_name"] = imported["variant_name"]
+    return values
+
+
+def _shopify_build_product_update_values(existing: dict[str, object], imported: dict[str, object]) -> dict[str, object]:
+    patch: dict[str, object] = {
+        "te_product.shopify_handle": imported["shopify_handle"],
+        "te_product.shopify_description_html": imported["shopify_description_html"],
+        "te_product.shopify_product_url": imported["shopify_product_url"],
+        "te_product.shopify_product_id": imported["shopify_product_id"],
+        "te_product.shopify_variant_id": imported["shopify_variant_id"],
+        "te_product.shopify_inventory_item_id": imported["shopify_inventory_item_id"],
+        "te_product.shopify_status": imported["shopify_status"],
+        "te_product.shopify_last_sync_status": "imported",
+        "te_product.shopify_last_sync_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "te_product.shopify_last_sync_error": "",
+    }
+    if not str(existing.get("te_product.title") or "").strip():
+        patch["te_product.title"] = imported["title"]
+    if imported.get("variant_name") and not str(existing.get("te_product.variant_name") or "").strip():
+        patch["te_product.variant_name"] = imported["variant_name"]
+    if _to_number(existing.get("te_product.retail_price")) <= 0:
+        patch["te_product.retail_price"] = imported["retail_price"]
+    if _to_number(existing.get("te_product.compare_at_price")) <= 0:
+        patch["te_product.compare_at_price"] = imported["compare_at_price"]
+    if not str(existing.get("te_product.sales_currency") or "").strip():
+        patch["te_product.sales_currency"] = imported["sales_currency"]
+    return patch
+
+
+def _shopify_upsert_product_record(connection: dict, product: dict[str, object], variant: dict[str, object]) -> dict[str, object]:
+    imported = _shopify_build_product_values(connection, product, variant)
+    if not imported["sku"]:
+        return {"ok": True, "action": "skipped_missing_sku", "sku": "", "record_id": None}
+    local_row, has_conflict = _shopify_find_product_match(imported)
+    if has_conflict:
+        return {
+            "ok": False,
+            "action": "conflict",
+            "sku": imported["sku"],
+            "record_id": None,
+            "error": f"Multiple te_product records share SKU {imported['sku']}.",
+        }
+    if local_row and isinstance(local_row.get("record"), dict):
+        updated = _run_generic_update_record(
+            {
+                "entity_id": "entity.te_product",
+                "record_id": local_row.get("record_id"),
+                "patch": _shopify_build_product_update_values(local_row.get("record") or {}, imported),
+            },
+            {},
+        )
+        image_summary = _shopify_sync_product_images_to_record(str(updated.get("record_id") or ""), product)
+        return {
+            "ok": True,
+            "action": "updated",
+            "sku": imported["sku"],
+            "record_id": updated.get("record_id"),
+            "image_summary": image_summary,
+            **updated,
+        }
+    created = _run_generic_create_record(
+        {
+            "entity_id": "entity.te_product",
+            "values": _shopify_build_product_create_values(imported),
+        },
+        {},
+    )
+    image_summary = _shopify_sync_product_images_to_record(str(created.get("record_id") or ""), product)
+    return {
+        "ok": True,
+        "action": "created",
+        "sku": imported["sku"],
+        "record_id": created.get("record_id"),
+        "image_summary": image_summary,
+        **created,
+    }
+
+
+def _shopify_build_order_admin_url(connection: dict, order: dict[str, object]) -> str:
+    admin_base = _shopify_admin_base_url(connection)
+    order_id = str(order.get("id") or "").strip()
+    if not admin_base or not order_id:
+        return ""
+    return f"{admin_base}/orders/{order_id}"
+
+
+def _shopify_build_order_values(order: dict[str, object], *, admin_url: str, customer_record_id: str | None = None) -> dict[str, object]:
+    financial_status = _shopify_map_financial_status(order.get("financial_status"))
+    fulfillment_status = _shopify_map_fulfillment_status(order.get("fulfillment_status"))
+    shipping = order.get("shipping_address") if isinstance(order.get("shipping_address"), dict) else {}
+    customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
+    customer_name = _shopify_customer_name(customer) if customer else str(shipping.get("name") or "").strip()
+    values: dict[str, object] = {
+        "te_sales_order.order_number": str(order.get("name") or order.get("order_number") or "").strip(),
+        "te_sales_order.channel": "shopify",
+        "te_sales_order.status": _shopify_order_status(financial_status, fulfillment_status, order.get("cancelled_at")),
+        "te_sales_order.financial_status": financial_status,
+        "te_sales_order.fulfillment_status": fulfillment_status,
+        "te_sales_order.order_date": _shopify_iso_date(order.get("created_at")) or _now().date().isoformat(),
+        "te_sales_order.currency": str(order.get("currency") or "NZD").strip() or "NZD",
+        "te_sales_order.shopify_order_id": str(order.get("admin_graphql_api_id") or _shopify_gid("Order", order.get("id"))).strip(),
+        "te_sales_order.shopify_order_name": str(order.get("name") or "").strip(),
+        "te_sales_order.shopify_order_admin_url": admin_url,
+        "te_sales_order.customer_name": customer_name,
+        "te_sales_order.customer_email": str(order.get("email") or customer.get("email") or "").strip(),
+        "te_sales_order.customer_phone": str(order.get("phone") or customer.get("phone") or shipping.get("phone") or "").strip(),
+        "te_sales_order.shipping_name": str(shipping.get("name") or "").strip(),
+        "te_sales_order.shipping_address_1": str(shipping.get("address1") or "").strip(),
+        "te_sales_order.shipping_address_2": str(shipping.get("address2") or "").strip(),
+        "te_sales_order.shipping_city": str(shipping.get("city") or "").strip(),
+        "te_sales_order.shipping_region": str(shipping.get("province") or "").strip(),
+        "te_sales_order.shipping_postcode": str(shipping.get("zip") or "").strip(),
+        "te_sales_order.shipping_country": str(shipping.get("country") or "").strip(),
+        "te_sales_order.shipping_amount": _shopify_shipping_amount(order),
+        "te_sales_order.order_total": _to_number(order.get("current_total_price") if order.get("current_total_price") is not None else order.get("total_price")),
+        "te_sales_order.total_paid": _to_number(order.get("total_received") if order.get("total_received") is not None else order.get("total_paid")),
+        "te_sales_order.customer_note": str(order.get("note") or "").strip(),
+        "te_sales_order.shopify_last_sync_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "te_sales_order.shopify_last_sync_status": "imported",
+        "te_sales_order.shopify_last_sync_error": "",
+    }
+    if customer_record_id:
+        values["te_sales_order.customer_id"] = customer_record_id
+    return values
+
+
+def _shopify_build_order_line_values(line_item: dict[str, object], *, sales_order_id: str, product_row: dict | None, currency: str) -> dict[str, object]:
+    sku = str(line_item.get("sku") or "").strip()
+    values: dict[str, object] = {
+        "te_sales_order_line.sales_order_id": sales_order_id,
+        "te_sales_order_line.shopify_line_item_id": str(line_item.get("admin_graphql_api_id") or _shopify_gid("LineItem", line_item.get("id"))).strip(),
+        "te_sales_order_line.shopify_product_id": str(_shopify_gid("Product", line_item.get("product_id"))).strip() if line_item.get("product_id") else "",
+        "te_sales_order_line.shopify_variant_id": str(_shopify_gid("ProductVariant", line_item.get("variant_id"))).strip() if line_item.get("variant_id") else "",
+        "te_sales_order_line.sku_snapshot": sku,
+        "te_sales_order_line.description": _shopify_line_description(line_item),
+        "te_sales_order_line.uom_snapshot": str(((product_row or {}).get("record") or {}).get("te_product.uom") or "EA"),
+        "te_sales_order_line.currency_snapshot": currency,
+        "te_sales_order_line.quantity": _to_number(line_item.get("quantity")) or 0,
+        "te_sales_order_line.fulfillable_quantity": _to_number(line_item.get("fulfillable_quantity")) or 0,
+        "te_sales_order_line.unit_price": _to_number(line_item.get("price")),
+        "te_sales_order_line.line_discount_total": _to_number(line_item.get("total_discount")),
+        "te_sales_order_line.line_tax_total": _shopify_line_tax_total(line_item),
+        "te_sales_order_line.unit_cost_snapshot": _to_number((((product_row or {}).get("record") or {}).get("te_product.effective_cost_nzd"))),
+    }
+    if product_row and product_row.get("record_id"):
+        values["te_sales_order_line.product_id"] = product_row.get("record_id")
+    return values
+
+
+def _shopify_upsert_order_record(connection: dict, order: dict[str, object]) -> dict[str, object]:
+    customer_payload = _shopify_order_customer_payload(order)
+    customer_result = None
+    customer_record_id = None
+    if customer_payload:
+        customer_result = _shopify_upsert_customer_record(connection, customer_payload)
+        if isinstance(customer_result, dict):
+            customer_record_id = str(customer_result.get("record_id") or "").strip() or None
+
+    shopify_order_id = str(order.get("admin_graphql_api_id") or _shopify_gid("Order", order.get("id"))).strip()
+    order_row = _first_record_by_field("entity.te_sales_order", "te_sales_order.shopify_order_id", shopify_order_id) if shopify_order_id else None
+    order_values = _shopify_build_order_values(
+        order,
+        admin_url=_shopify_build_order_admin_url(connection, order),
+        customer_record_id=customer_record_id,
+    )
+    if order_row and order_row.get("record_id"):
+        order_result = _run_generic_update_record(
+            {
+                "entity_id": "entity.te_sales_order",
+                "record_id": order_row.get("record_id"),
+                "patch": order_values,
+            },
+            {},
+        )
+        sales_order_id = str(order_result.get("record_id") or "").strip()
+        order_action = "updated"
+    else:
+        order_result = _run_generic_create_record(
+            {
+                "entity_id": "entity.te_sales_order",
+                "values": order_values,
+            },
+            {},
+        )
+        sales_order_id = str(order_result.get("record_id") or "").strip()
+        order_action = "created"
+
+    existing_lines = DbGenericRecordStore().list_by_field_value(
+        "entity.te_sales_order_line",
+        "te_sales_order_line.sales_order_id",
+        sales_order_id,
+        limit=500,
+    )
+    lines_by_shopify_id: dict[str, dict] = {}
+    for row in existing_lines:
+        if not isinstance(row, dict):
+            continue
+        record = row.get("record") if isinstance(row.get("record"), dict) else {}
+        shopify_line_id = str(record.get("te_sales_order_line.shopify_line_item_id") or "").strip()
+        if shopify_line_id:
+            lines_by_shopify_id[shopify_line_id] = row
+
+    created_lines = 0
+    updated_lines = 0
+    linked_lines = 0
+    unlinked_lines = 0
+    for line_item in order.get("line_items") if isinstance(order.get("line_items"), list) else []:
+        if not isinstance(line_item, dict):
+            continue
+        product_row = _shopify_find_product_link_for_line(line_item)
+        line_values = _shopify_build_order_line_values(
+            line_item,
+            sales_order_id=sales_order_id,
+            product_row=product_row,
+            currency=str(order_values.get("te_sales_order.currency") or "NZD"),
+        )
+        if product_row:
+            linked_lines += 1
+        else:
+            unlinked_lines += 1
+        shopify_line_id = str(line_values.get("te_sales_order_line.shopify_line_item_id") or "").strip()
+        existing_line = lines_by_shopify_id.get(shopify_line_id)
+        if existing_line and existing_line.get("record_id"):
+            _run_generic_update_record(
+                {
+                    "entity_id": "entity.te_sales_order_line",
+                    "record_id": existing_line.get("record_id"),
+                    "patch": line_values,
+                },
+                {},
+            )
+            updated_lines += 1
+        else:
+            created_line = _run_generic_create_record(
+                {
+                    "entity_id": "entity.te_sales_order_line",
+                    "values": line_values,
+                },
+                {},
+            )
+            lines_by_shopify_id[shopify_line_id] = {
+                "record_id": created_line.get("record_id"),
+                "record": created_line.get("record"),
+            }
+            created_lines += 1
+
+    return {
+        "ok": True,
+        "action": order_action,
+        "order_record_id": sales_order_id,
+        "customer_record_id": customer_record_id,
+        "customer_result": customer_result,
+        "created_lines": created_lines,
+        "updated_lines": updated_lines,
+        "linked_lines": linked_lines,
+        "unlinked_lines": unlinked_lines,
+        **order_result,
+    }
 
 
 def _handle_email_send(job: dict, org_id: str) -> None:
@@ -1636,6 +2411,382 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             "mapping_id": mapping_id.strip(),
             "mapping_name": mapping.get("name"),
             **result,
+        }
+
+    if action_id == "system.shopify_upsert_customer_webhook":
+        connection_id = inputs.get("connection_id")
+        payload = inputs.get("payload")
+        if not isinstance(connection_id, str) or not connection_id.strip():
+            raise RuntimeError("connection_id required")
+        if not isinstance(payload, dict):
+            raise RuntimeError("payload must be an object")
+        connection = DbConnectionStore().get(connection_id.strip())
+        if not connection:
+            raise RuntimeError("Connection not found")
+        result = _shopify_upsert_customer_record(connection, payload)
+        return {
+            "ok": True,
+            "action": "upserted" if isinstance(result, dict) else "noop",
+            "record_id": result.get("record_id") if isinstance(result, dict) else None,
+            "result": result,
+        }
+
+    if action_id == "system.shopify_upsert_product_webhook":
+        connection_id = inputs.get("connection_id")
+        payload = inputs.get("payload")
+        if not isinstance(connection_id, str) or not connection_id.strip():
+            raise RuntimeError("connection_id required")
+        if not isinstance(payload, dict):
+            raise RuntimeError("payload must be an object")
+        connection = DbConnectionStore().get(connection_id.strip())
+        if not connection:
+            raise RuntimeError("Connection not found")
+        results: list[dict[str, object]] = []
+        variants = payload.get("variants") if isinstance(payload.get("variants"), list) else []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            results.append(_shopify_upsert_product_record(connection, payload, variant))
+        conflicts = [item for item in results if item.get("ok") is False]
+        if conflicts:
+            raise RuntimeError("; ".join(str(item.get("error") or "Shopify product webhook conflict") for item in conflicts[:5]))
+        return {
+            "ok": True,
+            "product_id": str(payload.get("id") or ""),
+            "variant_count": len([item for item in variants if isinstance(item, dict)]),
+            "processed_count": len(results),
+            "created": len([item for item in results if item.get("action") == "created"]),
+            "updated": len([item for item in results if item.get("action") == "updated"]),
+            "skipped_missing_sku": len([item for item in results if item.get("action") == "skipped_missing_sku"]),
+            "results": results,
+        }
+
+    if action_id == "system.shopify_upsert_order_webhook":
+        connection_id = inputs.get("connection_id")
+        payload = inputs.get("payload")
+        if not isinstance(connection_id, str) or not connection_id.strip():
+            raise RuntimeError("connection_id required")
+        if not isinstance(payload, dict):
+            raise RuntimeError("payload must be an object")
+        connection = DbConnectionStore().get(connection_id.strip())
+        if not connection:
+            raise RuntimeError("Connection not found")
+        return _shopify_upsert_order_record(connection, payload)
+
+    if action_id == "system.shopify_refresh_order_from_refund_webhook":
+        connection_id = inputs.get("connection_id")
+        payload = inputs.get("payload")
+        if not isinstance(connection_id, str) or not connection_id.strip():
+            raise RuntimeError("connection_id required")
+        if not isinstance(payload, dict):
+            raise RuntimeError("payload must be an object")
+        connection = DbConnectionStore().get(connection_id.strip())
+        if not connection:
+            raise RuntimeError("Connection not found")
+        order_id = str(payload.get("order_id") or "").strip()
+        if not order_id:
+            raise RuntimeError("refund webhook payload is missing order_id")
+        refresh = execute_connection_request(
+            connection,
+            {
+                "method": "GET",
+                "path": f"/orders/{order_id}.json",
+                "query": {"status": "any"},
+            },
+            get_org_id(),
+        )
+        if not refresh.get("ok"):
+            raise RuntimeError(f"Shopify order refresh failed with status {refresh.get('status_code')}")
+        body_json = refresh.get("body_json") if isinstance(refresh.get("body_json"), dict) else {}
+        order = body_json.get("order")
+        if not isinstance(order, dict):
+            raise RuntimeError("Shopify refund refresh returned no order payload")
+        result = _shopify_upsert_order_record(connection, order)
+        return {
+            "ok": True,
+            "refund_id": str(payload.get("id") or ""),
+            "order_id": order_id,
+            "order_result": result,
+        }
+
+    if action_id == "system.shopify_sync_product_media":
+        result: dict[str, object] = {
+            "ok": False,
+            "product_id": inputs.get("product_id"),
+            "attachment_count": 0,
+            "synced_count": 0,
+            "skipped_existing_count": 0,
+            "skipped_non_image_count": 0,
+            "errors": [],
+            "message": "",
+        }
+        try:
+            connection_id = inputs.get("connection_id")
+            if not isinstance(connection_id, str) or not connection_id.strip():
+                raise RuntimeError("connection_id required")
+            product_id = inputs.get("product_id")
+            if not isinstance(product_id, str) or not product_id.strip():
+                raise RuntimeError("product_id required")
+            entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+            record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+            if not isinstance(entity_id, str) or not entity_id.strip():
+                raise RuntimeError("entity_id required")
+            if not isinstance(record_id, str) or not record_id.strip():
+                raise RuntimeError("record_id required")
+            connection = DbConnectionStore().get(connection_id.strip())
+            if not connection:
+                raise RuntimeError("Connection not found")
+
+            attachment_field_id = inputs.get("attachment_field_id")
+            attachment_purpose = inputs.get("attachment_purpose")
+            attach_store = DbAttachmentStore()
+            record_data = _fetch_record_payload(entity_id.strip(), record_id.strip())
+            attachments = _resolve_linked_attachments(
+                attach_store,
+                entity_id=entity_id.strip(),
+                record_id=record_id.strip(),
+                purpose=attachment_purpose if isinstance(attachment_purpose, str) else None,
+                record_data=record_data,
+                attachment_field=attachment_field_id if isinstance(attachment_field_id, str) else None,
+            )
+            result["attachment_count"] = len(attachments)
+            if not attachments:
+                result["ok"] = True
+                result["message"] = "No linked attachments to sync."
+                return result
+
+            attachments_bucket, public_url, using_supabase_storage = _get_attachment_public_url_helpers()
+            if not using_supabase_storage():
+                raise RuntimeError("Shopify media sync requires public Supabase-backed attachment storage.")
+
+            existing_media_body = _shopify_graphql_request(
+                connection,
+                query="""
+query ProductMedia($id: ID!) {
+  node(id: $id) {
+    ... on Product {
+      id
+      media(first: 100) {
+        nodes {
+          mediaContentType
+          ... on MediaImage {
+            id
+            originalSource {
+              url
+            }
+          }
+        }
+      }
+    }
+  }
+}
+""".strip(),
+                variables={"id": product_id.strip()},
+            )
+            node = (existing_media_body.get("data") or {}).get("node") if isinstance(existing_media_body.get("data"), dict) else None
+            if not isinstance(node, dict) or str(node.get("id") or "").strip() != product_id.strip():
+                raise RuntimeError("Shopify product not found when syncing media.")
+            existing_source_urls: set[str] = set()
+            media_nodes = ((node.get("media") or {}).get("nodes") or []) if isinstance(node.get("media"), dict) else []
+            for item in media_nodes:
+                if not isinstance(item, dict):
+                    continue
+                source = item.get("originalSource") if isinstance(item.get("originalSource"), dict) else {}
+                url = str(source.get("url") or "").strip()
+                if url:
+                    existing_source_urls.add(url)
+
+            image_exts = {".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
+            pending_media: list[dict[str, str]] = []
+            pending_source_urls: set[str] = set(existing_source_urls)
+            skipped_existing = 0
+            skipped_non_image = 0
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                filename = str(attachment.get("filename") or "").strip()
+                mime_type = str(attachment.get("mime_type") or "").strip().lower()
+                if not (
+                    (mime_type.startswith("image/") and mime_type != "image/svg+xml")
+                    or Path(filename).suffix.lower() in image_exts
+                ):
+                    skipped_non_image += 1
+                    continue
+                storage_key = str(attachment.get("storage_key") or "").strip()
+                if not storage_key:
+                    skipped_non_image += 1
+                    continue
+                source_url = public_url(attachments_bucket(), storage_key)
+                if source_url in pending_source_urls:
+                    skipped_existing += 1
+                    continue
+                pending_source_urls.add(source_url)
+                pending_media.append(
+                    {
+                        "filename": filename or "image",
+                        "source_url": source_url,
+                        "alt": _shopify_media_alt_text(filename),
+                    }
+                )
+
+            result["skipped_existing_count"] = skipped_existing
+            result["skipped_non_image_count"] = skipped_non_image
+            if not pending_media:
+                result["ok"] = True
+                result["message"] = "No new image attachments to sync."
+                return result
+
+            media_errors: list[str] = []
+            synced_count = 0
+            for media in pending_media:
+                body_json = _shopify_graphql_request(
+                    connection,
+                    query="""
+mutation ProductCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+  productCreateMedia(productId: $productId, media: $media) {
+    media {
+      alt
+      mediaContentType
+      status
+    }
+    mediaUserErrors {
+      field
+      message
+    }
+    product {
+      id
+    }
+  }
+}
+""".strip(),
+                    variables={
+                        "productId": product_id.strip(),
+                        "media": [
+                            {
+                                "alt": media["alt"],
+                                "mediaContentType": "IMAGE",
+                                "originalSource": media["source_url"],
+                            }
+                        ],
+                    },
+                )
+                payload = ((body_json.get("data") or {}).get("productCreateMedia") or {}) if isinstance(body_json.get("data"), dict) else {}
+                user_errors = payload.get("mediaUserErrors")
+                if isinstance(user_errors, list) and user_errors:
+                    for item in user_errors:
+                        if not isinstance(item, dict):
+                            continue
+                        message = str(item.get("message") or "Shopify media sync failed").strip()
+                        if message:
+                            media_errors.append(f"{media['filename']}: {message}")
+                    continue
+                synced_count += 1
+
+            result["synced_count"] = synced_count
+            result["errors"] = media_errors
+            result["ok"] = not media_errors
+            result["message"] = "; ".join(media_errors[:3]) if media_errors else (
+                f"Synced {synced_count} image attachment{'s' if synced_count != 1 else ''} to Shopify."
+            )
+            return result
+        except Exception as exc:
+            result["message"] = str(exc)
+            result["errors"] = [str(exc)]
+            return result
+
+    if action_id == "system.sync_sales_order_to_finance":
+        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
+        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        if not isinstance(entity_id, str) or entity_id.strip() != "entity.te_sales_order":
+            raise RuntimeError("entity_id must be entity.te_sales_order")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise RuntimeError("record_id required")
+        record_id = record_id.strip()
+        order = _fetch_record_payload(entity_id.strip(), record_id)
+        if not isinstance(order, dict) or not order:
+            raise RuntimeError("Sales order record not found")
+
+        finance_values = _build_finance_income_values_from_sales_order(record_id, order)
+        finance_store = DbGenericRecordStore()
+        existing_rows = finance_store.list_by_field_value(
+            "entity.te_finance_entry",
+            "te_finance_entry.source_record_id",
+            record_id,
+            limit=10,
+        )
+        if not existing_rows:
+            shopify_order_id = str(order.get("te_sales_order.shopify_order_id") or "").strip()
+            if shopify_order_id:
+                existing_rows = finance_store.list_by_field_value(
+                    "entity.te_finance_entry",
+                    "te_finance_entry.shopify_order_id",
+                    shopify_order_id,
+                    limit=10,
+                )
+        existing = existing_rows[0] if existing_rows else None
+        existing_record_id = str(existing.get("record_id") or "").strip() if isinstance(existing, dict) else ""
+        existing_record = existing.get("record") if isinstance(existing, dict) else None
+
+        if finance_values is None:
+            if existing_record_id and isinstance(existing_record, dict):
+                current_status = str(existing_record.get("te_finance_entry.status") or "").strip().lower()
+                if current_status != "void":
+                    patched = _run_generic_update_record(
+                        {
+                            "entity_id": "entity.te_finance_entry",
+                            "record_id": existing_record_id,
+                            "patch": {
+                                "te_finance_entry.status": "void",
+                                "te_finance_entry.void_reason": "Auto-voided because the linked sales order is no longer eligible for posted company income.",
+                            },
+                        },
+                        ctx,
+                    )
+                    return {
+                        "ok": True,
+                        "action": "voided",
+                        "finance_record_id": existing_record_id,
+                        "sales_order_id": record_id,
+                        **patched,
+                    }
+            return {
+                "ok": True,
+                "action": "noop",
+                "finance_record_id": existing_record_id or None,
+                "sales_order_id": record_id,
+                "message": "Sales order is not currently eligible for company income posting.",
+            }
+
+        if existing_record_id:
+            patched = _run_generic_update_record(
+                {
+                    "entity_id": "entity.te_finance_entry",
+                    "record_id": existing_record_id,
+                    "patch": finance_values,
+                },
+                ctx,
+            )
+            return {
+                "ok": True,
+                "action": "updated",
+                "finance_record_id": existing_record_id,
+                "sales_order_id": record_id,
+                **patched,
+            }
+
+        created = _run_generic_create_record(
+            {
+                "entity_id": "entity.te_finance_entry",
+                "values": finance_values,
+            },
+            ctx,
+        )
+        return {
+            "ok": True,
+            "action": "created",
+            "finance_record_id": created.get("record_id"),
+            "sales_order_id": record_id,
+            **created,
         }
 
     if action_id == "system.integration_request":

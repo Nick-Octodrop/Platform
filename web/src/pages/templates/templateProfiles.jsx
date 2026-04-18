@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SamplePicker from "./SamplePicker.jsx";
 import { API_URL, getActiveWorkspaceId } from "../../api.js";
-import { supabase } from "../../supabase.js";
+import { getSafeSession } from "../../supabase.js";
 import { apiFetch } from "../../api.js";
 import CodeTextarea from "../../components/CodeTextarea.jsx";
 import AppSelect from "../../components/AppSelect.jsx";
@@ -531,7 +531,7 @@ function DocPreviewTab({
       }
       setLoading(true);
       try {
-        const session = (await supabase.auth.getSession()).data.session;
+        const session = await getSafeSession();
         const token = session?.access_token;
         const workspaceId = previewState?.workspace_id || getActiveWorkspaceId();
         const res = await fetch(`${API_URL}/attachments/${previewState.attachment_id}/download`, {

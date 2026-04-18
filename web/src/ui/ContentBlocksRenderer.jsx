@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef, createContext, useContext } from "react";
 import { apiFetch, API_URL, getActiveWorkspaceId } from "../api.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
 import ViewModesBlock from "./ViewModesBlock.jsx";
@@ -1116,7 +1116,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
     let mounted = true;
     async function loadCurrentUser() {
       try {
-        const session = (await supabase.auth.getSession()).data.session;
+        const session = await getSafeSession();
         const user = session?.user;
         const label = user?.email || user?.user_metadata?.full_name || "You";
         if (mounted) setCurrentUserLabel(label);
@@ -1254,7 +1254,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
     setUploading(true);
     setError("");
     try {
-      const session = (await supabase.auth.getSession()).data.session;
+      const session = await getSafeSession();
       const token = session?.access_token;
       const uploadedItems = [];
       const failures = [];

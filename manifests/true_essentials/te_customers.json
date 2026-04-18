@@ -1,0 +1,391 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_customers",
+    "key": "te_customers",
+    "name": "Customers",
+    "version": "1.0.0",
+    "description": "Customer master records for True Essentials with Shopify linkage, marketing-consent visibility, and reusable CRM fields for automations.",
+    "category": "True Essentials",
+    "icon_key": "lucide:Users"
+  },
+  "app": {
+    "home": "page:te_customer.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_customer.list_page",
+      "entity_form_page": "page:te_customer.form_page",
+      "entities": {
+        "entity.te_customer": {
+          "entity_home_page": "page:te_customer.list_page",
+          "entity_form_page": "page:te_customer.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Customers",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_customer.home_page" },
+          { "label": "Customers", "to": "page:te_customer.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_customer",
+      "label": "Customer",
+      "display_field": "te_customer.name",
+      "fields": [
+        { "id": "te_customer.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_customer.customer_code", "type": "string", "label": "Customer Code" },
+        { "id": "te_customer.name", "type": "string", "label": "Customer Name", "required": true },
+        {
+          "id": "te_customer.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "inactive", "label": "Inactive" },
+            { "value": "blocked", "label": "Blocked" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        { "id": "te_customer.email", "type": "string", "label": "Email" },
+        { "id": "te_customer.phone", "type": "string", "label": "Phone" },
+        { "id": "te_customer.accepts_email_marketing", "type": "bool", "label": "Email Marketing", "default": false },
+        { "id": "te_customer.accepts_sms_marketing", "type": "bool", "label": "SMS Marketing", "default": false },
+        {
+          "id": "te_customer.currency_preference",
+          "type": "enum",
+          "label": "Currency Preference",
+          "default": "NZD",
+          "options": [
+            { "value": "NZD", "label": "NZD" },
+            { "value": "USD", "label": "USD" }
+          ]
+        },
+        { "id": "te_customer.tags", "type": "text", "label": "Tags" },
+        { "id": "te_customer.shopify_customer_id", "type": "string", "label": "Shopify Customer ID", "readonly": true },
+        { "id": "te_customer.shopify_customer_admin_url", "type": "string", "label": "Shopify Admin URL", "readonly": true },
+        { "id": "te_customer.shopify_state", "type": "string", "label": "Shopify State", "readonly": true },
+        { "id": "te_customer.default_address_line_1", "type": "string", "label": "Address Line 1" },
+        { "id": "te_customer.default_address_line_2", "type": "string", "label": "Address Line 2" },
+        { "id": "te_customer.default_city", "type": "string", "label": "City" },
+        { "id": "te_customer.default_region", "type": "string", "label": "Region / State" },
+        { "id": "te_customer.default_postcode", "type": "string", "label": "Postcode" },
+        { "id": "te_customer.default_country", "type": "string", "label": "Country" },
+        {
+          "id": "te_customer.orders_count",
+          "type": "number",
+          "label": "Orders Count",
+          "readonly": true,
+          "default": 0
+        },
+        {
+          "id": "te_customer.total_spent_nzd",
+          "type": "number",
+          "label": "Total Spent (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 }
+        },
+        { "id": "te_customer.last_order_name", "type": "string", "label": "Last Order", "readonly": true },
+        { "id": "te_customer.last_order_date", "type": "date", "label": "Last Order Date", "readonly": true },
+        { "id": "te_customer.notes", "type": "text", "label": "Notes" },
+        { "id": "te_customer.shopify_last_sync_status", "type": "string", "label": "Shopify Sync Status", "readonly": true },
+        { "id": "te_customer.shopify_last_sync_at", "type": "datetime", "label": "Shopify Last Sync At", "readonly": true },
+        { "id": "te_customer.shopify_last_sync_error", "type": "text", "label": "Shopify Sync Error", "readonly": true }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_customer",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": ["count", "sum:te_customer.total_spent_nzd"],
+        "group_bys": [
+          "te_customer.status",
+          "te_customer.accepts_email_marketing",
+          "te_customer.currency_preference"
+        ]
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "workflow.te_customer",
+      "entity": "entity.te_customer",
+      "status_field": "te_customer.status",
+      "states": [
+        { "id": "active", "label": "Active", "order": 1 },
+        { "id": "inactive", "label": "Inactive", "order": 2 },
+        { "id": "blocked", "label": "Blocked", "order": 3 }
+      ],
+      "transitions": [
+        { "from": "active", "to": "inactive", "label": "Deactivate" },
+        { "from": "inactive", "to": "active", "label": "Reactivate" },
+        { "from": "active", "to": "blocked", "label": "Block" },
+        { "from": "inactive", "to": "blocked", "label": "Block" },
+        { "from": "blocked", "to": "active", "label": "Unblock" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_customer_new", "kind": "open_form", "label": "New Customer", "target": "te_customer.form" },
+    {
+      "id": "action.te_customer_activate",
+      "kind": "update_record",
+      "entity_id": "entity.te_customer",
+      "label": "Activate",
+      "patch": { "te_customer.status": "active" },
+      "visible_when": { "op": "in", "field": "te_customer.status", "value": ["inactive", "blocked"] }
+    },
+    {
+      "id": "action.te_customer_deactivate",
+      "kind": "update_record",
+      "entity_id": "entity.te_customer",
+      "label": "Deactivate",
+      "patch": { "te_customer.status": "inactive" },
+      "visible_when": { "op": "eq", "field": "te_customer.status", "value": "active" }
+    },
+    {
+      "id": "action.te_customer_block",
+      "kind": "update_record",
+      "entity_id": "entity.te_customer",
+      "label": "Block",
+      "patch": { "te_customer.status": "blocked" },
+      "visible_when": { "op": "not", "condition": { "op": "eq", "field": "te_customer.status", "value": "blocked" } }
+    }
+  ],
+  "views": [
+    {
+      "id": "te_customer.list",
+      "kind": "list",
+      "entity": "entity.te_customer",
+      "columns": [
+        { "field_id": "te_customer.customer_code" },
+        { "field_id": "te_customer.name" },
+        { "field_id": "te_customer.status" },
+        { "field_id": "te_customer.email" },
+        { "field_id": "te_customer.phone" },
+        { "field_id": "te_customer.accepts_email_marketing" },
+        { "field_id": "te_customer.last_order_date" },
+        { "field_id": "te_customer.orders_count" },
+        { "field_id": "te_customer.total_spent_nzd" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_customer_new" }],
+        "open_record_target": "page:te_customer.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search customers...",
+          "fields": ["te_customer.customer_code", "te_customer.name", "te_customer.email", "te_customer.phone", "te_customer.tags"]
+        },
+        "filters": [
+          {
+            "id": "all",
+            "label": "All",
+            "domain": { "op": "in", "field": "te_customer.status", "value": ["active", "inactive", "blocked"] }
+          },
+          { "id": "active", "label": "Active", "domain": { "op": "eq", "field": "te_customer.status", "value": "active" } },
+          { "id": "inactive", "label": "Inactive", "domain": { "op": "eq", "field": "te_customer.status", "value": "inactive" } },
+          { "id": "blocked", "label": "Blocked", "domain": { "op": "eq", "field": "te_customer.status", "value": "blocked" } },
+          { "id": "email_marketing", "label": "Email Marketing", "domain": { "op": "eq", "field": "te_customer.accepts_email_marketing", "value": true } }
+        ]
+      }
+    },
+    {
+      "id": "te_customer.form",
+      "kind": "form",
+      "entity": "entity.te_customer",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Customer",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_customer.customer_code",
+            "te_customer.status",
+            "te_customer.name",
+            "te_customer.currency_preference",
+            "te_customer.email",
+            "te_customer.phone",
+            "te_customer.accepts_email_marketing",
+            "te_customer.accepts_sms_marketing",
+            "te_customer.orders_count",
+            "te_customer.total_spent_nzd",
+            "te_customer.last_order_name",
+            "te_customer.last_order_date"
+          ]
+        },
+        {
+          "id": "address",
+          "title": "Default Address",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_customer.default_address_line_1",
+            "te_customer.default_address_line_2",
+            "te_customer.default_city",
+            "te_customer.default_region",
+            "te_customer.default_postcode",
+            "te_customer.default_country"
+          ]
+        },
+        {
+          "id": "shopify",
+          "title": "Shopify",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_customer.shopify_customer_id",
+            "te_customer.shopify_state",
+            "te_customer.shopify_customer_admin_url",
+            "te_customer.shopify_last_sync_at",
+            "te_customer.shopify_last_sync_status",
+            "te_customer.shopify_last_sync_error",
+            "te_customer.tags"
+          ]
+        },
+        { "id": "notes", "title": "Notes", "fields": ["te_customer.notes"] }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_customer.status" },
+        "auto_state_actions": false,
+        "primary_actions": [{ "action_id": "action.te_customer_activate" }],
+        "secondary_actions": [
+          { "action_id": "action.te_customer_deactivate" },
+          { "action_id": "action.te_customer_block" }
+        ],
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            { "id": "summary", "label": "Summary", "sections": ["summary"] },
+            { "id": "address", "label": "Address", "sections": ["address"] },
+            { "id": "shopify", "label": "Shopify", "sections": ["shopify"] },
+            { "id": "notes", "label": "Notes", "sections": ["notes"] }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "te_customer.name",
+          "te_customer.status",
+          "te_customer.email",
+          "te_customer.phone",
+          "te_customer.accepts_email_marketing",
+          "te_customer.accepts_sms_marketing",
+          "te_customer.shopify_last_sync_status"
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_customer.home_page",
+      "title": "Customers",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Customer", "target": "page:te_customer.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "active_customers", "label": "Active Customers", "entity_id": "entity.te_customer", "measure": "count", "domain": { "op": "eq", "field": "te_customer.status", "value": "active" }, "format": "number" },
+            { "id": "email_marketing", "label": "Email Marketing", "entity_id": "entity.te_customer", "measure": "count", "domain": { "op": "eq", "field": "te_customer.accepts_email_marketing", "value": true }, "format": "number" },
+            { "id": "blocked_customers", "label": "Blocked", "entity_id": "entity.te_customer", "measure": "count", "domain": { "op": "eq", "field": "te_customer.status", "value": "blocked" }, "format": "number" },
+            { "id": "total_spent", "label": "Total Spent", "entity_id": "entity.te_customer", "measure": "sum:te_customer.total_spent_nzd", "format": "currency" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_customer",
+              "default_mode": "list",
+              "default_filter_id": "all",
+              "modes": [
+                { "mode": "list", "target": "view:te_customer.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_customer.list_page",
+      "title": "Customers",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_customer",
+              "default_mode": "list",
+              "default_filter_id": "all",
+              "modes": [
+                { "mode": "list", "target": "view:te_customer.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_customer.form_page",
+      "title": "Customer",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_customer",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_customer.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_customer", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

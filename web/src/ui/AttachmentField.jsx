@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import AttachmentGallery from "./AttachmentGallery.jsx";
@@ -50,7 +50,7 @@ export default function AttachmentField({
   }, [entityId, recordId]);
 
   async function uploadOne(file) {
-    const session = (await supabase.auth.getSession()).data.session;
+    const session = await getSafeSession();
     const token = session?.access_token;
     const workspaceId = getActiveWorkspaceId();
 

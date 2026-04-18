@@ -3103,7 +3103,7 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                 "auth_mode": "oauth2",
                 "api_version": "2026-01",
                 "client_id": _provider_env("OCTO_SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_ID"),
-                "oauth_scope": "read_products,write_products,read_inventory,write_inventory,read_orders,read_locations",
+                "oauth_scope": "read_products,write_products,read_inventory,write_inventory,read_orders,read_all_orders,read_customers,read_locations",
                 "default_headers": {
                     "Accept": "application/json",
                 },
@@ -3221,19 +3221,19 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                             "title": "Magnesium Sleep Support",
                             "handle": "magnesium-sleep-support",
                             "status": "ACTIVE",
-                            "vendor": "True Essentials",
-                            "productType": "Supplements",
+                            "vendor": "Example Vendor",
+                            "productType": "Wellness",
                             "variants": [
                                 {
                                     "id": "gid://shopify/ProductVariant/2001",
-                                    "sku": "TE-MAG-001",
+                                    "sku": "SKU-001",
                                     "title": "Default Title",
                                     "price": "39.90",
                                     "compareAtPrice": "49.90",
                                     "inventoryItem": {"id": "gid://shopify/InventoryItem/3001"},
                                 }
                             ],
-                            "onlineStoreUrl": "https://true-essentials.myshopify.com/products/magnesium-sleep-support",
+                            "onlineStoreUrl": "https://example-store.myshopify.com/products/magnesium-sleep-support",
                         },
                     },
                     {
@@ -3290,8 +3290,8 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                         "type": "text",
                         "label": "Shop domain",
                         "group": "connection",
-                        "help": "Use the store's myshopify domain, for example true-essentials.myshopify.com.",
-                        "placeholder": "true-essentials.myshopify.com",
+                        "help": "Use the store's myshopify domain, for example example-store.myshopify.com.",
+                        "placeholder": "example-store.myshopify.com",
                     },
                     {
                         "id": "api_version",
@@ -3314,7 +3314,7 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                         "label": "Scopes",
                         "group": "connection",
                         "help": "Comma-separated Shopify scopes requested during authorization.",
-                        "placeholder": "read_products,write_products,read_inventory,write_inventory,read_orders,read_locations",
+                        "placeholder": "read_products,write_products,read_inventory,write_inventory,read_orders,read_all_orders,read_customers,read_locations",
                     },
                     {
                         "id": "shopify_shop_name",

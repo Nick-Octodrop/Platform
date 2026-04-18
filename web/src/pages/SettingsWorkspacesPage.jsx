@@ -5,7 +5,7 @@ import { useAccessContext } from "../access.js";
 import { useToast } from "../components/Toast.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 import { applyBrandColors, DEFAULT_BRAND_COLORS, setBrandColors } from "../theme/theme.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import AppSelect from "../components/AppSelect.jsx";
@@ -199,7 +199,7 @@ export default function SettingsWorkspacesPage() {
     if (!file) return;
     setLogoUploading(true);
     try {
-      const session = (await supabase.auth.getSession()).data.session;
+      const session = await getSafeSession();
       const token = session?.access_token;
       const form = new FormData();
       form.append("file", file);

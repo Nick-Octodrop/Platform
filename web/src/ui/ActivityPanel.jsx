@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Paperclip, Send, Trash2 } from "lucide-react";
 import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useAccessContext } from "../access.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
@@ -111,7 +111,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     let mounted = true;
     async function loadCurrentUser() {
       try {
-        const session = (await supabase.auth.getSession()).data.session;
+        const session = await getSafeSession();
         const user = session?.user;
         const label = user?.email || user?.user_metadata?.full_name || "";
         if (mounted) setCurrentUserLabel(label);
@@ -246,7 +246,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     setUploading(true);
     setError("");
     try {
-      const session = (await supabase.auth.getSession()).data.session;
+      const session = await getSafeSession();
       const token = session?.access_token;
       const uploadedItems = [];
       const failures = [];
@@ -289,7 +289,7 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
   async function openAttachment(attachmentId) {
     if (!attachmentId) return;
     try {
-      const session = (await supabase.auth.getSession()).data.session;
+      const session = await getSafeSession();
       const token = session?.access_token;
       const response = await fetch(`${API_URL}/attachments/${attachmentId}/download`, {
         headers: workspaceHeaders(token),

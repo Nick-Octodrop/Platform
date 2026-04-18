@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { API_URL, getActiveWorkspaceId } from "../api.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import { formatDateTime } from "../utils/dateTime.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -91,7 +91,7 @@ function iconForType(type) {
 }
 
 async function fetchAttachmentBlob(attachmentId) {
-  const session = (await supabase.auth.getSession()).data.session;
+  const session = await getSafeSession();
   const token = session?.access_token;
   const workspaceId = getActiveWorkspaceId();
   const response = await fetch(`${API_URL}/attachments/${attachmentId}/download`, {

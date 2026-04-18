@@ -26,11 +26,15 @@ class TestShopifySetup(unittest.TestCase):
         module = _load_setup_module()
         templates = module.build_request_templates()
         product_template = next((item for item in templates if item.get("id") == "shopify_graphql_product_set"), None)
+        list_template = next((item for item in templates if item.get("id") == "shopify_graphql_products_list"), None)
         inventory_template = next((item for item in templates if item.get("id") == "shopify_graphql_inventory_set_quantities"), None)
         self.assertIsNotNone(product_template, templates)
+        self.assertIsNotNone(list_template, templates)
         self.assertIsNotNone(inventory_template, templates)
         self.assertEqual(product_template.get("method"), "POST")
         self.assertEqual(product_template.get("path"), "/graphql.json")
+        self.assertEqual(list_template.get("method"), "POST")
+        self.assertEqual(list_template.get("path"), "/graphql.json")
         self.assertEqual(inventory_template.get("method"), "POST")
         self.assertEqual(inventory_template.get("path"), "/graphql.json")
 
@@ -55,6 +59,16 @@ class TestShopifySetup(unittest.TestCase):
         self.assertEqual(inputs.get("template_id"), "shopify_graphql_product_set")
         self.assertIn("productSet", inputs.get("body") or "")
         self.assertIn("slugify", inputs.get("body") or "")
+        graphql_check = next((item for item in automation.get("steps") or [] if item.get("id") == "graphql_errors_found"), None)
+        product_saved = next((item for item in (graphql_check or {}).get("else_steps") or [] if item.get("id") == "user_errors_found"), None)
+        product_saved = next((item for item in (product_saved or {}).get("else_steps") or [] if item.get("id") == "product_saved"), None)
+        nested_steps = (product_saved or {}).get("then_steps") or []
+        media_step = next((item for item in nested_steps if item.get("id") == "push_shopify_media"), None)
+        self.assertIsNotNone(media_step, nested_steps)
+        self.assertEqual((media_step or {}).get("action_id"), "system.shopify_sync_product_media")
+        media_inputs = (media_step or {}).get("inputs") or {}
+        self.assertEqual(media_inputs.get("attachment_field_id"), "te_product.shopify_image_attachments")
+        self.assertEqual(media_inputs.get("attachment_purpose"), "field:te_product.shopify_image_attachments")
 
     def test_push_body_template_renders_valid_graphql_json(self) -> None:
         module = _load_setup_module()
@@ -87,6 +101,34 @@ class TestShopifySetup(unittest.TestCase):
         self.assertEqual(payload["variables"]["input"]["variants"][0]["compareAtPrice"], 49.9)
         self.assertTrue(payload["variables"]["input"]["variants"][0]["inventoryItem"]["tracked"])
 
+    def test_push_body_template_allows_missing_optional_shopify_fields(self) -> None:
+        module = _load_setup_module()
+        template = module.build_product_push_body_template("True Essentials")
+        rendered = render_template(
+            template,
+            {
+                "trigger": {
+                    "record": {
+                        "fields": {
+                            "title": "Portable water flosser",
+                            "sku": "A-0013",
+                            "status": "active",
+                            "retail_price": 89,
+                            "track_stock": True,
+                        }
+                    }
+                }
+            },
+            strict=True,
+        )
+        payload = __import__("json").loads(rendered)
+        self.assertIsNone(payload["variables"]["identifier"])
+        self.assertEqual(payload["variables"]["input"]["title"], "Portable water flosser")
+        self.assertEqual(payload["variables"]["input"]["handle"], "a-0013")
+        self.assertEqual(payload["variables"]["input"]["status"], "ACTIVE")
+        self.assertEqual(payload["variables"]["input"]["variants"][0]["compareAtPrice"], None)
+        self.assertTrue(payload["variables"]["input"]["variants"][0]["inventoryItem"]["tracked"])
+
     def test_inventory_push_automation_targets_inventory_action(self) -> None:
         module = _load_setup_module()
         automation = module.build_inventory_push_automation(
@@ -107,6 +149,18 @@ class TestShopifySetup(unittest.TestCase):
         self.assertEqual(inputs.get("connection_id"), "conn-123")
         self.assertEqual(inputs.get("template_id"), "shopify_graphql_inventory_set_quantities")
         self.assertIn("inventorySetQuantities", inputs.get("body") or "")
+        graphql_check = next((item for item in automation.get("steps") or [] if item.get("id") == "inventory_graphql_errors_found"), None)
+        self.assertEqual((graphql_check or {}).get("expr"), {"op": "exists", "left": {"var": "steps.push_shopify_inventory.body_json.errors[0].message"}})
+
+    def test_product_push_automation_uses_exists_for_error_checks(self) -> None:
+        module = _load_setup_module()
+        automation = module.build_push_automation(
+            connection_id="conn-123",
+            status="draft",
+            default_vendor="True Essentials",
+        )
+        graphql_check = next((item for item in automation.get("steps") or [] if item.get("id") == "graphql_errors_found"), None)
+        self.assertEqual((graphql_check or {}).get("expr"), {"op": "exists", "left": {"var": "steps.push_shopify_product.body_json.errors[0].message"}})
 
     def test_inventory_body_template_renders_valid_graphql_json(self) -> None:
         module = _load_setup_module()

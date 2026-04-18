@@ -2,11 +2,48 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
+import app.main as app_main
 from app.stores import MemoryAutomationStore, MemoryJobStore
 from app.worker import _emit_automation_event, _handle_system_action, _run_automation
 
 
 class TestAutomationRuntime(unittest.TestCase):
+    def test_emit_triggers_still_reaches_automations_without_manifest_trigger(self):
+        handled: list[dict] = []
+        published: list[dict] = []
+
+        request = SimpleNamespace(
+            state=SimpleNamespace(actor={"workspace_id": "org_test"}),
+            headers={},
+        )
+        manifest = {"module": {"id": "te_catalog"}, "triggers": []}
+        fake_bus = SimpleNamespace(publish=lambda event: published.append(event))
+
+        def fake_make_event(name, payload, meta):
+            return {"name": name, "payload": payload, "meta": meta}
+
+        with (
+            patch.object(app_main, "_get_module", return_value={"current_hash": "hash_test"}),
+            patch.object(app_main, "make_event", side_effect=fake_make_event),
+            patch.object(app_main, "event_bus", fake_bus),
+            patch.object(app_main, "_handle_automation_event", side_effect=lambda event: handled.append(event)),
+        ):
+            app_main._emit_triggers(
+                request,
+                "module_dafacb",
+                manifest,
+                "action.clicked",
+                {
+                    "action_id": "action.te_product_push_shopify_inventory",
+                    "entity_id": "entity.te_product",
+                    "record_id": "prod_123",
+                },
+                action_id="action.te_product_push_shopify_inventory",
+            )
+
+        self.assertTrue(any(item["payload"]["event"] == "action.clicked" for item in handled))
+        self.assertTrue(any(item["payload"]["event"] == "action.clicked" for item in published))
+
     def test_emit_automation_event_uses_sha256_manifest_hash(self):
         captured: dict[str, object] = {}
 

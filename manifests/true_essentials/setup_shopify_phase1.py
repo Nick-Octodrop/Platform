@@ -257,6 +257,17 @@ def build_request_templates() -> list[dict[str, Any]]:
             "query": {},
         },
         {
+            "id": "shopify_graphql_products_list",
+            "name": "Shopify: List products and variants",
+            "method": "POST",
+            "path": "/graphql.json",
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            "query": {},
+        },
+        {
             "id": "shopify_graphql_inventory_set_quantities",
             "name": "Shopify: Set inventory quantities",
             "method": "POST",
@@ -278,19 +289,15 @@ def build_product_push_body_template(default_vendor: str | None) -> str:
   "query": "mutation UpsertProduct($input: ProductSetInput!, $identifier: ProductSetIdentifiers, $synchronous: Boolean!) { productSet(synchronous: $synchronous, input: $input, identifier: $identifier) { product { id handle status onlineStoreUrl onlineStorePreviewUrl variants(first: 5) { nodes { id title sku price compareAtPrice inventoryItem { id tracked } } } } userErrors { field message } } }",
   "variables": {
     "synchronous": true,
-    "identifier": {
-{% if trigger.record.fields.shopify_product_id %}
-      "id": {{ trigger.record.fields.shopify_product_id | tojson }}
-{% else %}
-      "handle": {% if trigger.record.fields.shopify_handle %}{{ trigger.record.fields.shopify_handle | slugify | tojson }}{% elif trigger.record.fields.sku %}{{ trigger.record.fields.sku | slugify | tojson }}{% else %}{{ trigger.record.fields.title | slugify | tojson }}{% endif %}
-{% endif %}
-    },
+    "identifier": {% if trigger.record.fields.shopify_product_id | default('', true) %}{
+      "id": {{ trigger.record.fields.shopify_product_id | default('', true) | tojson }}
+    }{% else %}null{% endif %},
     "input": {
       "title": {{ trigger.record.fields.title | tojson }},
-      "handle": {% if trigger.record.fields.shopify_handle %}{{ trigger.record.fields.shopify_handle | slugify | tojson }}{% elif trigger.record.fields.sku %}{{ trigger.record.fields.sku | slugify | tojson }}{% else %}{{ trigger.record.fields.title | slugify | tojson }}{% endif %},
+      "handle": {% if trigger.record.fields.shopify_handle | default('', true) %}{{ trigger.record.fields.shopify_handle | default('', true) | slugify | tojson }}{% elif trigger.record.fields.sku | default('', true) %}{{ trigger.record.fields.sku | default('', true) | slugify | tojson }}{% else %}{{ trigger.record.fields.title | default('', true) | slugify | tojson }}{% endif %},
       "descriptionHtml": {{ trigger.record.fields.shopify_description_html | default('', true) | tojson }},
-__DEFAULT_VENDOR_BLOCK__{% if trigger.record.fields.shopify_status %}
-      "status": {{ trigger.record.fields.shopify_status | upper | tojson }},
+__DEFAULT_VENDOR_BLOCK__{% if trigger.record.fields.shopify_status | default('', true) %}
+      "status": {{ trigger.record.fields.shopify_status | default('', true) | upper | tojson }},
 {% elif trigger.record.fields.status == 'active' %}
       "status": "ACTIVE",
 {% elif trigger.record.fields.status == 'archived' %}
@@ -300,11 +307,11 @@ __DEFAULT_VENDOR_BLOCK__{% if trigger.record.fields.shopify_status %}
 {% endif %}
       "productOptions": [
         {
-          "name": {% if trigger.record.fields.variant_name %}"Variant"{% else %}"Title"{% endif %},
+          "name": {% if trigger.record.fields.variant_name | default('', true) %}"Variant"{% else %}"Title"{% endif %},
           "position": 1,
           "values": [
             {
-              "name": {% if trigger.record.fields.variant_name %}{{ trigger.record.fields.variant_name | tojson }}{% else %}"Default Title"{% endif %}
+              "name": {% if trigger.record.fields.variant_name | default('', true) %}{{ trigger.record.fields.variant_name | default('', true) | tojson }}{% else %}"Default Title"{% endif %}
             }
           ]
         }
@@ -313,15 +320,15 @@ __DEFAULT_VENDOR_BLOCK__{% if trigger.record.fields.shopify_status %}
         {
           "optionValues": [
             {
-              "optionName": {% if trigger.record.fields.variant_name %}"Variant"{% else %}"Title"{% endif %},
-              "name": {% if trigger.record.fields.variant_name %}{{ trigger.record.fields.variant_name | tojson }}{% else %}"Default Title"{% endif %}
+              "optionName": {% if trigger.record.fields.variant_name | default('', true) %}"Variant"{% else %}"Title"{% endif %},
+              "name": {% if trigger.record.fields.variant_name | default('', true) %}{{ trigger.record.fields.variant_name | default('', true) | tojson }}{% else %}"Default Title"{% endif %}
             }
           ],
           "sku": {{ trigger.record.fields.sku | tojson }},
           "price": {{ trigger.record.fields.retail_price | default(0) | float }},
-          "compareAtPrice": {% if trigger.record.fields.compare_at_price and trigger.record.fields.compare_at_price > trigger.record.fields.retail_price %}{{ trigger.record.fields.compare_at_price | float }}{% else %}null{% endif %},
+          "compareAtPrice": {% if trigger.record.fields.compare_at_price | default(0, true) and (trigger.record.fields.compare_at_price | default(0, true)) > (trigger.record.fields.retail_price | default(0, true)) %}{{ trigger.record.fields.compare_at_price | default(0, true) | float }}{% else %}null{% endif %},
           "inventoryItem": {
-            "tracked": {% if trigger.record.fields.track_stock %}true{% else %}false{% endif %}
+            "tracked": {% if trigger.record.fields.track_stock | default(false, true) %}true{% else %}false{% endif %}
           }
         }
       ]
@@ -417,9 +424,8 @@ def build_push_automation(*, connection_id: str, status: str, default_vendor: st
                 "id": "graphql_errors_found",
                 "kind": "condition",
                 "expr": {
-                    "op": "any",
-                    "over": {"var": "steps.push_shopify_product.body_json.errors"},
-                    "where": {"op": "exists", "left": {"var": "item.message"}},
+                    "op": "exists",
+                    "left": {"var": "steps.push_shopify_product.body_json.errors[0].message"},
                 },
                 "then_steps": [
                     update_record_step(
@@ -437,9 +443,8 @@ def build_push_automation(*, connection_id: str, status: str, default_vendor: st
                         "id": "user_errors_found",
                         "kind": "condition",
                         "expr": {
-                            "op": "any",
-                            "over": {"var": "steps.push_shopify_product.body_json.data.productSet.userErrors"},
-                            "where": {"op": "exists", "left": {"var": "item.message"}},
+                            "op": "exists",
+                            "left": {"var": "steps.push_shopify_product.body_json.data.productSet.userErrors[0].message"},
                         },
                         "then_steps": [
                             update_record_step(
@@ -473,6 +478,41 @@ def build_push_automation(*, connection_id: str, status: str, default_vendor: st
                                             "te_product.shopify_last_sync_error": "",
                                         },
                                     )
+                                    ,
+                                    {
+                                        "id": "push_shopify_media",
+                                        "kind": "action",
+                                        "action_id": "system.shopify_sync_product_media",
+                                        "store_as": "push_shopify_media",
+                                        "inputs": {
+                                            "connection_id": connection_id,
+                                            "entity_id": "entity.te_product",
+                                            "record_id": "{{ trigger.record_id }}",
+                                            "product_id": "{{ steps.push_shopify_product.body_json.data.productSet.product.id }}",
+                                            "attachment_field_id": "te_product.shopify_image_attachments",
+                                            "attachment_purpose": "field:te_product.shopify_image_attachments",
+                                        },
+                                    },
+                                    {
+                                        "id": "media_sync_failed",
+                                        "kind": "condition",
+                                        "expr": {
+                                            "op": "eq",
+                                            "left": {"var": "steps.push_shopify_media.ok"},
+                                            "right": {"literal": False},
+                                        },
+                                        "then_steps": [
+                                            update_record_step(
+                                                "mark_media_sync_error",
+                                                record_id="{{ trigger.record_id }}",
+                                                patch={
+                                                    "te_product.shopify_last_sync_status": "error",
+                                                    "te_product.shopify_last_sync_at": timestamp_ref,
+                                                    "te_product.shopify_last_sync_error": "{{ steps.push_shopify_media.message | default('Shopify product media sync failed.') }}",
+                                                },
+                                            )
+                                        ],
+                                    },
                                 ],
                                 "else_steps": [
                                     update_record_step(
@@ -559,9 +599,8 @@ def build_inventory_push_automation(*, connection_id: str, status: str, location
                 "id": "inventory_graphql_errors_found",
                 "kind": "condition",
                 "expr": {
-                    "op": "any",
-                    "over": {"var": "steps.push_shopify_inventory.body_json.errors"},
-                    "where": {"op": "exists", "left": {"var": "item.message"}},
+                    "op": "exists",
+                    "left": {"var": "steps.push_shopify_inventory.body_json.errors[0].message"},
                 },
                 "then_steps": [
                     update_record_step(
@@ -579,9 +618,8 @@ def build_inventory_push_automation(*, connection_id: str, status: str, location
                         "id": "inventory_user_errors_found",
                         "kind": "condition",
                         "expr": {
-                            "op": "any",
-                            "over": {"var": "steps.push_shopify_inventory.body_json.data.inventorySetQuantities.userErrors"},
-                            "where": {"op": "exists", "left": {"var": "item.message"}},
+                            "op": "exists",
+                            "left": {"var": "steps.push_shopify_inventory.body_json.data.inventorySetQuantities.userErrors[0].message"},
                         },
                         "then_steps": [
                             update_record_step(

@@ -7,6 +7,8 @@ const realtimeFlag = (import.meta.env.VITE_SUPABASE_REALTIME || "").toLowerCase(
 export const realtimeEnabled = realtimeFlag === "1" || realtimeFlag === "true" || realtimeFlag === "yes";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60_000;
+let refreshInFlight = null;
 
 function authErrorMessage(errorLike) {
   return String(
@@ -58,7 +60,40 @@ async function recoverInvalidRefreshToken() {
   clearStoredSupabaseSession();
 }
 
-export async function getSafeSession() {
+function sessionExpiresSoon(session, leewayMs = ACCESS_TOKEN_REFRESH_LEEWAY_MS) {
+  const expiresAt = Number(session?.expires_at);
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return false;
+  return expiresAt * 1000 <= Date.now() + leewayMs;
+}
+
+async function refreshSafeSession() {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        if (isInvalidRefreshTokenError(error)) {
+          await recoverInvalidRefreshToken();
+          return null;
+        }
+        throw error;
+      }
+      return data?.session || null;
+    } catch (error) {
+      if (isInvalidRefreshTokenError(error)) {
+        await recoverInvalidRefreshToken();
+        return null;
+      }
+      throw error;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+export async function getSafeSession(options = {}) {
+  const forceRefresh = options && typeof options === "object" ? options.forceRefresh === true : false;
   try {
     const { data, error } = await supabase.auth.getSession();
     if (error) {
@@ -68,7 +103,12 @@ export async function getSafeSession() {
       }
       throw error;
     }
-    return data?.session || null;
+    const session = data?.session || null;
+    if (!session) return null;
+    if (forceRefresh || sessionExpiresSoon(session)) {
+      return (await refreshSafeSession()) || session;
+    }
+    return session;
   } catch (error) {
     if (isInvalidRefreshTokenError(error)) {
       await recoverInvalidRefreshToken();

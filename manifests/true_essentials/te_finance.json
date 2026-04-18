@@ -181,6 +181,10 @@
           "format": { "kind": "currency", "currency_field": "te_finance_entry.reporting_currency", "precision": 2 },
           "help_text": "Positive increases what the company owes the selected owner. Negative reduces that balance. Use 0 for company-only transactions."
         },
+        { "id": "te_finance_entry.source_order_number", "type": "string", "label": "Source Order Number", "readonly": true },
+        { "id": "te_finance_entry.source_entity_id", "type": "string", "label": "Source Entity", "readonly": true },
+        { "id": "te_finance_entry.source_record_id", "type": "string", "label": "Source Record ID", "readonly": true },
+        { "id": "te_finance_entry.shopify_order_id", "type": "string", "label": "Shopify Order ID", "readonly": true },
         { "id": "te_finance_entry.receipt_attachments", "type": "attachments", "label": "Receipts / Proof" },
         {
           "id": "te_finance_entry.void_reason",
@@ -264,6 +268,7 @@
         { "field_id": "te_finance_entry.entry_number" },
         { "field_id": "te_finance_entry.entry_date" },
         { "field_id": "te_finance_entry.entry_type" },
+        { "field_id": "te_finance_entry.source_order_number" },
         { "field_id": "te_finance_entry.member_user_id" },
         { "field_id": "te_finance_entry.amount_nzd" },
         { "field_id": "te_finance_entry.company_cash_effect_nzd" },
@@ -305,6 +310,7 @@
       "columns": [
         { "field_id": "te_finance_entry.entry_date" },
         { "field_id": "te_finance_entry.description" },
+        { "field_id": "te_finance_entry.source_order_number" },
         { "field_id": "te_finance_entry.entry_type" },
         { "field_id": "te_finance_entry.category" },
         { "field_id": "te_finance_entry.paid_from" },
@@ -361,7 +367,8 @@
             "te_finance_entry.member_user_id",
             "te_finance_entry.paid_from",
             "te_finance_entry.category",
-            "te_finance_entry.description"
+            "te_finance_entry.description",
+            "te_finance_entry.source_order_number"
           ]
         },
         {
@@ -377,6 +384,16 @@
             "te_finance_entry.amount_nzd",
             "te_finance_entry.company_cash_effect_nzd",
             "te_finance_entry.member_owed_effect_nzd"
+          ]
+        },
+        {
+          "id": "source",
+          "title": "Source Linkage",
+          "fields": [
+            "te_finance_entry.source_order_number",
+            "te_finance_entry.source_entity_id",
+            "te_finance_entry.source_record_id",
+            "te_finance_entry.shopify_order_id"
           ]
         },
         {
@@ -404,6 +421,7 @@
           "tabs": [
             { "id": "summary", "label": "Summary", "sections": ["summary"] },
             { "id": "amounts", "label": "Amounts", "sections": ["amounts"] },
+            { "id": "source", "label": "Source", "sections": ["source"] },
             { "id": "supporting", "label": "Notes & Proof", "sections": ["supporting"] }
           ]
         }

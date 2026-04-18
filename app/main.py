@@ -851,36 +851,35 @@ def _emit_triggers(
     if namespaced_event and namespaced_event != event:
         _emit_external_webhook_subscriptions(namespaced_event, {**payload, "event": namespaced_event}, meta)
 
+    try:
+        emitted_base = make_event(event, base_event_payload, meta)
+        event_bus.publish(emitted_base)
+        _handle_automation_event(emitted_base)
+        if namespaced_event and namespaced_event != event:
+            namespaced_payload = {**payload, "event": namespaced_event}
+            emitted_ns = make_event(namespaced_event, namespaced_payload, meta)
+            event_bus.publish(emitted_ns)
+            _handle_automation_event(emitted_ns)
+    except Exception as exc:
+        logger.warning("trigger_emit_failed module_id=%s event=%s error=%s", module_id, event, exc)
+
     triggers = _matching_triggers(manifest, event, entity_id, action_id, status_field)
     if not triggers:
         return
 
     for trig in triggers:
         name = trig.get("id") or event
+        if name in {event, namespaced_event}:
+            continue
         event_payload = {
             **payload,
-            "event": event,
+            "event": name,
             "trigger_id": trig.get("id"),
         }
         try:
             emitted = make_event(name, event_payload, meta)
             event_bus.publish(emitted)
             _handle_automation_event(emitted)
-            trigger_id = trig.get("id")
-            if isinstance(trigger_id, str) and trigger_id and trigger_id != event:
-                namespaced_payload = dict(event_payload)
-                namespaced_payload["event"] = trigger_id
-                emitted_ns = make_event(trigger_id, namespaced_payload, meta)
-                event_bus.publish(emitted_ns)
-                _handle_automation_event(emitted_ns)
-            elif not trigger_id:
-                namespaced_event = _derive_namespaced_event()
-                if namespaced_event and namespaced_event != event:
-                    namespaced_payload = dict(event_payload)
-                    namespaced_payload["event"] = namespaced_event
-                    emitted_ns = make_event(namespaced_event, namespaced_payload, meta)
-                    event_bus.publish(emitted_ns)
-                    _handle_automation_event(emitted_ns)
         except Exception as exc:
             logger.warning("trigger_emit_failed module_id=%s event=%s error=%s", module_id, event, exc)
 
@@ -18181,6 +18180,12 @@ async def automations_meta(request: Request) -> dict:
         {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
         {"id": "system.integration_sync", "label": "Run integration sync"},
+        {"id": "system.shopify_upsert_customer_webhook", "label": "Upsert Shopify customer from webhook"},
+        {"id": "system.shopify_upsert_product_webhook", "label": "Upsert Shopify product from webhook"},
+        {"id": "system.shopify_upsert_order_webhook", "label": "Upsert Shopify order from webhook"},
+        {"id": "system.shopify_refresh_order_from_refund_webhook", "label": "Refresh Shopify order from refund webhook"},
+        {"id": "system.shopify_sync_product_media", "label": "Sync Shopify product media"},
+        {"id": "system.sync_sales_order_to_finance", "label": "Sync sales order to finance"},
         {"id": "system.noop", "label": "No-op (test)"},
     ]
     entities: list[dict] = []
@@ -39217,6 +39222,12 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         {"id": "system.notify", "label": "Notify workspace users"},
         {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
+        {"id": "system.shopify_upsert_customer_webhook", "label": "Upsert Shopify customer from webhook"},
+        {"id": "system.shopify_upsert_product_webhook", "label": "Upsert Shopify product from webhook"},
+        {"id": "system.shopify_upsert_order_webhook", "label": "Upsert Shopify order from webhook"},
+        {"id": "system.shopify_refresh_order_from_refund_webhook", "label": "Refresh Shopify order from refund webhook"},
+        {"id": "system.shopify_sync_product_media", "label": "Sync Shopify product media"},
+        {"id": "system.sync_sales_order_to_finance", "label": "Sync sales order to finance"},
     ]
     module_actions: list[dict] = []
     for mod in _get_registry_list(request):

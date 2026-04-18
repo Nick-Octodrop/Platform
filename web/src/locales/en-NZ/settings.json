@@ -194,7 +194,9 @@
         "oauth_tokens_stored": "OAuth tokens stored.",
         "oauth_tokens_refreshed": "OAuth tokens refreshed.",
         "mapping_added": "Mapping added.",
-        "webhook_added": "Webhook added."
+        "webhook_added": "Webhook added.",
+        "webhook_updated": "Webhook updated.",
+        "webhook_endpoint_copied": "Webhook endpoint copied."
       },
       "errors": {
         "load_connection": "Failed to load connection",
@@ -209,7 +211,9 @@
         "create_mapping": "Failed to create mapping",
         "preview_mapping": "Failed to preview mapping",
         "create_webhook": "Failed to create webhook",
+        "update_webhook": "Failed to update webhook",
         "delete_webhook": "Failed to delete webhook",
+        "copy_webhook_endpoint": "Failed to copy webhook endpoint",
         "delete_mapping": "Failed to delete mapping"
       },
       "request": {
@@ -251,6 +255,9 @@
         "help": "Inbound webhooks store raw events and process them asynchronously. Outbound webhooks can be called through automation actions or manual requests.",
         "signing_model_title": "Signing model",
         "signing_model_help": "Signed outbound webhooks now include X-Octo-Timestamp and X-Octo-Signature. The signature is an HMAC SHA-256 over timestamp.payload. Inbound verification accepts that format and still supports the older body-only sha256= signature for compatibility.",
+        "new_title": "New webhook",
+        "edit_title": "Webhook: {{event_key}}",
+        "new_button": "New webhook",
         "direction": "Direction",
         "direction_inbound": "Inbound",
         "direction_outbound": "Outbound",
@@ -263,6 +270,12 @@
         "config": "Webhook config",
         "add": "Add webhook",
         "adding": "Adding...",
+        "save": "Save webhook",
+        "saving": "Saving...",
+        "open": "Open",
+        "copy_endpoint": "Copy endpoint",
+        "webhook_id": "Webhook ID",
+        "connection_id": "Connection ID",
         "none": "No webhooks configured yet.",
         "endpoint": "Endpoint"
       },

@@ -11,7 +11,8 @@
   },
   "depends_on": {
     "required": [
-      { "module": "te_catalog", "version": ">=1.0.0" }
+      { "module": "te_catalog", "version": ">=1.0.0" },
+      { "module": "te_customers", "version": ">=1.0.0" }
     ]
   },
   "app": {
@@ -113,6 +114,13 @@
         { "id": "te_sales_order.shopify_order_id", "type": "string", "label": "Shopify Order ID", "readonly": true },
         { "id": "te_sales_order.shopify_order_name", "type": "string", "label": "Shopify Order Name", "readonly": true },
         { "id": "te_sales_order.shopify_order_admin_url", "type": "string", "label": "Shopify Admin URL", "readonly": true },
+        {
+          "id": "te_sales_order.customer_id",
+          "type": "lookup",
+          "label": "Customer Record",
+          "entity": "entity.te_customer",
+          "display_field": "te_customer.name"
+        },
         { "id": "te_sales_order.customer_name", "type": "string", "label": "Customer Name" },
         { "id": "te_sales_order.customer_email", "type": "string", "label": "Customer Email" },
         { "id": "te_sales_order.customer_phone", "type": "string", "label": "Customer Phone" },
@@ -381,6 +389,23 @@
       ]
     }
   ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_sales_order",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": ["count", "sum:te_sales_order.order_total", "sum:te_sales_order.balance_due"],
+        "group_bys": [
+          "te_sales_order.status",
+          "te_sales_order.financial_status",
+          "te_sales_order.fulfillment_status",
+          "te_sales_order.channel",
+          "te_sales_order.currency"
+        ]
+      }
+    ]
+  },
   "actions": [
     { "id": "action.te_sales_order_new", "kind": "open_form", "label": "New Sales Order", "target": "te_sales_order.form" }
   ],
@@ -395,6 +420,7 @@
         { "field_id": "te_sales_order.financial_status" },
         { "field_id": "te_sales_order.fulfillment_status" },
         { "field_id": "te_sales_order.order_date" },
+        { "field_id": "te_sales_order.customer_id" },
         { "field_id": "te_sales_order.customer_name" },
         { "field_id": "te_sales_order.order_total" },
         { "field_id": "te_sales_order.balance_due" }
@@ -430,6 +456,7 @@
             "te_sales_order.currency",
             "te_sales_order.shopify_order_name",
             "te_sales_order.shopify_order_id",
+            "te_sales_order.customer_id",
             "te_sales_order.customer_name",
             "te_sales_order.customer_email",
             "te_sales_order.customer_phone"

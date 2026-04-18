@@ -23,7 +23,7 @@ import {
   Upload,
 } from "lucide-react";
 import { apiFetch, deleteRecord, subscribeRecordMutations } from "../api.js";
-import { supabase } from "../supabase.js";
+import { getSafeSession } from "../supabase.js";
 import ListViewRenderer from "./ListViewRenderer.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
@@ -1974,7 +1974,7 @@ export default function ViewModesBlock({
     let mounted = true;
     async function loadPrefs() {
       try {
-        const session = (await supabase.auth.getSession()).data.session;
+        const session = await getSafeSession();
         if (!session?.access_token) {
           prefsLoadedRef.current = true;
           if (mounted) setPrefsLoaded(true);
