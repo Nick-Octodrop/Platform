@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAccessContext } from "../../access.js";
 import useWorkspaceProviderStatus from "../../hooks/useWorkspaceProviderStatus.js";
+import useAiCapabilityCatalog from "../../hooks/useAiCapabilityCatalog.js";
 import ProviderSecretModal from "../../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../../components/LoadingSpinner.jsx";
 import ArtifactAiStageCard from "../../components/ArtifactAiStageCard.jsx";
 import ScopedAiAssistantPane from "../../components/ScopedAiAssistantPane.jsx";
 import { apiFetch } from "../../api.js";
+import { getArtifactQuickActions } from "../../aiCapabilities.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
 function formatValidationLines(items = []) {
@@ -22,6 +24,41 @@ function formatValidationLines(items = []) {
 
 function hasValidationErrors(validation) {
   return Array.isArray(validation?.errors) && validation.errors.length > 0;
+}
+
+function hasMeaningfulHtmlContent(value) {
+  const source = String(value || "").trim();
+  if (!source) return false;
+  const textOnly = source
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Boolean(textOnly || /<(img|table|svg|hr)\b/i.test(source));
+}
+
+function hasMeaningfulTemplateDraft(agentKind, draft) {
+  if (!draft || typeof draft !== "object") return false;
+  if (agentKind === "document") {
+    return hasMeaningfulHtmlContent(draft?.html)
+      || hasMeaningfulHtmlContent(draft?.header_html)
+      || hasMeaningfulHtmlContent(draft?.footer_html);
+  }
+  return Boolean(
+    String(draft?.subject || "").trim()
+    || String(draft?.body_text || "").trim()
+    || hasMeaningfulHtmlContent(draft?.body_html),
+  );
+}
+
+function isHtmlStarterValue(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return normalized === "<p>hello</p>" || normalized === "<p>hello</p>\n";
 }
 
 export default function TemplateAgentPane({
@@ -47,58 +84,54 @@ export default function TemplateAgentPane({
   const { hasCapability } = useAccessContext();
   const { t } = useI18n();
   const { providers, loading, reload } = useWorkspaceProviderStatus(["openai"]);
+  const { capabilities: aiCapabilities } = useAiCapabilityCatalog();
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const message = initialMessage || t("settings.template_studio.default_agent_message");
   const templateLabel = agentKind === "document" ? "document template" : "email template";
+  const assistantLabel = agentKind === "document" ? "AI Document Assistant" : "AI Email Assistant";
+  const isStarterTemplateDraft = useMemo(() => {
+    if (!draft || typeof draft !== "object") return false;
+    if (agentKind === "document") {
+      const starterName = String(t("settings.documents_templates_page.untitled_template") || "").trim();
+      const name = String(draft?.name || "").trim();
+      const description = String(draft?.description || "").trim();
+      const html = String(draft?.html || "").trim();
+      const headerHtml = String(draft?.header_html || "").trim();
+      const footerHtml = String(draft?.footer_html || "").trim();
+      return name === starterName
+        && !description
+        && isHtmlStarterValue(html)
+        && !headerHtml
+        && !footerHtml;
+    }
+    const starterName = String(t("settings.email_templates.untitled_template") || "").trim();
+    const starterSubject = String(t("settings.email_templates.new_template") || "").trim();
+    const name = String(draft?.name || "").trim();
+    const subject = String(draft?.subject || "").trim();
+    const description = String(draft?.description || "").trim();
+    const bodyHtml = String(draft?.body_html || "").trim();
+    const bodyText = String(draft?.body_text || "").trim();
+    return name === starterName
+      && subject === starterSubject
+      && !description
+      && !bodyText
+      && isHtmlStarterValue(bodyHtml);
+  }, [agentKind, draft, t]);
   const openAiConnected = Boolean(providers?.openai?.connected);
   const canUseTemplateAi = hasCapability("templates.manage");
   const canManageSettings = hasCapability("workspace.manage_settings");
   const userLabel = user?.email || t("common.you");
   const lastAutoFixTokenRef = useRef(0);
-  const quickActions = useMemo(() => (
-    agentKind === "document"
-      ? [
-          {
-            id: "improve-design",
-            label: "Improve layout",
-            prompt: "Improve the layout, hierarchy, and print readability of this document template while preserving its intent, variables, and overall structure unless a clearer layout change is needed.",
-            focus: "design",
-          },
-          {
-            id: "tighten-copy",
-            label: "Tighten copy",
-            prompt: "Improve the clarity, labels, and wording in this document template while preserving its structure and variables.",
-            focus: "content",
-          },
-          {
-            id: "apply-branding",
-            label: "Use branding",
-            prompt: "Apply workspace branding more effectively to this document template while keeping it clean, printable, and consistent with the existing structure.",
-            focus: "design",
-          },
-        ]
-      : [
-          {
-            id: "improve-design",
-            label: "Improve design",
-            prompt: "Improve the design, hierarchy, and scannability of this email template while preserving its intent, variables, and overall structure unless a clearer layout change is needed.",
-            focus: "design",
-          },
-          {
-            id: "tighten-copy",
-            label: "Tighten copy",
-            prompt: "Improve the subject, CTA wording, and overall copy clarity of this email template while preserving its structure and variables.",
-            focus: "content",
-          },
-          {
-            id: "apply-branding",
-            label: "Use branding",
-            prompt: "Apply workspace branding more effectively to this email template while keeping it production-ready and consistent with the existing structure.",
-            focus: "design",
-          },
-        ]
-  ), [agentKind]);
+  const quickActions = useMemo(() => getArtifactQuickActions(
+    aiCapabilities,
+    agentKind,
+    {
+      surface: "scoped_editor",
+      artifactLabel: draft?.name || templateLabel,
+      excludeFocuses: ["validation"],
+    },
+  ), [agentKind, aiCapabilities, draft?.name, templateLabel]);
   const planningStatusItems = useMemo(() => ([
     `Reviewing the current ${templateLabel} draft`,
     "Checking structure, placeholders, and editable content",
@@ -177,6 +210,82 @@ export default function TemplateAgentPane({
     await runTemplateAiPlan(action.prompt, draft, { focus: action.focus });
   }
 
+  const templateHasSeedContent = useMemo(
+    () => hasMeaningfulTemplateDraft(agentKind, draft) && !isStarterTemplateDraft,
+    [agentKind, draft, isStarterTemplateDraft],
+  );
+
+  const actionStrip = useMemo(() => {
+    if (submitting) return null;
+    if (proposal) {
+      return {
+        title: "Actions",
+        actions: [
+          {
+            key: "apply-draft",
+            label: "Apply draft",
+            onClick: applyProposal,
+            primary: true,
+            disabled: !proposal?.draft || proposal?.validation?.compiled_ok === false,
+          },
+          ...(proposal?.validation?.compiled_ok === false
+            ? [{
+                key: "fix-with-ai",
+                label: "Fix with AI",
+                onClick: () => runTemplateAiFix({
+                  draft: proposal?.draft,
+                  validation: proposal?.validation,
+                  summary: proposal?.summary,
+                }),
+              }]
+            : []),
+          {
+            key: "discard-proposal",
+            label: "Discard",
+            onClick: discardProposal,
+            outline: true,
+          },
+        ],
+      };
+    }
+    if (!draft || disabled || !endpoint || !templateHasSeedContent) return null;
+    const idleActions = [
+      ...(hasValidationErrors(validationState)
+        ? [{
+            key: "fix-current-validation",
+            label: "Fix with AI",
+            onClick: () => runTemplateAiFix({
+              draft,
+              validation: validationState,
+              summary: draft?.name || `${templateLabel} draft`,
+            }),
+            primary: true,
+          }]
+        : []),
+      ...quickActions.map((action) => ({
+        key: action.id,
+        label: action.label,
+        onClick: () => handleQuickAction(action),
+        outline: true,
+      })),
+    ];
+    return idleActions.length ? { title: "Actions", actions: idleActions } : null;
+  }, [
+    applyProposal,
+    disabled,
+    discardProposal,
+    draft,
+    endpoint,
+    handleQuickAction,
+    proposal,
+    quickActions,
+    runTemplateAiFix,
+    submitting,
+    templateHasSeedContent,
+    templateLabel,
+    validationState,
+  ]);
+
   function applyProposal() {
     if (!proposal?.draft) return;
     if (typeof setDraft === "function") {
@@ -248,7 +357,7 @@ export default function TemplateAgentPane({
       <div className="h-full min-h-0 flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 overflow-auto space-y-4">
           <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{assistantLabel}</div>
             <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
               You need template management access to use template AI.
             </div>
@@ -305,7 +414,7 @@ export default function TemplateAgentPane({
     <>
       <ScopedAiAssistantPane
         introMessage={message}
-        assistantLabel={t("settings.template_studio.assistant")}
+        assistantLabel={assistantLabel}
         userLabel={userLabel}
         messages={messages}
         autoScrollKey={`${messages.length}:${submitting ? "loading" : "idle"}:${proposal ? "proposal" : "none"}`}
@@ -327,18 +436,6 @@ export default function TemplateAgentPane({
             assumptions={proposal.assumptions}
             warnings={proposal.warnings}
             validation={proposal.validation}
-            actions={[
-              { label: "Apply draft", onClick: applyProposal, primary: true, disabled: !proposal?.draft || proposal?.validation?.compiled_ok === false },
-              ...(proposal?.validation?.compiled_ok === false ? [{
-                label: "Fix with AI",
-                onClick: () => runTemplateAiFix({
-                  draft: proposal?.draft,
-                  validation: proposal?.validation,
-                  summary: proposal?.summary,
-                }),
-              }] : []),
-              { label: "Discard", onClick: discardProposal },
-            ]}
           />
         ) : null)}
         inputValue={input}
@@ -347,24 +444,7 @@ export default function TemplateAgentPane({
         inputDisabled={disabled || submitting || !endpoint || !draft}
         inputPlaceholder={t("settings.template_studio.describe_template_change")}
         minRows={4}
-        composerExtras={draft ? (
-          <div className="space-y-2">
-            <div className="text-[10px] uppercase tracking-wide opacity-60">Quick actions</div>
-            <div className="flex flex-wrap gap-2">
-              {quickActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => handleQuickAction(action)}
-                  disabled={disabled || submitting || !endpoint || !draft}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        actionStrip={actionStrip}
       />
       <ProviderSecretModal
         open={modalOpen}

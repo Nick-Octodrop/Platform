@@ -23,9 +23,11 @@ import { DESKTOP_PANEL_SHELL } from "../ui/pageShell.js";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import { useAccessContext } from "../access.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import useAiCapabilityCatalog from "../hooks/useAiCapabilityCatalog.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
+import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 function JsonBlock({ value }) {
@@ -402,6 +404,7 @@ export default function OctoAiWorkspacePage() {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const { hasCapability } = useAccessContext();
   const { providers: aiProviders, loading: providerStatusLoading, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["openai"]);
+  const { capabilities: aiCapabilities } = useAiCapabilityCatalog();
   const chatScrollRef = useRef(null);
   const chatBottomRef = useRef(null);
   const composerRef = useRef(null);
@@ -602,90 +605,15 @@ export default function OctoAiWorkspacePage() {
     };
   }, [data.session?.selected_artifact_key, data.session?.selected_artifact_type, structuredPlan?.artifacts]);
   const artifactFocusActions = useMemo(() => {
-    const label = selectedArtifactContext.label || "selected artifact";
-    if (selectedArtifactContext.type === "automation") {
-      return [
-        {
-          id: "fix-validation",
-          label: "Fix validation",
-          prompt: `Fix validation errors in the selected automation "${label}" and keep the existing behavior unless a targeted fix is required.`,
-        },
-        {
-          id: "improve-logic",
-          label: "Improve logic",
-          prompt: `Improve the trigger logic, branching, and step flow in the selected automation "${label}" while preserving the intended business outcome.`,
-        },
-        {
-          id: "tighten-messages",
-          label: "Tighten messages",
-          prompt: `Improve the human-facing notification and email wording in the selected automation "${label}" while keeping its trigger logic and structure stable.`,
-        },
-      ];
-    }
-    if (selectedArtifactContext.type === "email_template") {
-      return [
-        {
-          id: "fix-validation",
-          label: "Fix validation",
-          prompt: `Fix validation errors in the selected email template "${label}" and preserve the current structure, copy, and design unless a targeted fix is required.`,
-        },
-        {
-          id: "improve-design",
-          label: "Improve design",
-          prompt: `Improve the design, hierarchy, and scannability of the selected email template "${label}" while preserving its intent and valid dynamic fields.`,
-        },
-        {
-          id: "tighten-copy",
-          label: "Tighten copy",
-          prompt: `Improve the subject line, CTA wording, and overall copy clarity in the selected email template "${label}" while preserving its structure and variables.`,
-        },
-      ];
-    }
-    if (selectedArtifactContext.type === "document_template") {
-      return [
-        {
-          id: "fix-validation",
-          label: "Fix validation",
-          prompt: `Fix validation errors in the selected document template "${label}" and preserve the current structure, copy, and design unless a targeted fix is required.`,
-        },
-        {
-          id: "improve-design",
-          label: "Improve design",
-          prompt: `Improve the layout, hierarchy, and print readability of the selected document template "${label}" while preserving its intent and valid dynamic fields.`,
-        },
-        {
-          id: "tighten-copy",
-          label: "Tighten copy",
-          prompt: `Improve the labels, section wording, and overall copy clarity in the selected document template "${label}" while preserving its structure and variables.`,
-        },
-      ];
-    }
-    if (selectedArtifactContext.type === "module") {
-      return [
-        {
-          id: "fix-validation",
-          label: "Fix validation",
-          prompt: `Fix validation errors in the selected module "${label}" and preserve the current structure, UX, and business behavior unless a targeted fix is required.`,
-        },
-        {
-          id: "improve-ux",
-          label: "Improve UX",
-          prompt: `Improve the UX, page hierarchy, navigation clarity, and field grouping in the selected module "${label}" while preserving its business intent.`,
-        },
-        {
-          id: "tighten-copy",
-          label: "Tighten copy",
-          prompt: `Improve labels, helper text, action wording, and empty-state copy in the selected module "${label}" while keeping its schema and workflows stable.`,
-        },
-        {
-          id: "improve-logic",
-          label: "Improve logic",
-          prompt: `Improve workflows, actions, and business-rule logic in the selected module "${label}" while preserving its intended data model and user-facing experience.`,
-        },
-      ];
-    }
-    return [];
-  }, [selectedArtifactContext.label, selectedArtifactContext.type]);
+    return getArtifactQuickActions(
+      aiCapabilities,
+      selectedArtifactContext.type,
+      {
+        surface: "workspace",
+        artifactLabel: selectedArtifactContext.label || "selected artifact",
+      },
+    );
+  }, [aiCapabilities, selectedArtifactContext.label, selectedArtifactContext.type]);
 
   async function refreshSession(options = {}) {
     if (!sessionId) return;
@@ -1216,6 +1144,9 @@ export default function OctoAiWorkspacePage() {
                   <span className="badge badge-outline badge-sm">
                     {selectedArtifactContext.typeLabel || "artifact"}{selectedArtifactContext.label ? `: ${selectedArtifactContext.label}` : ""}
                   </span>
+                </div>
+                <div className="mt-2 text-xs opacity-70">
+                  Octo AI reuses the same module, automation, and template capability rules as the scoped editors.
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {artifactFocusActions.map((action) => (

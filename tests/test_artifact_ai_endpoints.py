@@ -110,6 +110,35 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertIn("compiled_ok", validation)
 
+    def test_ai_capabilities_endpoint_returns_shared_quick_actions(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            res = client.get("/ai/capabilities")
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        capabilities = body.get("capabilities") or {}
+        artifacts = capabilities.get("artifacts") or {}
+        self.assertIn("module", artifacts)
+        self.assertIn("automation", artifacts)
+        self.assertIn("email_template", artifacts)
+        self.assertIn("document_template", artifacts)
+        module_actions = artifacts["module"].get("quick_actions") or []
+        self.assertTrue(any(action.get("id") == "improve-ux" for action in module_actions))
+        self.assertIn("focus_guidance", artifacts["module"])
+        self.assertIn("focus_inference_signals", artifacts["automation"])
+        email_actions = artifacts["email_template"].get("quick_actions") or []
+        self.assertTrue(any(action.get("id") == "apply-branding" for action in email_actions))
+        self.assertTrue(any(action.get("focus") == "validation" for action in email_actions))
+
+    def test_shared_capability_catalog_drives_focus_inference_and_module_guidance(self) -> None:
+        self.assertEqual(main._studio2_agent_focus(None, "Improve labels and helper text in this module."), "content")
+        self.assertEqual(main._studio2_agent_focus(None, "Improve workflow logic and actions."), "logic")
+        self.assertEqual(main._artifact_ai_requested_focus("document_template", None, "Improve layout and print readability."), "design")
+        self.assertEqual(main._artifact_ai_requested_focus("automation", None, "Tighten the notification copy."), "content")
+        instruction = main._studio2_agent_focus_instruction("design")
+        self.assertIn("Focus mode: design.", instruction)
+        self.assertIn("navigation clarity", instruction)
+
     def test_document_template_ai_plan_returns_validated_draft(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -134,7 +163,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                             "filename_pattern": "Service Report - {{ record['job.reference'] }}",
                             "html": "<h1>Service Report</h1><p>{{ record['job.reference'] }}</p>",
                             "header_html": "<div>Octodrop Service</div>",
-                            "footer_html": "<div>Page {{ pageNumber }}</div>",
+                            "footer_html": "<div>Page <span class=\"pageNumber\"></span> of <span class=\"totalPages\"></span></div>",
                             "paper_size": "A4",
                             "margin_top": "12mm",
                             "margin_right": "12mm",
@@ -161,6 +190,154 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             self.assertEqual(body.get("draft", {}).get("paper_size"), "A4")
             validation = body.get("validation") or {}
             self.assertIn("compiled_ok", validation)
+
+    def test_document_template_ai_plan_context_exposes_lookup_aliases_and_runtime_examples(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "PO Document",
+                    "description": "",
+                    "filename_pattern": "po-document",
+                    "html": "<p>PO</p>",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        captured: dict[str, object] = {}
+        fake_entities = [
+            {
+                "id": "entity.biz_purchase_order",
+                "label": "Purchase Order",
+                "fields": [
+                    {"id": "biz_purchase_order.po_number", "label": "PO Number", "type": "string"},
+                    {
+                        "id": "biz_purchase_order.supplier_id",
+                        "label": "Supplier",
+                        "type": "lookup",
+                        "entity": "entity.biz_contact",
+                        "display_field": "biz_contact.name",
+                    },
+                ],
+            }
+        ]
+        fake_contact_entity = {
+            "id": "entity.biz_contact",
+            "label": "Contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+            ],
+        }
+
+        def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+            captured["messages"] = messages
+            return _fake_response(
+                {
+                    "summary": "Improved the purchase order document.",
+                    "draft": {
+                        "name": "PO Document",
+                        "description": "Supplier-facing PDF.",
+                        "filename_pattern": "PO-{{ record['biz_purchase_order.po_number'] }}",
+                        "html": "<p>Hello {{ record['biz_purchase_order.supplier_name'] }}</p>",
+                        "header_html": "<div>PO</div>",
+                        "footer_html": "<div>Page <span class=\"pageNumber\"></span></div>",
+                        "paper_size": "A4",
+                        "margin_top": "12mm",
+                        "margin_right": "12mm",
+                        "margin_bottom": "12mm",
+                        "margin_left": "12mm",
+                    },
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            )
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main, "_artifact_ai_entities", lambda _request: fake_entities),
+            patch.object(main, "_find_entity_def_global", lambda entity_id: fake_contact_entity if entity_id == "biz_contact" or entity_id == "entity.biz_contact" else None),
+            patch.object(main, "_openai_chat_completion", fake_openai),
+            patch.object(main, "_openai_configured", lambda: True),
+        ):
+            res = client.post(
+                f"/documents/templates/{template_id}/ai/plan",
+                json={
+                    "prompt": "Create a supplier-facing purchase order document.",
+                    "draft": {**created["template"], "variables_schema": {"entity_id": "entity.biz_purchase_order"}},
+                    "sample": {"entity_id": "entity.biz_purchase_order"},
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        messages = captured.get("messages") or []
+        context_messages = [
+            item.get("content")
+            for item in messages
+            if isinstance(item, dict) and isinstance(item.get("content"), str) and item.get("content", "").startswith("context.json")
+        ]
+        self.assertEqual(len(context_messages), 1)
+        context_text = context_messages[0]
+        self.assertIn("\"accessible_record_keys\"", context_text)
+        self.assertIn("\"biz_purchase_order.supplier_name\"", context_text)
+        self.assertIn("\"lookup_alias_keys\"", context_text)
+        self.assertIn("\"document_runtime_examples\"", context_text)
+        self.assertIn("\"pagination_footer_example\"", context_text)
+
+    def test_document_template_validation_flags_invalid_record_key_and_pagination_jinja(self) -> None:
+        fake_purchase_order_entity = {
+            "id": "entity.biz_purchase_order",
+            "label": "Purchase Order",
+            "fields": [
+                {"id": "biz_purchase_order.po_number", "label": "PO Number", "type": "string"},
+                {
+                    "id": "biz_purchase_order.supplier_id",
+                    "label": "Supplier",
+                    "type": "lookup",
+                    "entity": "entity.biz_contact",
+                    "display_field": "biz_contact.name",
+                },
+            ],
+        }
+        fake_contact_entity = {
+            "id": "entity.biz_contact",
+            "label": "Contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+            ],
+        }
+
+        def fake_find_entity(entity_id):
+            if entity_id in {"entity.biz_purchase_order", "biz_purchase_order"}:
+                return fake_purchase_order_entity
+            if entity_id in {"entity.biz_contact", "biz_contact"}:
+                return fake_contact_entity
+            return None
+
+        with patch.object(main, "_find_entity_def_global", fake_find_entity):
+            validation = main._artifact_ai_validate_doc_template_draft(
+                {
+                    "name": "PO Document",
+                    "filename_pattern": "PO-{{ record['biz_purchase_order.po_number'] }}",
+                    "html": "<p>Hello {{ record['biz_contact.name'] }}</p>",
+                    "header_html": "<div>PO</div>",
+                    "footer_html": "<div>Page {{ pageNumber }}</div>",
+                    "paper_size": "A4",
+                    "margin_top": "12mm",
+                    "margin_right": "12mm",
+                    "margin_bottom": "12mm",
+                    "margin_left": "12mm",
+                    "variables_schema": {"entity_id": "entity.biz_purchase_order"},
+                }
+            )
+
+        self.assertFalse(validation.get("compiled_ok"))
+        messages = [item.get("message") for item in (validation.get("errors") or []) if isinstance(item, dict)]
+        self.assertTrue(any("invalid record key 'biz_contact.name'" in str(message) for message in messages), messages)
+        self.assertTrue(any('class="pageNumber"' in str(message) for message in messages), messages)
 
     def test_email_template_ai_plan_context_includes_validation_and_entity_guidance(self) -> None:
         client = TestClient(main.app)
@@ -237,6 +414,10 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertIn("\"requested_focus\": \"design\"", context_text)
         self.assertIn("\"selected_entity_summary\"", context_text)
         self.assertIn("\"safe_jinja_examples\"", context_text)
+        self.assertIn("\"shared_capability_catalog\"", context_text)
+        self.assertIn("\"quick_actions\"", context_text)
+        self.assertIn("\"module\"", context_text)
+        self.assertIn("\"automation\"", context_text)
         self.assertIn("\"design_playbook\"", context_text)
         self.assertIn("\"design_principles\"", context_text)
         self.assertIn("\"component_priority\"", context_text)
@@ -244,7 +425,212 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertIn("\"design_signals\"", context_text)
         self.assertIn("\"quote.number\"", context_text)
         self.assertIn("\"field_ids_by_type\"", context_text)
+        self.assertIn("\"accessible_record_keys\"", context_text)
         self.assertIn("\"record_field_example\"", context_text)
+
+    def test_email_template_ai_plan_context_exposes_lookup_alias_record_keys(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "PO Notice",
+                    "description": "",
+                    "subject": "PO",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        captured: dict[str, object] = {}
+        fake_entities = [
+            {
+                "id": "entity.biz_purchase_order",
+                "label": "Purchase Order",
+                "fields": [
+                    {"id": "biz_purchase_order.po_number", "label": "PO Number", "type": "string"},
+                    {
+                        "id": "biz_purchase_order.supplier_id",
+                        "label": "Supplier",
+                        "type": "lookup",
+                        "entity": "entity.biz_contact",
+                        "display_field": "biz_contact.name",
+                    },
+                ],
+            }
+        ]
+        fake_contact_entity = {
+            "id": "entity.biz_contact",
+            "label": "Contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+            ],
+        }
+
+        def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+            captured["messages"] = messages
+            return _fake_response(
+                {
+                    "summary": "Improved the purchase order email.",
+                    "draft": {
+                        "name": "PO Notice",
+                        "description": "Supplier notice.",
+                        "subject": "Purchase order {{ record['biz_purchase_order.po_number'] }}",
+                        "body_html": "<p>Hello {{ record['biz_purchase_order.supplier_name'] }}</p>",
+                        "body_text": "Hello {{ record['biz_purchase_order.supplier_name'] }}",
+                    },
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            )
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main, "_artifact_ai_entities", lambda _request: fake_entities),
+            patch.object(main, "_find_entity_def_global", lambda entity_id: fake_contact_entity if entity_id == "biz_contact" or entity_id == "entity.biz_contact" else None),
+            patch.object(main, "_openai_chat_completion", fake_openai),
+            patch.object(main, "_openai_configured", lambda: True),
+        ):
+            res = client.post(
+                f"/email/templates/{template_id}/ai/plan",
+                json={
+                    "prompt": "Create a supplier-facing purchase order email.",
+                    "draft": created["template"],
+                    "sample": {"entity_id": "entity.biz_purchase_order"},
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        messages = captured.get("messages") or []
+        context_messages = [
+            item.get("content")
+            for item in messages
+            if isinstance(item, dict) and isinstance(item.get("content"), str) and item.get("content", "").startswith("context.json")
+        ]
+        self.assertEqual(len(context_messages), 1)
+        context_text = context_messages[0]
+        self.assertIn("\"accessible_record_keys\"", context_text)
+        self.assertIn("\"biz_purchase_order.supplier_name\"", context_text)
+        self.assertIn("\"lookup_alias_keys\"", context_text)
+        self.assertIn("\"lookup_alias_example\"", context_text)
+
+    def test_email_template_validation_flags_invalid_record_key_and_suggests_lookup_alias(self) -> None:
+        fake_purchase_order_entity = {
+            "id": "entity.biz_purchase_order",
+            "label": "Purchase Order",
+            "fields": [
+                {"id": "biz_purchase_order.po_number", "label": "PO Number", "type": "string"},
+                {
+                    "id": "biz_purchase_order.supplier_id",
+                    "label": "Supplier",
+                    "type": "lookup",
+                    "entity": "entity.biz_contact",
+                    "display_field": "biz_contact.name",
+                },
+            ],
+        }
+        fake_contact_entity = {
+            "id": "entity.biz_contact",
+            "label": "Contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+            ],
+        }
+
+        def fake_find_entity(entity_id):
+            if entity_id in {"entity.biz_purchase_order", "biz_purchase_order"}:
+                return fake_purchase_order_entity
+            if entity_id in {"entity.biz_contact", "biz_contact"}:
+                return fake_contact_entity
+            return None
+
+        with patch.object(main, "_find_entity_def_global", fake_find_entity):
+            validation = main._artifact_ai_validate_email_template_draft(
+                {
+                    "name": "PO Notice",
+                    "subject": "Purchase order {{ record['biz_purchase_order.po_number'] }}",
+                    "body_html": "<p>Hello {{ record['biz_contact.name'] }}</p>",
+                    "body_text": "Hello {{ record['biz_contact.name'] }}",
+                    "variables_schema": {"entity_id": "entity.biz_purchase_order"},
+                }
+            )
+
+        self.assertFalse(validation.get("compiled_ok"))
+        messages = [item.get("message") for item in (validation.get("errors") or []) if isinstance(item, dict)]
+        self.assertTrue(any("invalid record key 'biz_contact.name'" in str(message) for message in messages), messages)
+        self.assertTrue(any("record['biz_purchase_order.supplier_name']" in str(message) for message in messages), messages)
+
+    def test_validate_email_template_endpoint_flags_invalid_record_key(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "PO Notice",
+                    "description": "",
+                    "subject": "PO",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        fake_purchase_order_entity = {
+            "id": "entity.biz_purchase_order",
+            "label": "Purchase Order",
+            "fields": [
+                {"id": "biz_purchase_order.po_number", "label": "PO Number", "type": "string"},
+                {
+                    "id": "biz_purchase_order.supplier_id",
+                    "label": "Supplier",
+                    "type": "lookup",
+                    "entity": "entity.biz_contact",
+                    "display_field": "biz_contact.name",
+                },
+            ],
+        }
+        fake_contact_entity = {
+            "id": "entity.biz_contact",
+            "label": "Contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+            ],
+        }
+
+        def fake_find_entity(entity_id):
+            if entity_id in {"entity.biz_purchase_order", "biz_purchase_order"}:
+                return fake_purchase_order_entity
+            if entity_id in {"entity.biz_contact", "biz_contact"}:
+                return fake_contact_entity
+            return None
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main, "_find_entity_def_global", fake_find_entity),
+        ):
+            res = client.post(
+                f"/email/templates/{template_id}/validate",
+                json={
+                    "draft": {
+                        **created["template"],
+                        "subject": "Purchase order {{ record['biz_purchase_order.po_number'] }}",
+                        "body_html": "<p>Hello {{ record['biz_contact.name'] }}</p>",
+                        "body_text": "Hello {{ record['biz_contact.name'] }}",
+                        "variables_schema": {"entity_id": "entity.biz_purchase_order"},
+                    }
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertFalse(body.get("compiled_ok"), body)
+        validation_errors = body.get("errors") or []
+        messages = [item.get("message") for item in validation_errors if isinstance(item, dict)]
+        self.assertTrue(any("invalid record key 'biz_contact.name'" in str(message) for message in messages), messages)
 
     def test_email_template_ai_plan_derives_plain_text_when_model_omits_it(self) -> None:
         client = TestClient(main.app)
@@ -289,6 +675,89 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertTrue(body.get("ok"), body)
         self.assertEqual(body.get("draft", {}).get("body_text"), "Hello Customer Your account is ready.")
 
+    def test_email_template_ai_plan_normalizes_scalar_assumptions_and_warnings(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Purchase Order Email",
+                    "description": "",
+                    "subject": "Hello",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Created a purchase order email template with appropriate branding and dynamic fields.",
+                        "draft": {
+                            "name": "Purchase Order Email",
+                            "description": "",
+                            "subject": "Purchase Order {{ record['purchase_order.number'] }}",
+                            "body_html": "<p>Please find purchase order {{ record['purchase_order.number'] }} attached.</p>",
+                            "body_text": "Please find purchase order {{ record['purchase_order.number'] }} attached.",
+                        },
+                        "assumptions": "The email template is designed to send purchase order notifications to clients, utilizing the purchase order entity and its fields.",
+                        "warnings": "Send from the correct mailbox before going live.",
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/email/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Create me an email template to send purchase orders off to client!",
+                        "draft": created["template"],
+                    },
+                )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertEqual(
+            body.get("assumptions"),
+            ["The email template is designed to send purchase order notifications to clients, utilizing the purchase order entity and its fields."],
+        )
+        self.assertEqual(body.get("warnings"), ["Send from the correct mailbox before going live."])
+
+    def test_email_template_preview_uses_draft_override(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Welcome",
+                    "description": "",
+                    "subject": "Stored subject",
+                    "body_html": "<p>Stored body</p>",
+                    "body_text": "Stored body",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+            res = client.post(
+                f"/email/templates/{template_id}/preview",
+                json={
+                    "sample": {
+                        "entity_id": "entity.quote",
+                        "record": {
+                            "quote.number": "Q-1001",
+                        },
+                    },
+                    "draft": {
+                        **created["template"],
+                        "subject": "Draft subject",
+                        "body_html": "<p>Draft body</p>",
+                        "body_text": "Draft body",
+                    },
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertEqual(body.get("rendered_subject"), "Draft subject")
+        self.assertIn("Draft body", body.get("rendered_html", ""))
+
     def test_document_template_normalizer_applies_safe_defaults(self) -> None:
         normalized = main._artifact_ai_normalize_doc_template_draft(
             {},
@@ -323,12 +792,18 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertIn("context.requested_focus", email_prompt)
         self.assertIn("If context.requested_focus is validation", email_prompt)
         self.assertIn("preserve it unless the user clearly asks for a redesign", email_prompt)
+        self.assertIn("context.selected_entity_summary.accessible_record_keys", email_prompt)
+        self.assertIn("Never invent related-record dotted keys", email_prompt)
         self.assertIn("context.design_playbook", document_prompt)
         self.assertIn("soft guidance", document_prompt.lower())
         self.assertIn("component_priority", document_prompt)
         self.assertIn("context.design_signals", document_prompt)
         self.assertIn("context.requested_focus", document_prompt)
         self.assertIn("If context.requested_focus is validation", document_prompt)
+        self.assertIn("context.selected_entity_summary.accessible_record_keys", document_prompt)
+        self.assertIn("Never invent related-record dotted keys", document_prompt)
+        self.assertIn("context.document_runtime_examples", document_prompt)
+        self.assertIn("Do not use Jinja variables like {{ pageNumber }}", document_prompt)
         self.assertIn("preserve it unless the user clearly asks for a redesign", document_prompt)
 
     def test_automation_ai_plan_context_includes_requested_focus_and_validation(self) -> None:
@@ -401,6 +876,9 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         )
         self.assertIn("\"requested_focus\": \"content\"", context_text)
         self.assertIn("\"current_validation\"", context_text)
+        self.assertIn("\"shared_capability_catalog\"", context_text)
+        self.assertIn("\"quick_actions\"", context_text)
+        self.assertIn("\"focus_modes\": [\"validation\", \"logic\", \"content\"]", context_text)
 
     def test_automation_ai_system_prompt_includes_requested_focus_guidance(self) -> None:
         automation_prompt = main._artifact_ai_system_prompt("automation")
@@ -673,6 +1151,114 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             self.assertEqual((trigger.get("filters") or [{}])[0].get("path"), "entity_id")
             validation = body.get("validation") or {}
             self.assertTrue(validation.get("compiled_ok"))
+
+    def test_automation_validation_flags_invalid_field_refs_and_template_ids(self) -> None:
+        fake_meta = {
+            "event_types": ["biz_contacts.record.biz_contact.created"],
+            "event_catalog": [
+                {
+                    "id": "biz_contacts.record.biz_contact.created",
+                    "label": "Contact created",
+                    "event": "record.created",
+                    "entity_id": "entity.biz_contact",
+                }
+            ],
+            "system_actions": [
+                {"id": "system.send_email", "label": "Send email"},
+                {"id": "system.generate_document", "label": "Generate document"},
+                {"id": "system.update_record", "label": "Update record"},
+            ],
+            "module_actions": [],
+            "entities": [
+                {
+                    "id": "entity.biz_contact",
+                    "label": "Contact",
+                    "fields": [
+                        {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                        {"id": "biz_contact.email", "label": "Email", "type": "email"},
+                    ],
+                }
+            ],
+            "field_path_catalog": [
+                {
+                    "entity_id": "entity.biz_contact",
+                    "fields": [
+                        {
+                            "field_id": "biz_contact.name",
+                            "label": "Name",
+                            "type": "string",
+                            "paths": [
+                                "trigger.record.fields.biz_contact.name",
+                                "trigger.before.fields.biz_contact.name",
+                                "trigger.after.fields.biz_contact.name",
+                            ],
+                        },
+                        {
+                            "field_id": "biz_contact.email",
+                            "label": "Email",
+                            "type": "email",
+                            "paths": [
+                                "trigger.record.fields.biz_contact.email",
+                                "trigger.before.fields.biz_contact.email",
+                                "trigger.after.fields.biz_contact.email",
+                            ],
+                        },
+                    ],
+                }
+            ],
+            "email_templates": [{"id": "email_tpl_valid"}],
+            "doc_templates": [{"id": "doc_tpl_valid"}],
+        }
+
+        validation = main._artifact_ai_validate_automation_draft(
+            {
+                "name": "Broken automation",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": ["biz_contacts.record.biz_contact.created"],
+                    "filters": [],
+                    "expr": {
+                        "op": "eq",
+                        "left": {"var": "trigger.record.fields.biz_contact.full_name"},
+                        "right": {"literal": "nick"},
+                    },
+                },
+                "steps": [
+                    {
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "to_field_ids": ["biz_contact.full_name"],
+                            "template_id": "email_tpl_missing",
+                            "subject": "Hi",
+                        },
+                    },
+                    {
+                        "kind": "action",
+                        "action_id": "system.generate_document",
+                        "inputs": {"template_id": "doc_tpl_missing", "record_id": "{{trigger.record_id}}"},
+                    },
+                    {
+                        "kind": "action",
+                        "action_id": "system.update_record",
+                        "inputs": {
+                            "entity_id": "entity.biz_contact",
+                            "record_id": "{{trigger.record_id}}",
+                            "patch": {"biz_contact.full_name": "Nick"},
+                        },
+                    },
+                ],
+            },
+            fake_meta,
+        )
+
+        self.assertFalse(validation.get("compiled_ok"), validation)
+        messages = [item.get("message") for item in (validation.get("errors") or []) if isinstance(item, dict)]
+        self.assertTrue(any("Unknown automation field reference" in str(message) for message in messages), messages)
+        self.assertTrue(any("Unknown email field id 'biz_contact.full_name'" in str(message) for message in messages), messages)
+        self.assertTrue(any("Unknown email template id 'email_tpl_missing'" in str(message) for message in messages), messages)
+        self.assertTrue(any("Unknown document template id 'doc_tpl_missing'" in str(message) for message in messages), messages)
+        self.assertTrue(any("Unknown field id 'biz_contact.full_name'" in str(message) for message in messages), messages)
 
     def test_automation_ai_plan_normalizes_update_record_patch_inputs(self) -> None:
         client = TestClient(main.app)
@@ -1387,6 +1973,9 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(len(context_messages), 1)
         context_text = context_messages[0]
         self.assertIn("\"field_path_catalog\"", context_text)
+        self.assertIn("\"reference_contract\"", context_text)
+        self.assertIn("\"event_type_ids\"", context_text)
+        self.assertIn("\"action_ids\"", context_text)
         self.assertIn("trigger.record.fields.biz_contact.name", context_text)
         self.assertIn("\"trigger_contracts\"", context_text)
         self.assertIn("\"step_kind_contracts\"", context_text)
@@ -1670,6 +2259,101 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             artifacts = [item for item in (plan.get("affected_artifacts") or []) if isinstance(item, dict)]
             self.assertTrue(any(item.get("artifact_type") == "automation" and item.get("artifact_id") == automation["id"] for item in artifacts))
             self.assertTrue(any(item.get("artifact_type") == "email_template" and item.get("artifact_id") == email_template["id"] for item in artifacts))
+
+    def test_octo_chat_named_artifact_merge_keeps_missing_artifact_when_semantic_already_has_one(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Workspace orchestrator"}).json()["session"]
+
+            semantic_plan = {
+                "candidate_ops": [
+                    {
+                        "op": "update_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": "automation_a",
+                        "automation": {
+                            "name": "Automation A",
+                            "status": "draft",
+                            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                            "steps": [self._seed_automation_step()],
+                        },
+                    }
+                ],
+                "questions": [],
+                "question_meta": None,
+                "assumptions": [],
+                "risk_flags": [],
+                "advisories": [],
+                "affected_modules": [],
+                "plan_v1": None,
+            }
+            named_plan = {
+                "candidate_ops": [
+                    {
+                        "op": "update_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": "automation_a",
+                        "automation": {
+                            "name": "Automation A",
+                            "status": "draft",
+                            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                            "steps": [self._seed_automation_step()],
+                        },
+                    },
+                    {
+                        "op": "update_email_template_record",
+                        "artifact_type": "email_template",
+                        "artifact_id": "email_a",
+                        "email_template": {
+                            "name": "Email A",
+                            "subject": "Updated",
+                            "body_html": "<p>Updated</p>",
+                            "body_text": "Updated",
+                        },
+                    },
+                ],
+                "questions": [],
+                "question_meta": None,
+                "assumptions": ["Matched named artifacts from the request."],
+                "risk_flags": [],
+                "advisories": [],
+                "requested_change_lines": ["Update Automation A.", "Update Email A."],
+                "affected_artifacts": [
+                    {"artifact_type": "automation", "artifact_id": "automation_a", "artifact_key": "automation_a"},
+                    {"artifact_type": "email_template", "artifact_id": "email_a", "artifact_key": "email_a"},
+                ],
+                "planner_state": {
+                    "intent": "mixed_artifact_change",
+                    "artifact_matches": [
+                        {"artifact_type": "automation", "artifact_id": "automation_a", "artifact_label": "Automation A"},
+                        {"artifact_type": "email_template", "artifact_id": "email_a", "artifact_label": "Email A"},
+                    ],
+                },
+                "resolved_without_changes": False,
+            }
+
+            with (
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: semantic_plan),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: named_plan),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": "Update Automation A and Email A from the workspace brief."},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            ops = [item for item in (plan.get("candidate_operations") or []) if isinstance(item, dict)]
+            self.assertEqual(
+                [(item.get("artifact_type"), item.get("artifact_id"), item.get("op")) for item in ops],
+                [
+                    ("automation", "automation_a", "update_automation_record"),
+                    ("email_template", "email_a", "update_email_template_record"),
+                ],
+            )
 
     def test_octo_semantic_plan_resolves_workspace_artifact_labels_without_scoped_session(self) -> None:
         client = TestClient(main.app)

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AiActionStrip from "./AiActionStrip.jsx";
 
 function toneClass(tone) {
   if (tone === "primary") return "badge badge-primary";
@@ -8,42 +9,30 @@ function toneClass(tone) {
   return "badge badge-ghost";
 }
 
-function ActionStrip({ actions, busy = false }) {
-  const visible = Array.isArray(actions)
-    ? actions.filter((item) => item && item.label && typeof item.onClick === "function")
-    : [];
-  if (!visible.length) return null;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {visible.map((action) => (
-        <button
-          key={action.label}
-          type="button"
-          className={action.primary ? "btn btn-sm btn-primary" : "btn btn-sm"}
-          disabled={Boolean(action.disabled || (busy && action.allowWhileBusy !== true))}
-          onClick={action.onClick}
-        >
-          {action.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function normalizeInfoItems(items) {
-  return Array.isArray(items)
-    ? items
-        .map((item) => {
-          if (typeof item === "string") return item.trim();
-          if (item && typeof item === "object") {
-            if (typeof item.message === "string") return item.message.trim();
-            if (typeof item.text === "string") return item.text.trim();
-            if (typeof item.label === "string") return item.label.trim();
-          }
-          return "";
-        })
-        .filter(Boolean)
-    : [];
+  const normalized = typeof items === "string"
+    ? [items.trim()]
+    : Array.isArray(items)
+      ? items
+          .map((item) => {
+            if (typeof item === "string") return item.trim();
+            if (item && typeof item === "object") {
+              if (typeof item.message === "string") return item.message.trim();
+              if (typeof item.text === "string") return item.text.trim();
+              if (typeof item.label === "string") return item.label.trim();
+            }
+            return "";
+          })
+          .filter(Boolean)
+      : [];
+  if (
+    normalized.length >= 12
+    && normalized.every((item) => item.length === 1 || /^[.,;:!?-]$/.test(item))
+  ) {
+    const joined = normalized.join("").replace(/\s+/g, " ").trim();
+    return joined ? [joined] : [];
+  }
+  return normalized;
 }
 
 function InfoBlock({ title, items }) {
@@ -202,7 +191,7 @@ export default function ArtifactAiStageCard({
       {combinedValidationItems.length > 0 ? <InfoBlock title="Validation" items={combinedValidationItems} /> : null}
       {assumptions.length > 0 ? <InfoBlock title="Assumptions" items={assumptions} /> : null}
       {warnings.length > 0 ? <InfoBlock title="Warnings" items={warnings} /> : null}
-      <ActionStrip actions={actions} busy={busy} />
+      <AiActionStrip actions={actions} busy={busy} compact />
     </div>
   );
 }

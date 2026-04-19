@@ -710,7 +710,13 @@ def _error_response(
 
 
 def _ok_response(payload: dict, warnings: list | None = None, status: int = 200, headers: dict | None = None) -> JSONResponse:
-    body = {"ok": True, **payload, "errors": [], "warnings": warnings or []}
+    resolved_warnings = warnings
+    if resolved_warnings is None:
+        payload_warnings = payload.get("warnings") if isinstance(payload, dict) else None
+        resolved_warnings = payload_warnings if isinstance(payload_warnings, list) else []
+    payload_errors = payload.get("errors") if isinstance(payload, dict) else None
+    resolved_errors = payload_errors if isinstance(payload_errors, list) else []
+    body = {"ok": True, **payload, "errors": resolved_errors, "warnings": resolved_warnings or []}
     return JSONResponse(jsonable_encoder(body), status_code=status, headers=headers)
 
 
@@ -15562,46 +15568,119 @@ def _studio2_contains_patch_ops(plan_ops: dict | None) -> bool:
 
 
 def _studio2_agent_focus(raw_value: Any, message: str | None = None) -> str | None:
-    if isinstance(raw_value, str) and raw_value.strip():
-        normalized = raw_value.strip().lower()
-        if normalized in {"validation", "design", "content", "logic"}:
-            return normalized
-    prompt_text = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    if not prompt_text:
-        return None
-    if any(phrase in prompt_text for phrase in ("fix validation", "validation error", "schema error", "make it valid", "fix the errors")):
-        return "validation"
-    if any(phrase in prompt_text for phrase in ("tighten copy", "improve labels", "rewrite labels", "button copy", "empty state", "helper text", "wording")):
-        return "content"
-    if any(phrase in prompt_text for phrase in ("design", "ux", "layout", "navigation", "hierarchy", "spacing", "visual")):
-        return "design"
-    if any(phrase in prompt_text for phrase in ("workflow", "logic", "behavior", "actions", "status flow", "rules")):
-        return "logic"
-    return None
+    return _ai_focus_from_capability("module", raw_value, message)
 
 
 def _studio2_agent_focus_instruction(requested_focus: str | None) -> str:
-    if requested_focus == "validation":
-        return (
-            "Focus mode: validation. Fix only deterministic validation and completeness errors in the current draft. "
-            "Preserve the existing module structure, UX, and business behavior unless a targeted change is required to make the module valid."
-        )
-    if requested_focus == "design":
-        return (
-            "Focus mode: design. Prioritize page hierarchy, navigation clarity, action placement, field grouping, and overall UX quality. "
-            "Avoid unnecessary data-model churn unless a design improvement clearly requires a small structural adjustment."
-        )
-    if requested_focus == "content":
-        return (
-            "Focus mode: content. Prioritize labels, helper text, action copy, empty states, and concise admin-facing wording. "
-            "Keep schema, workflows, and layouts stable unless a small supporting adjustment is required."
-        )
-    if requested_focus == "logic":
-        return (
-            "Focus mode: logic. Prioritize workflow correctness, action behavior, record lifecycle, and business-rule integrity. "
-            "Avoid broad cosmetic changes unless they help clarify the intended workflow."
-        )
-    return ""
+    guidance = _ai_focus_instruction_from_capability("module", requested_focus)
+    if not guidance:
+        return ""
+    return f"Focus mode: {requested_focus}. {guidance[:1].upper()}{guidance[1:]}"
+
+
+def _studio2_manifest_reference_contract(manifest: dict | None) -> dict:
+    if not isinstance(manifest, dict):
+        return {
+            "entity_ids": [],
+            "field_ids_by_entity": {},
+            "view_ids": [],
+            "page_ids": [],
+            "action_ids": [],
+            "workflow_ids": [],
+            "workflow_status_fields_by_entity": {},
+        }
+    entity_ids: list[str] = []
+    field_ids_by_entity: dict[str, list[str]] = {}
+    workflow_status_fields_by_entity: dict[str, list[str]] = {}
+    for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = entity.get("id")
+        if not isinstance(entity_id, str) or not entity_id:
+            continue
+        entity_ids.append(entity_id)
+        field_ids = [
+            field.get("id")
+            for field in (entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str) and field.get("id")
+        ]
+        field_ids_by_entity[entity_id] = field_ids
+    view_ids = [
+        view.get("id")
+        for view in (manifest.get("views") or [])
+        if isinstance(view, dict) and isinstance(view.get("id"), str) and view.get("id")
+    ]
+    page_ids = [
+        page.get("id")
+        for page in (manifest.get("pages") or [])
+        if isinstance(page, dict) and isinstance(page.get("id"), str) and page.get("id")
+    ]
+    action_ids = [
+        action.get("id")
+        for action in (manifest.get("actions") or [])
+        if isinstance(action, dict) and isinstance(action.get("id"), str) and action.get("id")
+    ]
+    workflow_ids: list[str] = []
+    for workflow in manifest.get("workflows") if isinstance(manifest.get("workflows"), list) else []:
+        if not isinstance(workflow, dict):
+            continue
+        workflow_id = workflow.get("id")
+        if isinstance(workflow_id, str) and workflow_id:
+            workflow_ids.append(workflow_id)
+        entity_id = workflow.get("entity")
+        status_field = workflow.get("status_field")
+        if isinstance(entity_id, str) and entity_id and isinstance(status_field, str) and status_field:
+            workflow_status_fields_by_entity.setdefault(entity_id, []).append(status_field)
+    return {
+        "entity_ids": entity_ids,
+        "field_ids_by_entity": field_ids_by_entity,
+        "view_ids": view_ids,
+        "page_ids": page_ids,
+        "action_ids": action_ids,
+        "workflow_ids": workflow_ids,
+        "workflow_status_fields_by_entity": workflow_status_fields_by_entity,
+    }
+
+
+def _studio2_validate_call_references(manifest: dict | None, call: dict) -> list[dict]:
+    if not isinstance(call, dict):
+        return []
+    contract = _studio2_manifest_reference_contract(manifest)
+    entity_ids = set(contract.get("entity_ids") or [])
+    field_ids_by_entity = contract.get("field_ids_by_entity") if isinstance(contract.get("field_ids_by_entity"), dict) else {}
+    errors: list[dict] = []
+    tool = _studio2_normalize_tool_name(call.get("tool"))
+    entity_id = call.get("entity_id") or call.get("args", {}).get("entity_id")
+
+    def add_error(path: str, message: str, detail: dict | None = None) -> None:
+        errors.append({"code": "CALL_INVALID", "message": message, "path": path, "detail": detail or {}})
+
+    if tool in {"ensure_entity_pages", "ensure_actions_for_status"}:
+        if not isinstance(entity_id, str) or not entity_id:
+            add_error("calls.entity_id", f"{tool} requires entity_id")
+        elif entity_id not in entity_ids:
+            add_error("calls.entity_id", f"{tool} requires an existing entity_id", {"entity_id": entity_id})
+    elif tool == "ensure_workflow":
+        workflow = call.get("workflow") or call.get("args", {}).get("workflow")
+        if isinstance(workflow, dict):
+            workflow_entity = workflow.get("entity")
+            status_field = workflow.get("status_field")
+            if isinstance(workflow_entity, str) and workflow_entity:
+                if workflow_entity not in entity_ids:
+                    add_error("calls.workflow.entity", "workflow.entity must reference an existing entity", {"entity_id": workflow_entity})
+                elif isinstance(status_field, str) and status_field:
+                    valid_fields = {
+                        item
+                        for item in (field_ids_by_entity.get(workflow_entity) or [])
+                        if isinstance(item, str) and item
+                    }
+                    if valid_fields and status_field not in valid_fields:
+                        add_error(
+                            "calls.workflow.status_field",
+                            "workflow.status_field must reference an existing field on the workflow entity",
+                            {"entity_id": workflow_entity, "status_field": status_field},
+                        )
+    return errors
 
 
 async def _studio2_agent_chat_run(
@@ -15691,6 +15770,7 @@ async def _studio2_agent_chat_run(
         planner_context = {
             "module_id": module_id,
             "module_summary": _studio2_prompt_manifest_summary(ctx.base_manifest),
+            "reference_contract": _studio2_manifest_reference_contract(ctx.base_manifest),
             "registry": registry_header if len(registry_text.encode("utf-8")) <= STUDIO2_MAX_REGISTRY_BYTES else {"modules": []},
             "pattern": {"key": pattern_key, "data": pattern_hint} if pattern_hint else None,
             "history": history,
@@ -15775,6 +15855,7 @@ async def _studio2_agent_chat_run(
         context = {
             "module_id": module_id,
             "module_summaries": {module_id: summary},
+            "reference_contract": _studio2_manifest_reference_contract(ctx.working_manifest),
             "build_spec": build_spec,
             "errors": {module_id: last_validation["errors"]},
             "warnings": {module_id: last_validation["warnings"]},
@@ -15804,6 +15885,8 @@ async def _studio2_agent_chat_run(
             "ensure_relation, ensure_workflow, ensure_ui_pattern, read_manifest. "
             "calls schema: [{\"tool\":\"<allowed>\",\"module_id\":\"<target>\",\"args\":{...}}]. "
             "Do NOT invent tool names. If unsure, choose ensure_entity + ensure_entity_pages + ensure_nav. "
+            "Use context.reference_contract as the source of truth for existing entity ids, field ids, view ids, page ids, action ids, and workflow ids in this module. "
+            "If you need a new entity or field, create it with ensure_entity before using tools that require it to already exist. "
             "If validation includes MANIFEST_* schema errors, you MUST emit at least one tool call. "
             "Workflow schema (required): workflows[] items MUST include id, entity, status_field, states; "
             "states MUST be array of objects: [{\"id\":\"draft\",\"label\":\"Draft\"}, ...]. "
@@ -16026,6 +16109,10 @@ async def _studio2_agent_chat_run(
                 continue
             if tool != "read_manifest" and call_module_id != module_id:
                 local_errors.append({"code": "CALL_INVALID", "message": "module_id mismatch", "path": "calls.module_id"})
+                continue
+            ref_errors = _studio2_validate_call_references(ctx.working_manifest, call)
+            if ref_errors:
+                local_errors.extend(ref_errors)
                 continue
             base = ctx.working_manifest
             if tool == "ensure_entity":
@@ -20110,6 +20197,10 @@ def _ai_find_form_field_location(manifest: dict, field_ref: str) -> dict | None:
     if len(candidates) == 1:
         return candidates[0]
     return None
+
+
+def _ai_module_reference_contract(manifest: dict | None) -> dict:
+    return _studio2_manifest_reference_contract(manifest if isinstance(manifest, dict) else {})
 
 
 def _ai_find_list_field_reference(manifest: dict, field_ref: str) -> dict | None:
@@ -24755,9 +24846,18 @@ def _ai_semantic_plan_from_model(
         "modules": [_ai_kernel_module_digest(module_id, (module_index.get(module_id) or {}).get("manifest") or {}) for module_id in ordered_modules[:3]],
         "pattern_hint": (_load_pattern_memory().get("patterns") or {}).get(_infer_pattern_key(message, " ".join(ordered_modules)) or ""),
     }
+    workspace_automation_meta = _artifact_ai_automation_meta(request, actor if isinstance(actor, dict) else None)
     planner_context = {
         "request": message.strip(),
         "planning_mode": planning_mode,
+        "approval_state": {
+            "confirm_plan": bool(isinstance(answer_hints, dict) and answer_hints.get("confirm_plan") is True),
+            "approved_preview_brief": bool(
+                isinstance(answer_hints, dict)
+                and answer_hints.get("confirm_plan") is True
+                and _ai_preview_plan_style(message).get("system_brief")
+            ),
+        },
         "workspace_id": actor.get("workspace_id") if isinstance(actor, dict) else None,
         "scope_mode": session.get("scope_mode") or "auto",
         "selected_artifact_type": session.get("selected_artifact_type") or "none",
@@ -24767,6 +24867,12 @@ def _ai_semantic_plan_from_model(
         "reference_snippets": {key: value for key, value in reference_snippets.items() if isinstance(value, str) and value.strip()},
         "workspace_kernel_digest": kernel_digest,
         "workspace_artifacts": workspace_artifacts,
+        "artifact_ai_capabilities": _ai_workspace_ai_capability_catalog(request, actor if isinstance(actor, dict) else None),
+        "workspace_automation_reference_contract": _artifact_ai_automation_reference_contract(workspace_automation_meta),
+        "workspace_module_reference_contracts": {
+            module_id: _ai_module_reference_contract((module_index.get(module_id) or {}).get("manifest") or {})
+            for module_id in ordered_modules[:6]
+        },
         "retrieved_references": retrieved_references,
         "workspace_modules": [_ai_module_brief_for_semantic_planner(module_id, (module_index.get(module_id) or {}).get("manifest") or {}) for module_id in ordered_modules],
         "workspace_context_scope": {
@@ -24785,6 +24891,13 @@ def _ai_semantic_plan_from_model(
         "For create_module_design, design the requested new module and do not anchor on existing selected modules unless the user explicitly says to extend them. "
         "For workspace_change, use only the provided workspace_context_scope modules plus their retrieved references, and coordinate cross-module changes carefully. "
         "For preview_only, explain scope truthfully without inventing patch operations. "
+        "Octo AI is the workspace orchestrator, so mixed plans across modules, automations, email templates, and document templates are first-class. "
+        "When approval_state.approved_preview_brief is true, promote the approved workspace brief into concrete operations instead of returning another planning-only outline. "
+        "Use artifact_ai_capabilities as the shared capability contract for downstream module, automation, and template work so workspace plans stay aligned with the scoped AIs. "
+        "Use workspace_automation_reference_contract as the workspace-specific automation source of truth for event ids, action ids, field ids, and trigger field paths when mixed plans include automations. "
+        "Use workspace_module_reference_contracts as the workspace-specific source of truth for existing module entity ids, field ids, workflow ids, view ids, page ids, and action ids when planning module edits. "
+        "You may still propose new module entities or fields, but do not describe edits against an existing id unless it appears in workspace_module_reference_contracts. "
+        "When a request implies automations or templates, keep the proposed operations compatible with the focus modes, validation rules, and supported artifact structures in artifact_ai_capabilities. "
         "Understand natural language intent semantically and avoid literal copy of long phrases into ids. "
         "Use semantic_summary fields as high-signal natural-language guidance for dashboards, reports, and page intent, but validate concrete ids against the structured data. "
         "Infer clean human module names from purpose phrases; for example, if the user says 'create me a cooking module', the module name should be 'Cooking', not 'Me A Cooking'. "
@@ -25607,7 +25720,8 @@ def _ai_plan_from_message(
     preview_plan_applied = False
     confirm_plan = answer_hints.get("confirm_plan") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("confirm_plan"), bool) else None
     preview_style = _ai_preview_plan_style(planning_message)
-    force_preview_only = _ai_preview_contract_requested(planning_message) and bool(preview_style.get("system_brief"))
+    approved_workspace_brief = bool(confirm_plan is True and preview_style.get("system_brief"))
+    force_preview_only = _ai_preview_contract_requested(planning_message) and bool(preview_style.get("system_brief")) and not approved_workspace_brief
     actor = getattr(request.state, "actor", None)
     named_workspace_artifacts = _ai_match_named_workspace_artifacts(planning_message, actor if isinstance(actor, dict) else None)
     artifact_named_scope_detected = bool(named_workspace_artifacts)
@@ -25660,7 +25774,7 @@ def _ai_plan_from_message(
                 if item != "No explicit module match found; planner remained workspace-aware but conservative."
             ]
 
-    if slot_plan is None and not force_preview_only and not unresolved_requested_scope_only and not artifact_named_scope_detected:
+    if slot_plan is None and not force_preview_only and not unresolved_requested_scope_only and not artifact_named_scope_detected and not approved_workspace_brief:
         early_preview_plan = _ai_build_preview_only_plan(
             planning_message,
             affected_modules,
@@ -25758,56 +25872,71 @@ def _ai_plan_from_message(
             questions = placement_questions
             question_meta = placement_question_meta if isinstance(placement_question_meta, dict) else question_meta
 
-    has_non_module_artifact_ops = any(
-        isinstance(op, dict) and op.get("artifact_type") in {"automation", "email_template", "document_template"}
-        for op in candidate_ops
-    )
-    if not force_preview_only and not unresolved_requested_scope_only and not has_non_module_artifact_ops:
+    if not force_preview_only and not unresolved_requested_scope_only:
         named_artifact_plan = _ai_named_artifact_plan(request, session, planning_message)
         if isinstance(named_artifact_plan, dict):
-            candidate_ops = _ai_merge_candidate_ops(
-                candidate_ops,
-                [op for op in (named_artifact_plan.get("candidate_ops") or []) if isinstance(op, dict)],
-            )
-            assumptions.extend([item for item in (named_artifact_plan.get("assumptions") or []) if isinstance(item, str)])
-            risks.extend([item for item in (named_artifact_plan.get("risk_flags") or []) if isinstance(item, str)])
-            advisories.extend([item for item in (named_artifact_plan.get("advisories") or []) if isinstance(item, str)])
-            requested_change_lines.extend([item for item in (named_artifact_plan.get("requested_change_lines") or []) if isinstance(item, str) and item.strip()])
-            affected_artifact_entries.extend([item for item in (named_artifact_plan.get("affected_artifacts") or []) if isinstance(item, dict)])
-            named_state = named_artifact_plan.get("planner_state") if isinstance(named_artifact_plan.get("planner_state"), dict) else None
-            if not isinstance(planner_state, dict):
-                planner_state = copy.deepcopy(named_state) if isinstance(named_state, dict) else planner_state
-            elif isinstance(named_state, dict):
-                merged_state = copy.deepcopy(planner_state)
-                artifact_matches = [
-                    item
-                    for item in (named_state.get("artifact_matches") or [])
-                    if isinstance(item, dict)
-                ]
-                if not artifact_matches:
-                    single_type = named_state.get("artifact_type") if isinstance(named_state.get("artifact_type"), str) else None
-                    single_id = named_state.get("artifact_id") if isinstance(named_state.get("artifact_id"), str) else None
-                    single_label = named_state.get("artifact_label") if isinstance(named_state.get("artifact_label"), str) else None
-                    if isinstance(single_type, str) and isinstance(single_id, str):
-                        artifact_matches = [{"artifact_type": single_type, "artifact_id": single_id, "artifact_label": single_label}]
-                if artifact_matches:
-                    existing_matches = [
+            existing_artifact_keys = _ai_candidate_artifact_keys(candidate_ops)
+            named_candidate_ops = [op for op in (named_artifact_plan.get("candidate_ops") or []) if isinstance(op, dict)]
+            named_ops_to_add = [
+                op
+                for op in named_candidate_ops
+                if (
+                    isinstance(op.get("artifact_type"), str)
+                    and isinstance(op.get("artifact_id"), str)
+                    and (op.get("artifact_type"), op.get("artifact_id")) not in existing_artifact_keys
+                )
+            ]
+            if named_ops_to_add:
+                candidate_ops = _ai_merge_candidate_ops(candidate_ops, named_ops_to_add)
+                assumptions.extend([item for item in (named_artifact_plan.get("assumptions") or []) if isinstance(item, str)])
+                risks.extend([item for item in (named_artifact_plan.get("risk_flags") or []) if isinstance(item, str)])
+                advisories.extend([item for item in (named_artifact_plan.get("advisories") or []) if isinstance(item, str)])
+                requested_change_lines.extend([item for item in (named_artifact_plan.get("requested_change_lines") or []) if isinstance(item, str) and item.strip()])
+                added_artifact_keys = _ai_candidate_artifact_keys(named_ops_to_add)
+                affected_artifact_entries.extend(
+                    [
                         item
-                        for item in (merged_state.get("artifact_matches") or [])
+                        for item in (named_artifact_plan.get("affected_artifacts") or [])
+                        if isinstance(item, dict)
+                        and isinstance(item.get("artifact_type"), str)
+                        and isinstance(item.get("artifact_id"), str)
+                        and (item.get("artifact_type"), item.get("artifact_id")) in added_artifact_keys
+                    ]
+                )
+                named_state = named_artifact_plan.get("planner_state") if isinstance(named_artifact_plan.get("planner_state"), dict) else None
+                if not isinstance(planner_state, dict):
+                    planner_state = copy.deepcopy(named_state) if isinstance(named_state, dict) else planner_state
+                elif isinstance(named_state, dict):
+                    merged_state = copy.deepcopy(planner_state)
+                    artifact_matches = [
+                        item
+                        for item in (named_state.get("artifact_matches") or [])
                         if isinstance(item, dict)
                     ]
-                    for match in artifact_matches:
-                        if any(
-                            item.get("artifact_type") == match.get("artifact_type")
-                            and item.get("artifact_id") == match.get("artifact_id")
-                            for item in existing_matches
-                        ):
-                            continue
-                        existing_matches.append(match)
-                    merged_state["artifact_matches"] = existing_matches
-                if merged_state.get("intent") != named_state.get("intent"):
-                    merged_state["intent"] = "multi_request"
-                planner_state = merged_state
+                    if not artifact_matches:
+                        single_type = named_state.get("artifact_type") if isinstance(named_state.get("artifact_type"), str) else None
+                        single_id = named_state.get("artifact_id") if isinstance(named_state.get("artifact_id"), str) else None
+                        single_label = named_state.get("artifact_label") if isinstance(named_state.get("artifact_label"), str) else None
+                        if isinstance(single_type, str) and isinstance(single_id, str):
+                            artifact_matches = [{"artifact_type": single_type, "artifact_id": single_id, "artifact_label": single_label}]
+                    if artifact_matches:
+                        existing_matches = [
+                            item
+                            for item in (merged_state.get("artifact_matches") or [])
+                            if isinstance(item, dict)
+                        ]
+                        for match in artifact_matches:
+                            if any(
+                                item.get("artifact_type") == match.get("artifact_type")
+                                and item.get("artifact_id") == match.get("artifact_id")
+                                for item in existing_matches
+                            ):
+                                continue
+                            existing_matches.append(match)
+                        merged_state["artifact_matches"] = existing_matches
+                    if merged_state.get("intent") != named_state.get("intent"):
+                        merged_state["intent"] = "multi_request"
+                    planner_state = merged_state
 
     if candidate_ops and not questions:
         candidate_ops, affected_modules, assumptions = _ai_merge_followup_candidate_ops(
@@ -25884,7 +26013,7 @@ def _ai_plan_from_message(
         risks.append("Workspace impact spans multiple modules and shared flows.")
         advisories.append("dependency review: check shared module links before apply.")
         advisories.append("Review the workspace impact: this reaches multiple modules and shared flows.")
-    if not preview_plan_applied:
+    if not preview_plan_applied and not approved_workspace_brief:
         preview_only_plan = _ai_build_preview_only_plan(
             planning_message,
             affected_modules,
@@ -25914,7 +26043,7 @@ def _ai_plan_from_message(
             planner_state = preview_only_plan.get("planner_state") if isinstance(preview_only_plan.get("planner_state"), dict) else planner_state
             resolved_without_changes = bool(preview_only_plan.get("resolved_without_changes"))
             preview_plan_applied = True
-    if not candidate_ops and not resolved_without_changes and not preview_plan_applied:
+    if not candidate_ops and not resolved_without_changes and not preview_plan_applied and not approved_workspace_brief:
         inferred_preview_modules = (
             []
             if unresolved_requested_scope_only and not _ai_preview_specific_change_lines(planning_message)
@@ -26178,6 +26307,7 @@ def _ai_context_package(request: Request, session: dict, message: str, answer_hi
             "selected_artifact_type": selected_type,
             "selected_artifact_key": selected_key,
         },
+        "artifact_ai_capabilities": _ai_workspace_ai_capability_catalog(request, actor if isinstance(actor, dict) else None),
         "relevant_artifact_summaries": [a.get("summary") for a in artifacts],
         "full_selected_artifacts": artifacts,
         "contract_snippets": contract,
@@ -31645,6 +31775,14 @@ async def octo_ai_explorer(request: Request) -> dict:
         if isinstance(c, dict) and _is_integration_type(c.get("type"))
     ]
     return _ok_response({"modules": modules, "automations": automations, "integrations": integrations})
+
+
+@app.get("/ai/capabilities")
+async def get_ai_capabilities(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    return _ok_response({"capabilities": _ai_workspace_ai_capability_catalog(request, actor if isinstance(actor, dict) else None)})
 
 
 @app.get("/octo-ai/sessions")
@@ -39198,6 +39336,150 @@ def _artifact_ai_template_validation_snapshot(kind: str, current: dict | None) -
     }
 
 
+_TEMPLATE_RECORD_BRACKET_REF_RE = re.compile(r"""record\[\s*['"]([^'"]+)['"]\s*\]""")
+_TEMPLATE_RECORD_DOT_REF_RE = re.compile(r"""(?<![\w.])record\.([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)""")
+_DOCUMENT_TEMPLATE_RUNTIME_TOKEN_RE = re.compile(r"""\{\{\s*(pageNumber|totalPages|date|title|url)\s*\}\}""")
+
+
+def _artifact_ai_template_accessible_record_keys(template: dict | None) -> list[str]:
+    variables_schema = template.get("variables_schema") if isinstance(template, dict) and isinstance(template.get("variables_schema"), dict) else {}
+    selected_entity_id = variables_schema.get("entity_id") if isinstance(variables_schema.get("entity_id"), str) else None
+    entity_def = _find_entity_def_global(selected_entity_id)
+    summary = _artifact_ai_template_entity_summary(entity_def)
+    keys: list[str] = []
+    seen: set[str] = set()
+    for item in summary.get("accessible_record_keys") or []:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        keys.append(text)
+    template_helpers = _artifact_ai_template_helpers(selected_entity_id)
+    for item in template_helpers.get("record_collections") or []:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        keys.append(text)
+    return keys
+
+
+def _artifact_ai_template_extract_record_refs(text: str | None) -> list[tuple[str, str]]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    refs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for match in _TEMPLATE_RECORD_BRACKET_REF_RE.finditer(text):
+        ref = str(match.group(1) or "").strip()
+        item = (ref, "bracket")
+        if ref and item not in seen:
+            seen.add(item)
+            refs.append(item)
+    for match in _TEMPLATE_RECORD_DOT_REF_RE.finditer(text):
+        ref = str(match.group(1) or "").strip()
+        item = (ref, "dot")
+        if ref and item not in seen:
+            seen.add(item)
+            refs.append(item)
+    return refs
+
+
+def _artifact_ai_template_suggest_record_key(raw_key: str, allowed_keys: list[str]) -> str | None:
+    normalized = _ai_norm_token(raw_key)
+    if not normalized:
+        return None
+    if "." in raw_key:
+        suffix = str(raw_key.rsplit(".", 1)[-1] or "").strip()
+        if suffix:
+            exact_suffix_matches = [
+                candidate
+                for candidate in allowed_keys
+                if candidate == suffix
+                or candidate.endswith(f".{suffix}")
+                or candidate.endswith(f"_{suffix}")
+            ]
+            if exact_suffix_matches:
+                exact_suffix_matches.sort(key=lambda item: (0 if item.endswith(f"_{suffix}") else 1, len(item)))
+                return exact_suffix_matches[0]
+    for candidate in allowed_keys:
+        if _ai_norm_token(candidate) == normalized:
+            return candidate
+    close = difflib.get_close_matches(raw_key, allowed_keys, n=1, cutoff=0.55)
+    if close:
+        return close[0]
+    normalized_candidates = {candidate: _ai_norm_token(candidate) for candidate in allowed_keys}
+    close_norm = difflib.get_close_matches(normalized, list(normalized_candidates.values()), n=1, cutoff=0.55)
+    if close_norm:
+        best_norm = close_norm[0]
+        for candidate, candidate_norm in normalized_candidates.items():
+            if candidate_norm == best_norm:
+                return candidate
+    return None
+
+
+def _artifact_ai_template_record_reference_errors(template_parts: list[tuple[str, str | None]], template: dict | None) -> list[dict]:
+    allowed_keys = _artifact_ai_template_accessible_record_keys(template)
+    if not allowed_keys:
+        return []
+    allowed_set = set(allowed_keys)
+    errors: list[dict] = []
+    seen_messages: set[str] = set()
+    for label, text in template_parts:
+        for raw_key, style in _artifact_ai_template_extract_record_refs(text):
+            valid = raw_key in allowed_set if style == "bracket" else ("." not in raw_key and raw_key in allowed_set)
+            if valid:
+                continue
+            suggestion = _artifact_ai_template_suggest_record_key(raw_key, allowed_keys)
+            if style == "dot" and "." in raw_key:
+                message = f"{label}: invalid record reference record.{raw_key}. Use bracket access with a real key from accessible_record_keys."
+            else:
+                message = f"{label}: invalid record key '{raw_key}'."
+            if suggestion and suggestion != raw_key:
+                message = f"{message} Try record['{suggestion}'] instead."
+            elif style == "dot" and suggestion and suggestion == raw_key:
+                message = f"{message} Try record['{suggestion}'] instead."
+            if message in seen_messages:
+                continue
+            seen_messages.add(message)
+            errors.append({"message": message})
+    return errors
+
+
+def _artifact_ai_document_runtime_examples() -> dict:
+    return {
+        "pagination_footer_example": (
+            '<div style="width:100%;font-size:10px;color:#64748b;text-align:right;">'
+            'Page <span class="pageNumber"></span> of <span class="totalPages"></span>'
+            "</div>"
+        ),
+        "available_header_footer_tokens": ["pageNumber", "totalPages", "date", "title", "url"],
+        "notes": [
+            "In document header_html and footer_html, pagination and page metadata come from Playwright header/footer tokens, not Jinja variables.",
+            "Use spans like <span class=\"pageNumber\"></span> and <span class=\"totalPages\"></span> instead of {{ pageNumber }} or {{ totalPages }}.",
+        ],
+    }
+
+
+def _artifact_ai_document_runtime_reference_errors(template_parts: list[tuple[str, str | None]]) -> list[dict]:
+    errors: list[dict] = []
+    seen_messages: set[str] = set()
+    for label, text in template_parts:
+        if label not in {"header_html", "footer_html"} or not isinstance(text, str) or not text.strip():
+            continue
+        for match in _DOCUMENT_TEMPLATE_RUNTIME_TOKEN_RE.finditer(text):
+            token = str(match.group(1) or "").strip()
+            if not token:
+                continue
+            message = (
+                f'{label}: use Playwright header/footer token <span class="{token}"></span> instead of Jinja {{{{ {token} }}}}.'
+            )
+            if message in seen_messages:
+                continue
+            seen_messages.add(message)
+            errors.append({"message": message})
+    return errors
+
+
 def _artifact_ai_template_entity_summary(selected_entity: dict | None) -> dict:
     if not isinstance(selected_entity, dict):
         return {}
@@ -39216,6 +39498,58 @@ def _artifact_ai_template_entity_summary(selected_entity: dict | None) -> dict:
         lowered = field_id.lower()
         if any(token in lowered for token in preferred_tokens):
             preferred_field_ids.append(field_id)
+    lookup_alias_keys: list[str] = []
+    lookup_aliases_by_field: dict[str, list[str]] = {}
+    for field in fields:
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id.strip():
+            continue
+        field_id = field_id.strip()
+        if str(field.get("type") or "").strip().lower() != "lookup":
+            continue
+        alias_candidates: list[str] = [f"{field_id}_label"]
+        related_prefix = field_id[:-3] if field_id.endswith("_id") else field_id
+        if field_id.endswith("_id"):
+            alias_candidates.append(f"{related_prefix}_name")
+        target = field.get("entity")
+        target_entity_id = target[7:] if isinstance(target, str) and target.startswith("entity.") else target
+        target_entity = _find_entity_def_global(target_entity_id if isinstance(target_entity_id, str) else None)
+        for target_field in _artifact_ai_entity_field_items(target_entity):
+            target_field_id = target_field.get("id")
+            if not isinstance(target_field_id, str) or "." not in target_field_id:
+                continue
+            suffix = target_field_id.split(".", 1)[1].strip()
+            if not suffix:
+                continue
+            alias_candidates.append(f"{related_prefix}_{suffix.replace('.', '_')}")
+        deduped_aliases: list[str] = []
+        seen_aliases: set[str] = set()
+        for alias_key in alias_candidates:
+            text = str(alias_key or "").strip()
+            if not text or text in seen_aliases:
+                continue
+            seen_aliases.add(text)
+            deduped_aliases.append(text)
+        if deduped_aliases:
+            lookup_aliases_by_field[field_id] = deduped_aliases[:20]
+            lookup_alias_keys.extend(deduped_aliases)
+    deduped_lookup_alias_keys: list[str] = []
+    seen_lookup_aliases: set[str] = set()
+    for key in lookup_alias_keys:
+        text = str(key or "").strip()
+        if not text or text in seen_lookup_aliases:
+            continue
+        seen_lookup_aliases.add(text)
+        deduped_lookup_alias_keys.append(text)
+    lookup_alias_keys = deduped_lookup_alias_keys
+    accessible_record_keys: list[str] = []
+    seen_accessible_keys: set[str] = set()
+    for key in [*field_ids, *lookup_alias_keys, "id"]:
+        text = str(key or "").strip()
+        if not text or text in seen_accessible_keys:
+            continue
+        seen_accessible_keys.add(text)
+        accessible_record_keys.append(text)
     return {
         "id": selected_entity.get("id"),
         "label": selected_entity.get("label") or selected_entity.get("id"),
@@ -39223,28 +39557,34 @@ def _artifact_ai_template_entity_summary(selected_entity: dict | None) -> dict:
         "field_ids": field_ids,
         "field_ids_by_type": field_ids_by_type,
         "preferred_field_ids": preferred_field_ids[:12],
+        "lookup_alias_keys": lookup_alias_keys,
+        "lookup_aliases_by_field": lookup_aliases_by_field,
+        "accessible_record_keys": accessible_record_keys,
     }
 
 
 def _artifact_ai_template_safe_jinja_examples(selected_entity: dict | None) -> dict:
-    field_ids = []
-    if isinstance(selected_entity, dict):
-        field_ids = [
-            field.get("id").strip()
-            for field in (selected_entity.get("fields") or [])
-            if isinstance(field, dict) and isinstance(field.get("id"), str) and field.get("id").strip()
-        ]
+    summary = _artifact_ai_template_entity_summary(selected_entity)
+    field_ids = summary.get("field_ids") if isinstance(summary.get("field_ids"), list) else []
+    alias_keys = summary.get("lookup_alias_keys") if isinstance(summary.get("lookup_alias_keys"), list) else []
     example_field_id = field_ids[0] if field_ids else "entity.field_id"
+    alias_example = alias_keys[0] if alias_keys else None
     return {
         "record_field_example": (
             "{{ record['%s'] if record is defined and record and record['%s'] is defined and record['%s'] else '' }}"
             % (example_field_id, example_field_id, example_field_id)
         ),
+        "lookup_alias_example": (
+            "{{ record['%s'] if record is defined and record and record['%s'] is defined and record['%s'] else '' }}"
+            % (alias_example, alias_example, alias_example)
+        ) if isinstance(alias_example, str) and alias_example else "",
         "logo_example": (
             "{%% set logo_url = workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else '' %%}"
         ),
         "notes": [
             "Prefer bracket access with full field ids like record['module.field_id'].",
+            "For lookup fields, use flattened alias keys from selected_entity_summary.accessible_record_keys such as supplier_name when available.",
+            "Do not invent related record keys like record['contact.name'] unless that exact key appears in accessible_record_keys.",
             "Guard dynamic values with is defined checks before rendering them.",
             "Do not use unsupported filters such as strftime.",
         ],
@@ -39402,46 +39742,315 @@ def _artifact_ai_template_design_signals(kind: str, current: dict | None) -> dic
     }
 
 
-def _artifact_ai_template_focus(raw_value: Any, prompt: str | None = None) -> str | None:
+def _ai_artifact_capability_key(kind: str) -> str:
+    normalized = str(kind or "").strip().lower()
+    if normalized == "email":
+        return "email_template"
+    if normalized == "document":
+        return "document_template"
+    return normalized
+
+
+def _ai_artifact_capability_details(kind: str, request: Request | None = None, actor: dict | None = None) -> dict:
+    capability_kind = _ai_artifact_capability_key(kind)
+    catalog = _ai_workspace_ai_capability_catalog(request, actor if isinstance(actor, dict) else None)
+    artifacts = catalog.get("artifacts") if isinstance(catalog, dict) and isinstance(catalog.get("artifacts"), dict) else {}
+    artifact = artifacts.get(capability_kind)
+    return artifact if isinstance(artifact, dict) else {}
+
+
+def _ai_focus_from_capability(kind: str, raw_value: Any = None, prompt: str | None = None) -> str | None:
+    capability = _ai_artifact_capability_details(kind)
+    focus_modes = [
+        item.strip().lower()
+        for item in (capability.get("focus_modes") or [])
+        if isinstance(item, str) and item.strip()
+    ]
     if isinstance(raw_value, str) and raw_value.strip():
         normalized = raw_value.strip().lower()
-        if normalized in {"design", "content", "validation"}:
+        if normalized in focus_modes:
             return normalized
     prompt_text = re.sub(r"\s+", " ", str(prompt or "").strip().lower())
     if not prompt_text:
         return None
-    if any(phrase in prompt_text for phrase in ("fix validation", "validation error", "compile error", "make it valid", "fix the errors")):
-        return "validation"
-    if any(phrase in prompt_text for phrase in ("tighten copy", "improve copy", "rewrite", "wording", "tone", "subject line", "cta")):
-        return "content"
-    if any(phrase in prompt_text for phrase in ("design", "layout", "branding", "hierarchy", "spacing", "visual", "scannable", "scannability")):
-        return "design"
+    inference = capability.get("focus_inference_signals") if isinstance(capability.get("focus_inference_signals"), dict) else {}
+    for focus in focus_modes:
+        phrases = inference.get(focus)
+        if not isinstance(phrases, list):
+            continue
+        normalized_phrases = [item.strip().lower() for item in phrases if isinstance(item, str) and item.strip()]
+        if any(phrase in prompt_text for phrase in normalized_phrases):
+            return focus
     return None
+
+
+def _ai_focus_instruction_from_capability(kind: str, requested_focus: str | None) -> str:
+    if not isinstance(requested_focus, str) or not requested_focus.strip():
+        return ""
+    capability = _ai_artifact_capability_details(kind)
+    focus_guidance = capability.get("focus_guidance") if isinstance(capability.get("focus_guidance"), dict) else {}
+    guidance = focus_guidance.get(requested_focus.strip().lower())
+    return guidance.strip() if isinstance(guidance, str) and guidance.strip() else ""
+
+
+def _ai_shared_prompt_heuristics(kind: str) -> list[str]:
+    capability = _ai_artifact_capability_details(kind)
+    heuristics = capability.get("shared_prompt_heuristics")
+    if not isinstance(heuristics, list):
+        return []
+    return [item.strip() for item in heuristics if isinstance(item, str) and item.strip()]
+
+
+def _artifact_ai_template_focus(raw_value: Any, prompt: str | None = None) -> str | None:
+    return _ai_focus_from_capability("email_template", raw_value, prompt)
 
 
 def _artifact_ai_automation_focus(raw_value: Any, prompt: str | None = None) -> str | None:
-    if isinstance(raw_value, str) and raw_value.strip():
-        normalized = raw_value.strip().lower()
-        if normalized in {"validation", "logic", "content"}:
-            return normalized
-    prompt_text = re.sub(r"\s+", " ", str(prompt or "").strip().lower())
-    if not prompt_text:
-        return None
-    if any(phrase in prompt_text for phrase in ("fix validation", "validation error", "compile error", "invalid automation", "make it valid", "fix the errors")):
-        return "validation"
-    if any(phrase in prompt_text for phrase in ("tighten copy", "improve copy", "rewrite", "wording", "notification copy", "email copy", "subject line", "message text")):
-        return "content"
-    if any(phrase in prompt_text for phrase in ("logic", "trigger", "condition", "branch", "workflow", "step order", "action flow", "behavior")):
-        return "logic"
-    return None
+    return _ai_focus_from_capability("automation", raw_value, prompt)
 
 
 def _artifact_ai_requested_focus(kind: str, raw_value: Any = None, prompt: str | None = None) -> str | None:
-    if kind in {"email_template", "document_template"}:
-        return _artifact_ai_template_focus(raw_value, prompt)
-    if kind == "automation":
-        return _artifact_ai_automation_focus(raw_value, prompt)
+    capability_kind = _ai_artifact_capability_key(kind)
+    if capability_kind in {"module", "automation", "email_template", "document_template"}:
+        return _ai_focus_from_capability(capability_kind, raw_value, prompt)
     return None
+
+
+def _ai_workspace_ai_capability_catalog(request: Request | None, actor: dict | None) -> dict:
+    def _quick_action(
+        action_id: str,
+        label: str,
+        focus: str,
+        prompt_template: str,
+        surfaces: list[str] | None = None,
+    ) -> dict:
+        return {
+            "id": action_id,
+            "label": label,
+            "focus": focus,
+            "prompt_template": prompt_template,
+            "surfaces": list(surfaces or ["scoped_editor", "workspace"]),
+        }
+
+    artifact_catalog = _ai_workspace_artifact_catalog(actor if isinstance(actor, dict) else None)
+    artifact_counts: dict[str, int] = {}
+    for item in artifact_catalog:
+        if not isinstance(item, dict):
+            continue
+        artifact_type = item.get("artifact_type")
+        if not isinstance(artifact_type, str) or not artifact_type.strip():
+            continue
+        artifact_counts[artifact_type] = artifact_counts.get(artifact_type, 0) + 1
+    automation_trigger_kinds = [
+        item.get("kind")
+        for item in _artifact_ai_automation_trigger_contracts()
+        if isinstance(item, dict) and isinstance(item.get("kind"), str) and item.get("kind").strip()
+    ]
+    automation_step_kinds = [
+        item.get("kind")
+        for item in _artifact_ai_automation_step_kind_contracts()
+        if isinstance(item, dict) and isinstance(item.get("kind"), str) and item.get("kind").strip()
+    ]
+    return {
+        "workspace_ai_role": (
+            "Octo AI is the full-workspace orchestrator. "
+            "Scoped AIs define reusable capability rules for modules, automations, email templates, and document templates. "
+            "Workspace planning should reuse those rules instead of inventing separate behavior."
+        ),
+        "artifacts": {
+            "module": {
+                "label": "module",
+                "shared_with": ["studio_ai", "octo_ai"],
+                "focus_modes": ["validation", "design", "content", "logic"],
+                "validation_source": "deterministic manifest compiler and Studio validation",
+                "build_scope": "schema, layouts, actions, workflows, cross-module behavior",
+                "focus_inference_signals": {
+                    "validation": ["fix validation", "validation error", "schema error", "make it valid", "fix the errors"],
+                    "design": ["design", "ux", "layout", "navigation", "hierarchy", "spacing", "visual"],
+                    "content": ["tighten copy", "improve labels", "rewrite labels", "button copy", "empty state", "helper text", "wording"],
+                    "logic": ["workflow", "logic", "behavior", "actions", "status flow", "rules"],
+                },
+                "focus_guidance": {
+                    "validation": "fix only deterministic validation and completeness errors in the current draft. Preserve the existing module structure, UX, and business behavior unless a targeted change is required to make the module valid.",
+                    "design": "prioritize page hierarchy, navigation clarity, action placement, field grouping, and overall UX quality. Avoid unnecessary data-model churn unless a design improvement clearly requires a small structural adjustment.",
+                    "content": "prioritize labels, helper text, action copy, empty states, and concise admin-facing wording. Keep schema, workflows, and layouts stable unless a small supporting adjustment is required.",
+                    "logic": "prioritize workflow correctness, action behavior, record lifecycle, and business-rule integrity. Avoid broad cosmetic changes unless they help clarify the intended workflow.",
+                },
+                "shared_prompt_heuristics": [
+                    "Refine workable module drafts instead of rewriting them from scratch.",
+                    "Preserve deliberate user edits unless a targeted structural change is required.",
+                ],
+                "quick_actions": [
+                    _quick_action(
+                        "fix-validation",
+                        "Fix validation",
+                        "validation",
+                        "Fix validation errors in {{artifact_name_clause}} and preserve the current structure, UX, and business behavior unless a targeted fix is required.",
+                    ),
+                    _quick_action(
+                        "improve-ux",
+                        "Improve UX",
+                        "design",
+                        "Improve the UX, page hierarchy, navigation clarity, and field grouping in {{artifact_name_clause}} while preserving its business intent.",
+                    ),
+                    _quick_action(
+                        "tighten-copy",
+                        "Tighten copy",
+                        "content",
+                        "Improve labels, helper text, action wording, and empty-state copy in {{artifact_name_clause}} while keeping its schema and workflows stable.",
+                    ),
+                    _quick_action(
+                        "improve-logic",
+                        "Improve logic",
+                        "logic",
+                        "Improve workflows, actions, and business-rule logic in {{artifact_name_clause}} while preserving its intended data model and user-facing experience.",
+                    ),
+                ],
+            },
+            "automation": {
+                "label": "automation",
+                "shared_with": ["automation_ai", "octo_ai"],
+                "focus_modes": ["validation", "logic", "content"],
+                "validation_source": "deterministic automation validator",
+                "supported_trigger_kinds": automation_trigger_kinds,
+                "supported_step_kinds": automation_step_kinds,
+                "existing_artifact_count": artifact_counts.get("automation", 0),
+                "focus_inference_signals": {
+                    "validation": ["fix validation", "validation error", "compile error", "invalid automation", "make it valid", "fix the errors"],
+                    "logic": ["logic", "trigger", "condition", "branch", "workflow", "step order", "action flow", "behavior"],
+                    "content": ["tighten copy", "improve copy", "rewrite", "wording", "notification copy", "email copy", "subject line", "message text"],
+                },
+                "focus_guidance": {
+                    "validation": "only fix deterministic validation errors and preserve the existing trigger, steps, and behavior unless a targeted structural fix is required.",
+                    "logic": "prioritize trigger accuracy, branching correctness, action sequencing, and runtime-safe field references while preserving the requested business outcome.",
+                    "content": "prioritize human-facing notification, email, and template wording while keeping trigger logic and step structure stable unless a small supporting fix is required.",
+                },
+                "shared_prompt_heuristics": [
+                    "Do not rewrite the entire automation if the current structure is already workable; refine the draft toward a valid, production-ready automation.",
+                ],
+                "quick_actions": [
+                    _quick_action(
+                        "fix-validation",
+                        "Fix validation",
+                        "validation",
+                        "Fix validation errors in {{artifact_name_clause}} and keep the existing behavior unless a targeted fix is required.",
+                    ),
+                    _quick_action(
+                        "improve-logic",
+                        "Improve logic",
+                        "logic",
+                        "Improve the trigger logic, branching, and step flow in {{artifact_name_clause}} while preserving the intended business outcome.",
+                    ),
+                    _quick_action(
+                        "tighten-messages",
+                        "Tighten messages",
+                        "content",
+                        "Improve the human-facing notification and email wording in {{artifact_name_clause}} while keeping its trigger logic and structure stable.",
+                    ),
+                ],
+            },
+            "email_template": {
+                "label": "email template",
+                "shared_with": ["template_ai", "octo_ai"],
+                "focus_modes": ["validation", "design", "content"],
+                "validation_source": "deterministic template validator",
+                "design_mode": "entity-aware branded email design with safe Jinja placeholders",
+                "existing_artifact_count": artifact_counts.get("email_template", 0),
+                "focus_inference_signals": {
+                    "validation": ["fix validation", "validation error", "compile error", "make it valid", "fix the errors"],
+                    "design": ["design", "layout", "branding", "hierarchy", "spacing", "visual", "scannable", "scannability"],
+                    "content": ["tighten copy", "improve copy", "rewrite", "wording", "tone", "subject line", "cta"],
+                },
+                "focus_guidance": {
+                    "validation": "only fix deterministic validation errors and preserve existing structure, copy, and design unless a targeted change is required.",
+                    "design": "prioritize visual hierarchy, spacing, grouping, and brand expression while preserving the draft's intent and valid dynamic fields.",
+                    "content": "prioritize clarity, tone, subject quality, CTA wording, and concise production-ready copy while keeping layout changes minimal unless they clearly help comprehension.",
+                },
+                "shared_prompt_heuristics": [
+                    "Prefer better-designed output by default: strong spacing, hierarchy, clean callouts, and realistic production copy.",
+                    "Do not generate a plain stack of generic paragraphs when better hierarchy, grouping, metadata rows, summary panels, or a CTA block would fit better.",
+                    "Do not rewrite the whole visual approach just because you can; respect deliberate user edits and refine them.",
+                ],
+                "quick_actions": [
+                    _quick_action(
+                        "fix-validation",
+                        "Fix validation",
+                        "validation",
+                        "Fix validation errors in {{artifact_name_clause}} and preserve the current structure, copy, and design unless a targeted fix is required.",
+                    ),
+                    _quick_action(
+                        "improve-design",
+                        "Improve design",
+                        "design",
+                        "Improve the design, hierarchy, and scannability of {{artifact_name_clause}} while preserving its intent and valid dynamic fields.",
+                    ),
+                    _quick_action(
+                        "tighten-copy",
+                        "Tighten copy",
+                        "content",
+                        "Improve the subject line, CTA wording, and overall copy clarity in {{artifact_name_clause}} while preserving its structure and variables.",
+                    ),
+                    _quick_action(
+                        "apply-branding",
+                        "Use branding",
+                        "design",
+                        "Apply workspace branding more effectively to {{artifact_name_clause}} while keeping it production-ready and consistent with the existing structure.",
+                        ["scoped_editor"],
+                    ),
+                ],
+            },
+            "document_template": {
+                "label": "document template",
+                "shared_with": ["template_ai", "octo_ai"],
+                "focus_modes": ["validation", "design", "content"],
+                "validation_source": "deterministic template validator",
+                "design_mode": "entity-aware printable document design with safe Jinja placeholders",
+                "existing_artifact_count": artifact_counts.get("document_template", 0),
+                "focus_inference_signals": {
+                    "validation": ["fix validation", "validation error", "compile error", "make it valid", "fix the errors"],
+                    "design": ["design", "layout", "branding", "hierarchy", "spacing", "visual", "print readability", "printable"],
+                    "content": ["tighten copy", "improve copy", "rewrite", "wording", "tone", "labels", "section wording"],
+                },
+                "focus_guidance": {
+                    "validation": "only fix deterministic validation errors and preserve existing structure, copy, and design unless a targeted change is required.",
+                    "design": "prioritize layout hierarchy, print readability, section grouping, table discipline, and thoughtful branding while preserving the draft's intent and valid dynamic fields.",
+                    "content": "prioritize clarity, labels, section wording, and concise production-ready copy while keeping layout changes minimal unless they clearly help comprehension.",
+                },
+                "shared_prompt_heuristics": [
+                    "Prefer better-designed output by default: branded masthead, clear metadata blocks, well-laid-out tables, totals, and disciplined whitespace.",
+                    "Do not generate a flat wall of text when better hierarchy, metadata bands, structured sections, or disciplined table layouts would fit better.",
+                    "Do not rewrite the whole document style just because you can; respect deliberate user edits and refine them.",
+                ],
+                "quick_actions": [
+                    _quick_action(
+                        "fix-validation",
+                        "Fix validation",
+                        "validation",
+                        "Fix validation errors in {{artifact_name_clause}} and preserve the current structure, copy, and design unless a targeted fix is required.",
+                    ),
+                    _quick_action(
+                        "improve-design",
+                        "Improve layout",
+                        "design",
+                        "Improve the layout, hierarchy, and print readability of {{artifact_name_clause}} while preserving its intent and valid dynamic fields.",
+                    ),
+                    _quick_action(
+                        "tighten-copy",
+                        "Tighten copy",
+                        "content",
+                        "Improve the labels, section wording, and overall copy clarity in {{artifact_name_clause}} while preserving its structure and variables.",
+                    ),
+                    _quick_action(
+                        "apply-branding",
+                        "Use branding",
+                        "design",
+                        "Apply workspace branding more effectively to {{artifact_name_clause}} while keeping it clean, printable, and consistent with the existing structure.",
+                        ["scoped_editor"],
+                    ),
+                ],
+            },
+        },
+    }
 
 
 def _artifact_ai_workspace_list(store: Any, method_name: str, workspace_id: str) -> list[dict]:
@@ -39921,6 +40530,125 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         "connections": connections,
         "email_templates": _artifact_ai_workspace_list(email_store, "list_templates", workspace_id),
         "doc_templates": _artifact_ai_workspace_list(doc_template_store, "list", workspace_id),
+    }
+
+
+def _artifact_ai_automation_reference_contract(meta: dict | None) -> dict:
+    if not isinstance(meta, dict):
+        return {}
+    event_type_ids: list[str] = []
+    seen_event_types: set[str] = set()
+    for item in meta.get("event_types") or []:
+        text = str(item or "").strip()
+        if not text or text in seen_event_types:
+            continue
+        seen_event_types.add(text)
+        event_type_ids.append(text)
+    for item in meta.get("event_catalog") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("id") or "").strip()
+        if not text or text in seen_event_types:
+            continue
+        seen_event_types.add(text)
+        event_type_ids.append(text)
+
+    action_ids: list[str] = []
+    seen_action_ids: set[str] = set()
+    for item in meta.get("system_actions") or []:
+        action_id = str(item.get("id") or "").strip() if isinstance(item, dict) else ""
+        if not action_id or action_id in seen_action_ids:
+            continue
+        seen_action_ids.add(action_id)
+        action_ids.append(action_id)
+    for group in meta.get("module_actions") or []:
+        actions = group.get("actions") if isinstance(group, dict) else []
+        for item in actions if isinstance(actions, list) else []:
+            action_id = str(item.get("id") or "").strip() if isinstance(item, dict) else ""
+            if not action_id or action_id in seen_action_ids:
+                continue
+            seen_action_ids.add(action_id)
+            action_ids.append(action_id)
+
+    entity_field_ids_by_entity: dict[str, list[str]] = {}
+    email_field_ids_by_entity: dict[str, list[str]] = {}
+    lookup_field_ids_by_entity: dict[str, list[str]] = {}
+    for entity in meta.get("entities") or []:
+        if not isinstance(entity, dict):
+            continue
+        entity_id = str(entity.get("id") or "").strip()
+        if not entity_id:
+            continue
+        field_ids: list[str] = []
+        email_ids: list[str] = []
+        lookup_ids: list[str] = []
+        for field in entity.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            field_id = str(field.get("id") or "").strip()
+            if not field_id:
+                continue
+            field_ids.append(field_id)
+            field_type = str(field.get("type") or "").strip().lower()
+            label = str(field.get("label") or "").strip().lower()
+            suffix = field_id.split(".")[-1].lower()
+            if field_type == "email" or "email" in label or "email" in suffix:
+                email_ids.append(field_id)
+            if field_type == "lookup":
+                lookup_ids.append(field_id)
+        if field_ids:
+            entity_field_ids_by_entity[entity_id] = field_ids
+        if email_ids:
+            email_field_ids_by_entity[entity_id] = email_ids
+        if lookup_ids:
+            lookup_field_ids_by_entity[entity_id] = lookup_ids
+
+    field_paths_by_entity: dict[str, list[str]] = {}
+    for entry in meta.get("field_path_catalog") or []:
+        if not isinstance(entry, dict):
+            continue
+        entity_id = str(entry.get("entity_id") or "").strip()
+        if not entity_id:
+            continue
+        paths: list[str] = []
+        seen_paths: set[str] = set()
+        for field in entry.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            for path in field.get("paths") or []:
+                text = str(path or "").strip()
+                if not text or text in seen_paths:
+                    continue
+                seen_paths.add(text)
+                paths.append(text)
+        if paths:
+            field_paths_by_entity[entity_id] = paths
+
+    email_template_ids = [
+        text
+        for text in dict.fromkeys(
+            str(item.get("id") or "").strip()
+            for item in (meta.get("email_templates") or [])
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        )
+    ]
+    doc_template_ids = [
+        text
+        for text in dict.fromkeys(
+            str(item.get("id") or "").strip()
+            for item in (meta.get("doc_templates") or [])
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        )
+    ]
+    return {
+        "event_type_ids": event_type_ids,
+        "action_ids": action_ids,
+        "entity_field_ids_by_entity": entity_field_ids_by_entity,
+        "field_paths_by_entity": field_paths_by_entity,
+        "email_field_ids_by_entity": email_field_ids_by_entity,
+        "lookup_field_ids_by_entity": lookup_field_ids_by_entity,
+        "email_template_ids": email_template_ids,
+        "doc_template_ids": doc_template_ids,
     }
 
 
@@ -40797,14 +41525,13 @@ def _artifact_ai_validate_email_template_draft(template: dict) -> dict:
     subject = template.get("subject")
     body_html = template.get("body_html")
     body_text = template.get("body_text")
-    errors, possible_undefined, actual_undefined = validate_templates(
-        [
-            ("subject", subject),
-            ("body_html", body_html),
-            ("body_text", body_text),
-        ],
-        context=None,
-    )
+    template_parts = [
+        ("subject", subject),
+        ("body_html", body_html),
+        ("body_text", body_text),
+    ]
+    errors, possible_undefined, actual_undefined = validate_templates(template_parts, context=None)
+    errors.extend(_artifact_ai_template_record_reference_errors(template_parts, template))
     warnings = _build_template_warnings(subject, body_html, body_text)
     undefined = actual_undefined if actual_undefined else possible_undefined
     return _validation_payload(errors, undefined, warnings, possible_undefined)
@@ -40850,15 +41577,15 @@ def _artifact_ai_validate_doc_template_draft(template: dict) -> dict:
     filename_pattern = template.get("filename_pattern") or template.get("name")
     header_html = template.get("header_html")
     footer_html = template.get("footer_html")
-    errors, possible_undefined, actual_undefined = validate_templates(
-        [
-            ("filename_pattern", filename_pattern),
-            ("html", html),
-            ("header_html", header_html),
-            ("footer_html", footer_html),
-        ],
-        context=None,
-    )
+    template_parts = [
+        ("filename_pattern", filename_pattern),
+        ("html", html),
+        ("header_html", header_html),
+        ("footer_html", footer_html),
+    ]
+    errors, possible_undefined, actual_undefined = validate_templates(template_parts, context=None)
+    errors.extend(_artifact_ai_template_record_reference_errors(template_parts, template))
+    errors.extend(_artifact_ai_document_runtime_reference_errors(template_parts))
     warnings: list[str] = []
     if filename_pattern is not None and not str(filename_pattern).strip():
         warnings.append("filename pattern is empty")
@@ -40912,8 +41639,148 @@ def _artifact_ai_normalize_automation_draft(current: dict | None, candidate: dic
     return base
 
 
-def _artifact_ai_validate_automation_draft(data: dict) -> dict:
+def _artifact_ai_automation_reference_errors(data: dict, meta: dict | None) -> list[dict]:
+    contract = _artifact_ai_automation_reference_contract(meta)
+    if not contract:
+        return []
+
+    valid_event_types = set(contract.get("event_type_ids") or [])
+    valid_action_ids = set(contract.get("action_ids") or [])
+    entity_field_ids_by_entity = contract.get("entity_field_ids_by_entity") if isinstance(contract.get("entity_field_ids_by_entity"), dict) else {}
+    field_paths_by_entity = contract.get("field_paths_by_entity") if isinstance(contract.get("field_paths_by_entity"), dict) else {}
+    email_field_ids_by_entity = contract.get("email_field_ids_by_entity") if isinstance(contract.get("email_field_ids_by_entity"), dict) else {}
+    lookup_field_ids_by_entity = contract.get("lookup_field_ids_by_entity") if isinstance(contract.get("lookup_field_ids_by_entity"), dict) else {}
+    valid_doc_template_ids = set(contract.get("doc_template_ids") or [])
+    valid_email_template_ids = set(contract.get("email_template_ids") or [])
+
+    valid_field_ids = {
+        str(field_id).strip()
+        for field_ids in entity_field_ids_by_entity.values()
+        if isinstance(field_ids, list)
+        for field_id in field_ids
+        if isinstance(field_id, str) and field_id.strip()
+    }
+    valid_email_field_ids = {
+        str(field_id).strip()
+        for field_ids in email_field_ids_by_entity.values()
+        if isinstance(field_ids, list)
+        for field_id in field_ids
+        if isinstance(field_id, str) and field_id.strip()
+    }
+    valid_lookup_field_ids = {
+        str(field_id).strip()
+        for field_ids in lookup_field_ids_by_entity.values()
+        if isinstance(field_ids, list)
+        for field_id in field_ids
+        if isinstance(field_id, str) and field_id.strip()
+    }
+    valid_field_paths = {
+        str(path).strip()
+        for paths in field_paths_by_entity.values()
+        if isinstance(paths, list)
+        for path in paths
+        if isinstance(path, str) and path.strip()
+    }
+
+    errors: list[dict] = []
+    seen_messages: set[str] = set()
+
+    def add_error(path: str, message: str) -> None:
+        text = str(message or "").strip()
+        if not text:
+            return
+        key = f"{path}:{text}"
+        if key in seen_messages:
+            return
+        seen_messages.add(key)
+        errors.append({"code": "AUTOMATION_REFERENCE_INVALID", "path": path, "message": text})
+
+    def validate_expr(expr: Any, path: str) -> None:
+        if not isinstance(expr, dict):
+            return
+        left = expr.get("left")
+        if isinstance(left, dict):
+            var = left.get("var")
+            if isinstance(var, str) and var.strip():
+                text = var.strip()
+                if text.startswith(("trigger.record.fields.", "trigger.before.fields.", "trigger.after.fields.")) and text not in valid_field_paths:
+                    add_error(path, f"Unknown automation field reference '{text}'. Use a path from meta.field_path_catalog.")
+        child = expr.get("child")
+        if isinstance(child, dict):
+            validate_expr(child, path)
+        children = expr.get("children")
+        if isinstance(children, list):
+            for item in children:
+                validate_expr(item, path)
+
+    def validate_steps(items: Any, base_path: str, trigger_entity_id: str | None) -> None:
+        if not isinstance(items, list):
+            return
+        for idx, step in enumerate(items):
+            if not isinstance(step, dict):
+                continue
+            step_path = f"{base_path}[{idx}]"
+            kind = step.get("kind")
+            action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else None
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(action_id, str) and action_id.strip() and valid_action_ids and action_id.strip() not in valid_action_ids:
+                add_error(f"{step_path}.action_id", f"Unknown automation action id '{action_id.strip()}'. Use ids from meta.system_actions or meta.module_actions.")
+            if kind == "condition":
+                validate_expr(step.get("expr"), f"{step_path}.expr")
+                validate_steps(step.get("then_steps"), f"{step_path}.then_steps", trigger_entity_id)
+                validate_steps(step.get("else_steps"), f"{step_path}.else_steps", trigger_entity_id)
+            elif kind == "foreach":
+                validate_steps(step.get("steps"), f"{step_path}.steps", trigger_entity_id)
+            if action_id == "system.send_email":
+                template_id = str(inputs.get("template_id") or "").strip()
+                if template_id and valid_email_template_ids and template_id not in valid_email_template_ids:
+                    add_error(f"{step_path}.inputs.template_id", f"Unknown email template id '{template_id}'. Use ids from meta.email_templates.")
+                for field_id in inputs.get("to_field_ids") or []:
+                    text = str(field_id or "").strip()
+                    if text and valid_email_field_ids and text not in valid_email_field_ids:
+                        add_error(f"{step_path}.inputs.to_field_ids", f"Unknown email field id '{text}'. Use email field ids from meta.entities.")
+                for field_id in inputs.get("to_lookup_field_ids") or []:
+                    text = str(field_id or "").strip()
+                    if text and valid_lookup_field_ids and text not in valid_lookup_field_ids:
+                        add_error(f"{step_path}.inputs.to_lookup_field_ids", f"Unknown lookup field id '{text}'. Use lookup field ids from meta.entities.")
+            elif action_id == "system.generate_document":
+                template_id = str(inputs.get("template_id") or "").strip()
+                if template_id and valid_doc_template_ids and template_id not in valid_doc_template_ids:
+                    add_error(f"{step_path}.inputs.template_id", f"Unknown document template id '{template_id}'. Use ids from meta.doc_templates.")
+            elif action_id in {"system.update_record", "system.create_record"}:
+                target_entity_id = str(inputs.get("entity_id") or "").strip() or (trigger_entity_id.strip() if isinstance(trigger_entity_id, str) and trigger_entity_id.strip() else "")
+                if target_entity_id:
+                    valid_target_fields = {
+                        str(item).strip()
+                        for item in (entity_field_ids_by_entity.get(target_entity_id) or [])
+                        if isinstance(item, str) and item.strip()
+                    }
+                    payload = _automation_object_input(inputs.get("patch" if action_id == "system.update_record" else "values"))
+                    if isinstance(payload, dict) and valid_target_fields:
+                        for field_id in payload.keys():
+                            text = str(field_id or "").strip()
+                            if text and text not in valid_target_fields:
+                                add_error(
+                                    f"{step_path}.inputs.{'patch' if action_id == 'system.update_record' else 'values'}",
+                                    f"Unknown field id '{text}' for entity '{target_entity_id}'. Use ids from meta.entities[].fields[].id.",
+                                )
+            elif action_id == "system.query_records":
+                validate_expr(inputs.get("filter_expr"), f"{step_path}.inputs.filter_expr")
+
+    trigger = data.get("trigger") if isinstance(data.get("trigger"), dict) else {}
+    if isinstance(trigger.get("event_types"), list) and valid_event_types:
+        for item in trigger.get("event_types") or []:
+            text = str(item or "").strip()
+            if text and text not in valid_event_types:
+                add_error("trigger.event_types", f"Unknown event type '{text}'. Use ids from meta.event_catalog.")
+    validate_expr(trigger.get("expr"), "trigger.expr")
+    validate_steps(data.get("steps"), "steps", _artifact_ai_automation_trigger_entity_id(meta, trigger))
+    return errors
+
+
+def _artifact_ai_validate_automation_draft(data: dict, meta: dict | None = None) -> dict:
     errors = _validate_automation_payload(data)
+    errors.extend(_artifact_ai_automation_reference_errors(data, meta))
     return {
         "compiled_ok": not errors,
         "errors": errors,
@@ -40934,13 +41801,16 @@ def _artifact_ai_prompt_context(
 ) -> dict:
     workspace_id = actor.get("workspace_id") if isinstance(actor, dict) and isinstance(actor.get("workspace_id"), str) and actor.get("workspace_id") else "default"
     if kind == "automation":
-        current_validation = _artifact_ai_validate_automation_draft(current)
+        meta = _artifact_ai_automation_meta(request, actor)
+        current_validation = _artifact_ai_validate_automation_draft(current, meta)
         return {
             "kind": kind,
             "current_draft": current,
             "current_validation": current_validation,
             "requested_focus": requested_focus,
-            "meta": _artifact_ai_automation_meta(request, actor),
+            "shared_capability_catalog": _ai_workspace_ai_capability_catalog(request, actor),
+            "meta": meta,
+            "reference_contract": _artifact_ai_automation_reference_contract(meta),
             "references": {
                 "automation_templates": _ai_read_doc_snippet(_marketplace_reference_root() / "docs" / "AUTOMATION_TEMPLATES.md", limit=3000),
                 "template_guide": _ai_read_doc_snippet(ROOT / "TEMPLATE_EDITOR_GUIDE.md", limit=1800),
@@ -40974,6 +41844,7 @@ def _artifact_ai_prompt_context(
             "template_helpers": template_helpers,
             "current_validation": current_validation,
             "requested_focus": requested_focus,
+            "shared_capability_catalog": _ai_workspace_ai_capability_catalog(request, actor),
             "safe_jinja_examples": safe_jinja_examples,
             "design_playbook": design_playbook,
             "design_signals": design_signals,
@@ -41007,7 +41878,9 @@ def _artifact_ai_prompt_context(
         "template_helpers": template_helpers,
         "current_validation": current_validation,
         "requested_focus": requested_focus,
+        "shared_capability_catalog": _ai_workspace_ai_capability_catalog(request, actor),
         "safe_jinja_examples": safe_jinja_examples,
+        "document_runtime_examples": _artifact_ai_document_runtime_examples(),
         "design_playbook": design_playbook,
         "design_signals": design_signals,
         **branding,
@@ -41035,6 +41908,20 @@ def _artifact_ai_prompt_context(
 
 
 def _artifact_ai_system_prompt(kind: str) -> str:
+    capability = _ai_artifact_capability_details(kind)
+    focus_modes = [
+        item.strip().lower()
+        for item in (capability.get("focus_modes") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    focus_guidance = capability.get("focus_guidance") if isinstance(capability.get("focus_guidance"), dict) else {}
+    focus_guidance_text = " ".join(
+        f"If context.requested_focus is {focus}, {guidance}"
+        for focus in focus_modes
+        for guidance in [focus_guidance.get(focus)]
+        if isinstance(guidance, str) and guidance.strip()
+    )
+    shared_heuristics_text = " ".join(_ai_shared_prompt_heuristics(kind))
     if kind == "automation":
         return (
             "You design OCTO automation drafts for business admins. "
@@ -41046,6 +41933,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "For entity-specific create/update requests, prefer the matching catalog trigger id instead of only adding a generic entity_id filter. "
             "Prefer existing event types, entities, system actions, module actions, email templates, and document templates from context. "
             "Use meta.trigger_contracts, meta.step_kind_contracts, meta.action_contracts, meta.editor_settings, and meta.runtime_context as the source of truth for automation structure. "
+            "Use context.reference_contract as the deterministic source of truth for allowed event type ids, action ids, entity field ids, trigger field paths, email field ids, lookup field ids, and template ids. "
             "Use field references from meta.field_path_catalog[].fields[].paths when building trigger conditions, query filters, and record-aware action inputs. "
             "Use entity field ids from meta.entities[].fields[].id when setting record values. "
             "For system.update_record, put entity_id and record_id inside step.inputs and put the actual field updates inside step.inputs.patch as a non-empty object. "
@@ -41061,10 +41949,8 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "Use to only for literal email addresses, to_expr for computed address expressions, to_field_ids for record email fields, and to_lookup_field_ids for lookup recipient sources. "
             "For system.apply_integration_mapping, use mapping_id from meta.integration_mappings and pass source_record as a concrete object or raw context reference like {{trigger.payload}}. "
             "Do not invent unknown action ids. "
-            "If context.requested_focus is validation, only fix deterministic validation errors and preserve the existing trigger, steps, and behavior unless a targeted structural fix is required. "
-            "If context.requested_focus is logic, prioritize trigger accuracy, branching correctness, action sequencing, and runtime-safe field references while preserving the requested business outcome. "
-            "If context.requested_focus is content, prioritize human-facing notification, email, and template wording while keeping trigger logic and step structure stable unless a small supporting fix is required. "
-            "Do not rewrite the entire automation if the current structure is already workable; refine the draft toward a valid, production-ready automation. "
+            f"{focus_guidance_text} "
+            f"{shared_heuristics_text} "
             "summary must describe the change in plain English. "
             "assumptions and warnings must be arrays of short strings."
         )
@@ -41078,22 +41964,22 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "Set draft.variables_schema.entity_id to that entity id unless the user clearly asks for a different entity. "
             "Use only fields from the selected entity when choosing Jinja placeholders and variable references. "
             "Prefer the field ids in context.selected_entity_summary.field_ids and groupings in context.selected_entity_summary.field_ids_by_type. "
+            "Every record[...] key must come from context.selected_entity_summary.accessible_record_keys or from supported line item collections in context.template_helpers. "
+            "Never invent related-record dotted keys such as record['contact.name'] unless that exact key exists in context.selected_entity_summary.accessible_record_keys. "
+            "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
             "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections and context.template_helpers.related_entity_fields for repeating rows instead of inventing unsupported paths. "
             "Use branding from context.branding, context.workspace, and context.company whenever available, especially logo_url and colors.primary/secondary/accent. "
             "Use Jinja placeholders that fit the selected entity when needed. "
             "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
+            "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
             "Use safe Jinja access checks for dynamic fields and avoid unsupported filters or functions. "
             "Use context.design_playbook as soft guidance for visual quality, spacing, hierarchy, and restraint, not as a rigid preset. "
             "Use context.design_playbook.design_principles, component_priority, and adaptation_rules to improve the draft without over-constraining it. "
             "Use context.design_signals to understand the current draft's existing structure and preserve it unless the user clearly asks for a redesign. "
-            "If context.requested_focus is validation, only fix deterministic validation errors and preserve existing structure, copy, and design unless a targeted change is required. "
-            "If context.requested_focus is design, prioritize visual hierarchy, spacing, grouping, and brand expression while preserving the draft's intent and valid dynamic fields. "
-            "If context.requested_focus is content, prioritize clarity, tone, subject quality, CTA wording, and concise production-ready copy while keeping layout changes minimal unless they clearly help comprehension. "
+            f"{focus_guidance_text} "
             "Prefer polished professional HTML that renders well in email clients, using inline styles and table-safe structure where helpful. "
             "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos. "
-            "Prefer better-designed output by default: strong spacing, hierarchy, clean callouts, and realistic production copy. "
-            "Do not generate a plain stack of generic paragraphs when better hierarchy, grouping, metadata rows, summary panels, or a CTA block would fit better. "
-            "Do not rewrite the whole visual approach just because you can; respect deliberate user edits and refine them. "
+            f"{shared_heuristics_text} "
             "Write body_text as a real readable plain-text counterpart, not an empty or token-only fallback. "
             "Do not return placeholder notes like 'add logo here' or incomplete scaffolding. "
             "summary must describe the change in plain English."
@@ -41107,25 +41993,42 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         "Set draft.variables_schema.entity_id to that entity id unless the user clearly asks for a different entity. "
         "Use only fields from the selected entity when choosing Jinja placeholders and variable references. "
         "Prefer the field ids in context.selected_entity_summary.field_ids and groupings in context.selected_entity_summary.field_ids_by_type. "
+        "Every record[...] key must come from context.selected_entity_summary.accessible_record_keys or from supported line item collections in context.template_helpers. "
+        "Never invent related-record dotted keys such as record['contact.name'] unless that exact key exists in context.selected_entity_summary.accessible_record_keys. "
+        "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
         "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections and context.template_helpers.related_entity_fields for repeating rows instead of inventing unsupported paths. "
         "Use branding from context.branding, context.workspace, and context.company whenever available, especially logo_url and colors.primary/secondary/accent. "
         "Use clean printable HTML and Jinja placeholders that fit the selected entity when needed. "
         "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
+        "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
+        "For header_html and footer_html pagination or page metadata, use context.document_runtime_examples.available_header_footer_tokens and context.document_runtime_examples.pagination_footer_example. "
+        "Do not use Jinja variables like {{ pageNumber }} or {{ totalPages }} in header_html/footer_html; use Playwright token spans instead. "
         "Use safe Jinja access checks for dynamic fields and avoid unsupported filters or functions. "
         "Use context.design_playbook as soft guidance for visual quality, spacing, hierarchy, and restraint, not as a rigid preset. "
         "Use context.design_playbook.design_principles, component_priority, and adaptation_rules to improve the draft without over-constraining it. "
         "Use context.design_signals to understand the current draft's existing structure and preserve it unless the user clearly asks for a redesign. "
-        "If context.requested_focus is validation, only fix deterministic validation errors and preserve existing structure, copy, and design unless a targeted change is required. "
-        "If context.requested_focus is design, prioritize layout hierarchy, print readability, section grouping, table discipline, and thoughtful branding while preserving the draft's intent and valid dynamic fields. "
-        "If context.requested_focus is content, prioritize clarity, labels, section wording, and concise production-ready copy while keeping layout changes minimal unless they clearly help comprehension. "
+        f"{focus_guidance_text} "
         "Prefer polished PDF-ready structure with strong spacing, typography hierarchy, useful header/footer sections, and inline styles only. "
-        "Prefer better-designed output by default: branded masthead, clear metadata blocks, well-laid-out tables, totals, and disciplined whitespace. "
-        "Do not generate a flat wall of text when better hierarchy, metadata bands, structured sections, or disciplined table layouts would fit better. "
-        "Do not rewrite the whole document style just because you can; respect deliberate user edits and refine them. "
+        f"{shared_heuristics_text} "
         "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos. "
         "Do not return placeholder notes like 'insert branding' or incomplete scaffolding. "
         "summary must describe the change in plain English."
     )
+
+
+def _artifact_ai_text_lines(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                lines.append(text)
+    return lines
 
 
 def _artifact_ai_generate_plan(
@@ -41159,12 +42062,13 @@ def _artifact_ai_generate_plan(
     if not isinstance(parsed, dict):
         raise ValueError("AI response did not contain a valid JSON object")
     summary = parsed.get("summary")
-    assumptions = [item.strip() for item in (parsed.get("assumptions") or []) if isinstance(item, str) and item.strip()]
-    warnings = [item.strip() for item in (parsed.get("warnings") or []) if isinstance(item, str) and item.strip()]
+    assumptions = _artifact_ai_text_lines(parsed.get("assumptions"))
+    warnings = _artifact_ai_text_lines(parsed.get("warnings"))
     candidate_draft = parsed.get("draft") if isinstance(parsed.get("draft"), dict) else {}
     if kind == "automation":
-        draft = _artifact_ai_normalize_automation_draft(current, candidate_draft, context_payload.get("meta") if isinstance(context_payload, dict) else None)
-        validation = _artifact_ai_validate_automation_draft(draft)
+        automation_meta = context_payload.get("meta") if isinstance(context_payload, dict) else None
+        draft = _artifact_ai_normalize_automation_draft(current, candidate_draft, automation_meta)
+        validation = _artifact_ai_validate_automation_draft(draft, automation_meta)
     elif kind == "email_template":
         draft = _artifact_ai_normalize_email_template_draft(current, candidate_draft)
         if isinstance(context_payload.get("selected_entity_id"), str) and context_payload.get("selected_entity_id").strip():
@@ -41434,6 +42338,21 @@ def _ai_named_artifact_plan(
     return aggregate
 
 
+def _ai_candidate_artifact_keys(ops: list[dict] | None) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for op in ops if isinstance(ops, list) else []:
+        if not isinstance(op, dict):
+            continue
+        artifact_type = op.get("artifact_type")
+        artifact_id = op.get("artifact_id")
+        if not isinstance(artifact_type, str) or not artifact_type.strip():
+            continue
+        if not isinstance(artifact_id, str) or not artifact_id.strip():
+            continue
+        keys.add((artifact_type.strip(), artifact_id.strip()))
+    return keys
+
+
 def _ai_scoped_artifact_plan(
     request: Request,
     session: dict,
@@ -41521,6 +42440,8 @@ async def validate_email_template(request: Request, template_id: str) -> dict:
     if not template:
         return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
     body = await _safe_json(request)
+    draft_override = body.get("draft") if isinstance(body, dict) else None
+    source_template = _artifact_ai_normalize_email_template_draft(template, draft_override)
     sample = body.get("sample") if isinstance(body, dict) else None
     context = None
     entity_id, record_id, inline_record, _ = _template_sample_record(sample)
@@ -41530,17 +42451,16 @@ async def validate_email_template(request: Request, template_id: str) -> dict:
         record_context = generic_records.get(entity_id, record_id)
         if record_context:
             context = {"record": record_context.get("record") or {}, "entity_id": entity_id}
-    subject = template.get("subject")
-    body_html = template.get("body_html")
-    body_text = template.get("body_text")
-    errors, possible_undefined, actual_undefined = validate_templates(
-        [
-            ("subject", subject),
-            ("body_html", body_html),
-            ("body_text", body_text),
-        ],
-        context=context,
-    )
+    subject = source_template.get("subject")
+    body_html = source_template.get("body_html")
+    body_text = source_template.get("body_text")
+    template_parts = [
+        ("subject", subject),
+        ("body_html", body_html),
+        ("body_text", body_text),
+    ]
+    errors, possible_undefined, actual_undefined = validate_templates(template_parts, context=context)
+    errors.extend(_artifact_ai_template_record_reference_errors(template_parts, source_template))
     warnings = _build_template_warnings(subject, body_html, body_text)
     undefined = actual_undefined if actual_undefined else possible_undefined
     return _ok_response(_validation_payload(errors, undefined, warnings, possible_undefined))
@@ -41557,11 +42477,13 @@ async def preview_email_template(request: Request, template_id: str) -> dict:
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    draft_override = body.get("draft")
+    source_template = _artifact_ai_normalize_email_template_draft(template, draft_override)
     sample = body.get("sample") or {}
     entity_id, record_id, inline_record, placeholder = _template_sample_record(sample)
     if not entity_id:
         return _error_response("SAMPLE_REQUIRED", "sample.entity_id required", "sample", status=400)
-    if not record_id:
+    if not record_id and inline_record is None:
         placeholder = True
     branding = _branding_context_for_org(get_org_id())
     if placeholder:
@@ -41590,9 +42512,9 @@ async def preview_email_template(request: Request, template_id: str) -> dict:
                 return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
             context = {"record": record_context.get("record") or {}, "entity_id": entity_id, **branding}
     try:
-        rendered_html = render_template(template.get("body_html") or "", context, strict=True)
-        rendered_text = render_template(template.get("body_text") or "", context, strict=False)
-        rendered_subject = render_template(template.get("subject") or "", context, strict=True)
+        rendered_html = render_template(source_template.get("body_html") or "", context, strict=True)
+        rendered_text = render_template(source_template.get("body_text") or "", context, strict=False)
+        rendered_subject = render_template(source_template.get("subject") or "", context, strict=True)
     except Exception as exc:
         return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
     return _ok_response(
@@ -41626,7 +42548,7 @@ async def email_template_ai_plan(request: Request, template_id: str) -> dict:
     current = body.get("draft") if isinstance(body.get("draft"), dict) else template
     sample = body.get("sample") if isinstance(body.get("sample"), dict) else {}
     selected_entity_id = sample.get("entity_id") if isinstance(sample.get("entity_id"), str) else None
-    requested_focus = _artifact_ai_template_focus(body.get("focus"), prompt)
+    requested_focus = _artifact_ai_requested_focus("email_template", body.get("focus"), prompt)
     try:
         plan = _artifact_ai_generate_plan(
             "email_template",
@@ -41974,6 +42896,8 @@ async def validate_doc_template(request: Request, template_id: str) -> dict:
     if not template:
         return _error_response("TEMPLATE_NOT_FOUND", "Template not found", "template_id", status=404)
     body = await _safe_json(request)
+    draft_override = body.get("draft") if isinstance(body, dict) else None
+    source_template = _artifact_ai_normalize_doc_template_draft(template, draft_override)
     sample = body.get("sample") if isinstance(body, dict) else None
     context = None
     entity_id, record_id, inline_record, _ = _template_sample_record(sample)
@@ -41993,19 +42917,19 @@ async def validate_doc_template(request: Request, template_id: str) -> dict:
                 _branding_context_for_org(get_org_id()),
                 localization=_localization_context_for_actor(actor),
             )
-    html = template.get("html")
-    filename_pattern = template.get("filename_pattern") or template.get("name")
-    header_html = template.get("header_html")
-    footer_html = template.get("footer_html")
-    errors, possible_undefined, actual_undefined = validate_templates(
-        [
-            ("filename_pattern", filename_pattern),
-            ("html", html),
-            ("header_html", header_html),
-            ("footer_html", footer_html),
-        ],
-        context=context,
-    )
+    html = source_template.get("html")
+    filename_pattern = source_template.get("filename_pattern") or source_template.get("name")
+    header_html = source_template.get("header_html")
+    footer_html = source_template.get("footer_html")
+    template_parts = [
+        ("filename_pattern", filename_pattern),
+        ("html", html),
+        ("header_html", header_html),
+        ("footer_html", footer_html),
+    ]
+    errors, possible_undefined, actual_undefined = validate_templates(template_parts, context=context)
+    errors.extend(_artifact_ai_template_record_reference_errors(template_parts, source_template))
+    errors.extend(_artifact_ai_document_runtime_reference_errors(template_parts))
     warnings: list[str] = []
     if filename_pattern is not None and not str(filename_pattern).strip():
         warnings.append("filename pattern is empty")
@@ -42026,11 +42950,13 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    draft_override = body.get("draft")
+    source_template = _artifact_ai_normalize_doc_template_draft(template, draft_override)
     sample = body.get("sample") or {}
     entity_id, record_id, inline_record, placeholder = _template_sample_record(sample)
     if not entity_id:
         return _error_response("SAMPLE_REQUIRED", "sample.entity_id required", "sample", status=400)
-    if not record_id:
+    if not record_id and inline_record is None:
         placeholder = True
     if placeholder:
         registry = _registry_for_request(request)
@@ -42072,11 +42998,11 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
             localization=_localization_context_for_actor(actor),
         )
     try:
-        html = render_template(template.get("html") or "", context, strict=True)
-        filename_pattern = template.get("filename_pattern") or template.get("name") or "document"
+        html = render_template(source_template.get("html") or "", context, strict=True)
+        filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
         filename = render_template(filename_pattern, context, strict=True)
-        header_html = template.get("header_html") or ""
-        footer_html = template.get("footer_html") or ""
+        header_html = source_template.get("header_html") or ""
+        footer_html = source_template.get("footer_html") or ""
         if header_html:
             header_html = render_template(header_html, context, strict=True)
         if footer_html:
@@ -42084,16 +43010,16 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
     except Exception as exc:
         return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
     margins = {
-        "top": template.get("margin_top") or "12mm",
-        "right": template.get("margin_right") or "12mm",
-        "bottom": template.get("margin_bottom") or "12mm",
-        "left": template.get("margin_left") or "12mm",
+        "top": source_template.get("margin_top") or "12mm",
+        "right": source_template.get("margin_right") or "12mm",
+        "bottom": source_template.get("margin_bottom") or "12mm",
+        "left": source_template.get("margin_left") or "12mm",
     }
     try:
         margins = normalize_margins(margins)
     except Exception as exc:
         return _error_response("MARGINS_INVALID", str(exc), "margins", status=400)
-    paper_size = template.get("paper_size") or "A4"
+    paper_size = source_template.get("paper_size") or "A4"
     try:
         pdf_bytes = await anyio.to_thread.run_sync(
             render_pdf,
@@ -42148,7 +43074,7 @@ async def document_template_ai_plan(request: Request, template_id: str) -> dict:
     current = body.get("draft") if isinstance(body.get("draft"), dict) else template
     sample = body.get("sample") if isinstance(body.get("sample"), dict) else {}
     selected_entity_id = sample.get("entity_id") if isinstance(sample.get("entity_id"), str) else None
-    requested_focus = _artifact_ai_template_focus(body.get("focus"), prompt)
+    requested_focus = _artifact_ai_requested_focus("document_template", body.get("focus"), prompt)
     try:
         plan = _artifact_ai_generate_plan(
             "document_template",

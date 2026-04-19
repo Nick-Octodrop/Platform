@@ -23,6 +23,16 @@ const EMPTY_VALIDATION = {
   draft_signature: "",
 };
 
+function parseStoredAgentState(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function collectValidationWarnings(validationState) {
   const undefinedList = (validationState?.undefined && validationState.undefined.length > 0)
     ? validationState.undefined
@@ -131,6 +141,7 @@ export default function TemplateStudioShell({
   const [agentInput, setAgentInput] = useState("");
   const [agentMessages, setAgentMessages] = useState([]);
   const [agentProposal, setAgentProposal] = useState(null);
+  const [agentHistoryHydrated, setAgentHistoryHydrated] = useState(false);
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const lastAutoPreviewRef = useRef("");
@@ -142,6 +153,10 @@ export default function TemplateStudioShell({
   const sampleStorageKey = useMemo(() => {
     return `template-studio-sample:${profile?.kind || "template"}`;
   }, [profile?.kind]);
+  const agentStorageKey = useMemo(() => {
+    if (!recordId) return "";
+    return `template-studio-agent:${profile?.kind || "template"}:${recordId}`;
+  }, [profile?.kind, recordId]);
 
   useEffect(() => {
     let mounted = true;
@@ -246,6 +261,7 @@ export default function TemplateStudioShell({
     let mounted = true;
     async function load() {
       if (!recordId || !loadRecordRef.current) return;
+      setAgentHistoryHydrated(false);
       validationRequestIdRef.current += 1;
       setRecord(null);
       setDraft(null);
@@ -257,15 +273,27 @@ export default function TemplateStudioShell({
       setDraft(res);
       setSaveStatus("saved");
       setSampleRecord(null);
-      setAgentInput("");
-      setAgentMessages([]);
-      setAgentProposal(null);
+      const stored = agentStorageKey ? parseStoredAgentState(sessionStorage.getItem(agentStorageKey)) : null;
+      setAgentInput(typeof stored?.input === "string" ? stored.input : "");
+      setAgentMessages(Array.isArray(stored?.messages) ? stored.messages : []);
+      setAgentProposal(stored?.proposal && typeof stored.proposal === "object" ? stored.proposal : null);
+      setAgentHistoryHydrated(true);
     }
     load();
     return () => {
       mounted = false;
     };
-  }, [recordId]);
+  }, [agentStorageKey, recordId]);
+
+  useEffect(() => {
+    if (!recordId || !agentStorageKey || !agentHistoryHydrated) return;
+    const payload = {
+      input: agentInput,
+      messages: Array.isArray(agentMessages) ? agentMessages : [],
+      proposal: agentProposal && typeof agentProposal === "object" ? agentProposal : null,
+    };
+    sessionStorage.setItem(agentStorageKey, JSON.stringify(payload));
+  }, [agentHistoryHydrated, agentInput, agentMessages, agentProposal, agentStorageKey, recordId]);
 
   useEffect(() => {
     if (externalActiveTab !== undefined) return;
@@ -352,7 +380,7 @@ export default function TemplateStudioShell({
     validationRequestIdRef.current = requestId;
     setValidationState((prev) => buildCheckingValidationState(prev, draftSignature));
     try {
-      const res = await validate(recordId, { sample: samplePayload });
+      const res = await validate(recordId, { sample: samplePayload, draft });
       if (validationRequestIdRef.current !== requestId) return res;
       const nextState = normalizeValidationState(res, draftSignature);
       setValidationState(nextState);
@@ -371,7 +399,7 @@ export default function TemplateStudioShell({
   async function runPreview(sampleOverride = null) {
     if (!preview) return;
     try {
-      const res = await preview(recordId, { sample: buildSamplePayload(sampleOverride) });
+      const res = await preview(recordId, { sample: buildSamplePayload(sampleOverride), draft });
       setPreviewState(res);
       return res;
     } catch (err) {
@@ -383,7 +411,7 @@ export default function TemplateStudioShell({
   async function runPreviewOnce(sampleOverride) {
     if (!preview) return null;
     try {
-      return await preview(recordId, { sample: buildSamplePayload(sampleOverride) });
+      return await preview(recordId, { sample: buildSamplePayload(sampleOverride), draft });
     } catch (err) {
       return null;
     }
@@ -494,7 +522,7 @@ export default function TemplateStudioShell({
   ];
   const utilityDrawerTitle = utilityDrawer === "agent" ? t("settings.template_studio.ai_assistant") : t("settings.template_studio.validation");
   const utilityDrawerDescription = utilityDrawer === "agent"
-    ? t("settings.template_studio.ai_assistant_description")
+    ? ""
     : t("settings.template_studio.validation_description");
   const utilityDrawerContent = utilityDrawer === "agent" ? leftPaneContent : validationContent;
 

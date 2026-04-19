@@ -342,11 +342,53 @@ class TestOctoAiFieldResolution(unittest.TestCase):
 
         request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "ws_123"}))
         session = {"scope_mode": "auto", "selected_artifact_type": "module", "selected_artifact_key": "jobs"}
+        fake_automation_meta = {
+            "event_types": ["jobs.record.job.completed"],
+            "event_catalog": [
+                {
+                    "id": "jobs.record.job.completed",
+                    "label": "Job completed",
+                    "event": "record.updated",
+                    "entity_id": "entity.job",
+                }
+            ],
+            "system_actions": [{"id": "system.notify", "label": "Notify workspace users"}],
+            "module_actions": [],
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.status", "label": "Status", "type": "string"},
+                    ],
+                }
+            ],
+            "field_path_catalog": [
+                {
+                    "entity_id": "entity.job",
+                    "fields": [
+                        {
+                            "field_id": "job.status",
+                            "label": "Status",
+                            "type": "string",
+                            "paths": [
+                                "trigger.record.fields.job.status",
+                                "trigger.before.fields.job.status",
+                                "trigger.after.fields.job.status",
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "email_templates": [],
+            "doc_templates": [],
+        }
 
         with (
             patch.object(main, "USE_AI", True),
             patch.object(main, "_openai_configured", lambda: True),
             patch.object(main, "_openai_chat_completion", fake_chat_completion),
+            patch.object(main, "_artifact_ai_automation_meta", lambda _request, _actor: fake_automation_meta),
         ):
             result = main._ai_semantic_plan_from_model(
                 request,
@@ -367,6 +409,31 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(
             [item["module_id"] for item in context["workspace_modules"][:3]],
             ["jobs", "invoices", "contacts"],
+        )
+        self.assertIn("artifact_ai_capabilities", context)
+        self.assertIn("workspace_automation_reference_contract", context)
+        self.assertIn("workspace_module_reference_contracts", context)
+        self.assertIn("automation", context["artifact_ai_capabilities"]["artifacts"])
+        self.assertEqual(
+            context["artifact_ai_capabilities"]["artifacts"]["automation"]["focus_modes"],
+            ["validation", "logic", "content"],
+        )
+        self.assertEqual(
+            context["workspace_automation_reference_contract"]["event_type_ids"],
+            ["jobs.record.job.completed"],
+        )
+        self.assertIn(
+            "trigger.record.fields.job.status",
+            context["workspace_automation_reference_contract"]["field_paths_by_entity"]["entity.job"],
+        )
+        self.assertIn("jobs", context["workspace_module_reference_contracts"])
+        self.assertEqual(
+            context["workspace_module_reference_contracts"]["jobs"]["entity_ids"],
+            [],
+        )
+        self.assertEqual(
+            context["artifact_ai_capabilities"]["artifacts"]["module"]["focus_modes"],
+            ["validation", "design", "content", "logic"],
         )
         self.assertIn("semantic_summary", context["workspace_modules"][0])
         self.assertTrue(context["workspace_modules"][0]["semantic_summary"])
@@ -8805,6 +8872,112 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Dispatch", text)
         self.assertIn("Phase 1", text)
         self.assertNotIn("What should the new field be called?", text)
+
+    def test_confirmed_workspace_brief_promotes_into_concrete_mixed_operations(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        req = type("R", (), {"state": type("S", (), {"cache": {}, "actor": {"workspace_id": "default"}})()})()
+        module_index = _ai_module_manifest_index(req)
+        message = (
+            "Use this brief to design the workspace: approved quotes should trigger job setup and send a customer confirmation email. "
+            "Show me the draft plan first."
+        )
+
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "add_field",
+                    "artifact_type": "module",
+                    "artifact_id": "sales",
+                    "entity_id": "entity.quote",
+                    "field": {"id": "quote.job_ready", "label": "Job Ready", "type": "boolean"},
+                },
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "quote_job_ready_flow",
+                    "automation": {
+                        "name": "Quote Job Ready Flow",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "notify_team",
+                                "inputs": {"message": "Job setup is ready."},
+                            }
+                        ],
+                    },
+                },
+                {
+                    "op": "create_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "quote_job_ready_email",
+                    "email_template": {
+                        "name": "Quote Job Ready Email",
+                        "subject": "Your quote is ready for job setup",
+                        "body_html": "<p>Your quote is ready for job setup.</p>",
+                        "body_text": "Your quote is ready for job setup.",
+                    },
+                },
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": ["The approved workspace brief should now become a concrete build draft."],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["sales", "jobs"],
+            "plan_v1": {
+                "version": "1",
+                "intent": "cross_module_change",
+                "summary": "Turn the approved workspace brief into quote, automation, and email changes.",
+                "requested_scope": {
+                    "requested_modules": ["Sales", "Jobs"],
+                    "missing_modules": [],
+                    "requested_artifacts": ["Quote Job Ready Flow", "Quote Job Ready Email"],
+                },
+                "artifacts": [
+                    {"artifact_type": "module", "artifact_id": "sales", "artifact_label": "Sales", "status": "planned"},
+                    {"artifact_type": "automation", "artifact_id": "quote_job_ready_flow", "artifact_label": "Quote Job Ready Flow", "status": "planned"},
+                    {"artifact_type": "email_template", "artifact_id": "quote_job_ready_email", "artifact_label": "Quote Job Ready Email", "status": "planned"},
+                ],
+                "modules": [
+                    {"module_id": "sales", "module_label": "Sales", "status": "planned"},
+                    {"module_id": "jobs", "module_label": "Jobs", "status": "planned"},
+                ],
+                "changes": [],
+                "sections": [],
+                "clarifications": {"items": [], "meta": {}},
+                "assumptions": [],
+                "risks": [],
+                "noop_notes": [],
+                "operation_families": ["cross_module_change", "automation_change", "template_change"],
+                "primary_operation_family": "cross_module_change",
+                "needs_clarification": False,
+                "architecture_decisions": [],
+                "first_delivery_slice": [],
+            },
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: semantic_plan),
+        ):
+            plan, derived = _ai_plan_from_message(
+                req,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={"confirm_plan": True, "answer_text": "Approved."},
+            )
+
+        op_names = [op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertIn("add_field", op_names)
+        self.assertIn("create_automation_record", op_names)
+        self.assertIn("create_email_template_record", op_names)
+        self.assertEqual(plan.get("required_questions"), [])
+        self.assertFalse(plan.get("resolved_without_changes"))
+        self.assertNotEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_noop")
+        self.assertEqual(derived.get("status"), "ready_to_apply")
 
     def test_requirements_document_prompt_uses_final_ask_not_background_document_noise(self) -> None:
         main._octo_ai_seed_in_memory_baseline_modules()

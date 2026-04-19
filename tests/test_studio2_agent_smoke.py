@@ -179,6 +179,77 @@ class TestStudio2AgentSmoke(unittest.TestCase):
         form_view = next(v for v in normalized["views"] if v.get("id") == "contact.form")
         self.assertTrue("statusbar" not in (form_view.get("header") or {}))
 
+    def test_agent_builder_context_includes_reference_contract(self) -> None:
+        client = TestClient(main.app)
+        module_id = f"ctx_{uuid.uuid4().hex[:6]}"
+        res = client.post("/studio2/modules", json={"module_id": module_id, "name": "Contacts"})
+        payload = res.json()
+        self.assertTrue(payload.get("ok"), payload)
+
+        captured: dict[str, object] = {}
+        calls = [
+            {
+                "tool": "ensure_entity",
+                "module_id": module_id,
+                "entity": {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "display_field": "contact.name",
+                    "fields": [{"id": "contact.name", "type": "string", "label": "Name"}],
+                },
+            }
+        ]
+
+        def fake_openai(messages, model=None):
+            captured["messages"] = messages
+            return _fake_builder_response(calls)
+
+        build_spec = {"goal": "Build contacts", "entities": [{"id": "entity.contact"}]}
+        with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+            res = client.post(
+                "/studio2/agent/chat",
+                json={"module_id": module_id, "message": "build contacts app", "build_spec": build_spec},
+            )
+        body = res.json()
+        self.assertTrue(body.get("ok"), body)
+        messages = captured.get("messages") or []
+        context_messages = [
+            item.get("content")
+            for item in messages
+            if isinstance(item, dict) and isinstance(item.get("content"), str) and item.get("content", "").startswith("context.json")
+        ]
+        self.assertEqual(len(context_messages), 1)
+        context_text = context_messages[0]
+        self.assertIn("\"reference_contract\"", context_text)
+        self.assertIn("\"entity_ids\"", context_text)
+        self.assertIn("\"view_ids\"", context_text)
+        self.assertIn("\"workflow_ids\"", context_text)
+
+    def test_agent_rejects_entity_pages_for_missing_entity(self) -> None:
+        client = TestClient(main.app)
+        module_id = f"missing_entity_{uuid.uuid4().hex[:6]}"
+        res = client.post("/studio2/modules", json={"module_id": module_id, "name": "No Entity"})
+        payload = res.json()
+        self.assertTrue(payload.get("ok"), payload)
+
+        calls = [{"tool": "ensure_entity_pages", "module_id": module_id, "entity_id": "entity.missing"}]
+
+        def fake_openai(_messages, model=None):
+            return _fake_builder_response(calls)
+
+        build_spec = {"goal": "Build pages", "entities": []}
+        with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+            res = client.post(
+                "/studio2/agent/chat",
+                json={"module_id": module_id, "message": "add pages", "build_spec": build_spec},
+            )
+        body = res.json()
+        self.assertTrue(body.get("ok"), body)
+        data = body.get("data") or {}
+        errors = (data.get("validation") or {}).get("errors") or []
+        self.assertTrue(any(err.get("code") == "CALL_INVALID" for err in errors), errors)
+        self.assertTrue(any("requires an existing entity_id" in str(err.get("message")) for err in errors), errors)
+
     def test_agent_read_manifest_cross_module(self) -> None:
         client = TestClient(main.app)
         contacts_id = f"contacts_{uuid.uuid4().hex[:6]}"

@@ -489,6 +489,10 @@ export async function getProviderStatus(providers = []) {
   return apiFetch(`/settings/provider-status${suffix}`);
 }
 
+export async function getAiCapabilities() {
+  return apiFetch("/ai/capabilities");
+}
+
 export async function createWorkspaceSecret(payload = {}) {
   return apiFetch("/settings/secrets", { method: "POST", body: payload });
 }

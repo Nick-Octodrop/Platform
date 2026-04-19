@@ -14,11 +14,13 @@ import { formatDateTime } from "../utils/dateTime.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import useAiCapabilityCatalog from "../hooks/useAiCapabilityCatalog.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import ArtifactAiStageCard from "../components/ArtifactAiStageCard.jsx";
 import ScopedAiAssistantPane from "../components/ScopedAiAssistantPane.jsx";
+import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
 
@@ -42,6 +44,16 @@ function normalizeIntegrationRequestTemplate(template, index = 0) {
     path: String(raw.path || ""),
     url: String(raw.url || ""),
   };
+}
+
+function parseStoredAutomationAiState(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
@@ -351,6 +363,7 @@ export default function AutomationEditorPage({ user }) {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [pendingAiPlan, setPendingAiPlan] = useState(null);
+  const [chatHistoryHydrated, setChatHistoryHydrated] = useState(false);
   const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(false);
@@ -378,6 +391,9 @@ export default function AutomationEditorPage({ user }) {
   });
   const EMAIL_CONNECTION_TYPES = new Set(["smtp", "postmark"]);
   const automationAddButtonClass = "btn btn-sm btn-ghost shrink-0";
+  const automationAiStorageKey = useMemo(() => (
+    automationId ? `automation-editor-ai:${automationId}` : ""
+  ), [automationId]);
 
   function buildAutomationDefinition(nextName = name, nextDescription = description, nextTrigger = trigger, nextTriggerExprText = triggerExprText, nextSteps = steps) {
     const normalizeStepForPersist = (step) => {
@@ -1675,6 +1691,26 @@ export default function AutomationEditorPage({ user }) {
   }, [automationId, loadMeta]);
 
   useEffect(() => {
+    if (!automationId || !automationAiStorageKey) return;
+    setChatHistoryHydrated(false);
+    const stored = parseStoredAutomationAiState(sessionStorage.getItem(automationAiStorageKey));
+    setChatMessages(Array.isArray(stored?.messages) ? stored.messages : []);
+    setChatInput(typeof stored?.input === "string" ? stored.input : "");
+    setPendingAiPlan(stored?.pendingAiPlan && typeof stored.pendingAiPlan === "object" ? stored.pendingAiPlan : null);
+    setChatHistoryHydrated(true);
+  }, [automationAiStorageKey, automationId]);
+
+  useEffect(() => {
+    if (!automationId || !automationAiStorageKey || !chatHistoryHydrated) return;
+    const payload = {
+      input: chatInput,
+      messages: Array.isArray(chatMessages) ? chatMessages : [],
+      pendingAiPlan: pendingAiPlan && typeof pendingAiPlan === "object" ? pendingAiPlan : null,
+    };
+    sessionStorage.setItem(automationAiStorageKey, JSON.stringify(payload));
+  }, [automationAiStorageKey, automationId, chatHistoryHydrated, chatInput, chatMessages, pendingAiPlan]);
+
+  useEffect(() => {
     loadRuns();
   }, [loadRuns]);
 
@@ -1738,7 +1774,7 @@ export default function AutomationEditorPage({ user }) {
 
   const buildAutomationAiRepairPrompt = useCallback((validation, summary) => {
     const items = Array.isArray(validation?.errors) ? validation.errors : [];
-    const messages = items
+  const messages = items
       .map((item) => {
         if (!item) return "";
         if (typeof item === "string") return item.trim();
@@ -1759,20 +1795,16 @@ export default function AutomationEditorPage({ user }) {
     ].join("\n\n");
   }, []);
 
-  const automationQuickActions = useMemo(() => ([
+  const { capabilities: aiCapabilities } = useAiCapabilityCatalog();
+  const automationQuickActions = useMemo(() => getArtifactQuickActions(
+    aiCapabilities,
+    "automation",
     {
-      id: "improve-logic",
-      label: "Improve logic",
-      prompt: "Improve the trigger accuracy, branching, and step logic of this automation while preserving the intended business outcome.",
-      focus: "logic",
+      surface: "scoped_editor",
+      artifactLabel: name.trim() || "automation",
+      excludeFocuses: ["validation"],
     },
-    {
-      id: "tighten-messages",
-      label: "Tighten messages",
-      prompt: "Improve the human-facing notification and email wording in this automation while preserving the trigger logic and step structure.",
-      focus: "content",
-    },
-  ]), []);
+  ), [aiCapabilities, name]);
 
   const runAutomationAiPlan = useCallback(async (rawText, draftOverride = null, options = null) => {
     const prompt = String(rawText || "").trim();
@@ -2159,12 +2191,75 @@ export default function AutomationEditorPage({ user }) {
     setPendingAiPlan(null);
   }, [pendingAiPlan, pendingAutomationPlanDetails]);
 
+  const automationAgentActionStrip = useMemo(() => {
+    if (chatLoading) return null;
+    if (pendingAiPlan) {
+      return {
+        title: "Actions",
+        actions: [
+          {
+            key: "apply-draft",
+            label: "Apply draft",
+            onClick: applyPendingAutomationPlan,
+            primary: true,
+            disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid,
+          },
+          ...(pendingAutomationPlanInvalid
+            ? [{
+                key: "fix-with-ai",
+                label: "Fix with AI",
+                onClick: () => runAutomationAiFix({
+                  draft: pendingAiPlan?.draft,
+                  validation: pendingAiPlan?.validation,
+                  summary: pendingAiPlan?.summary,
+                }),
+              }]
+            : []),
+          {
+            key: "discard-proposal",
+            label: "Discard",
+            onClick: discardPendingAutomationPlan,
+            outline: true,
+          },
+        ],
+      };
+    }
+    const idleActions = [
+      ...(validationPanelErrors.length > 0
+        ? [{
+            key: "fix-current-validation",
+            label: "Fix with AI",
+            onClick: () => runAutomationAiFix({ summary: name.trim() || "the current automation" }),
+            primary: true,
+          }]
+        : []),
+      ...automationQuickActions.map((action) => ({
+        key: action.id,
+        label: action.label,
+        onClick: () => runAutomationAiPlan(action.prompt, null, { focus: action.focus }),
+        outline: true,
+      })),
+    ];
+    return idleActions.length ? { title: "Actions", actions: idleActions } : null;
+  }, [
+    applyPendingAutomationPlan,
+    automationQuickActions,
+    chatLoading,
+    discardPendingAutomationPlan,
+    name,
+    pendingAiPlan,
+    pendingAutomationPlanInvalid,
+    runAutomationAiFix,
+    runAutomationAiPlan,
+    validationPanelErrors,
+  ]);
+
   const renderLeftPane = useCallback(() => (
     <div className="h-full min-h-0 flex flex-col overflow-hidden">
       {!isSuperadmin ? (
         <div className="flex-1 min-h-0 overflow-auto space-y-4">
           <div className="chat chat-start">
-            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("settings.template_studio.assistant")}</div>
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">AI Automation Assistant</div>
             <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
               Automation AI is currently limited to superadmins.
             </div>
@@ -2173,7 +2268,7 @@ export default function AutomationEditorPage({ user }) {
       ) : automationAiEnabled ? (
         <ScopedAiAssistantPane
           introMessage={t("settings.automation_editor.default_agent_message")}
-          assistantLabel={t("settings.template_studio.assistant")}
+          assistantLabel="AI Automation Assistant"
           userLabel={userLabel}
           messages={chatMessages}
           autoScrollKey={`${chatMessages.length}:${chatLoading ? "loading" : "idle"}:${pendingAiPlan ? "proposal" : "none"}`}
@@ -2197,21 +2292,6 @@ export default function AutomationEditorPage({ user }) {
               assumptions={pendingAiPlan.assumptions}
               warnings={pendingAiPlan.warnings}
               validation={pendingAiPlan.validation}
-              actions={[
-                { label: "Apply draft", onClick: applyPendingAutomationPlan, primary: true, disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid },
-                ...(pendingAutomationPlanInvalid
-                  ? [{
-                      label: "Fix with AI",
-                      onClick: () => runAutomationAiFix({
-                        draft: pendingAiPlan?.draft,
-                        validation: pendingAiPlan?.validation,
-                        summary: pendingAiPlan?.summary,
-                      }),
-                      disabled: chatLoading,
-                    }]
-                  : []),
-                { label: "Discard", onClick: discardPendingAutomationPlan },
-              ]}
             />
           ) : null)}
           inputValue={chatInput}
@@ -2220,21 +2300,7 @@ export default function AutomationEditorPage({ user }) {
           inputDisabled={chatLoading}
           inputPlaceholder={t("settings.automation_editor.describe_change")}
           minRows={4}
-          composerExtras={automationQuickActions.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {automationQuickActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="btn btn-xs btn-outline"
-                  disabled={chatLoading}
-                  onClick={() => runAutomationAiPlan(action.prompt, null, { focus: action.focus })}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          actionStrip={automationAgentActionStrip}
         />
       ) : (
         providerStatusLoading ? (
@@ -2251,7 +2317,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [applyPendingAutomationPlan, automationAiEnabled, automationPlanningStatusItems, automationQuickActions, canManageSettings, chatInput, chatLoading, chatMessages, discardPendingAutomationPlan, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiFix, runAutomationAiPlan, t, userLabel]);
+  ), [automationAgentActionStrip, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {

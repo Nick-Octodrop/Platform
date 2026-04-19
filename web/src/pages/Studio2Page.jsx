@@ -34,11 +34,13 @@ import { formatDateTime } from "../utils/dateTime.js";
 import { DESKTOP_PAGE_SHELL } from "../ui/pageShell.js";
 import { MoreHorizontal } from "lucide-react";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import useAiCapabilityCatalog from "../hooks/useAiCapabilityCatalog.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import ArtifactAiStageCard from "../components/ArtifactAiStageCard.jsx";
 import ScopedAiAssistantPane from "../components/ScopedAiAssistantPane.jsx";
+import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { writeStudioPreviewManifest } from "./studio/studioPreviewStore.js";
 
@@ -687,6 +689,7 @@ export default function Studio2Page({ user }) {
   const [newModuleName, setNewModuleName] = useState("");
   const [newModuleDescription, setNewModuleDescription] = useState("");
   const [newModuleBusy, setNewModuleBusy] = useState(false);
+  const [justCreatedModuleId, setJustCreatedModuleId] = useState("");
   const [listActionLoading, setListActionLoading] = useState(false);
   const [rollbackModalOpen, setRollbackModalOpen] = useState(false);
   const [rollbackTargetModule, setRollbackTargetModule] = useState("");
@@ -1845,6 +1848,7 @@ function buildPreviewManifest() {
       const res = await createStudio2Module(name, newModuleDescription.trim());
       const createdId = res.data?.module_id;
       sessionStorage.removeItem(storageKey(createdId));
+      setJustCreatedModuleId(createdId || "");
       setCreateModalOpen(false);
       setNewModuleName("");
       setNewModuleDescription("");
@@ -2349,26 +2353,16 @@ function buildPreviewManifest() {
 
   const userLabel = user?.email || "User";
   const pendingStudioPlanInvalid = pendingAgentPlan?.validation?.status === "error";
-  const studioQuickActions = useMemo(() => ([
+  const { capabilities: aiCapabilities } = useAiCapabilityCatalog();
+  const studioQuickActions = useMemo(() => getArtifactQuickActions(
+    aiCapabilities,
+    "module",
     {
-      id: "improve-ux",
-      label: "Improve UX",
-      prompt: "Improve the UX, page hierarchy, navigation clarity, and field grouping of this module while preserving its business intent.",
-      focus: "design",
+      surface: "scoped_editor",
+      artifactLabel: activeModuleName || routeModuleId || "module",
+      excludeFocuses: ["validation"],
     },
-    {
-      id: "tighten-copy",
-      label: "Tighten copy",
-      prompt: "Improve labels, helper text, action wording, and empty-state copy in this module while keeping the schema and workflows stable.",
-      focus: "content",
-    },
-    {
-      id: "improve-logic",
-      label: "Improve logic",
-      prompt: "Improve workflows, actions, and business-rule logic in this module while preserving the intended data model and user-facing experience.",
-      focus: "logic",
-    },
-  ]), []);
+  ), [activeModuleName, aiCapabilities, routeModuleId]);
 
   const runStudioAiFix = useCallback(async ({ draftTextOverride = "", validationOverride = null, summary = "" } = {}) => {
     if (draftError) {
@@ -2396,6 +2390,116 @@ function buildPreviewManifest() {
     await runAgentDraftFlow(sections.join("\n\n"), { focus: "validation" });
   }, [draftError, draftText, prepareFixJson, runAgentDraftFlow, validation]);
 
+  const studioValidationErrors = useMemo(() => ([
+    ...(validation?.errors || []),
+    ...(validation?.strictErrors || validation?.strict_errors || []),
+    ...(validation?.completenessErrors || validation?.completeness_errors || []),
+  ]), [validation]);
+  const installedManifestText = useMemo(() => {
+    try {
+      return installedManifest ? stringifyPretty(installedManifest) : "";
+    } catch {
+      return "";
+    }
+  }, [installedManifest]);
+  const hideStudioQuickActionsForFreshScaffold = useMemo(() => {
+    if (!routeModuleId || justCreatedModuleId !== routeModuleId) return false;
+    if (chatMessages.length > 0 || pendingAgentPlan) return false;
+    if (studioValidationErrors.length > 0) return false;
+    const current = String(draftText || "").trim();
+    const baseline = String(installedManifestText || "").trim();
+    return Boolean(current && baseline && current === baseline);
+  }, [
+    chatMessages.length,
+    draftText,
+    installedManifestText,
+    justCreatedModuleId,
+    pendingAgentPlan,
+    routeModuleId,
+    studioValidationErrors.length,
+  ]);
+
+  const studioAgentActionStrip = useMemo(() => {
+    if (chatLoading) {
+      return {
+        title: "Actions",
+        busy: true,
+        actions: routeModuleId ? [{ key: "cancel-run", label: "Cancel", onClick: cancelAgentRun, outline: true, allowWhileBusy: true }] : [],
+      };
+    }
+    if (pendingAgentPlan) {
+      return {
+        title: "Actions",
+        actions: [
+          {
+            key: "apply-draft",
+            label: "Apply draft",
+            onClick: () => applyPendingAgentPlan(),
+            primary: true,
+            disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid,
+          },
+          {
+            key: "apply-preview",
+            label: "Apply + Preview",
+            onClick: () => applyPendingAgentPlan({ openPreview: true }),
+            outline: true,
+            disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid,
+          },
+          ...(pendingStudioPlanInvalid
+            ? [{
+                key: "fix-with-ai",
+                label: "Fix with AI",
+                onClick: () => runStudioAiFix({
+                  draftTextOverride: pendingAgentPlan?.draftText,
+                  validationOverride: pendingAgentPlan?.validation,
+                  summary: pendingAgentPlan?.summary,
+                }),
+              }]
+            : []),
+          {
+            key: "discard-proposal",
+            label: "Discard",
+            onClick: discardPendingAgentPlan,
+            outline: true,
+          },
+        ],
+      };
+    }
+    if (!routeModuleId) return null;
+    if (hideStudioQuickActionsForFreshScaffold) return null;
+    const idleActions = [
+      ...(studioValidationErrors.length > 0
+        ? [{
+            key: "fix-current-validation",
+            label: "Fix with AI",
+            onClick: () => runStudioAiFix({ summary: activeModuleName || routeModuleId || "this module" }),
+            primary: true,
+          }]
+        : []),
+      ...studioQuickActions.map((action) => ({
+        key: action.id,
+        label: action.label,
+        onClick: () => runAgentDraftFlow(action.prompt, { focus: action.focus }),
+        outline: true,
+      })),
+    ];
+    return idleActions.length ? { title: "Actions", actions: idleActions } : null;
+  }, [
+    activeModuleName,
+    applyPendingAgentPlan,
+    cancelAgentRun,
+    chatLoading,
+    discardPendingAgentPlan,
+    pendingAgentPlan,
+    pendingStudioPlanInvalid,
+    routeModuleId,
+    runAgentDraftFlow,
+    runStudioAiFix,
+    studioQuickActions,
+    studioValidationErrors,
+    hideStudioQuickActionsForFreshScaffold,
+  ]);
+
   const renderLeftPane = useMemo(() => () => {
     if (providerStatusLoading) {
       return (
@@ -2409,7 +2513,7 @@ function buildPreviewManifest() {
         <div ref={leftPaneRef} className="h-full min-h-0 flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0 overflow-auto space-y-4">
             <div className="chat chat-start">
-              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{t("common.assistant")}</div>
+              <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">AI Studio Assistant</div>
               <div className="chat-bubble text-sm leading-5 max-w-[85%] bg-base-200 text-base-content">
                 Studio AI is currently limited to superadmins.
               </div>
@@ -2433,13 +2537,13 @@ function buildPreviewManifest() {
       );
     }
     return (
-      <div ref={leftPaneRef} className="h-full min-h-0 overflow-hidden">
-        <div className="h-full min-h-0">
+        <div ref={leftPaneRef} className="h-full min-h-0 overflow-hidden">
+          <div className="h-full min-h-0">
           <ScopedAiAssistantPane
             introMessage={routeModuleId
               ? t("settings.studio.agent.describe_change_for_module", { moduleName: activeModuleName })
               : t("settings.studio.agent.intro")}
-            assistantLabel={t("common.assistant")}
+            assistantLabel="AI Studio Assistant"
             userLabel={userLabel}
             messages={chatMessages}
             scrollRef={chatListRef}
@@ -2454,9 +2558,6 @@ function buildPreviewManifest() {
                 detailsTitle={studioPlanProgressItems.length > 0 ? "Plan Progress" : ""}
                 details={studioPlanProgressItems}
                 busy
-                actions={[
-                  { label: "Cancel", onClick: cancelAgentRun, allowWhileBusy: true },
-                ]}
               />
             ) : (!chatLoading && pendingAgentPlan ? (
               <ArtifactAiStageCard
@@ -2468,19 +2569,6 @@ function buildPreviewManifest() {
                 details={pendingAgentPlan.changes?.length ? pendingAgentPlan.changes : studioPlanProgressItems}
                 warnings={pendingAgentPlan.warnings}
                 validation={pendingAgentPlan.validation}
-                actions={[
-                  { label: "Apply draft", onClick: () => applyPendingAgentPlan(), primary: true, disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid },
-                  { label: "Apply + Preview", onClick: () => applyPendingAgentPlan({ openPreview: true }), disabled: !pendingAgentPlan?.draftText || pendingStudioPlanInvalid },
-                  ...(pendingStudioPlanInvalid ? [{
-                    label: "Fix with AI",
-                    onClick: () => runStudioAiFix({
-                      draftTextOverride: pendingAgentPlan?.draftText,
-                      validationOverride: pendingAgentPlan?.validation,
-                      summary: pendingAgentPlan?.summary,
-                    }),
-                  }] : []),
-                  { label: "Discard", onClick: discardPendingAgentPlan },
-                ]}
               />
             ) : null)}
             inputValue={chatInput}
@@ -2489,42 +2577,23 @@ function buildPreviewManifest() {
             inputDisabled={!routeModuleId || chatLoading}
             inputPlaceholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
             minRows={4}
-            composerExtras={studioQuickActions.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {studioQuickActions.map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className="btn btn-xs btn-outline"
-                    disabled={!routeModuleId || chatLoading}
-                    onClick={() => runAgentDraftFlow(action.prompt, { focus: action.focus })}
-                  >
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            actionStrip={studioAgentActionStrip}
           />
         </div>
       </div>
     );
   }, [
     activeModuleName,
-    applyPendingAgentPlan,
-    cancelAgentRun,
     chatInput,
     chatLoading,
     chatMessages,
-    discardPendingAgentPlan,
     handleAgentChat,
     pendingAgentPlan,
     pendingStudioPlanInvalid,
     progressEvents,
-    runAgentDraftFlow,
-    runStudioAiFix,
+    studioAgentActionStrip,
     studioPlanningStatusItems,
     studioPlanProgressItems,
-    studioQuickActions,
     routeModuleId,
     canManageSettings,
     isSuperadmin,

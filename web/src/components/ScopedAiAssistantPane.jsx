@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import AgentChatInput from "../ui/AgentChatInput.jsx";
 import ArtifactAiStageCard from "./ArtifactAiStageCard.jsx";
+import AiActionStrip from "./AiActionStrip.jsx";
 
 function normalizeHistoryCard(card) {
   if (!card || typeof card !== "object") return null;
@@ -26,7 +27,7 @@ export default function ScopedAiAssistantPane({
   inputDisabled = false,
   inputPlaceholder = "",
   minRows = 4,
-  composerExtras = null,
+  actionStrip = null,
 }) {
   const internalScrollRef = useRef(null);
   const activeScrollRef = scrollRef || internalScrollRef;
@@ -77,16 +78,22 @@ export default function ScopedAiAssistantPane({
       </div>
       <div className="shrink-0 border-t border-base-200 pt-3">
         {stageCard ? (
-          <div className="mb-3 space-y-2">
-            <div className="text-[10px] uppercase tracking-wide opacity-60">{assistantLabel}</div>
-            <div className="max-h-[40vh] overflow-y-auto pr-1">
-              {stageCard}
+          <div className="mb-3 chat chat-start">
+            <div className="chat-header text-[10px] uppercase tracking-wide opacity-60">{assistantLabel}</div>
+            <div className={`${bubbleBase} bg-base-200 text-base-content p-0 overflow-hidden`}>
+              <div className="max-h-[40vh] overflow-y-auto">
+                {stageCard}
+              </div>
             </div>
           </div>
         ) : null}
-        {composerExtras ? (
+        {actionStrip ? (
           <div className="mb-3">
-            {composerExtras}
+            <AiActionStrip
+              title={actionStrip?.title || ""}
+              actions={actionStrip?.actions || []}
+              busy={Boolean(actionStrip?.busy)}
+            />
           </div>
         ) : null}
         <AgentChatInput
