@@ -1552,12 +1552,15 @@ function buildPreviewManifest() {
 
   async function sendAgentMessage(userMessage, options = {}) {
     if (!routeModuleId || !userMessage.trim()) return;
+    const liveDraftText = typeof options?.draftTextOverride === "string"
+      ? options.draftTextOverride
+      : (!draftError && typeof draftText === "string" && draftText.trim() ? draftText : null);
     setPendingAgentPlan(null);
     setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
     setChatLoading(true);
     try {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-      const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history, false, options?.focus || null);
+      const res = await studio2AgentChat(routeModuleId, userMessage, liveDraftText, null, null, history, false, options?.focus || null);
       const payload = res.data || {};
       applyAgentPayload(payload, null, payload.diagnostics || null);
     } catch (err) {
@@ -1579,6 +1582,10 @@ function buildPreviewManifest() {
     if (!chatInput.trim()) return;
     const userMessage = chatInput.trim();
     setChatInput("");
+    if (pendingStudioDecisionSlots.length > 0 && pendingStudioDecisionSlots[0]?.allow_free_text) {
+      await submitStudioDecisionText(userMessage);
+      return;
+    }
     await runAgentDraftFlow(userMessage);
   }
 
@@ -1678,10 +1685,47 @@ function buildPreviewManifest() {
     const designWarnings = payload.validation?.design_warnings || [];
     const changeSummary = summarizeChanges(payload.calls || [], payload.ops_by_module || [], t);
     const hasErrors = errors.length + strictErrors.length + completenessErrors.length > 0;
+    const plan = payload.plan && typeof payload.plan === "object" ? payload.plan : {};
+    const requiredQuestions = Array.isArray(plan?.required_questions)
+      ? plan.required_questions.filter((item) => typeof item === "string" && item.trim())
+      : [];
+    const questionMeta = plan?.required_question_meta && typeof plan.required_question_meta === "object"
+      ? plan.required_question_meta
+      : null;
+    const decisionSlots = Array.isArray(plan?.decision_slots)
+      ? plan.decision_slots.filter((item) => item && typeof item === "object")
+      : [];
+    const planAdvisories = Array.isArray(plan?.advisories) ? plan.advisories.filter((item) => typeof item === "string" && item.trim()) : [];
+    const planRisks = Array.isArray(plan?.risk_flags) ? plan.risk_flags.filter((item) => typeof item === "string" && item.trim()) : [];
+    const qualitySectionItems = Array.isArray(plan?.plan_v1?.structured_plan?.sections)
+      ? (plan.plan_v1.structured_plan.sections.find((section) => section && typeof section === "object" && section.key === "quality_fit")?.items || [])
+          .filter((item) => typeof item === "string" && item.trim())
+      : [];
+    const derivedAdvisories = [
+      ...planAdvisories,
+      ...qualitySectionItems,
+      ...designWarnings
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          return String(item.message || item.detail || item.code || "").trim();
+        })
+        .filter(Boolean),
+    ];
+    const derivedRisks = [
+      ...planRisks,
+      ...(hasErrors ? ["The draft still has validation issues and needs review before apply."] : []),
+    ];
     setPendingAgentPlan({
       draftText: nextDraftText,
       summary: assistantMessage,
       changes: changeSummary,
+      advisories: Array.from(new Set(derivedAdvisories)),
+      risks: Array.from(new Set(derivedRisks)),
+      requiredQuestions,
+      questionMeta,
+      decisionSlots,
+      prompt: payload.original_prompt || payload.request_prompt || null,
+      focus: payload.requested_focus || null,
       warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
       validation: payload.validation
         ? {
@@ -1720,6 +1764,8 @@ function buildPreviewManifest() {
           stageTone: "success",
           detailsTitle: "Planned Changes",
           details: pendingAgentPlan.changes || [],
+          advisories: pendingAgentPlan.advisories || [],
+          risks: pendingAgentPlan.risks || [],
           warnings: pendingAgentPlan.warnings || [],
           validation: pendingAgentPlan.validation,
         },
@@ -1742,6 +1788,9 @@ function buildPreviewManifest() {
             stageTone: "ghost",
             detailsTitle: "Planned Changes",
             details: pendingAgentPlan.changes || [],
+            advisories: pendingAgentPlan.advisories || [],
+            risks: pendingAgentPlan.risks || [],
+            requiredQuestions: pendingAgentPlan.requiredQuestions || [],
             warnings: pendingAgentPlan.warnings || [],
             validation: pendingAgentPlan.validation,
           },
@@ -1753,9 +1802,15 @@ function buildPreviewManifest() {
 
   async function runAgentDraftFlow(userMessage, options = {}) {
     if (!routeModuleId) return;
+    const displayText = String(options?.displayText || userMessage || "").trim();
+    const requestMessage = String(options?.requestMessage || userMessage || "").trim();
+    if (!requestMessage) return;
+    const liveDraftText = typeof options?.draftTextOverride === "string"
+      ? options.draftTextOverride
+      : (!draftError && typeof draftText === "string" && draftText.trim() ? draftText : null);
     setPendingAgentPlan(null);
     setChatLoading(true);
-    setChatMessages((prev) => [...prev, { role: "user", text: userMessage, ts: nowIso() }]);
+    setChatMessages((prev) => [...prev, { role: "user", text: displayText || requestMessage, ts: nowIso() }]);
     setProgressEvents([
       { event: "run_started", phase: "start", iter: null, ts_ms: Date.now(), data: { local: true } },
     ]);
@@ -1764,9 +1819,11 @@ function buildPreviewManifest() {
       const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
       const { cancel, promise } = startAgentStream({
         moduleId: routeModuleId,
-        message: userMessage,
+        message: requestMessage,
         chatHistory: history,
+        draftText: liveDraftText,
         focus: options?.focus || null,
+        hints: options?.hints && typeof options.hints === "object" ? options.hints : null,
         onEvent: (evt) => {
           setProgressEvents((prev) => {
             const next = [...prev, evt].slice(-200);
@@ -1796,7 +1853,17 @@ function buildPreviewManifest() {
       }
       try {
         const history = chatMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-        const res = await studio2AgentChat(routeModuleId, userMessage, null, null, null, history, true, options?.focus || null);
+        const res = await studio2AgentChat(
+          routeModuleId,
+          requestMessage,
+          liveDraftText,
+          null,
+          null,
+          history,
+          true,
+          options?.focus || null,
+          options?.hints && typeof options.hints === "object" ? options.hints : null,
+        );
         const payload = res.data || {};
         if (Array.isArray(payload.progress)) {
           setProgressEvents(payload.progress.slice(-200));
@@ -1987,7 +2054,7 @@ function buildPreviewManifest() {
       return bullets.length ? `Planner: ${bullets[0]}` : "Planner finished";
     }
     if (evt.event === "run_started") {
-      return "Run started";
+      return "";
     }
     if (evt.event === "builder_result") {
       const tools = Array.isArray(data.tools_used) && data.tools_used.length ? ` tools: ${data.tools_used.join(", ")}` : "";
@@ -2419,6 +2486,57 @@ function buildPreviewManifest() {
     studioValidationErrors.length,
   ]);
 
+  const pendingStudioDecisionSlots = useMemo(() => (
+    Array.isArray(pendingAgentPlan?.decisionSlots)
+      ? pendingAgentPlan.decisionSlots.filter((item) => item && typeof item === "object")
+      : []
+  ), [pendingAgentPlan?.decisionSlots]);
+  const pendingStudioAssistantMessage = useMemo(() => {
+    if (!chatLoading) return "";
+    const latestProgress = summarizeProgressEvent(progressEvents[progressEvents.length - 1]);
+    return latestProgress || "Working through your request and preparing a validated proposal.";
+  }, [chatLoading, progressEvents]);
+  const pendingStudioAssistantMessages = useMemo(() => {
+    if (!chatLoading) return [];
+    const items = [];
+    if (pendingStudioAssistantMessage) items.push(pendingStudioAssistantMessage);
+    for (const item of studioPlanProgressItems) {
+      if (typeof item === "string" && item.trim()) items.push(item.trim());
+    }
+    for (const item of studioPlanningStatusItems) {
+      if (typeof item === "string" && item.trim()) items.push(item.trim());
+    }
+    return items.filter((item, index) => items.indexOf(item) === index);
+  }, [chatLoading, pendingStudioAssistantMessage, studioPlanProgressItems, studioPlanningStatusItems]);
+
+  const submitStudioDecisionSlotOption = useCallback(async (slot, option) => {
+    if (!pendingAgentPlan?.prompt || !slot || !option) return;
+    const optionValue = typeof option?.value === "string" ? option.value.trim() : "";
+    const optionLabel = typeof option?.label === "string" ? option.label.trim() : optionValue;
+    const hints = option?.hints && typeof option.hints === "object" ? option.hints : {};
+    await runAgentDraftFlow(optionLabel || optionValue, {
+      requestMessage: pendingAgentPlan?.prompt,
+      displayText: optionLabel || optionValue,
+      draftTextOverride: pendingAgentPlan?.draftText || undefined,
+      focus: pendingAgentPlan?.focus || null,
+      hints,
+    });
+  }, [pendingAgentPlan?.focus, pendingAgentPlan?.prompt, runAgentDraftFlow]);
+
+  const submitStudioDecisionText = useCallback(async (rawText) => {
+    const slot = pendingStudioDecisionSlots[0];
+    const text = String(rawText || "").trim();
+    if (!text || !pendingAgentPlan?.prompt || !slot?.allow_free_text) return;
+    const hintField = typeof slot?.hint_field === "string" && slot.hint_field.trim() ? slot.hint_field.trim() : "answer_text";
+    await runAgentDraftFlow(text, {
+      requestMessage: pendingAgentPlan?.prompt,
+      displayText: text,
+      draftTextOverride: pendingAgentPlan?.draftText || undefined,
+      focus: pendingAgentPlan?.focus || null,
+      hints: { [hintField]: text, answer_text: text },
+    });
+  }, [pendingAgentPlan?.focus, pendingAgentPlan?.prompt, pendingStudioDecisionSlots, runAgentDraftFlow]);
+
   const studioAgentActionStrip = useMemo(() => {
     if (chatLoading) {
       return {
@@ -2428,6 +2546,19 @@ function buildPreviewManifest() {
       };
     }
     if (pendingAgentPlan) {
+      if (pendingStudioDecisionSlots.length > 0) {
+        return {
+          title: "Actions",
+          actions: [
+            {
+              key: "discard-proposal",
+              label: "Discard",
+              onClick: discardPendingAgentPlan,
+              outline: true,
+            },
+          ],
+        };
+      }
       return {
         title: "Actions",
         actions: [
@@ -2491,6 +2622,7 @@ function buildPreviewManifest() {
     chatLoading,
     discardPendingAgentPlan,
     pendingAgentPlan,
+    pendingStudioDecisionSlots.length,
     pendingStudioPlanInvalid,
     routeModuleId,
     runAgentDraftFlow,
@@ -2548,36 +2680,34 @@ function buildPreviewManifest() {
             messages={chatMessages}
             scrollRef={chatListRef}
             autoScrollKey={`${chatMessages.length}:${chatLoading ? progressEvents.length : "idle"}:${pendingAgentPlan ? "proposal" : "none"}`}
-            stageCard={chatLoading ? (
+            stageCard={!chatLoading && pendingAgentPlan ? (
               <ArtifactAiStageCard
                 title="Studio Plan"
-                summary={summarizeProgressEvent(progressEvents[progressEvents.length - 1])}
-                stageLabel="Planning"
-                stageTone="warning"
-                statusItems={studioPlanningStatusItems}
-                detailsTitle={studioPlanProgressItems.length > 0 ? "Plan Progress" : ""}
-                details={studioPlanProgressItems}
-                busy
-              />
-            ) : (!chatLoading && pendingAgentPlan ? (
-              <ArtifactAiStageCard
-                title="Studio Plan"
-                summary={pendingAgentPlan.summary}
-                stageLabel={pendingStudioPlanInvalid ? "Needs Fix" : "Ready to Apply"}
-                stageTone={pendingStudioPlanInvalid ? "error" : "primary"}
+                summary=""
+                stageLabel={pendingStudioDecisionSlots.length > 0 ? "Decision Needed" : (pendingStudioPlanInvalid ? "Needs Fix" : "Ready to Apply")}
+                stageTone={pendingStudioDecisionSlots.length > 0 ? "warning" : (pendingStudioPlanInvalid ? "error" : "primary")}
                 detailsTitle="Planned Changes"
                 details={pendingAgentPlan.changes?.length ? pendingAgentPlan.changes : studioPlanProgressItems}
+                advisories={pendingAgentPlan.advisories}
+                risks={pendingAgentPlan.risks}
+                requiredQuestions={pendingAgentPlan.requiredQuestions}
                 warnings={pendingAgentPlan.warnings}
                 validation={pendingAgentPlan.validation}
               />
-            ) : null)}
+            ) : null}
             inputValue={chatInput}
             onInputChange={setChatInput}
             onSend={handleAgentChat}
             inputDisabled={!routeModuleId || chatLoading}
             inputPlaceholder={routeModuleId ? t("settings.studio.agent.placeholder") : t("settings.studio.agent.select_module_first")}
-            minRows={4}
+            minRows={1}
+            decisionSlots={pendingStudioDecisionSlots}
+            onSelectDecisionSlotOption={submitStudioDecisionSlotOption}
             actionStrip={studioAgentActionStrip}
+            pendingAssistantMessage={pendingStudioAssistantMessage}
+            pendingAssistantMessages={pendingStudioAssistantMessages}
+            inputBusy={chatLoading}
+            inputBusyLabel={pendingStudioAssistantMessage}
           />
         </div>
       </div>
@@ -2589,8 +2719,11 @@ function buildPreviewManifest() {
     chatMessages,
     handleAgentChat,
     pendingAgentPlan,
+    pendingStudioDecisionSlots,
+    pendingStudioAssistantMessages,
     pendingStudioPlanInvalid,
     progressEvents,
+    submitStudioDecisionSlotOption,
     studioAgentActionStrip,
     studioPlanningStatusItems,
     studioPlanProgressItems,

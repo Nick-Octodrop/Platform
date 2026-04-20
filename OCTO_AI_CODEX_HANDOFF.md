@@ -65,6 +65,39 @@ The semantic planner now returns a structured `plan_v1` object from `app/main.py
 - Weak semantic summaries are rejected and fall back to deterministic summaries.
 - Semantic sections are merged with deterministic fallback sections instead of replacing useful detail.
 
+## Current Architecture Worklist
+
+These items are in the active improvement lane and should stay aligned across Studio AI, scoped artifact AIs, and Octo AI:
+
+- Shared capability registry for modules, automations, email templates, and document templates
+- Shared prompt heuristics and focus modes across Octo + scoped AIs
+- Deterministic manifest-contract validation for fields, workflows, actions, conditions, templates, and automations
+- Shared module authoring contract with domain heuristics and quality scoring
+- Line-item, cross-module, and handoff coverage in tests
+- Structured decision-slot planning
+  - planner should build the full safe draft first
+  - unresolved recipient/template/target choices should be surfaced as structured slots
+  - current implemented slot producers cover module/entity target selection for ambiguous workspace changes, shared field-target selection for ambiguous module edits, shared tab-target/section-target/page-target/view-target selection for ambiguous module placement and layout changes, notification recipients, plus email/document template selection for automation drafts, including create-new companion template drafts when selected
+  - selected page/view targets now also narrow executable module-edit ops in Octo and module-op preflight for page/view surface changes instead of just gating ambiguity
+  - existing-page dashboard requests with a resolved page target now have a deterministic starter `add_page_block` path using `stat_cards`
+  - dashboard stat cards now infer `count`, `sum:<field>`, or `count_distinct:<field>` from real manifest-backed entity fields when possible, and only fall back to advisories when no safe richer measure can be inferred
+  - Studio `ensure_ui_pattern` now reuses that same dashboard stat-card inference for existing dashboard-page requests, so Studio and Octo share one backend page-authoring contract
+  - the same shared dashboard metric specs now also populate `interfaces.dashboardable.default_widgets` when a grouped widget is possible, so grouped widgets and page stat cards stay aligned on `group_by` and `measure`
+  - when a matching graph view already exists, Studio now also reuses those same shared dashboard metric specs to seed the graph view `default` (`type`, `group_by`, `measure`)
+  - when a dashboard page already has grouped `view_modes`, Studio now also reuses those same shared grouped defaults to seed `graph` / `pivot` mode `default_group_by`
+  - Octo workspace planning now reuses that same shared dashboard surface bundle for existing dashboard-page requests, so it can emit aligned `add_page_block`, `update_view`, and `update_page` ops instead of only adding stat cards
+  - broader Octo dashboard/reporting requests can now auto-target one clear existing dashboard page, ask for a dashboard-page choice when several candidates exist, offer a structured reuse-vs-create dashboard-page choice when a soft home/overview page is plausible, or create a starter dashboard page and then reuse that same shared dashboard surface bundle when no dashboard page exists yet
+  - broader Octo dashboard/reporting requests now also narrow module targeting before page targeting: one clear analytics module can be auto-scoped, while several plausible modules produce a narrowed dashboard-module choice slot instead of a generic preview fallback
+  - once the analytics module is chosen, broader Octo dashboard/reporting requests now also narrow entity targeting before page targeting: one clear reporting entity can be auto-scoped, while several plausible entities produce a narrowed dashboard-entity choice slot instead of defaulting to the first entity
+  - once analytics module/entity/page targeting is resolved, broader Octo dashboard/reporting requests can now also return a narrowed dashboard-metric choice slot when multiple real numeric or grouping fields are plausible, and the selected metric/grouping is threaded back through the shared dashboard surface bundle
+  - scoped template AI now uses the same slot pattern for missing entity selection and default email-connection selection
+  - scoped Studio AI now uses the same slot pattern for ambiguous entity, field, form-tab, form-section, page, and view targets before builder execution
+  - UI should prefer real system options plus free-text fallback where needed
+  - apply should stay gated only on slots that materially affect correctness
+- Shared stage-card feedback
+  - scoped AIs should surface required input, advisories, and risks in the same plan-stage card shape
+  - quality/risk feedback should not live only in Octo workspace plans
+
 ## Key Product Decisions
 
 ### Sandbox/session model

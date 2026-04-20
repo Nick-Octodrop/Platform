@@ -1,0 +1,36 @@
+{
+  "module": {
+    "id": "construction",
+    "key": "construction",
+    "name": "Construction"
+  },
+  "entities": [],
+  "views": [],
+  "pages": [
+    {
+      "id": "construction.dashboard_page",
+      "title": "Operations Dashboard",
+      "layout": "single",
+      "content": [
+        {
+          "kind": "stat_cards",
+          "cards": [
+            {
+              "id": "materials_logged_today",
+              "label": "Materials Logged Today",
+              "entity_id": "entity.material_log",
+              "measure": "count"
+            },
+            {
+              "id": "cost_breakdown_today",
+              "label": "Cost Breakdown Today",
+              "entity_id": "entity.cost_log",
+              "measure": "sum:cost_log.amount"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": []
+}

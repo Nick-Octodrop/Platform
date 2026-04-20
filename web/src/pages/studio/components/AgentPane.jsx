@@ -58,7 +58,7 @@ export default function AgentPane({ onApply, onValidate, onPreview, disabled }) 
                 }}
                 disabled={disabled}
                 placeholder={t("settings.studio.agent.placeholder")}
-                minRows={4}
+                minRows={1}
               />
             </div>
           )}

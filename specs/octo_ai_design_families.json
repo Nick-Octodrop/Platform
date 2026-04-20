@@ -3,6 +3,7 @@
     "icon_key": "lucide:Dumbbell",
     "minimum_business_fields": 8,
     "default_module_name": "Training Tracker",
+    "preferred_views": ["list", "form", "calendar", "graph"],
     "purpose_name_rules": [
       {"match_any": ["gym", "workout", "exercise", "fitness"], "name": "Gym Training"}
     ],
@@ -35,6 +36,8 @@
     "icon_key": "lucide:ChefHat",
     "minimum_business_fields": 8,
     "default_module_name": "Recipe Book",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "purpose_name_rules": [
       {"match_any": ["ingredient", "ingredients", "pantry"], "name": "Kitchen Recipes"}
     ],
@@ -61,11 +64,81 @@
       {"suffix": "attachments", "type": "attachments", "label": "Photos"}
     ]
   },
+  "influencer": {
+    "icon_key": "lucide:BadgePercent",
+    "minimum_business_fields": 10,
+    "default_module_name": "Influencers",
+    "default_list_mode": "list",
+    "preferred_views": ["list", "form", "kanban", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["instagram influencer", "instagram influencers", "influencer", "influencers", "creator outreach", "influencer outreach"], "name": "Influencers"}
+    ],
+    "detect_any": ["instagram influencer", "instagram influencers", "creator outreach", "influencer outreach", "creator seeding", "instagram handle", "creator handle", "affiliate code", "coupon code"],
+    "detect_all": [
+      ["instagram", "influencer"],
+      ["influencer", "catalog"],
+      ["influencer", "followers"],
+      ["coupon", "followers"],
+      ["coupon", "purchases"],
+      ["creator", "catalog"]
+    ],
+    "primary_label": "Influencer Name",
+    "summary_template": "{module_name} with creator profiles, coupon tracking, performance signals, and sent-product line items.",
+    "statuses": [
+      {"value": "prospect", "label": "Prospect"},
+      {"value": "sent_products", "label": "Sent Products"},
+      {"value": "active", "label": "Active"},
+      {"value": "not_a_fit", "label": "Not A Fit"},
+      {"value": "archived", "label": "Archived"}
+    ],
+    "fields": [
+      {"suffix": "instagram_handle", "type": "string", "label": "Instagram Handle", "required": true},
+      {"suffix": "platform", "type": "enum", "label": "Platform", "default": "instagram", "options": [
+        {"label": "Instagram", "value": "instagram"},
+        {"label": "TikTok", "value": "tiktok"},
+        {"label": "YouTube", "value": "youtube"},
+        {"label": "Other", "value": "other"}
+      ]},
+      {"suffix": "coupon_code", "type": "string", "label": "Coupon Code"},
+      {"suffix": "follower_count", "type": "number", "label": "Followers"},
+      {"suffix": "purchase_count", "type": "number", "label": "Purchases"},
+      {"suffix": "engagement_rate", "type": "number", "label": "Engagement Rate (%)"},
+      {"suffix": "performance_rating", "type": "enum", "label": "Performance Rating", "options": [
+        {"label": "Great", "value": "great"},
+        {"label": "Good", "value": "good"},
+        {"label": "Average", "value": "average"},
+        {"label": "Poor", "value": "poor"}
+      ]},
+      {"suffix": "last_send_date", "type": "date", "label": "Last Send Date"},
+      {"suffix": "last_post_date", "type": "date", "label": "Last Post Date"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "sent_product",
+        "entity_label": "Sent Product",
+        "nav_label": "Products Sent",
+        "related_title": "Products Sent",
+        "related_tab_label": "Products Sent",
+        "fields": [
+          {"id": "catalog_item", "type": "string", "label": "Catalog Item", "required": true},
+          {"id": "sku", "type": "string", "label": "SKU"},
+          {"id": "quantity", "type": "number", "label": "Quantity", "required": true, "default": 1},
+          {"id": "unit_value", "type": "number", "label": "Unit Value"},
+          {"id": "line_total", "type": "number", "label": "Line Total"},
+          {"id": "sent_on", "type": "date", "label": "Sent On"},
+          {"id": "notes", "type": "text", "label": "Notes"}
+        ]
+      }
+    ]
+  },
   "commerce": {
     "icon_key": "lucide:BadgeDollarSign",
     "minimum_business_fields": 10,
     "default_module_name": "Spend & Sales Tracker",
     "default_list_mode": "list",
+    "preferred_views": ["list", "form", "graph", "pivot"],
     "purpose_name_rules": [
       {"match_any": ["catalog", "owed", "profit", "margin", "online shop", "shop"], "name": "Spend & Sales Tracker"}
     ],
@@ -111,6 +184,7 @@
     "minimum_business_fields": 8,
     "default_module_name": "Sales Pipeline",
     "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "purpose_name_rules": [
       {"match_any": ["candidate", "recruit", "hiring", "interview"], "name": "Candidate Pipeline"}
     ],
@@ -139,6 +213,7 @@
     "icon_key": "lucide:CalendarDays",
     "minimum_business_fields": 8,
     "default_module_name": "Planning Hub",
+    "preferred_views": ["list", "form", "calendar", "graph"],
     "purpose_name_rules": [
       {"match_any": ["holiday", "trip", "travel", "itinerary"], "name": "Holiday Planning"}
     ],
@@ -161,10 +236,55 @@
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
     ]
   },
+  "fleet": {
+    "icon_key": "lucide:Truck",
+    "minimum_business_fields": 9,
+    "default_module_name": "Fleet Maintenance",
+    "default_list_mode": "list",
+    "preferred_views": ["list", "form", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["vehicle maintenance", "fleet maintenance"], "name": "Fleet Maintenance"}
+    ],
+    "detect_any": ["odometer", "registration number", "service history", "next service"],
+    "detect_all": [
+      ["vehicle", "maintenance"],
+      ["fleet", "maintenance"],
+      ["vehicle", "service"],
+      ["fleet", "service"],
+      ["asset", "maintenance"]
+    ],
+    "primary_label": "Vehicle Name",
+    "summary_template": "{module_name} with vehicle records, maintenance history, service due dates, and condition tracking.",
+    "statuses": [
+      {"value": "active", "label": "Active"},
+      {"value": "inactive", "label": "Inactive"},
+      {"value": "retired", "label": "Retired"}
+    ],
+    "fields": [
+      {"suffix": "registration_number", "type": "string", "label": "Registration Number"},
+      {"suffix": "make", "type": "string", "label": "Make"},
+      {"suffix": "model", "type": "string", "label": "Model"},
+      {"suffix": "year", "type": "number", "label": "Year"},
+      {"suffix": "odometer", "type": "number", "label": "Odometer"},
+      {"suffix": "service_due_date", "type": "date", "label": "Next Service Date"},
+      {"suffix": "last_service_date", "type": "date", "label": "Last Service Date"},
+      {"suffix": "driver_name", "type": "string", "label": "Assigned Driver"},
+      {"suffix": "location", "type": "string", "label": "Location"},
+      {"suffix": "condition", "type": "enum", "label": "Condition", "options": [
+        {"label": "Good", "value": "good"},
+        {"label": "Fair", "value": "fair"},
+        {"label": "Needs Attention", "value": "needs_attention"},
+        {"label": "Out Of Service", "value": "out_of_service"}
+      ]},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
   "request": {
     "icon_key": "lucide:ClipboardList",
     "minimum_business_fields": 8,
     "default_module_name": "Request Management",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "purpose_name_rules": [
       {"match_any": ["purchase", "procurement", "vendor"], "name": "Purchase Requests"}
     ],
@@ -198,6 +318,7 @@
     "icon_key": "lucide:ShieldCheck",
     "minimum_business_fields": 8,
     "default_module_name": "Compliance Tracker",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "detect_any": ["vendor compliance", "supplier compliance", "insurance expiry", "insurance renewal", "safety docs", "safety documents", "approved categories", "review notes"],
     "detect_all": [["compliance", "vendor"], ["compliance", "supplier"], ["compliance", "insurance"], ["compliance", "certificate"], ["compliance", "onboarding"]],
     "primary_label": "Compliance Item",
@@ -228,6 +349,7 @@
     "icon_key": "lucide:Shield",
     "minimum_business_fields": 8,
     "default_module_name": "Safety Assessments",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "detect_any": ["job hazard analysis", "hazard analysis", "hazard assessment", "risk assessment", "safe work method"],
     "detect_all": [["hazard", "controls"], ["hazard", "signoff"], ["risk", "signoff"]],
     "primary_label": "Assessment Title",
@@ -254,6 +376,7 @@
     "icon_key": "lucide:ShieldAlert",
     "minimum_business_fields": 8,
     "default_module_name": "Incident Tracking",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "detect_any": ["incident", "safety", "audit finding", "finding", "quality audit", "audit action"],
     "primary_label": "Title",
     "summary_template": "{module_name} with incident lifecycle, severity, and follow-up tracking.",
@@ -282,6 +405,7 @@
     "icon_key": "lucide:Archive",
     "minimum_business_fields": 8,
     "default_module_name": "Operations Register",
+    "preferred_views": ["list", "form", "graph"],
     "detect_any": ["register", "logbook", "vehicle", "fleet", "tool", "asset", "stocktake", "checkout", "fuel"],
     "primary_label": "Name",
     "summary_template": "{module_name} with register-style records, condition tracking, and service history.",
@@ -309,6 +433,8 @@
     "icon_key": "lucide:Briefcase",
     "minimum_business_fields": 8,
     "default_module_name": "Delivery Work",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "purpose_name_rules": [
       {"match_any": ["contracting", "contract work", "freelance", "client work"], "name": "Software Delivery"},
       {"match_any": ["software", "engineering", "development", "sprint", "release", "repository", "repo"], "name": "Delivery Work"}
@@ -347,6 +473,8 @@
     "icon_key": "lucide:ListChecks",
     "minimum_business_fields": 6,
     "default_module_name": "Work Tracker",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "detect_any": ["onboarding", "compliance"],
     "primary_label": "Title",
     "summary_template": "{module_name} with assignable workflow records and completion tracking.",
@@ -367,6 +495,7 @@
   "generic": {
     "icon_key": "lucide:Package",
     "minimum_business_fields": 6,
+    "preferred_views": ["list", "form", "kanban", "graph"],
     "primary_label": "Title",
     "summary_template": "{module_name} with operational records, priorities, and notes.",
     "statuses": [

@@ -1252,6 +1252,40 @@ def _resolve_step_value(value: object, ctx: dict) -> object:
     return _resolve_value(value, ctx)
 
 
+def _resolve_action_inputs(step: dict, ctx: dict) -> dict:
+    if not isinstance(step, dict):
+        return {}
+    raw_inputs = step.get("inputs")
+    if not isinstance(raw_inputs, dict):
+        return {}
+    action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
+    if action_id != "system.send_email":
+        return _resolve_inputs(raw_inputs, ctx)
+    preserved_template_keys = {"subject", "body_html", "body_text", "to_expr"}
+    resolved: dict[str, object] = {}
+    for key, value in raw_inputs.items():
+        if key in preserved_template_keys and isinstance(value, str):
+            resolved[key] = value
+            continue
+        if key == "to":
+            if isinstance(value, str) and "{{" in value:
+                resolved[key] = value
+                continue
+            if isinstance(value, list):
+                preserved_items: list[object] = []
+                should_preserve = False
+                for item in value:
+                    if isinstance(item, str) and "{{" in item:
+                        preserved_items.append(item)
+                        should_preserve = True
+                    else:
+                        preserved_items.append(_resolve_value(item, ctx))
+                resolved[key] = preserved_items if should_preserve else _resolve_value(value, ctx)
+                continue
+        resolved[key] = _resolve_value(value, ctx)
+    return resolved
+
+
 def _coerce_json_like_value(value: object) -> object:
     if not isinstance(value, str):
         return value
@@ -2012,7 +2046,30 @@ def _lookup_email_from_record(target_entity_id: str | None, target_record_id: st
 def _resolve_recipients(inputs: dict, context: dict, record_data: dict, entity_id: str | None, entity_def: dict | None) -> list[str]:
     recipients: list[str] = []
     # Explicit manual addresses are always additive.
-    recipients.extend(_split_recipients(inputs.get("to")))
+    raw_to = inputs.get("to")
+    rendered_to_values: list[str] = []
+    if isinstance(raw_to, list):
+        for item in raw_to:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            text = item.strip()
+            if "{{" in text or "}}" in text:
+                try:
+                    text = render_template(text, context, strict=False)
+                except Exception:
+                    text = ""
+            if text:
+                rendered_to_values.append(text)
+    elif isinstance(raw_to, str) and raw_to.strip():
+        text = raw_to.strip()
+        if "{{" in text or "}}" in text:
+            try:
+                text = render_template(text, context, strict=False)
+            except Exception:
+                text = ""
+        if text:
+            rendered_to_values.append(text)
+    recipients.extend(_split_recipients(rendered_to_values))
     recipients.extend(_split_recipients(inputs.get("to_internal_emails")))
 
     # Record fields can contribute recipients.
@@ -2286,13 +2343,14 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             record_id = None
         record_data = _fetch_record_payload(entity_id, record_id)
         entity_def = _find_entity_def(entity_id)
-        enriched_record = app_main._enrich_template_record(record_data, entity_def)
-        context = {
-            "record": enriched_record,
-            "entity_id": entity_id,
-            "trigger": ctx.get("trigger") or {},
-            **app_main._branding_context_for_org(get_org_id()),
-        }
+        context = app_main._build_template_render_context(
+            record_data if isinstance(record_data, dict) else {},
+            entity_def,
+            entity_id,
+            app_main._branding_context_for_org(get_org_id()),
+        )
+        context["trigger"] = ctx.get("trigger") or {}
+        enriched_record = context.get("record") if isinstance(context.get("record"), dict) else {}
         subject = inputs.get("subject") or (template.get("subject") if template else None)
         if not subject:
             raise RuntimeError("Email subject required")
@@ -3025,7 +3083,7 @@ def _execute_step_runtime(
         _record_step_output(ctx, step_id, output, step)
         return output
     if kind == "action":
-        inputs = _resolve_inputs(step.get("inputs"), ctx)
+        inputs = _resolve_action_inputs(step, ctx)
         inputs["idempotency_key"] = f"{run_id}:{step_prefix}:0"
         output = _handle_action(step, inputs, ctx, job_store)
         _record_step_output(ctx, step_id, output, step)

@@ -10,6 +10,8 @@ Layout baseline (required unless user asks otherwise):
 - Provide `list_page` and `form_page` for each primary entity.
 - Use page headers with `variant: none` by default.
 - Wrap major content in `container` cards.
+- Prefer a single card-wrapped `view_modes` surface for list-family pages when multiple modes exist.
+- Add list-header search when the entity has clear searchable business fields; search config must use real field ids and not placeholder/invented fields.
 - Use form page `grid` with 12 columns: form card (`span: 8`) + activity card (`span: 4`).
 - Keep chatter/activity in a separate right-side card, not mixed inside form card.
 - Nav targets must always be `page:<id>`.

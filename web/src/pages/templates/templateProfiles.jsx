@@ -11,6 +11,7 @@ import ListViewRenderer from "../../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../../ui/SystemListToolbar.jsx";
 import { translateRuntime } from "../../i18n/runtime.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
+import { buildTemplateEntityOptions, getTemplateEntityId, setTemplateEntityId } from "./templateEntityState.js";
 
 function Fieldset({ label, hint, optional = false, className = "", children }) {
   return (
@@ -41,6 +42,14 @@ function SectionGroup({ title, description, children, className = "" }) {
 }
 
 function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
+  const selectedEntityId = getTemplateEntityId(draft);
+  const entityOptions = buildTemplateEntityOptions(entities, selectedEntityId);
+
+  function handleEntityChange(nextEntityId) {
+    setDraft((prev) => setTemplateEntityId(prev, nextEntityId));
+    setSample((prev) => ({ ...(prev || {}), entity_id: nextEntityId, record_id: "" }));
+  }
+
   return (
     <div className="space-y-4">
       <SectionGroup
@@ -65,11 +74,11 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
           <Fieldset label={translateRuntime("common.entity")} hint={translateRuntime("settings.template_studio.template_entity_hint")}>
             <AppSelect
               className="select select-bordered"
-              value={sample?.entity_id || ""}
-              onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
+              value={selectedEntityId}
+              onChange={(e) => handleEntityChange(e.target.value)}
             >
               <option value="">{translateRuntime("settings.template_studio.select_entity")}</option>
-              {entities.map((ent) => (
+              {entityOptions.map((ent) => (
                 <option key={ent.id} value={ent.id}>
                   {ent.label || ent.id}
                 </option>
@@ -167,6 +176,109 @@ function DocumentTemplateTab({ draft, setDraft, sample, setSample, entities }) {
   );
 }
 
+function EmailTemplateComposeTab({ draft, setDraft, connections, setSample, entities, t }) {
+  const selectedEntityId = getTemplateEntityId(draft);
+  const entityOptions = buildTemplateEntityOptions(entities, selectedEntityId);
+
+  function handleEntityChange(nextEntityId) {
+    setDraft((prev) => setTemplateEntityId(prev, nextEntityId));
+    setSample((prev) => ({ ...(prev || {}), entity_id: nextEntityId, record_id: "" }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionGroup
+        title={t("settings.template_studio.template_details")}
+        description={t("settings.template_studio.email_template_details_description")}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Fieldset label={t("common.name")}>
+            <input
+              className="input input-bordered"
+              value={draft?.name || ""}
+              onChange={(e) => setDraft((prev) => ({ ...(prev || {}), name: e.target.value }))}
+            />
+          </Fieldset>
+          <Fieldset label={t("common.description")} optional>
+            <input
+              className="input input-bordered"
+              value={draft?.description || ""}
+              onChange={(e) => setDraft((prev) => ({ ...(prev || {}), description: e.target.value }))}
+            />
+          </Fieldset>
+          <Fieldset label={t("common.entity")} hint={t("settings.template_studio.template_entity_hint")} className="md:col-start-1">
+            <AppSelect
+              className="select select-bordered"
+              value={selectedEntityId}
+              onChange={(e) => handleEntityChange(e.target.value)}
+            >
+              <option value="">{t("settings.template_studio.select_entity")}</option>
+              {entityOptions.map((ent) => (
+                <option key={ent.id} value={ent.id}>
+                  {ent.label || ent.id}
+                </option>
+              ))}
+            </AppSelect>
+          </Fieldset>
+          <Fieldset label={t("common.connection")} optional>
+            {connections.length > 0 ? (
+              <AppSelect
+                className="select select-bordered"
+                value={draft?.default_connection_id || ""}
+                onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value || null }))}
+              >
+                <option value="">{t("settings.template_studio.use_default_connection")}</option>
+                {connections.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.name || conn.id}
+                  </option>
+                ))}
+              </AppSelect>
+            ) : (
+              <input
+                className="input input-bordered"
+                placeholder={t("settings.template_studio.connection_id_placeholder")}
+                value={draft?.default_connection_id || ""}
+                onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value }))}
+              />
+            )}
+          </Fieldset>
+        </div>
+      </SectionGroup>
+      <SectionGroup
+        title={t("settings.template_studio.message_content")}
+        description={t("settings.template_studio.message_content_description")}
+      >
+        <div className="grid grid-cols-1 gap-4">
+          <Fieldset label={t("settings.template_studio.subject_jinja")}>
+            <input
+              className="input input-bordered"
+              value={draft?.subject || ""}
+              onChange={(e) => setDraft((prev) => ({ ...(prev || {}), subject: e.target.value }))}
+            />
+          </Fieldset>
+          <Fieldset label={t("settings.template_studio.body_html_jinja")}>
+            <CodeTextarea
+              value={draft?.body_html || ""}
+              onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_html: e.target.value }))}
+              textareaClassName="resize-none"
+              minHeight="260px"
+            />
+          </Fieldset>
+          <Fieldset label={t("settings.template_studio.text_fallback")} optional>
+            <CodeTextarea
+              value={draft?.body_text || ""}
+              onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_text: e.target.value }))}
+              textareaClassName="resize-none"
+              minHeight="120px"
+            />
+          </Fieldset>
+        </div>
+      </SectionGroup>
+    </div>
+  );
+}
+
 export function getEmailTemplateProfile(t = translateRuntime) {
   return {
     kind: "email",
@@ -184,97 +296,15 @@ export function getEmailTemplateProfile(t = translateRuntime) {
     {
       id: "compose",
       label: t("settings.template_studio.compose"),
-      render: ({ draft, setDraft, connections = [], sample, setSample, entities }) => (
-        <div className="space-y-4">
-          <SectionGroup
-            title={t("settings.template_studio.template_details")}
-            description={t("settings.template_studio.email_template_details_description")}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Fieldset label={t("common.name")}>
-                <input
-                  className="input input-bordered"
-                  value={draft?.name || ""}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev || {}), name: e.target.value }))}
-                />
-              </Fieldset>
-              <Fieldset label={t("common.description")} optional>
-                <input
-                  className="input input-bordered"
-                  value={draft?.description || ""}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev || {}), description: e.target.value }))}
-                />
-              </Fieldset>
-              <Fieldset label={t("common.entity")} hint={t("settings.template_studio.template_entity_hint")} className="md:col-start-1">
-                <AppSelect
-                  className="select select-bordered"
-                  value={sample?.entity_id || ""}
-                  onChange={(e) => setSample({ ...sample, entity_id: e.target.value, record_id: "" })}
-                >
-                  <option value="">{t("settings.template_studio.select_entity")}</option>
-                  {entities.map((ent) => (
-                    <option key={ent.id} value={ent.id}>
-                      {ent.label || ent.id}
-                    </option>
-                  ))}
-                </AppSelect>
-              </Fieldset>
-              <Fieldset label={t("common.connection")} optional>
-                {connections.length > 0 ? (
-                  <AppSelect
-                    className="select select-bordered"
-                    value={draft?.default_connection_id || ""}
-                    onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value || null }))}
-                  >
-                    <option value="">{t("settings.template_studio.use_default_connection")}</option>
-                    {connections.map((conn) => (
-                      <option key={conn.id} value={conn.id}>
-                        {conn.name || conn.id}
-                      </option>
-                    ))}
-                  </AppSelect>
-                ) : (
-                  <input
-                    className="input input-bordered"
-                    placeholder={t("settings.template_studio.connection_id_placeholder")}
-                    value={draft?.default_connection_id || ""}
-                    onChange={(e) => setDraft((prev) => ({ ...(prev || {}), default_connection_id: e.target.value }))}
-                  />
-                )}
-              </Fieldset>
-            </div>
-          </SectionGroup>
-          <SectionGroup
-            title={t("settings.template_studio.message_content")}
-            description={t("settings.template_studio.message_content_description")}
-          >
-            <div className="grid grid-cols-1 gap-4">
-              <Fieldset label={t("settings.template_studio.subject_jinja")}>
-                <input
-                  className="input input-bordered"
-                  value={draft?.subject || ""}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev || {}), subject: e.target.value }))}
-                />
-              </Fieldset>
-              <Fieldset label={t("settings.template_studio.body_html_jinja")}>
-                <CodeTextarea
-                  value={draft?.body_html || ""}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_html: e.target.value }))}
-                  textareaClassName="resize-none"
-                  minHeight="260px"
-                />
-              </Fieldset>
-              <Fieldset label={t("settings.template_studio.text_fallback")} optional>
-                <CodeTextarea
-                  value={draft?.body_text || ""}
-                  onChange={(e) => setDraft((prev) => ({ ...(prev || {}), body_text: e.target.value }))}
-                  textareaClassName="resize-none"
-                  minHeight="120px"
-                />
-              </Fieldset>
-            </div>
-          </SectionGroup>
-        </div>
+      render: ({ draft, setDraft, connections = [], setSample, entities }) => (
+        <EmailTemplateComposeTab
+          draft={draft}
+          setDraft={setDraft}
+          connections={connections}
+          setSample={setSample}
+          entities={entities}
+          t={t}
+        />
       ),
     },
     {
@@ -438,6 +468,7 @@ function EmailPreviewTab({
   const [rendering, setRendering] = useState(false);
   const zoom = Math.max(0.5, Math.min(1, zoomPct / 100));
   const showPreviewFrame = Boolean(previewState?.rendered_html);
+  const previewError = typeof previewState?.error === "string" ? previewState.error.trim() : "";
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
@@ -474,6 +505,11 @@ function EmailPreviewTab({
           {translateRuntime("settings.template_studio.choose_entity_preview_email")}
         </div>
       )}
+      {previewError ? (
+        <div className="rounded-box border border-error/30 bg-error/10 p-3 text-sm text-error">
+          {previewError}
+        </div>
+      ) : null}
       <div className={`flex-1 min-h-0 border border-base-200 rounded-xl overflow-hidden bg-base-100 ${showPreviewFrame ? "" : "hidden"}`}>
         {showPreviewFrame && (
           <>
@@ -521,15 +557,37 @@ function DocPreviewTab({
   const [previewUrl, setPreviewUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   useEffect(() => {
     let revokedUrl = "";
+    let inlineUrl = "";
     async function loadPdf() {
+      const inlinePdf = typeof previewState?.pdf_base64 === "string" ? previewState.pdf_base64.trim() : "";
+      if (inlinePdf) {
+        try {
+          const binary = atob(inlinePdf);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          inlineUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+          setPreviewUrl(inlineUrl);
+          setPreviewError("");
+          return;
+        } catch (err) {
+          setPreviewUrl("");
+          setPreviewError(err?.message || translateRuntime("settings.template_studio.preview_failed"));
+          return;
+        }
+      }
       if (!previewState?.attachment_id) {
         setPreviewUrl("");
+        setPreviewError(previewState?.error || "");
         return;
       }
       setLoading(true);
+      setPreviewError("");
       try {
         const session = await getSafeSession();
         const token = session?.access_token;
@@ -542,12 +600,25 @@ function DocPreviewTab({
         });
         if (!res.ok) {
           setPreviewUrl("");
+          let message = translateRuntime("settings.template_studio.preview_failed");
+          try {
+            const payload = await res.json();
+            if (payload?.message && typeof payload.message === "string" && payload.message.trim()) {
+              message = payload.message.trim();
+            }
+          } catch {
+            // ignore response parsing failures
+          }
+          setPreviewError(message);
           return;
         }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         revokedUrl = url;
         setPreviewUrl(url);
+      } catch (err) {
+        setPreviewUrl("");
+        setPreviewError(err?.message || translateRuntime("settings.template_studio.preview_failed"));
       } finally {
         setLoading(false);
       }
@@ -557,8 +628,11 @@ function DocPreviewTab({
       if (revokedUrl) {
         URL.revokeObjectURL(revokedUrl);
       }
+      if (inlineUrl) {
+        URL.revokeObjectURL(inlineUrl);
+      }
     };
-  }, [previewState?.attachment_id, previewState?.workspace_id]);
+  }, [previewState?.attachment_id, previewState?.workspace_id, previewState?.pdf_base64, previewState?.error]);
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
@@ -596,6 +670,11 @@ function DocPreviewTab({
         {loading && (
           <div className="w-full h-full flex items-center justify-center">
             <span className="loading loading-spinner loading-lg text-primary" />
+          </div>
+        )}
+        {!loading && previewError && (
+          <div className="w-full h-full flex items-center justify-center p-6 text-sm text-error text-center">
+            {previewError}
           </div>
         )}
         {!loading && previewUrl && (

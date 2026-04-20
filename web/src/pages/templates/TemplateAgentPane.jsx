@@ -7,7 +7,7 @@ import ProviderUnavailableState from "../../components/ProviderUnavailableState.
 import LoadingSpinner from "../../components/LoadingSpinner.jsx";
 import ArtifactAiStageCard from "../../components/ArtifactAiStageCard.jsx";
 import ScopedAiAssistantPane from "../../components/ScopedAiAssistantPane.jsx";
-import { apiFetch } from "../../api.js";
+import { apiFetch, startArtifactAiPlanStream } from "../../api.js";
 import { getArtifactQuickActions } from "../../aiCapabilities.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
@@ -58,7 +58,116 @@ function isHtmlStarterValue(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
-  return normalized === "<p>hello</p>" || normalized === "<p>hello</p>\n";
+  return normalized === "<p>hello</p>"
+    || normalized === "<p>hello</p>\n"
+    || normalized.includes("data-octo-starter=\"email-template\"")
+    || normalized.includes("data-octo-starter=\"document-template\"");
+}
+
+function humanizeProgressLabel(value, { stripEntityPrefix = false } = {}) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  let text = value.trim();
+  if (stripEntityPrefix) {
+    text = text.replace(/^entity\./, "");
+  }
+  return text.replaceAll("_", " ").replaceAll("-", " ").trim();
+}
+
+function summarizeTemplatePlanProgressEvent(evt, templateLabel) {
+  if (!evt || typeof evt !== "object") return "";
+  const data = evt.data && typeof evt.data === "object" ? evt.data : {};
+  if (typeof data.summary === "string" && data.summary.trim()) {
+    return data.summary.trim();
+  }
+  if (evt.event === "run_started") return "";
+  if (evt.event === "context_resolved") {
+    if (typeof data.profile_summary === "string" && data.profile_summary.trim()) {
+      return data.profile_summary.trim();
+    }
+    const entityLabel = humanizeProgressLabel(data.selected_entity_label || data.selected_entity_id, { stripEntityPrefix: true });
+    const focusLabel = humanizeProgressLabel(data.requested_focus_label || data.requested_focus);
+    const supportsLineItems = Boolean(data.supports_line_items);
+    const usesTableLayout = Boolean(data.uses_table_layout);
+    const usesLogoReference = Boolean(data.uses_logo_reference);
+    const hasButtonLikeCta = Boolean(data.has_button_like_cta);
+    const hasHeaderFooterSections = Boolean(data.has_header_footer_sections);
+    let draftShape = "";
+    if (templateLabel === "document template") {
+      if (usesTableLayout && supportsLineItems) {
+        draftShape = "line-item table layout";
+      } else if (hasHeaderFooterSections) {
+        draftShape = "header and footer layout";
+      } else if (usesLogoReference) {
+        draftShape = "branded layout";
+      }
+    } else if (usesTableLayout && supportsLineItems) {
+      draftShape = "line-item email layout";
+    } else if (hasButtonLikeCta) {
+      draftShape = "CTA-driven email layout";
+    } else if (usesLogoReference) {
+      draftShape = "branded email layout";
+    }
+    if (entityLabel && draftShape && focusLabel) {
+      return `Reviewing the ${entityLabel} ${draftShape} for ${focusLabel} changes.`;
+    }
+    if (entityLabel && draftShape) {
+      return `Reviewing the ${entityLabel} ${draftShape}.`;
+    }
+    if (entityLabel && focusLabel) {
+      return `Reviewing the ${entityLabel} ${templateLabel} for ${focusLabel} changes.`;
+    }
+    if (entityLabel) {
+      return `Reviewing the ${entityLabel} ${templateLabel}.`;
+    }
+    if (focusLabel) {
+      return `Reviewing the current ${templateLabel} for ${focusLabel} changes.`;
+    }
+    return "";
+  }
+  if (evt.event === "draft_loaded") return "";
+  if (evt.event === "plan_requested") return "";
+  if (evt.event === "draft_refined") {
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    if (Number(data.hint_count || 0) > 0) {
+      return `Applying your answer to the current ${templateLabel} draft.`;
+    }
+    return "";
+  }
+  if (evt.event === "decision_required") {
+    if (typeof data.slot_label === "string" && data.slot_label.trim()) {
+      return `Waiting on one decision: ${data.slot_label.trim()}.`;
+    }
+    if (typeof data.question === "string" && data.question.trim()) {
+      return `Waiting on one decision: ${data.question.trim()}`;
+    }
+    return `Checking which decision is still needed for the ${templateLabel} draft.`;
+  }
+  if (evt.event === "stage_started") {
+    if (evt.phase === "planning") return "";
+    if (evt.phase === "validating") return `Validating the proposed ${templateLabel} draft.`;
+  }
+  if (evt.event === "plan_result") {
+    if (Number(data.required_questions || 0) > 0) return "";
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    const questions = Number(data.required_questions || 0);
+    if (questions > 0) return `Prepared a draft ${templateLabel} proposal and need one decision to continue.`;
+    return `Prepared a draft ${templateLabel} proposal.`;
+  }
+  if (evt.event === "validate_result") {
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    const total = Number(data?.error_counts?.total || 0);
+    if (total > 0) return `Validation found ${total} issue${total === 1 ? "" : "s"} in the proposed ${templateLabel} draft.`;
+    return `Validation passed for the proposed ${templateLabel} draft.`;
+  }
+  if (evt.event === "final_done") return "Finalizing the proposal.";
+  if (evt.event === "stopped") return "Stopping the current run.";
+  return "";
 }
 
 export default function TemplateAgentPane({
@@ -87,6 +196,8 @@ export default function TemplateAgentPane({
   const { capabilities: aiCapabilities } = useAiCapabilityCatalog();
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [progressEvents, setProgressEvents] = useState([]);
+  const streamCancelRef = useRef(null);
   const message = initialMessage || t("settings.template_studio.default_agent_message");
   const templateLabel = agentKind === "document" ? "document template" : "email template";
   const assistantLabel = agentKind === "document" ? "AI Document Assistant" : "AI Email Assistant";
@@ -132,17 +243,34 @@ export default function TemplateAgentPane({
       excludeFocuses: ["validation"],
     },
   ), [agentKind, aiCapabilities, draft?.name, templateLabel]);
-  const planningStatusItems = useMemo(() => ([
-    `Reviewing the current ${templateLabel} draft`,
-    "Checking structure, placeholders, and editable content",
-    `Preparing a validated ${templateLabel} proposal`,
-  ]), [templateLabel]);
+  const [activeRequestMode, setActiveRequestMode] = useState("");
+  const pendingAssistantMessage = useMemo(() => {
+    if (!submitting) return "";
+    for (let index = progressEvents.length - 1; index >= 0; index -= 1) {
+      const summary = summarizeTemplatePlanProgressEvent(progressEvents[index], templateLabel);
+      if (summary) return summary;
+    }
+    if (activeRequestMode === "validation") {
+      return `Checking the current ${templateLabel} validation issues and preparing a targeted fix.`;
+    }
+    if (activeRequestMode === "decision") {
+      return `Applying your answer and updating the current ${templateLabel} draft.`;
+    }
+    if (activeRequestMode) {
+      return activeRequestMode;
+    }
+    return `Reviewing the current ${templateLabel} draft and planning the requested changes.`;
+  }, [activeRequestMode, progressEvents, submitting, templateLabel]);
   const endpoint = useMemo(() => {
     if (!recordId) return "";
     if (agentKind === "email") return `/email/templates/${recordId}/ai/plan`;
     if (agentKind === "document") return `/documents/templates/${recordId}/ai/plan`;
     return "";
   }, [agentKind, recordId]);
+
+  const cancelTemplateAiRun = useCallback(() => {
+    streamCancelRef.current?.();
+  }, []);
 
   const buildTemplateAiRepairPrompt = useCallback((validation, summary) => {
     const errors = formatValidationLines(validation?.errors || []);
@@ -157,40 +285,84 @@ export default function TemplateAgentPane({
   }, [templateLabel]);
 
   const runTemplateAiPlan = useCallback(async (rawText, draftOverride = null, options = null) => {
-    const text = String(rawText || "").trim();
+    const text = String(options?.displayText || rawText || "").trim();
+    const requestPrompt = String(options?.requestPrompt || rawText || "").trim();
     const nextDraft = draftOverride || draft;
-    if (!text || submitting || disabled || !endpoint || !nextDraft) return;
+    if (!requestPrompt || !text || submitting || disabled || !endpoint || !nextDraft) return;
     const focus = options?.focus || null;
+    const requestMode = focus === "validation"
+      ? "validation"
+      : (options?.requestPrompt ? "decision" : "");
     setProposal(null);
     setMessages((prev) => [...prev, { role: "user", text }]);
     if (!draftOverride) {
       setInput("");
     }
+    setProgressEvents([]);
+    setActiveRequestMode(requestMode);
     setSubmitting(true);
     try {
-      const res = await apiFetch(endpoint, {
-        method: "POST",
-        body: {
-          prompt: text,
-          draft: nextDraft,
-          focus,
-          sample: sample?.entity_id ? { entity_id: sample.entity_id, record_id: sample.record_id || "" } : null,
-        },
-      });
+      const requestBody = {
+        prompt: requestPrompt,
+        draft: nextDraft,
+        focus,
+        hints: options?.hints && typeof options.hints === "object" ? options.hints : null,
+        sample: sample?.entity_id ? { entity_id: sample.entity_id, record_id: sample.record_id || "" } : null,
+      };
+      let res = null;
+      try {
+        const { cancel, promise } = startArtifactAiPlanStream({
+          path: `${endpoint}/stream`,
+          body: requestBody,
+          onEvent: (evt) => {
+            setProgressEvents((prev) => [...prev, evt].slice(-200));
+          },
+        });
+        streamCancelRef.current = cancel;
+        res = await promise;
+      } catch (streamErr) {
+        if (streamErr?.name === "AbortError") return;
+        res = await apiFetch(endpoint, {
+          method: "POST",
+          body: { ...requestBody, include_progress: true },
+        });
+        if (Array.isArray(res?.progress)) {
+          setProgressEvents(res.progress.slice(-200));
+        }
+      }
+      const requiredQuestions = Array.isArray(res?.required_questions)
+        ? res.required_questions.filter((item) => typeof item === "string" && item.trim())
+        : [];
+      const questionMeta = res?.required_question_meta && typeof res.required_question_meta === "object"
+        ? res.required_question_meta
+        : null;
+      const decisionSlots = Array.isArray(res?.decision_slots)
+        ? res.decision_slots.filter((item) => item && typeof item === "object")
+        : [];
       setProposal({
         draft: res?.draft || null,
         validation: res?.validation || null,
         summary: String(res?.summary || "Draft ready to apply."),
         assumptions: Array.isArray(res?.assumptions) ? res.assumptions : [],
         warnings: Array.isArray(res?.warnings) ? res.warnings : [],
+        advisories: Array.isArray(res?.warnings) ? res.warnings : [],
+        risks: res?.validation?.compiled_ok === false ? ["The draft still has validation issues and needs review before apply."] : [],
+        requiredQuestions,
+        questionMeta,
+        decisionSlots,
+        prompt: requestPrompt,
+        focus,
       });
       setMessages((prev) => [...prev, { role: "assistant", text: String(res?.summary || "Draft ready to apply.") }]);
     } catch (err) {
+      if (err?.name === "AbortError") return;
       setMessages((prev) => [...prev, { role: "assistant", text: err?.message || t("common.error") }]);
     } finally {
+      streamCancelRef.current = null;
+      setActiveRequestMode("");
       setSubmitting(false);
     }
-  }, [disabled, draft, endpoint, sample, submitting]);
+  }, [disabled, draft, endpoint, sample, submitting, t]);
 
   const runTemplateAiFix = useCallback(async ({ draft: repairDraft = null, validation = null, summary = "" } = {}) => {
     const nextValidation = validation || proposal?.validation || validationState;
@@ -202,6 +374,10 @@ export default function TemplateAgentPane({
   }, [buildTemplateAiRepairPrompt, draft, proposal, runTemplateAiPlan, validationState]);
 
   async function handleSend() {
+    if (pendingTemplateDecisionSlots.length > 0 && pendingTemplateDecisionSlots[0]?.allow_free_text) {
+      await submitTemplateDecisionText(input);
+      return;
+    }
     await runTemplateAiPlan(input);
   }
 
@@ -210,14 +386,72 @@ export default function TemplateAgentPane({
     await runTemplateAiPlan(action.prompt, draft, { focus: action.focus });
   }
 
+  const pendingTemplateDecisionSlots = useMemo(() => (
+    Array.isArray(proposal?.decisionSlots)
+      ? proposal.decisionSlots.filter((item) => item && typeof item === "object")
+      : []
+  ), [proposal?.decisionSlots]);
+
+  const submitTemplateDecisionSlotOption = useCallback(async (slot, option) => {
+    if (!proposal?.prompt || !slot || !option) return;
+    const optionValue = typeof option?.value === "string" ? option.value.trim() : "";
+    const optionLabel = typeof option?.label === "string" ? option.label.trim() : optionValue;
+    const hints = option?.hints && typeof option.hints === "object" ? option.hints : {};
+    await runTemplateAiPlan(optionLabel || optionValue, proposal?.draft, {
+      requestPrompt: proposal?.prompt,
+      displayText: optionLabel || optionValue,
+      focus: proposal?.focus || null,
+      hints,
+    });
+  }, [proposal?.draft, proposal?.focus, proposal?.prompt, runTemplateAiPlan]);
+
+  const submitTemplateDecisionText = useCallback(async (rawText) => {
+    const slot = pendingTemplateDecisionSlots[0];
+    const text = String(rawText || "").trim();
+    if (!text || !proposal?.prompt || !slot?.allow_free_text) return;
+    const hintField = typeof slot?.hint_field === "string" && slot.hint_field.trim() ? slot.hint_field.trim() : "selected_option_value";
+    await runTemplateAiPlan(text, proposal?.draft, {
+      requestPrompt: proposal?.prompt,
+      displayText: text,
+      focus: proposal?.focus || null,
+      hints: { [hintField]: text, selected_option_value: text },
+    });
+  }, [pendingTemplateDecisionSlots, proposal?.draft, proposal?.focus, proposal?.prompt, runTemplateAiPlan]);
+
   const templateHasSeedContent = useMemo(
     () => hasMeaningfulTemplateDraft(agentKind, draft) && !isStarterTemplateDraft,
     [agentKind, draft, isStarterTemplateDraft],
   );
 
   const actionStrip = useMemo(() => {
-    if (submitting) return null;
+    if (submitting) {
+      return {
+        title: "Actions",
+        actions: [
+          {
+            key: "cancel-run",
+            label: "Stop",
+            onClick: cancelTemplateAiRun,
+            allowWhileBusy: true,
+            outline: true,
+          },
+        ],
+      };
+    }
     if (proposal) {
+      if (pendingTemplateDecisionSlots.length > 0) {
+        return {
+          title: "Actions",
+          actions: [
+            {
+              key: "discard-proposal",
+              label: "Discard",
+              onClick: discardProposal,
+              outline: true,
+            },
+          ],
+        };
+      }
       return {
         title: "Actions",
         actions: [
@@ -272,12 +506,14 @@ export default function TemplateAgentPane({
     return idleActions.length ? { title: "Actions", actions: idleActions } : null;
   }, [
     applyProposal,
+    cancelTemplateAiRun,
     disabled,
     discardProposal,
     draft,
     endpoint,
     handleQuickAction,
     proposal,
+    pendingTemplateDecisionSlots.length,
     quickActions,
     runTemplateAiFix,
     submitting,
@@ -287,7 +523,7 @@ export default function TemplateAgentPane({
   ]);
 
   function applyProposal() {
-    if (!proposal?.draft) return;
+    if (!proposal?.draft || pendingTemplateDecisionSlots.length > 0) return;
     if (typeof setDraft === "function") {
       setDraft(proposal.draft);
     }
@@ -306,6 +542,8 @@ export default function TemplateAgentPane({
           summary: proposal.summary,
           stageLabel: "Applied",
           stageTone: "success",
+          advisories: proposal.advisories,
+          risks: proposal.risks,
           assumptions: proposal.assumptions,
           warnings: proposal.warnings,
           validation: proposal.validation,
@@ -326,6 +564,8 @@ export default function TemplateAgentPane({
             summary: proposal.summary,
             stageLabel: "Discarded",
             stageTone: "ghost",
+            advisories: proposal.advisories,
+            risks: proposal.risks,
             assumptions: proposal.assumptions,
             warnings: proposal.warnings,
             validation: proposal.validation,
@@ -417,34 +657,34 @@ export default function TemplateAgentPane({
         assistantLabel={assistantLabel}
         userLabel={userLabel}
         messages={messages}
-        autoScrollKey={`${messages.length}:${submitting ? "loading" : "idle"}:${proposal ? "proposal" : "none"}`}
-        stageCard={submitting ? (
+        autoScrollKey={`${messages.length}:${progressEvents.length}:${submitting ? "loading" : "idle"}:${proposal ? "proposal" : "none"}:${pendingTemplateDecisionSlots.length ? "slots" : "no-slots"}`}
+        stageCard={!submitting && proposal ? (
           <ArtifactAiStageCard
             title="Template Plan"
-            summary="Working through the request and preparing a validated template proposal."
-            stageLabel="Planning"
-            stageTone="warning"
-            statusItems={planningStatusItems}
-            busy
-          />
-        ) : (!submitting && proposal ? (
-          <ArtifactAiStageCard
-            title="Template Plan"
-            summary={proposal.summary}
-            stageLabel={proposal?.validation?.compiled_ok === false ? "Needs Fix" : "Ready to Apply"}
-            stageTone={proposal?.validation?.compiled_ok === false ? "danger" : "primary"}
+            summary=""
+            stageLabel={pendingTemplateDecisionSlots.length > 0 ? "Decision Needed" : (proposal?.validation?.compiled_ok === false ? "Needs Fix" : "Ready to Apply")}
+            stageTone={pendingTemplateDecisionSlots.length > 0 ? "warning" : (proposal?.validation?.compiled_ok === false ? "error" : "primary")}
+            advisories={proposal.advisories}
+            risks={proposal.risks}
+            requiredQuestions={proposal.requiredQuestions}
             assumptions={proposal.assumptions}
             warnings={proposal.warnings}
             validation={proposal.validation}
           />
-        ) : null)}
+        ) : null}
         inputValue={input}
         onInputChange={setInput}
         onSend={handleSend}
         inputDisabled={disabled || submitting || !endpoint || !draft}
         inputPlaceholder={t("settings.template_studio.describe_template_change")}
-        minRows={4}
+        minRows={1}
+        decisionSlots={pendingTemplateDecisionSlots}
+        onSelectDecisionSlotOption={submitTemplateDecisionSlotOption}
         actionStrip={actionStrip}
+        pendingAssistantMessage={pendingAssistantMessage}
+        pendingAssistantMessages={[]}
+        inputBusy={submitting}
+        inputBusyLabel={pendingAssistantMessage}
       />
       <ProviderSecretModal
         open={modalOpen}

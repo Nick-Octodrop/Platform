@@ -33,6 +33,6 @@ Build spec schema:
 
 Hard rules:
 - IDs must be namespaced: entity.xxx and xxx.field.
-- Field types must be one of: string, text, number, bool, date, datetime, enum, uuid, lookup, tags.
+- Field types must be one of: string, text, number, bool, date, datetime, enum, uuid, lookup, tags, attachments.
 - If unsure, add assumptions and proceed.
 - Keep it compact and relevant to the user request.

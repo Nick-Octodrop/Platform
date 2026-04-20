@@ -1,6 +1,8 @@
 import os
 import json
 import unittest
+import copy
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,6 +15,8 @@ os.environ.setdefault("OCTO_DISABLE_AUTH", "1")
 os.environ.setdefault("SUPABASE_URL", "http://localhost")
 
 import app.main as main  # noqa: E402
+from app.manifest_validate import validate_manifest_raw  # noqa: E402
+from app.secrets import SecretStoreError  # noqa: E402
 from app.main import (  # noqa: E402
     _AI_ENTITY_MESSAGE,
     _AI_ENTITY_PATCHSET,
@@ -21,6 +25,7 @@ from app.main import (  # noqa: E402
     _AI_ENTITY_SESSION,
     _AI_ENTITY_SNAPSHOT,
     _ai_answer_restarts_request,
+    _ai_named_artifact_plan_expected_failure,
     _ai_page_block_digest,
     _ai_page_semantic_summary,
     _ai_module_semantic_summary,
@@ -61,6 +66,23 @@ from app.main import (  # noqa: E402
 
 
 class TestOctoAiFieldResolution(unittest.TestCase):
+    def test_named_artifact_plan_expected_failure_detects_missing_openai_key(self) -> None:
+        self.assertTrue(
+            _ai_named_artifact_plan_expected_failure(
+                SecretStoreError("OpenAI API key is not configured for this workspace")
+            )
+        )
+
+    def test_named_artifact_plan_expected_failure_detects_deterministic_semantic_skip(self) -> None:
+        self.assertTrue(
+            _ai_named_artifact_plan_expected_failure(
+                AssertionError("semantic model should not be needed for this deterministic commerce create-module brief")
+            )
+        )
+
+    def test_named_artifact_plan_expected_failure_keeps_real_errors_warning_worthy(self) -> None:
+        self.assertFalse(_ai_named_artifact_plan_expected_failure(RuntimeError("planner crashed")))
+
     def test_page_semantic_summary_highlights_dashboard_elements(self) -> None:
         summary = _ai_page_semantic_summary(
             {
@@ -413,6 +435,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("artifact_ai_capabilities", context)
         self.assertIn("workspace_automation_reference_contract", context)
         self.assertIn("workspace_module_reference_contracts", context)
+        self.assertIn("workspace_module_authoring_contract", context)
         self.assertIn("automation", context["artifact_ai_capabilities"]["artifacts"])
         self.assertEqual(
             context["artifact_ai_capabilities"]["artifacts"]["automation"]["focus_modes"],
@@ -435,6 +458,15 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             context["artifact_ai_capabilities"]["artifacts"]["module"]["focus_modes"],
             ["validation", "design", "content", "logic"],
         )
+        self.assertIn("authoring_contract", context["artifact_ai_capabilities"]["artifacts"]["module"])
+        self.assertFalse(context["workspace_module_authoring_contract"]["list_view_rules"]["legacy_inline_search"])
+        self.assertEqual(
+            context["workspace_module_authoring_contract"]["list_view_rules"]["primary_create_action_label"],
+            "New",
+        )
+        self.assertIn("domain_heuristics", context["workspace_module_authoring_contract"])
+        self.assertIn("header_line", context["workspace_module_authoring_contract"]["domain_heuristics"]["modeling_patterns"])
+        self.assertIn("request", context["workspace_module_authoring_contract"]["domain_heuristics"]["families"])
         self.assertIn("semantic_summary", context["workspace_modules"][0])
         self.assertTrue(context["workspace_modules"][0]["semantic_summary"])
         self.assertIn("semantic_summary", context["workspace_kernel_digest"]["modules"][0])
@@ -463,6 +495,23 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             ),
             "ws_live_456",
         )
+
+    def test_system_prompt_pack_aligns_with_shared_authoring_contract(self) -> None:
+        prompt = main._load_prompt_pack("system.md")
+        self.assertIn("add header.search with real field ids", prompt)
+        self.assertIn("8-column form card and a 4-column chatter/activity card", prompt)
+        self.assertIn("list bulk actions", prompt)
+        self.assertIn("attachments", prompt)
+
+    def test_planner_prompt_pack_allows_attachments_field_type(self) -> None:
+        prompt = main._load_prompt_pack("planner.md")
+        self.assertIn("attachments", prompt)
+
+    def test_ui_rules_prompt_pack_aligns_with_shared_surface_contract(self) -> None:
+        prompt = main._load_prompt_pack("ui_rules.md")
+        self.assertIn("card-wrapped `view_modes` surface", prompt)
+        self.assertIn("Add list-header search when the entity has clear searchable business fields", prompt)
+        self.assertIn("form card (`span: 8`) + activity card (`span: 4`)", prompt)
 
     def test_strict_sandbox_workspace_unwraps_record_payload_and_never_falls_back(self) -> None:
         self.assertEqual(
@@ -1008,6 +1057,57 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((structured.get("design_spec") or {}).get("family"), "recipe")
         self.assertEqual(structured["sections"][0]["key"], "module_blueprint")
         self.assertIn("Core fields: Recipe Name, Ingredients.", structured["sections"][0]["items"])
+
+    def test_structured_plan_create_module_includes_quality_section_and_risks(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": ["Confirm this plan?"],
+                "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                "affected_artifacts": [{"artifact_type": "module", "artifact_id": "purchase_requests"}],
+                "proposed_changes": [
+                    {
+                        "op": "create_module",
+                        "artifact_type": "module",
+                        "artifact_id": "purchase_requests",
+                        "manifest": {
+                            "module": {"name": "Purchase Requests"},
+                            "entities": [
+                                {
+                                    "id": "entity.purchase_request",
+                                    "fields": [
+                                        {"id": "purchase_request.name", "label": "Request Title"},
+                                        {"id": "purchase_request.status", "label": "Status"},
+                                    ],
+                                }
+                            ],
+                            "views": [{"id": "purchase_request.list", "kind": "list"}, {"id": "purchase_request.form", "kind": "form"}],
+                            "pages": [{"id": "purchase_requests.list_page", "title": "Purchase Requests"}, {"id": "purchase_requests.form_page", "title": "Purchase Request"}],
+                            "actions": [{"id": "action.purchase_request_submit", "kind": "update_record", "label": "Submit"}],
+                        },
+                        "design_spec": {
+                            "family": "request",
+                            "layout": {"tabs": [{"label": "Overview"}]},
+                            "experience": {"interfaces": []},
+                            "automation_intents": [],
+                        },
+                        "quality_report": {
+                            "strengths": ["Models a real approval workflow with decision actions."],
+                            "issues": ["Approval-oriented module should include requester, approver, amount/impact, due date, or review-note fields."],
+                            "domain_matched_pattern_count": 1,
+                            "domain_aligned_column_count": 2,
+                        },
+                    }
+                ],
+                "planner_state": {"intent": "create_module", "module_name": "Purchase Requests"},
+                "risk_flags": ["Purchase Requests: Approval-oriented module should include requester, approver, amount/impact, due date, or review-note fields."],
+            },
+            {},
+        )
+
+        quality_section = next((section for section in (structured.get("sections") or []) if section.get("key") == "quality_fit"), None)
+        self.assertIsInstance(quality_section, dict)
+        self.assertTrue(any("Starter design matches" in item for item in (quality_section.get("items") or [])))
+        self.assertTrue(any("review-note fields" in item for item in structured.get("risks", [])))
 
     def test_plan_assistant_text_renders_module_blueprint_section(self) -> None:
         text = _ai_plan_assistant_text(
@@ -2699,6 +2799,1289 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(valid_ops, [])
         self.assertTrue(any(error.get("code") == "CREATE_MODULE_QUALITY" for error in errors))
 
+    def test_create_module_preflight_accepts_rich_manifest_contract_features(self) -> None:
+        module_id = "catalog_intl"
+        manifest = main._ai_build_new_module_scaffold(
+            module_id,
+            "Catalog Intl",
+            "Create a catalog module with pricing, stock tracking, approvals, and localized labels.",
+        )
+
+        entity = next(item for item in (manifest.get("entities") or []) if isinstance(item, dict))
+        entity_id = entity.get("id")
+        slug = str(entity.get("display_field") or "catalog.name").split(".")[0]
+        fields = [field for field in (entity.get("fields") or []) if isinstance(field, dict)]
+        field_by_id = {field.get("id"): field for field in fields if isinstance(field.get("id"), str)}
+        status_field = field_by_id.get(f"{slug}.status")
+        if isinstance(status_field, dict):
+            status_field["label_key"] = "catalog.entities.item.fields.status.label"
+            status_field["options"] = [
+                {"value": "draft", "label": "Draft", "label_key": "catalog.entities.item.fields.status.options.draft", "status_label_key": "catalog.entities.item.fields.status.options.draft"},
+                {"value": "active", "label": "Active", "label_key": "catalog.entities.item.fields.status.options.active", "status_label_key": "catalog.entities.item.fields.status.options.active"},
+                {"value": "rejected", "label": "Rejected", "label_key": "catalog.entities.item.fields.status.options.rejected", "status_label_key": "catalog.entities.item.fields.status.options.rejected"},
+            ]
+
+        fields.extend(
+            [
+                {"id": f"{slug}.uom", "type": "string", "label": "Unit of Measure", "label_key": "catalog.entities.item.fields.uom.label", "default": "EA"},
+                {"id": f"{slug}.sales_currency", "type": "string", "label": "Sales Currency", "label_key": "catalog.entities.item.fields.sales_currency.label", "default": "USD"},
+                {
+                    "id": f"{slug}.qty_on_hand",
+                    "type": "number",
+                    "label": "Qty On Hand",
+                    "label_key": "catalog.entities.item.fields.qty_on_hand.label",
+                    "default": 0,
+                    "format": {"kind": "measurement", "unit_field": f"{slug}.uom", "precision": 0},
+                },
+                {
+                    "id": f"{slug}.sales_price",
+                    "type": "number",
+                    "label": "Sales Price",
+                    "label_key": "catalog.entities.item.fields.sales_price.label",
+                    "default": 0,
+                    "format": {"kind": "currency", "currency_field": f"{slug}.sales_currency", "precision": 2},
+                },
+                {
+                    "id": f"{slug}.cost_price",
+                    "type": "number",
+                    "label": "Cost Price",
+                    "label_key": "catalog.entities.item.fields.cost_price.label",
+                    "default": 0,
+                    "format": {"kind": "currency", "currency_field": f"{slug}.sales_currency", "precision": 2},
+                },
+                {
+                    "id": f"{slug}.margin_amount",
+                    "type": "number",
+                    "label": "Margin",
+                    "label_key": "catalog.entities.item.fields.margin_amount.label",
+                    "readonly": True,
+                    "default": 0,
+                    "format": {"kind": "currency", "currency_field": f"{slug}.sales_currency", "precision": 2},
+                    "compute": {
+                        "expression": {
+                            "op": "round",
+                            "args": [
+                                {
+                                    "op": "sub",
+                                    "args": [
+                                        {"ref": f"$current.{slug}.sales_price"},
+                                        {"ref": f"$current.{slug}.cost_price"},
+                                    ],
+                                },
+                                2,
+                            ],
+                        }
+                    },
+                },
+                {
+                    "id": f"{slug}.review_notes",
+                    "type": "text",
+                    "label": "Review Notes",
+                    "label_key": "catalog.entities.item.fields.review_notes.label",
+                    "required_when": {"op": "eq", "field": f"{slug}.status", "value": "rejected"},
+                },
+            ]
+        )
+        entity["fields"] = fields
+
+        workflow = next((item for item in (manifest.get("workflows") or []) if isinstance(item, dict)), None)
+        if isinstance(workflow, dict):
+            workflow["entity"] = entity_id
+            workflow["status_field"] = f"{slug}.status"
+            workflow["states"] = [
+                {"id": "draft", "label": "Draft", "label_key": "catalog.workflows.item_status.states.draft", "status_label_key": "catalog.workflows.item_status.states.draft"},
+                {"id": "active", "label": "Active", "label_key": "catalog.workflows.item_status.states.active", "status_label_key": "catalog.workflows.item_status.states.active"},
+                {"id": "rejected", "label": "Rejected", "label_key": "catalog.workflows.item_status.states.rejected", "status_label_key": "catalog.workflows.item_status.states.rejected"},
+            ]
+            workflow["transitions"] = [
+                {"from": "draft", "to": "active", "label": "Activate", "label_key": "catalog.workflows.item_status.transitions.activate"},
+                {"from": "active", "to": "rejected", "label": "Reject", "label_key": "catalog.workflows.item_status.transitions.reject"},
+            ]
+
+        rich_action = {
+            "id": f"action.{slug}_reject",
+            "kind": "update_record",
+            "entity_id": entity_id,
+            "label": "Reject",
+            "label_key": "catalog.actions.reject",
+            "patch": {f"{slug}.status": "rejected"},
+            "enabled_when": {"op": "eq", "field": f"{slug}.status", "value": "active"},
+            "visible_when": {"op": "eq", "field": f"{slug}.status", "value": "active"},
+        }
+        manifest["actions"] = [*(manifest.get("actions") or []), rich_action]
+        form_view = next((item for item in (manifest.get("views") or []) if isinstance(item, dict) and item.get("kind") == "form"), None)
+        if isinstance(form_view, dict):
+            header = form_view.get("header") if isinstance(form_view.get("header"), dict) else {}
+            secondary = header.get("secondary_actions") if isinstance(header.get("secondary_actions"), list) else []
+            secondary.append({"action_id": rich_action["id"], "label_key": "catalog.actions.reject"})
+            header["secondary_actions"] = secondary
+            form_view["header"] = header
+        app_cfg = manifest.get("app") if isinstance(manifest.get("app"), dict) else {}
+        nav = app_cfg.get("nav") if isinstance(app_cfg.get("nav"), list) else []
+        if nav and isinstance(nav[0], dict):
+            items = nav[0].get("items") if isinstance(nav[0].get("items"), list) else []
+            if items and isinstance(items[0], dict):
+                items[0]["label_key"] = "catalog.nav.home"
+        for page in (manifest.get("pages") or []):
+            if isinstance(page, dict) and isinstance(page.get("id"), str):
+                page["title_key"] = f"catalog.pages.{page['id'].replace('.', '_')}.title"
+
+        normalized, errors, warnings = validate_manifest_raw(manifest, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        valid_ops, preflight_errors = _ai_preflight_candidate_ops(
+            {},
+            [{"op": "create_module", "artifact_type": "module", "artifact_id": module_id, "manifest": manifest}],
+        )
+
+        self.assertEqual(preflight_errors, [])
+        self.assertEqual(len(valid_ops), 1)
+        accepted = valid_ops[0]
+        self.assertEqual(accepted.get("op"), "create_module")
+        accepted_manifest = accepted.get("manifest") or {}
+        accepted_entity = next(item for item in (accepted_manifest.get("entities") or []) if isinstance(item, dict))
+        accepted_fields = {field.get("id"): field for field in (accepted_entity.get("fields") or []) if isinstance(field, dict)}
+        self.assertEqual((accepted_fields[f"{slug}.qty_on_hand"].get("format") or {}).get("unit_field"), f"{slug}.uom")
+        self.assertEqual((accepted_fields[f"{slug}.margin_amount"].get("label_key")), "catalog.entities.item.fields.margin_amount.label")
+        self.assertIn("expression", (accepted_fields[f"{slug}.margin_amount"].get("compute") or {}))
+        accepted_action = next(item for item in (accepted_manifest.get("actions") or []) if isinstance(item, dict) and item.get("id") == rich_action["id"])
+        self.assertEqual(accepted_action.get("label_key"), "catalog.actions.reject")
+        self.assertEqual((accepted_action.get("enabled_when") or {}).get("value"), "active")
+
+    def test_create_module_preflight_infers_family_for_view_quality_without_design_spec(self) -> None:
+        module_id = "recipe_manager_plus"
+        manifest, family, _ = main._ai_build_rich_module_scaffold(
+            module_id,
+            "Recipe Manager Plus",
+            "Create a recipe management module with statuses, cuisine, meal type, ingredients, and last cooked tracking.",
+        )
+        self.assertEqual(family, "recipe")
+
+        normalized, errors, warnings = validate_manifest_raw(manifest, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        valid_ops, preflight_errors = _ai_preflight_candidate_ops(
+            {},
+            [{"op": "create_module", "artifact_type": "module", "artifact_id": module_id, "manifest": normalized}],
+        )
+
+        self.assertEqual(preflight_errors, [])
+        self.assertEqual(len(valid_ops), 1)
+        quality = valid_ops[0].get("quality_report") or {}
+        self.assertTrue(quality.get("ok"))
+        self.assertNotIn("calendar", quality.get("view_kinds") or [])
+
+    def test_create_module_preflight_accepts_interfaces_modals_transformations_and_localized_blocks(self) -> None:
+        module_id = "service_requests_plus"
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": module_id, "key": module_id, "name": "Service Requests Plus", "version": "0.1.0"},
+            "app": {
+                "home": "page:service_request.list_page",
+                "nav": [
+                    {
+                        "group": "Operations",
+                        "items": [
+                            {
+                                "label": "Service Requests",
+                                "menu_label_key": "service_requests.nav.requests",
+                                "to": "page:service_request.list_page",
+                            },
+                            {
+                                "label": "Operations Board",
+                                "menu_label_key": "service_requests.nav.operations",
+                                "to": "page:service_request.operations_page",
+                            },
+                            {
+                                "label": "Calendar",
+                                "menu_label_key": "service_requests.nav.calendar",
+                                "to": "page:service_request.calendar_page",
+                            },
+                        ],
+                    }
+                ],
+            },
+            "entities": [
+                {
+                    "id": "entity.service_request",
+                    "label": "Service Request",
+                    "display_field": "service_request.title",
+                    "fields": [
+                        {"id": "service_request.title", "type": "string", "label": "Title", "label_key": "service_requests.entities.service_request.fields.title.label", "required": True},
+                        {
+                            "id": "service_request.status",
+                            "type": "enum",
+                            "label": "Status",
+                            "label_key": "service_requests.entities.service_request.fields.status.label",
+                            "default": "draft",
+                            "options": [
+                                {"value": "draft", "label": "Draft", "label_key": "service_requests.entities.service_request.fields.status.options.draft", "status_label_key": "service_requests.entities.service_request.fields.status.options.draft"},
+                                {"value": "approved", "label": "Approved", "label_key": "service_requests.entities.service_request.fields.status.options.approved", "status_label_key": "service_requests.entities.service_request.fields.status.options.approved"},
+                                {"value": "cancelled", "label": "Cancelled", "label_key": "service_requests.entities.service_request.fields.status.options.cancelled", "status_label_key": "service_requests.entities.service_request.fields.status.options.cancelled"},
+                            ],
+                        },
+                        {"id": "service_request.owner_user_id", "type": "user", "label": "Owner", "label_key": "service_requests.entities.service_request.fields.owner_user_id.label"},
+                        {"id": "service_request.priority", "type": "string", "label": "Priority", "label_key": "service_requests.entities.service_request.fields.priority.label"},
+                        {"id": "service_request.attachments", "type": "attachments", "label": "Attachments", "label_key": "service_requests.entities.service_request.fields.attachments.label"},
+                        {"id": "service_request.scheduled_start", "type": "datetime", "label": "Scheduled Start", "label_key": "service_requests.entities.service_request.fields.scheduled_start.label"},
+                        {"id": "service_request.scheduled_end", "type": "datetime", "label": "Scheduled End", "label_key": "service_requests.entities.service_request.fields.scheduled_end.label"},
+                        {"id": "service_request.review_notes", "type": "text", "label": "Review Notes", "label_key": "service_requests.entities.service_request.fields.review_notes.label"},
+                        {"id": "service_request.cancel_reason", "type": "text", "label": "Cancel Reason", "label_key": "service_requests.entities.service_request.fields.cancel_reason.label"},
+                        {"id": "service_request.job_id", "type": "string", "label": "Job ID", "label_key": "service_requests.entities.service_request.fields.job_id.label"},
+                        {"id": "service_request.created_at", "type": "datetime", "label": "Created At", "label_key": "service_requests.entities.service_request.fields.created_at.label"},
+                    ],
+                }
+            ],
+            "views": [
+                {
+                    "id": "service_request.list",
+                    "kind": "list",
+                    "entity": "entity.service_request",
+                    "columns": [
+                        {"field_id": "service_request.title"},
+                        {"field_id": "service_request.status"},
+                        {"field_id": "service_request.owner_user_id"},
+                        {"field_id": "service_request.scheduled_start"},
+                    ],
+                    "header": {
+                        "filters": [
+                            {
+                                "id": "approved_only",
+                                "label": "Approved",
+                                "label_key": "service_requests.views.list.filters.approved.label",
+                                "domain": {"op": "eq", "field": "service_request.status", "value": "approved"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "id": "service_request.form",
+                    "kind": "form",
+                    "entity": "entity.service_request",
+                    "sections": [
+                        {
+                            "id": "summary",
+                            "title": "Summary",
+                            "fields": [
+                                "service_request.title",
+                                "service_request.status",
+                                "service_request.owner_user_id",
+                                "service_request.priority",
+                            ],
+                        },
+                        {
+                            "id": "schedule",
+                            "title": "Schedule",
+                            "fields": [
+                                "service_request.scheduled_start",
+                                "service_request.scheduled_end",
+                                "service_request.review_notes",
+                                "service_request.attachments",
+                                "service_request.cancel_reason",
+                            ],
+                        },
+                    ],
+                    "header": {
+                        "secondary_actions": [
+                            {
+                                "action_id": "action.service_request_set_approved",
+                                "label_key": "service_requests.actions.approve",
+                            },
+                            {
+                                "action_id": "action.service_request_set_cancelled",
+                                "label_key": "service_requests.actions.cancel",
+                            },
+                            {
+                                "action_id": "action.service_request_convert_to_job",
+                                "label_key": "service_requests.actions.convert_to_job",
+                            }
+                        ]
+                    },
+                },
+                {
+                    "id": "service_request.calendar",
+                    "kind": "calendar",
+                    "entity": "entity.service_request",
+                    "calendar": {
+                        "date_start": "service_request.scheduled_start",
+                        "date_end": "service_request.scheduled_end",
+                        "title_field": "service_request.title",
+                        "color_field": "service_request.priority",
+                        "default_scale": "month",
+                    },
+                },
+            ],
+            "pages": [
+                {
+                    "id": "service_request.list_page",
+                    "title": "Service Requests",
+                    "title_key": "service_requests.pages.list_page.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "service_requests.pages.list_page.container.title",
+                            "content": [
+                                {
+                                    "kind": "view",
+                                    "target": "view:service_request.list",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "service_request.operations_page",
+                    "title": "Operations Board",
+                    "title_key": "service_requests.pages.operations_page.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "service_requests.pages.operations_page.container.title",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.service_request",
+                                    "default_mode": "list",
+                                    "modes": [
+                                        {"mode": "list", "target": "view:service_request.list"}
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "service_request.calendar_page",
+                    "title": "Calendar",
+                    "title_key": "service_requests.pages.calendar_page.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "service_requests.pages.calendar_page.container.title",
+                            "content": [
+                                {
+                                    "kind": "view",
+                                    "target": "view:service_request.calendar",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "service_request.form_page",
+                    "title": "Service Request",
+                    "title_key": "service_requests.pages.form_page.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "record",
+                            "entity_id": "entity.service_request",
+                            "record_id_query": "id",
+                            "content": [
+                                {
+                                    "kind": "grid",
+                                    "columns": 12,
+                                    "items": [
+                                        {
+                                            "span": 8,
+                                            "content": [
+                                                {"kind": "view", "target": "view:service_request.form"}
+                                            ],
+                                        },
+                                        {
+                                            "span": 4,
+                                            "content": [
+                                                {
+                                                    "kind": "chatter",
+                                                    "entity_id": "entity.service_request",
+                                                    "record_ref": "$record.id",
+                                                }
+                                            ],
+                                        },
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "actions": [
+                {
+                    "id": "action.service_request_set_approved",
+                    "kind": "update_record",
+                    "entity_id": "entity.service_request",
+                    "label": "Approve",
+                    "action_label_key": "service_requests.actions.approve",
+                    "patch": {"service_request.status": "approved"},
+                    "enabled_when": {"op": "eq", "field": "service_request.status", "value": "draft"},
+                },
+                {
+                    "id": "action.service_request_set_cancelled",
+                    "kind": "update_record",
+                    "entity_id": "entity.service_request",
+                    "label": "Cancel",
+                    "action_label_key": "service_requests.actions.cancel",
+                    "patch": {"service_request.status": "cancelled"},
+                    "enabled_when": {"op": "neq", "field": "service_request.status", "value": "cancelled"},
+                },
+                {
+                    "id": "action.service_request_convert_to_job",
+                    "kind": "transform_record",
+                    "entity_id": "entity.service_request",
+                    "label": "Create Job",
+                    "action_label_key": "service_requests.actions.convert_to_job",
+                    "transformation_key": "service_request_to_job",
+                    "enabled_when": {"op": "eq", "field": "service_request.status", "value": "approved"},
+                    "visible_when": {"op": "neq", "field": "service_request.status", "value": "cancelled"},
+                }
+            ],
+            "triggers": [
+                {
+                    "id": "trigger.service_request_status_changed",
+                    "label": "Service Request Status Changed",
+                    "event": "workflow.status_changed",
+                    "entity_id": "entity.service_request",
+                    "status_field": "service_request.status",
+                }
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.service_request_status",
+                    "entity": "entity.service_request",
+                    "status_field": "service_request.status",
+                    "states": [
+                        {"id": "draft", "label": "Draft", "label_key": "service_requests.workflows.status.states.draft", "status_label_key": "service_requests.workflows.status.states.draft"},
+                        {"id": "approved", "label": "Approved", "label_key": "service_requests.workflows.status.states.approved", "status_label_key": "service_requests.workflows.status.states.approved"},
+                        {"id": "cancelled", "label": "Cancelled", "label_key": "service_requests.workflows.status.states.cancelled", "status_label_key": "service_requests.workflows.status.states.cancelled"},
+                    ],
+                    "transitions": [
+                        {"from": "draft", "to": "approved", "label": "Approve", "label_key": "service_requests.workflows.status.transitions.approve"},
+                        {"from": "approved", "to": "cancelled", "label": "Cancel", "label_key": "service_requests.workflows.status.transitions.cancel"},
+                    ],
+                }
+            ],
+            "interfaces": {
+                "schedulable": [
+                    {
+                        "entity_id": "entity.service_request",
+                        "enabled": True,
+                        "scope": "module_and_global",
+                        "title_field": "service_request.title",
+                        "date_start": "service_request.scheduled_start",
+                        "date_end": "service_request.scheduled_end",
+                        "owner_field": "service_request.owner_user_id",
+                        "status_field": "service_request.status",
+                        "color_field": "service_request.priority",
+                    }
+                ],
+                "documentable": [
+                    {
+                        "entity_id": "entity.service_request",
+                        "enabled": True,
+                        "scope": "module_and_global",
+                        "attachment_field": "service_request.attachments",
+                        "title_field": "service_request.title",
+                        "owner_field": "service_request.owner_user_id",
+                        "category_field": "service_request.status",
+                        "date_field": "service_request.created_at",
+                        "record_label_field": "service_request.title",
+                        "preview_enabled": True,
+                        "allow_delete": False,
+                        "allow_download": True,
+                    }
+                ],
+                "dashboardable": [
+                    {
+                        "entity_id": "entity.service_request",
+                        "enabled": True,
+                        "scope": "module_and_global",
+                        "date_field": "service_request.created_at",
+                        "measures": ["count"],
+                        "group_bys": ["service_request.status", "service_request.priority"],
+                        "default_widgets": [
+                            {
+                                "id": "requests_by_status",
+                                "type": "group",
+                                "title_key": "service_requests.dashboard.requests_by_status.title",
+                                "group_by": "service_request.status",
+                                "measure": "count",
+                            }
+                        ],
+                        "default_filters": [
+                            {"op": "neq", "field": "service_request.status", "value": "cancelled"}
+                        ],
+                    }
+                ],
+            },
+            "transformations": [
+                {
+                    "key": "service_request_to_job",
+                    "source_entity_id": "entity.service_request",
+                    "target_entity_id": "entity.job",
+                    "field_mappings": {
+                        "job.title": {"from": "service_request.title"},
+                        "job.owner_user_id": {"from": "service_request.owner_user_id"},
+                        "job.priority": {"from": "service_request.priority"},
+                        "job.start_date": {"from": "service_request.scheduled_start"},
+                        "job.status": {"value": "new"},
+                    },
+                    "link_fields": {"source_to_target": "service_request.job_id"},
+                    "source_update": {"patch": {"service_request.status": "approved"}},
+                    "validation": {
+                        "require_source_fields": ["service_request.title", "service_request.scheduled_start"],
+                        "prevent_if_target_linked": True,
+                        "selected_record_domain": {"op": "eq", "field": "service_request.status", "value": "approved"},
+                    },
+                }
+            ],
+            "modals": [
+                {
+                    "id": "modal.service_request_cancel",
+                    "title": "Cancel Request",
+                    "title_key": "service_requests.modals.cancel.title",
+                    "entity_id": "entity.service_request",
+                    "fields": ["service_request.cancel_reason"],
+                    "actions": [
+                        {
+                            "kind": "update_record",
+                            "entity_id": "entity.service_request",
+                            "label": "Cancel Request",
+                            "action_label_key": "service_requests.modals.cancel.actions.cancel.label",
+                            "patch": {
+                                "service_request.status": "cancelled",
+                                "service_request.cancel_reason": {"ref": "$record.service_request.cancel_reason"},
+                            },
+                            "close_on_success": True,
+                        },
+                        {
+                            "kind": "close_modal",
+                            "label": "Keep Open",
+                            "action_label_key": "service_requests.modals.cancel.actions.close.label",
+                            "variant": "ghost",
+                        },
+                    ],
+                }
+            ],
+            "relations": [],
+            "queries": {},
+        }
+
+        normalized, errors, warnings = validate_manifest_raw(manifest, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        valid_ops, preflight_errors = _ai_preflight_candidate_ops(
+            {},
+            [{"op": "create_module", "artifact_type": "module", "artifact_id": module_id, "manifest": manifest}],
+        )
+
+        self.assertEqual(preflight_errors, [])
+        self.assertEqual(len(valid_ops), 1)
+        accepted_manifest = valid_ops[0].get("manifest") or {}
+        interfaces = accepted_manifest.get("interfaces") if isinstance(accepted_manifest.get("interfaces"), dict) else {}
+        self.assertEqual((((interfaces.get("schedulable") or [])[0]).get("date_start")), "service_request.scheduled_start")
+        self.assertEqual((((interfaces.get("documentable") or [])[0]).get("attachment_field")), "service_request.attachments")
+        dashboard = (interfaces.get("dashboardable") or [])[0]
+        self.assertEqual((((dashboard.get("default_widgets") or [])[0]).get("title_key")), "service_requests.dashboard.requests_by_status.title")
+
+        transform = next(item for item in (accepted_manifest.get("transformations") or []) if isinstance(item, dict) and item.get("key") == "service_request_to_job")
+        self.assertEqual((transform.get("validation") or {}).get("selected_record_domain", {}).get("value"), "approved")
+
+        modal = next(item for item in (accepted_manifest.get("modals") or []) if isinstance(item, dict) and item.get("id") == "modal.service_request_cancel")
+        self.assertEqual(modal.get("title_key"), "service_requests.modals.cancel.title")
+
+        page_by_id = {page.get("id"): page for page in (accepted_manifest.get("pages") or []) if isinstance(page, dict)}
+        self.assertEqual(page_by_id["service_request.operations_page"].get("title_key"), "service_requests.pages.operations_page.title")
+        self.assertEqual((((page_by_id["service_request.operations_page"].get("content") or [])[0]).get("kind")), "container")
+
+        action = next(item for item in (accepted_manifest.get("actions") or []) if isinstance(item, dict) and item.get("id") == "action.service_request_convert_to_job")
+        self.assertEqual(action.get("transformation_key"), "service_request_to_job")
+        self.assertEqual(action.get("action_label_key"), "service_requests.actions.convert_to_job")
+
+    def test_create_module_preflight_accepts_view_variants_relations_and_activity_contract(self) -> None:
+        module_id = "dispatch_board_plus"
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": module_id, "key": module_id, "name": "Dispatch Board Plus", "version": "0.1.0"},
+            "app": {
+                "home": "page:dispatch.control_page",
+                "nav": [
+                    {
+                        "group": "Operations",
+                        "items": [
+                            {"label": "Dispatch Control", "menu_label_key": "dispatch.nav.control", "to": "page:dispatch.control_page"},
+                            {"label": "Dispatch Calendar", "menu_label_key": "dispatch.nav.calendar", "to": "page:dispatch.calendar_page"},
+                        ],
+                    }
+                ],
+            },
+            "entities": [
+                {
+                    "id": "entity.dispatch",
+                    "label": "Dispatch",
+                    "display_field": "dispatch.title",
+                    "fields": [
+                        {"id": "dispatch.title", "type": "string", "label": "Title", "label_key": "dispatch.entities.dispatch.fields.title.label", "required": True},
+                        {
+                            "id": "dispatch.status",
+                            "type": "enum",
+                            "label": "Status",
+                            "label_key": "dispatch.entities.dispatch.fields.status.label",
+                            "default": "planned",
+                            "options": [
+                                {"value": "planned", "label": "Planned", "label_key": "dispatch.entities.dispatch.fields.status.options.planned", "status_label_key": "dispatch.entities.dispatch.fields.status.options.planned"},
+                                {"value": "en_route", "label": "En Route", "label_key": "dispatch.entities.dispatch.fields.status.options.en_route", "status_label_key": "dispatch.entities.dispatch.fields.status.options.en_route"},
+                                {"value": "completed", "label": "Completed", "label_key": "dispatch.entities.dispatch.fields.status.options.completed", "status_label_key": "dispatch.entities.dispatch.fields.status.options.completed"},
+                            ],
+                        },
+                        {"id": "dispatch.assignee_id", "type": "user", "label": "Dispatcher", "label_key": "dispatch.entities.dispatch.fields.assignee_id.label"},
+                        {"id": "dispatch.priority", "type": "string", "label": "Priority", "label_key": "dispatch.entities.dispatch.fields.priority.label"},
+                        {"id": "dispatch.route_name", "type": "string", "label": "Route", "label_key": "dispatch.entities.dispatch.fields.route_name.label"},
+                        {"id": "dispatch.scheduled_start", "type": "datetime", "label": "Scheduled Start", "label_key": "dispatch.entities.dispatch.fields.scheduled_start.label"},
+                        {"id": "dispatch.scheduled_end", "type": "datetime", "label": "Scheduled End", "label_key": "dispatch.entities.dispatch.fields.scheduled_end.label"},
+                        {"id": "dispatch.attachments", "type": "attachments", "label": "Attachments", "label_key": "dispatch.entities.dispatch.fields.attachments.label"},
+                        {"id": "dispatch.notes", "type": "text", "label": "Notes", "label_key": "dispatch.entities.dispatch.fields.notes.label"},
+                        {"id": "dispatch.created_at", "type": "datetime", "label": "Created At", "label_key": "dispatch.entities.dispatch.fields.created_at.label"},
+                    ],
+                },
+                {
+                    "id": "entity.dispatch_stop",
+                    "label": "Dispatch Stop",
+                    "display_field": "dispatch_stop.name",
+                    "fields": [
+                        {"id": "dispatch_stop.dispatch_id", "type": "lookup", "label": "Dispatch", "entity": "entity.dispatch", "display_field": "dispatch.title"},
+                        {"id": "dispatch_stop.name", "type": "string", "label": "Stop Name", "label_key": "dispatch.entities.dispatch_stop.fields.name.label"},
+                        {"id": "dispatch_stop.sequence", "type": "number", "label": "Sequence", "label_key": "dispatch.entities.dispatch_stop.fields.sequence.label"},
+                    ],
+                },
+            ],
+            "views": [
+                {
+                    "id": "dispatch.list",
+                    "kind": "list",
+                    "entity": "entity.dispatch",
+                    "columns": [
+                        {"field_id": "dispatch.title"},
+                        {"field_id": "dispatch.status"},
+                        {"field_id": "dispatch.assignee_id"},
+                        {"field_id": "dispatch.scheduled_start"},
+                    ],
+                    "header": {
+                        "filters": [
+                            {
+                                "id": "planned_only",
+                                "label": "Planned",
+                                "label_key": "dispatch.views.list.filters.planned.label",
+                                "domain": {"op": "eq", "field": "dispatch.status", "value": "planned"},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "id": "dispatch.kanban",
+                    "kind": "kanban",
+                    "entity": "entity.dispatch",
+                    "card": {
+                        "title_field": "dispatch.title",
+                        "subtitle_fields": ["dispatch.route_name", "dispatch.scheduled_start"],
+                        "badge_fields": ["dispatch.status", "dispatch.priority"],
+                    },
+                },
+                {
+                    "id": "dispatch.graph",
+                    "kind": "graph",
+                    "entity": "entity.dispatch",
+                    "default": {"type": "bar", "group_by": "dispatch.status", "measure": "count"},
+                },
+                {
+                    "id": "dispatch.calendar",
+                    "kind": "calendar",
+                    "entity": "entity.dispatch",
+                    "calendar": {
+                        "title_field": "dispatch.title",
+                        "date_start": "dispatch.scheduled_start",
+                        "date_end": "dispatch.scheduled_end",
+                        "color_field": "dispatch.assignee_id",
+                        "default_scale": "week",
+                    },
+                },
+                {
+                    "id": "dispatch.form",
+                    "kind": "form",
+                    "entity": "entity.dispatch",
+                    "sections": [
+                        {"id": "summary", "title": "Summary", "fields": ["dispatch.title", "dispatch.status", "dispatch.assignee_id", "dispatch.priority"]},
+                        {"id": "schedule", "title": "Schedule", "fields": ["dispatch.route_name", "dispatch.scheduled_start", "dispatch.scheduled_end", "dispatch.attachments", "dispatch.notes"]},
+                    ],
+                    "header": {
+                        "statusbar": {"field_id": "dispatch.status"},
+                        "tabs": {
+                            "style": "lifted",
+                            "default_tab": "summary_tab",
+                            "tabs": [
+                                {"id": "summary_tab", "label": "Summary", "tab_label_key": "dispatch.views.form.tabs.summary", "sections": ["summary"]},
+                                {"id": "schedule_tab", "label": "Schedule", "tab_label_key": "dispatch.views.form.tabs.schedule", "sections": ["schedule"]},
+                            ],
+                        },
+                    },
+                    "activity": {
+                        "enabled": True,
+                        "mode": "tab",
+                        "tab_label_key": "dispatch.views.form.activity.tab",
+                        "allow_comments": True,
+                        "allow_attachments": True,
+                        "show_changes": True,
+                        "tracked_fields": ["dispatch.status", "dispatch.assignee_id", "dispatch.scheduled_start", "dispatch.scheduled_end"],
+                    },
+                },
+                {
+                    "id": "dispatch_stop.list",
+                    "kind": "list",
+                    "entity": "entity.dispatch_stop",
+                    "columns": [
+                        {"field_id": "dispatch_stop.sequence"},
+                        {"field_id": "dispatch_stop.name"},
+                    ],
+                },
+            ],
+            "pages": [
+                {
+                    "id": "dispatch.control_page",
+                    "title": "Dispatch Control",
+                    "title_key": "dispatch.pages.control.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "dispatch.pages.control.container.title",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.dispatch",
+                                    "default_mode": "kanban",
+                                    "modes": [
+                                        {"mode": "kanban", "target": "view:dispatch.kanban", "default_group_by": "dispatch.status"},
+                                        {"mode": "list", "target": "view:dispatch.list"},
+                                        {"mode": "graph", "target": "view:dispatch.graph"},
+                                        {"mode": "calendar", "target": "view:dispatch.calendar"},
+                                    ],
+                                    "default_filter_id": "planned_only",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "dispatch.calendar_page",
+                    "title": "Dispatch Calendar",
+                    "title_key": "dispatch.pages.calendar.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "dispatch.pages.calendar.container.title",
+                            "content": [{"kind": "view", "target": "view:dispatch.calendar"}],
+                        }
+                    ],
+                },
+                {
+                    "id": "dispatch.form_page",
+                    "title": "Dispatch",
+                    "title_key": "dispatch.pages.form.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "record",
+                            "entity_id": "entity.dispatch",
+                            "record_id_query": "id",
+                            "content": [
+                                {
+                                    "kind": "tabs",
+                                    "default_tab": "details",
+                                    "tabs": [
+                                        {
+                                            "id": "details",
+                                            "label": "Dispatch",
+                                            "tab_label_key": "dispatch.pages.form.tabs.details",
+                                            "content": [{"kind": "view", "target": "view:dispatch.form"}],
+                                        },
+                                        {
+                                            "id": "stops",
+                                            "label": "Stops",
+                                            "tab_label_key": "dispatch.pages.form.tabs.stops",
+                                            "content": [
+                                                {
+                                                    "kind": "related_list",
+                                                    "entity_id": "entity.dispatch_stop",
+                                                    "view": "dispatch_stop.list",
+                                                    "record_domain": {"op": "eq", "field": "dispatch_stop.dispatch_id", "value": {"ref": "$record.id"}},
+                                                }
+                                            ],
+                                        },
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "actions": [
+                {"id": "action.dispatch_set_en_route", "kind": "update_record", "entity_id": "entity.dispatch", "label": "Mark En Route", "action_label_key": "dispatch.actions.set_en_route", "patch": {"dispatch.status": "en_route"}},
+                {"id": "action.dispatch_set_completed", "kind": "update_record", "entity_id": "entity.dispatch", "label": "Mark Completed", "action_label_key": "dispatch.actions.set_completed", "patch": {"dispatch.status": "completed"}},
+            ],
+            "triggers": [
+                {"id": "trigger.dispatch_status_changed", "label": "Dispatch Status Changed", "event": "workflow.status_changed", "entity_id": "entity.dispatch", "status_field": "dispatch.status"}
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.dispatch_status",
+                    "entity": "entity.dispatch",
+                    "status_field": "dispatch.status",
+                    "states": [
+                        {"id": "planned", "label": "Planned", "label_key": "dispatch.workflows.status.states.planned", "status_label_key": "dispatch.workflows.status.states.planned"},
+                        {"id": "en_route", "label": "En Route", "label_key": "dispatch.workflows.status.states.en_route", "status_label_key": "dispatch.workflows.status.states.en_route"},
+                        {"id": "completed", "label": "Completed", "label_key": "dispatch.workflows.status.states.completed", "status_label_key": "dispatch.workflows.status.states.completed"},
+                    ],
+                    "transitions": [
+                        {"from": "planned", "to": "en_route", "label": "Mark En Route", "label_key": "dispatch.workflows.status.transitions.en_route"},
+                        {"from": "en_route", "to": "completed", "label": "Mark Completed", "label_key": "dispatch.workflows.status.transitions.completed"},
+                    ],
+                }
+            ],
+            "relations": [
+                {"from": "entity.dispatch", "to": "entity.dispatch_stop", "label_field": "dispatch_stop.name"}
+            ],
+            "interfaces": {
+                "schedulable": [
+                    {
+                        "entity_id": "entity.dispatch",
+                        "enabled": True,
+                        "scope": "module_and_global",
+                        "title_field": "dispatch.title",
+                        "date_start": "dispatch.scheduled_start",
+                        "date_end": "dispatch.scheduled_end",
+                        "owner_field": "dispatch.assignee_id",
+                        "status_field": "dispatch.status",
+                        "color_field": "dispatch.assignee_id",
+                    }
+                ],
+                "dashboardable": [
+                    {
+                        "entity_id": "entity.dispatch",
+                        "enabled": True,
+                        "scope": "module_and_global",
+                        "date_field": "dispatch.created_at",
+                        "measures": ["count"],
+                        "group_bys": ["dispatch.status", "dispatch.assignee_id"],
+                        "default_widgets": [
+                            {
+                                "id": "dispatch_by_status",
+                                "type": "group",
+                                "title_key": "dispatch.dashboard.by_status.title",
+                                "group_by": "dispatch.status",
+                                "measure": "count",
+                            }
+                        ],
+                    }
+                ],
+            },
+            "modals": [],
+            "transformations": [],
+            "queries": {},
+        }
+
+        normalized, errors, warnings = validate_manifest_raw(manifest, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        valid_ops, preflight_errors = _ai_preflight_candidate_ops(
+            {},
+            [{"op": "create_module", "artifact_type": "module", "artifact_id": module_id, "manifest": manifest}],
+        )
+
+        self.assertEqual(preflight_errors, [])
+        self.assertEqual(len(valid_ops), 1)
+        accepted_manifest = valid_ops[0].get("manifest") or {}
+        view_by_id = {view.get("id"): view for view in (accepted_manifest.get("views") or []) if isinstance(view, dict)}
+        self.assertEqual(((((view_by_id["dispatch.kanban"].get("card") or {}).get("subtitle_fields")) or [])[0]), "dispatch.route_name")
+        self.assertEqual(((view_by_id["dispatch.graph"].get("default") or {}).get("group_by")), "dispatch.status")
+        self.assertEqual(((view_by_id["dispatch.calendar"].get("calendar") or {}).get("default_scale")), "week")
+        self.assertEqual(((view_by_id["dispatch.form"].get("activity") or {}).get("tab_label_key")), "dispatch.views.form.activity.tab")
+        form_tabs = (((view_by_id["dispatch.form"].get("header") or {}).get("tabs") or {}).get("tabs")) or []
+        self.assertTrue(any(isinstance(tab, dict) and tab.get("tab_label_key") == "dispatch.views.form.tabs.schedule" for tab in form_tabs))
+
+        page_by_id = {page.get("id"): page for page in (accepted_manifest.get("pages") or []) if isinstance(page, dict)}
+        self.assertEqual(page_by_id["dispatch.control_page"].get("title_key"), "dispatch.pages.control.title")
+        self.assertEqual((((page_by_id["dispatch.form_page"].get("content") or [])[0]).get("kind")), "record")
+
+        relations = [item for item in (accepted_manifest.get("relations") or []) if isinstance(item, dict)]
+        self.assertTrue(any(rel.get("label_field") == "dispatch_stop.name" for rel in relations))
+
+        triggers = [item for item in (accepted_manifest.get("triggers") or []) if isinstance(item, dict)]
+        self.assertTrue(any(trigger.get("id") == "trigger.dispatch_status_changed" for trigger in triggers))
+
+        nav_items = ((((accepted_manifest.get("app") or {}).get("nav") or [])[0]).get("items")) or []
+        self.assertTrue(any(isinstance(item, dict) and item.get("menu_label_key") == "dispatch.nav.calendar" for item in nav_items))
+
+    def test_create_module_preflight_accepts_line_items_and_cross_module_dependencies(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "display_field": "contact.name",
+                    "fields": [
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                        {"id": "contact.email", "type": "string", "label": "Email"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "display_field": "product.name",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                        {"id": "product.uom", "type": "string", "label": "UOM"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {"module_key": "contacts", "version": "1.0.0", "manifest": contacts_manifest},
+            "products": {"module_key": "products", "version": "1.0.0", "manifest": products_manifest},
+        }
+        module_id = "sales_quote_studio"
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": module_id, "key": module_id, "name": "Sales Quote Studio", "version": "0.1.0"},
+            "app": {
+                "home": "page:sales_quote.list_page",
+                "nav": [
+                    {
+                        "group": "Sales",
+                        "items": [
+                            {"label": "Quotes", "menu_label_key": "sales_quotes.nav.quotes", "to": "page:sales_quote.list_page"}
+                        ],
+                    }
+                ],
+            },
+            "entities": [
+                {
+                    "id": "entity.sales_quote",
+                    "label": "Sales Quote",
+                    "display_field": "sales_quote.number",
+                    "fields": [
+                        {"id": "sales_quote.number", "type": "string", "label": "Quote Number", "label_key": "sales_quotes.entities.sales_quote.fields.number.label", "required": True},
+                        {
+                            "id": "sales_quote.customer_id",
+                            "type": "lookup",
+                            "label": "Customer",
+                            "label_key": "sales_quotes.entities.sales_quote.fields.customer_id.label",
+                            "entity": "entity.contact",
+                            "display_field": "contact.name",
+                            "required": True,
+                        },
+                        {
+                            "id": "sales_quote.status",
+                            "type": "enum",
+                            "label": "Status",
+                            "label_key": "sales_quotes.entities.sales_quote.fields.status.label",
+                            "default": "draft",
+                            "options": [
+                                {"value": "draft", "label": "Draft", "label_key": "sales_quotes.entities.sales_quote.fields.status.options.draft", "status_label_key": "sales_quotes.entities.sales_quote.fields.status.options.draft"},
+                                {"value": "sent", "label": "Sent", "label_key": "sales_quotes.entities.sales_quote.fields.status.options.sent", "status_label_key": "sales_quotes.entities.sales_quote.fields.status.options.sent"},
+                                {"value": "accepted", "label": "Accepted", "label_key": "sales_quotes.entities.sales_quote.fields.status.options.accepted", "status_label_key": "sales_quotes.entities.sales_quote.fields.status.options.accepted"},
+                            ],
+                        },
+                        {"id": "sales_quote.quote_date", "type": "date", "label": "Quote Date", "label_key": "sales_quotes.entities.sales_quote.fields.quote_date.label"},
+                        {"id": "sales_quote.valid_until", "type": "date", "label": "Valid Until", "label_key": "sales_quotes.entities.sales_quote.fields.valid_until.label"},
+                        {"id": "sales_quote.currency", "type": "string", "label": "Currency", "label_key": "sales_quotes.entities.sales_quote.fields.currency.label", "default": "NZD"},
+                    ],
+                },
+                {
+                    "id": "entity.sales_quote_line",
+                    "label": "Quote Line",
+                    "display_field": "sales_quote_line.description",
+                    "fields": [
+                        {
+                            "id": "sales_quote_line.sales_quote_id",
+                            "type": "lookup",
+                            "label": "Quote",
+                            "label_key": "sales_quotes.entities.sales_quote_line.fields.sales_quote_id.label",
+                            "entity": "entity.sales_quote",
+                            "display_field": "sales_quote.number",
+                            "required": True,
+                        },
+                        {
+                            "id": "sales_quote_line.product_id",
+                            "type": "lookup",
+                            "label": "Product",
+                            "label_key": "sales_quotes.entities.sales_quote_line.fields.product_id.label",
+                            "entity": "entity.product",
+                            "display_field": "product.name",
+                        },
+                        {"id": "sales_quote_line.description", "type": "string", "label": "Description", "label_key": "sales_quotes.entities.sales_quote_line.fields.description.label"},
+                        {
+                            "id": "sales_quote_line.qty",
+                            "type": "number",
+                            "label": "Qty",
+                            "label_key": "sales_quotes.entities.sales_quote_line.fields.qty.label",
+                            "default": 1,
+                            "format": {"kind": "measurement", "unit_field": "sales_quote_line.uom", "precision": 2},
+                        },
+                        {"id": "sales_quote_line.uom", "type": "string", "label": "UOM", "label_key": "sales_quotes.entities.sales_quote_line.fields.uom.label", "default": "ea"},
+                        {
+                            "id": "sales_quote_line.unit_price",
+                            "type": "number",
+                            "label": "Unit Price",
+                            "label_key": "sales_quotes.entities.sales_quote_line.fields.unit_price.label",
+                            "default": 0,
+                            "format": {"kind": "currency", "currency_code": "NZD", "precision": 2},
+                        },
+                        {
+                            "id": "sales_quote_line.line_total",
+                            "type": "number",
+                            "label": "Line Total",
+                            "label_key": "sales_quotes.entities.sales_quote_line.fields.line_total.label",
+                            "readonly": True,
+                            "format": {"kind": "currency", "currency_code": "NZD", "precision": 2},
+                            "compute": {
+                                "expression": {
+                                    "op": "round",
+                                    "args": [
+                                        {
+                                            "op": "mul",
+                                            "args": [
+                                                {"ref": "$current.sales_quote_line.qty"},
+                                                {"ref": "$current.sales_quote_line.unit_price"},
+                                            ],
+                                        },
+                                        2,
+                                    ],
+                                }
+                            },
+                        },
+                    ],
+                },
+            ],
+            "views": [
+                {
+                    "id": "sales_quote.list",
+                    "kind": "list",
+                    "entity": "entity.sales_quote",
+                    "columns": [
+                        {"field_id": "sales_quote.number"},
+                        {"field_id": "sales_quote.customer_id"},
+                        {"field_id": "sales_quote.status"},
+                        {"field_id": "sales_quote.quote_date"},
+                    ],
+                },
+                {
+                    "id": "sales_quote.form",
+                    "kind": "form",
+                    "entity": "entity.sales_quote",
+                    "sections": [
+                        {"id": "summary", "title": "Summary", "fields": ["sales_quote.number", "sales_quote.customer_id", "sales_quote.status"]},
+                        {"id": "commercial", "title": "Commercial", "fields": ["sales_quote.quote_date", "sales_quote.valid_until", "sales_quote.currency"]},
+                    ],
+                    "header": {"statusbar": {"field_id": "sales_quote.status"}},
+                },
+                {
+                    "id": "sales_quote.calendar",
+                    "kind": "calendar",
+                    "entity": "entity.sales_quote",
+                    "calendar": {
+                        "title_field": "sales_quote.number",
+                        "date_start": "sales_quote.quote_date",
+                        "date_end": "sales_quote.valid_until",
+                        "color_field": "sales_quote.status",
+                        "default_scale": "month",
+                    },
+                },
+                {
+                    "id": "sales_quote_line.list",
+                    "kind": "list",
+                    "entity": "entity.sales_quote_line",
+                    "columns": [
+                        {"field_id": "sales_quote_line.product_id"},
+                        {"field_id": "sales_quote_line.description"},
+                        {"field_id": "sales_quote_line.qty"},
+                        {"field_id": "sales_quote_line.unit_price"},
+                        {"field_id": "sales_quote_line.line_total"},
+                    ],
+                },
+            ],
+            "pages": [
+                {
+                    "id": "sales_quote.list_page",
+                    "title": "Quotes",
+                    "title_key": "sales_quotes.pages.list.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "sales_quotes.pages.list.container.title",
+                            "content": [{"kind": "view", "target": "view:sales_quote.list"}],
+                        }
+                    ],
+                },
+                {
+                    "id": "sales_quote.form_page",
+                    "title": "Quote",
+                    "title_key": "sales_quotes.pages.form.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "record",
+                            "entity_id": "entity.sales_quote",
+                            "record_id_query": "id",
+                            "content": [
+                                {
+                                    "kind": "tabs",
+                                    "default_tab": "details",
+                                    "tabs": [
+                                        {
+                                            "id": "details",
+                                            "label": "Details",
+                                            "tab_label_key": "sales_quotes.pages.form.tabs.details",
+                                            "content": [{"kind": "view", "target": "view:sales_quote.form"}],
+                                        },
+                                        {
+                                            "id": "line_items",
+                                            "label": "Line Items",
+                                            "tab_label_key": "sales_quotes.pages.form.tabs.line_items",
+                                            "content": [
+                                                {
+                                                    "kind": "related_list",
+                                                    "entity_id": "entity.sales_quote_line",
+                                                    "view": "sales_quote_line.list",
+                                                    "record_domain": {"op": "eq", "field": "sales_quote_line.sales_quote_id", "value": {"ref": "$record.id"}},
+                                                }
+                                            ],
+                                        },
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "sales_quote.calendar_page",
+                    "title": "Quote Calendar",
+                    "title_key": "sales_quotes.pages.calendar.title",
+                    "layout": "single",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "title_key": "sales_quotes.pages.calendar.container.title",
+                            "content": [{"kind": "view", "target": "view:sales_quote.calendar"}],
+                        }
+                    ],
+                },
+            ],
+            "actions": [
+                {
+                    "id": "action.sales_quote_mark_sent",
+                    "kind": "update_record",
+                    "entity_id": "entity.sales_quote",
+                    "label": "Mark Sent",
+                    "action_label_key": "sales_quotes.actions.mark_sent",
+                    "patch": {"sales_quote.status": "sent"},
+                },
+                {
+                    "id": "action.sales_quote_accept",
+                    "kind": "update_record",
+                    "entity_id": "entity.sales_quote",
+                    "label": "Accept Quote",
+                    "action_label_key": "sales_quotes.actions.accept",
+                    "patch": {"sales_quote.status": "accepted"},
+                },
+            ],
+            "triggers": [
+                {
+                    "id": "trigger.sales_quote_status_changed",
+                    "label": "Quote Status Changed",
+                    "event": "workflow.status_changed",
+                    "entity_id": "entity.sales_quote",
+                    "status_field": "sales_quote.status",
+                }
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.sales_quote_status",
+                    "entity": "entity.sales_quote",
+                    "status_field": "sales_quote.status",
+                    "states": [
+                        {"id": "draft", "label": "Draft", "label_key": "sales_quotes.workflows.status.states.draft", "status_label_key": "sales_quotes.workflows.status.states.draft"},
+                        {"id": "sent", "label": "Sent", "label_key": "sales_quotes.workflows.status.states.sent", "status_label_key": "sales_quotes.workflows.status.states.sent"},
+                        {"id": "accepted", "label": "Accepted", "label_key": "sales_quotes.workflows.status.states.accepted", "status_label_key": "sales_quotes.workflows.status.states.accepted"},
+                    ],
+                    "transitions": [
+                        {"from": "draft", "to": "sent", "label": "Mark Sent", "label_key": "sales_quotes.workflows.status.transitions.sent"},
+                        {"from": "sent", "to": "accepted", "label": "Accept Quote", "label_key": "sales_quotes.workflows.status.transitions.accepted"},
+                    ],
+                }
+            ],
+            "relations": [
+                {"from": "entity.sales_quote", "to": "entity.sales_quote_line", "label_field": "sales_quote_line.description"}
+            ],
+        }
+
+        normalized, errors, warnings = validate_manifest_raw(manifest, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        valid_ops, preflight_errors = _ai_preflight_candidate_ops(
+            module_index,
+            [{"op": "create_module", "artifact_type": "module", "artifact_id": module_id, "manifest": manifest}],
+        )
+
+        self.assertEqual(preflight_errors, [])
+        self.assertEqual(len(valid_ops), 1)
+        accepted_manifest = valid_ops[0].get("manifest") or {}
+        entity_by_id = {entity.get("id"): entity for entity in (accepted_manifest.get("entities") or []) if isinstance(entity, dict)}
+        self.assertIn("entity.sales_quote_line", entity_by_id)
+        quote_fields = {field.get("id"): field for field in (entity_by_id["entity.sales_quote"].get("fields") or []) if isinstance(field, dict)}
+        line_fields = {field.get("id"): field for field in (entity_by_id["entity.sales_quote_line"].get("fields") or []) if isinstance(field, dict)}
+        self.assertEqual(quote_fields["sales_quote.customer_id"].get("entity"), "entity.contact")
+        self.assertEqual(line_fields["sales_quote_line.product_id"].get("entity"), "entity.product")
+        self.assertEqual(((line_fields["sales_quote_line.qty"].get("format") or {}).get("unit_field")), "sales_quote_line.uom")
+        self.assertIn("expression", (line_fields["sales_quote_line.line_total"].get("compute") or {}))
+
+        page_by_id = {page.get("id"): page for page in (accepted_manifest.get("pages") or []) if isinstance(page, dict)}
+        tabs = (((((page_by_id["sales_quote.form_page"].get("content") or [])[0]).get("content") or [])[0]).get("tabs")) or []
+        line_items_tab = next(tab for tab in tabs if isinstance(tab, dict) and tab.get("id") == "line_items")
+        related_list = ((line_items_tab.get("content") or [])[0]) if isinstance(line_items_tab, dict) else None
+        self.assertEqual((related_list or {}).get("kind"), "related_list")
+        self.assertEqual((related_list or {}).get("entity_id"), "entity.sales_quote_line")
+        self.assertEqual((((related_list or {}).get("record_domain")) or {}).get("field"), "sales_quote_line.sales_quote_id")
+
+        dependency_ops = main._ai_build_create_module_dependency_ops(module_id, manifest, module_index)
+        self.assertEqual(
+            {
+                (op.get("dependency") or {}).get("module")
+                for op in dependency_ops
+                if isinstance(op, dict) and op.get("op") == "update_dependency"
+            },
+            {"contacts", "products"},
+        )
+
     def test_workflow_transitions_cover_adjacent_publishing_states(self) -> None:
         transitions = main._ai_workflow_transitions_for_states(["draft", "testing", "approved", "published"])
 
@@ -2817,6 +4200,53 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertTrue(any(action_id.endswith("start_testing") for action_id in secondary_action_ids))
         self.assertTrue(any(action_id.endswith("approve") for action_id in secondary_action_ids))
         self.assertTrue(any(action_id.endswith("publish") for action_id in secondary_action_ids))
+
+    def test_module_manifest_quality_report_flags_request_modules_missing_decision_structure(self) -> None:
+        manifest = {
+            "id": "purchase_requests",
+            "name": "Purchase Requests",
+            "entities": [
+                {
+                    "id": "entity.purchase_request",
+                    "label": "Purchase Request",
+                    "fields": [
+                        {"id": "purchase_request.name", "type": "string", "label": "Request Title"},
+                        {"id": "purchase_request.status", "type": "enum", "label": "Status", "options": ["draft", "submitted", "approved"]},
+                        {"id": "purchase_request.owner_id", "type": "user", "label": "Owner"},
+                        {"id": "purchase_request.notes", "type": "text", "label": "Notes"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "purchase_request.list", "kind": "list"},
+                {"id": "purchase_request.form", "kind": "form", "sections": [{"id": "main", "title": "Main"}]},
+            ],
+            "pages": [
+                {"id": "purchase_requests.list_page", "title": "Purchase Requests", "layout": "single", "content": []},
+                {"id": "purchase_requests.form_page", "title": "Purchase Request", "layout": "single", "content": []},
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.purchase_request_status",
+                    "entity": "entity.purchase_request",
+                    "status_field": "purchase_request.status",
+                    "states": [
+                        {"id": "draft", "label": "Draft"},
+                        {"id": "submitted", "label": "Submitted"},
+                        {"id": "approved", "label": "Approved"},
+                    ],
+                }
+            ],
+            "actions": [
+                {"id": "action.purchase_request_submit", "kind": "update_record", "label": "Submit", "entity_id": "entity.purchase_request"},
+            ],
+        }
+
+        report = main._ai_module_manifest_quality_report("purchase_requests", manifest, family="request")
+
+        self.assertFalse(report["ok"])
+        self.assertGreater(report.get("domain_matched_pattern_count", 0), 0)
+        self.assertTrue(any("approval-oriented module" in issue.lower() or "requester" in issue.lower() for issue in report["issues"]))
 
     def test_normalize_module_design_spec_preserves_generic_related_entities(self) -> None:
         normalized = main._ai_normalize_module_design_spec(
@@ -3342,6 +4772,347 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("create_module", op_names)
         self.assertIn("add_action", op_names)
 
+    def test_plan_from_message_follow_up_record_notification_request_keeps_pending_module_and_asks_recipient(self) -> None:
+        pending_manifest = {
+            "module": {"id": "cooking", "key": "cooking", "name": "Cooking"},
+            "entities": [
+                {
+                    "id": "entity.recipe",
+                    "label": "Recipe",
+                    "display_field": "recipe.name",
+                    "fields": [
+                        {"id": "recipe.name", "label": "Recipe Name", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [{"id": "recipe.form", "kind": "form", "entity": "entity.recipe", "sections": []}],
+        }
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "fields": [{"id": "contact.name", "label": "Name", "type": "string"}]}],
+            "views": [],
+        }
+        session = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "module",
+            "selected_artifact_key": "contacts",
+            "status": "planning",
+            "workspace_id": "default",
+        }
+        answer_hints = {
+            "pending_candidate_ops": [
+                {"op": "create_module", "artifact_id": "cooking", "manifest": pending_manifest}
+            ],
+            "pending_affected_modules": ["cooking"],
+            "module_target": "cooking",
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"contacts": {"manifest": contacts_manifest}}),
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ],
+            ),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                session,
+                "when i create a new recipe i want to send a notification",
+                answer_hints=answer_hints,
+            )
+
+        self.assertEqual(derived.get("affected_modules"), ["cooking"])
+        op_names = [op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(op_names, ["create_module"])
+        self.assertNotIn("add_field", op_names)
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "notify_recipient")
+        option_values = [item.get("value") for item in (meta.get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(option_values, ["nick@octodrop.com", "kelly@octodrop.com"])
+
+    def test_plan_from_message_follow_up_record_notification_request_adds_automation_after_recipient_choice(self) -> None:
+        pending_manifest = {
+            "module": {"id": "cooking", "key": "cooking", "name": "Cooking"},
+            "entities": [
+                {
+                    "id": "entity.recipe",
+                    "label": "Recipe",
+                    "display_field": "recipe.name",
+                    "fields": [
+                        {"id": "recipe.name", "label": "Recipe Name", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [{"id": "recipe.form", "kind": "form", "entity": "entity.recipe", "sections": []}],
+        }
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "fields": [{"id": "contact.name", "label": "Name", "type": "string"}]}],
+            "views": [],
+        }
+        session = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "module",
+            "selected_artifact_key": "contacts",
+            "status": "planning",
+            "workspace_id": "default",
+        }
+        answer_hints = {
+            "pending_candidate_ops": [
+                {"op": "create_module", "artifact_id": "cooking", "manifest": pending_manifest}
+            ],
+            "pending_affected_modules": ["cooking"],
+            "module_target": "cooking",
+            "recipient_email": "nick@octodrop.com",
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"contacts": {"manifest": contacts_manifest}}),
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ],
+            ),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                session,
+                "when i create a new recipe i want to send a notification",
+                answer_hints=answer_hints,
+            )
+
+        self.assertEqual(derived.get("affected_modules"), ["cooking"])
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_module", "create_automation_record"])
+        automation_op = ops[1]
+        step_inputs = (((automation_op.get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("recipient_user_ids"), ["user-nick"])
+        self.assertEqual(step_inputs.get("recipient_user_id"), "user-nick")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+
+    def test_plan_from_message_single_prompt_create_module_with_notification_asks_for_recipient(self) -> None:
+        session = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "none",
+            "selected_artifact_key": "",
+            "status": "planning",
+            "workspace_id": "default",
+        }
+        message = (
+            "create me a new module called cooker. i want to track all my recipes and ingredients. "
+            "make the ingredients as line items. and when i create a new recipe send a notification"
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_match_named_workspace_artifacts", lambda *_args, **_kwargs: []),
+            patch.object(main, "_ai_scoped_artifact_plan", lambda *_args, **_kwargs: None),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ],
+            ),
+        ):
+            plan, derived = _ai_plan_from_message(None, session, message, answer_hints={})
+
+        self.assertEqual(derived.get("affected_modules"), ["cooker"])
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_module"])
+        self.assertEqual((plan.get("required_question_meta") or {}).get("slot_kind"), "notify_recipient")
+        self.assertNotIn("What should the new module be called?", plan.get("required_questions") or [])
+
+    def test_plan_from_message_single_prompt_create_module_notification_followup_keeps_module_context(self) -> None:
+        pending_manifest = {
+            "module": {"id": "cooker", "key": "cooker", "name": "Cooker"},
+            "entities": [
+                {
+                    "id": "entity.recipe",
+                    "label": "Recipe",
+                    "display_field": "recipe.name",
+                    "fields": [
+                        {"id": "recipe.name", "label": "Recipe Name", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [{"id": "recipe.form", "kind": "form", "entity": "entity.recipe", "sections": []}],
+        }
+        session = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "none",
+            "selected_artifact_key": "",
+            "status": "planning",
+            "workspace_id": "default",
+        }
+        answer_hints = {
+            "pending_candidate_ops": [
+                {"op": "create_module", "artifact_id": "cooker", "manifest": pending_manifest}
+            ],
+            "pending_affected_modules": ["cooker"],
+            "module_target": "cooker",
+            "module_name": "Cooker",
+            "recipient_email": "nick@octodrop.com",
+            "answer_text": "nick@octodrop.com",
+        }
+        message = (
+            "create me a new module called cooker. i want to track all my recipes and ingredients. "
+            "make the ingredients as line items. and when i create a new recipe send a notification\n"
+            "Clarification: nick@octodrop.com"
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_match_named_workspace_artifacts", lambda *_args, **_kwargs: []),
+            patch.object(main, "_ai_scoped_artifact_plan", lambda *_args, **_kwargs: None),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ],
+            ),
+        ):
+            plan, derived = _ai_plan_from_message(None, session, message, answer_hints=answer_hints)
+
+        self.assertEqual(derived.get("affected_modules"), ["cooker"])
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_module", "create_automation_record"])
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertNotIn("What should the new module be called?", plan.get("required_questions") or [])
+
+    def test_octo_chat_create_module_then_follow_up_notification_applies_to_sandbox(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: actor),
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ],
+            ),
+        ):
+            with TestClient(main.app) as client:
+                main._octo_ai_seed_in_memory_baseline_modules()
+                create_response = client.post("/octo-ai/sessions", json={"title": "Cooking Sandbox"})
+                self.assertEqual(create_response.status_code, 200, create_response.text)
+                session_id = create_response.json()["session"]["id"]
+                sandbox_workspace_id = "ws_sandbox_cooking_flow"
+                _ai_update_record(
+                    _AI_ENTITY_SESSION,
+                    session_id,
+                    {"sandbox_workspace_id": sandbox_workspace_id, "sandbox_status": "active"},
+                )
+
+                first_chat = client.post(
+                    f"/octo-ai/sessions/{session_id}/chat",
+                    json={
+                        "message": "can you create me a cooking module, the purpose of this module is to record my recipes and recipe ingredients for my up and coming book, i will need to store attachments",
+                    },
+                )
+                self.assertEqual(first_chat.status_code, 200, first_chat.text)
+                first_body = first_chat.json()
+                self.assertTrue(first_body.get("ok"), first_body)
+                first_plan = first_body.get("plan") or {}
+                first_ops = [op for op in (first_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+                self.assertEqual([op.get("op") for op in first_ops], ["create_module"])
+
+                second_chat = client.post(
+                    f"/octo-ai/sessions/{session_id}/chat",
+                    json={"message": "when i create a new recipe i want to send a notification"},
+                )
+                self.assertEqual(second_chat.status_code, 200, second_chat.text)
+                second_body = second_chat.json()
+                self.assertTrue(second_body.get("ok"), second_body)
+                second_plan = second_body.get("plan") or {}
+                second_ops = [op for op in (second_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+                self.assertEqual([op.get("op") for op in second_ops], ["create_module"])
+                self.assertEqual((second_plan.get("required_question_meta") or {}).get("slot_kind"), "notify_recipient")
+
+                recipient_answer = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "hints": {
+                            "selected_option_id": "member:user-nick",
+                            "selected_option_value": "nick@octodrop.com",
+                            "selected_option_label": "Nick",
+                            "recipient_email": "nick@octodrop.com",
+                        },
+                    },
+                )
+                self.assertEqual(recipient_answer.status_code, 200, recipient_answer.text)
+                recipient_body = recipient_answer.json()
+                self.assertTrue(recipient_body.get("ok"), recipient_body)
+                recipient_plan = recipient_body.get("plan") or {}
+                recipient_ops = [op for op in (recipient_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+                self.assertEqual([op.get("op") for op in recipient_ops], ["create_module", "create_automation_record"])
+                self.assertEqual((recipient_plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+
+                approve_answer = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Approved."},
+                )
+                self.assertEqual(approve_answer.status_code, 200, approve_answer.text)
+                approve_body = approve_answer.json()
+                self.assertTrue(approve_body.get("ok"), approve_body)
+                approved_plan = approve_body.get("plan") or {}
+                approved_ops = [op for op in (approved_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+                self.assertEqual([op.get("op") for op in approved_ops], ["create_module", "create_automation_record"])
+                self.assertEqual(approved_plan.get("required_questions"), [])
+                expected_automation_id = approved_ops[1].get("artifact_id")
+                self.assertIsInstance(expected_automation_id, str)
+                self.assertTrue(expected_automation_id)
+
+                patchset_response = client.post(f"/octo-ai/sessions/{session_id}/patchsets/generate", json={})
+                self.assertEqual(patchset_response.status_code, 200, patchset_response.text)
+                patchset_body = patchset_response.json()
+                self.assertTrue(patchset_body.get("ok"), patchset_body)
+                patchset_id = (patchset_body.get("patchset") or {}).get("id")
+                self.assertTrue(isinstance(patchset_id, str) and patchset_id)
+
+                apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
+                self.assertEqual(apply_response.status_code, 200, apply_response.text)
+                apply_body = apply_response.json()
+                self.assertTrue(apply_body.get("ok"), apply_body)
+
+                sandbox_request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={}))
+                with main._ai_ops_workspace_scope(sandbox_request, sandbox_workspace_id, {"workspace_id": sandbox_workspace_id}):
+                    sandbox_module = main._get_module(sandbox_request, "cooking")
+                    sandbox_automation = main.automation_store.get(expected_automation_id)
+
+        self.assertIsInstance(sandbox_module, dict)
+        self.assertEqual(sandbox_module.get("module_id"), "cooking")
+        self.assertIsInstance(sandbox_automation, dict)
+        self.assertEqual(sandbox_automation.get("status"), "draft")
+
     def test_add_field_scope_ignores_tab_label_as_module_target(self) -> None:
         contacts_manifest = {
             "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
@@ -3478,6 +5249,67 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(plan.get("questions"), [])
         self.assertEqual((plan.get("planner_state") or {}).get("intent"), "remove_view_mode")
         self.assertEqual([op.get("op") for op in (plan.get("candidate_ops") or [])], ["update_page", "remove_view"])
+
+    def test_slot_plan_remove_view_request_respects_selected_page_target(self) -> None:
+        manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [{"id": "contact.name", "label": "Name", "type": "string"}],
+                }
+            ],
+            "views": [
+                {"id": "contact.list", "kind": "list", "entity": "entity.contact", "columns": [{"field_id": "contact.name", "label": "Name"}]},
+                {"id": "contact.calendar", "kind": "calendar", "entity": "entity.contact"},
+            ],
+            "pages": [
+                {
+                    "id": "contact.ops_page",
+                    "title": "Operations",
+                    "content": [
+                        {
+                            "kind": "view_modes",
+                            "entity_id": "entity.contact",
+                            "default_mode": "calendar",
+                            "modes": [
+                                {"mode": "calendar", "target": "view:contact.calendar"},
+                                {"mode": "list", "target": "view:contact.list"},
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "contact.schedule_page",
+                    "title": "Schedule",
+                    "content": [
+                        {
+                            "kind": "view_modes",
+                            "entity_id": "entity.contact",
+                            "default_mode": "calendar",
+                            "modes": [
+                                {"mode": "calendar", "target": "view:contact.calendar"},
+                                {"mode": "list", "target": "view:contact.list"},
+                            ],
+                        }
+                    ],
+                },
+            ],
+        }
+        module_index = {"contacts": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Remove the calendar from Contacts.",
+            [],
+            module_index,
+            answer_hints={"planned_page_id": "contact.ops_page"},
+        )
+
+        self.assertEqual(plan.get("questions"), [])
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_page_id"), "contact.ops_page")
+        ops = plan.get("candidate_ops") or []
+        self.assertEqual([op.get("op") for op in ops], ["update_page"])
+        self.assertEqual(ops[0].get("page_id"), "contact.ops_page")
 
     def test_slot_plan_marks_natural_move_to_tab_phrase_as_noop_when_field_missing(self) -> None:
         manifest = {
@@ -3784,6 +5616,48 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
         self.assertIn("Create a new module 'Job Hazard Analysis'.", text)
         self.assertIn("Planned changes:", text)
+        self.assertNotIn("What should the new module be called?", text)
+
+    def test_plan_from_message_instagram_influencer_module_stays_in_confirm_plan_flow(self) -> None:
+        prompt = (
+            "hi, i want to add a new module to our collection, i want to track instagram influencers "
+            "that we are sending products too, we need to track their handle, their coupon code, "
+            "maybe track if they were good or not, maybe how many followers / purchases etc, and "
+            "line items on what we sent them from our catalog. look at our other modules but dont change them"
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "create_module")
+        self.assertEqual((plan.get("planner_state") or {}).get("module_name"), "Influencers")
+        create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
+        self.assertEqual(create_op.get("artifact_id"), "influencers")
+        manifest = copy.deepcopy(create_op.get("manifest") or {})
+        self.assertEqual(((manifest.get("module") or {}).get("name")), "Influencers")
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.influencer", entity_ids)
+        self.assertIn("entity.sent_product", entity_ids)
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Create a new module 'Influencers'.", text)
+        self.assertNotIn("Spend & Sales Tracker", text)
         self.assertNotIn("What should the new module be called?", text)
 
     def test_build_create_module_dependency_ops_adds_required_dependency_for_external_lookup(self) -> None:
@@ -4385,6 +6259,845 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((plan.get("planner_state") or {}).get("intent"), "upgrade_module_style")
         self.assertIn("contacts", plan.get("affected_modules", []))
         self.assertFalse(any(op.get("op") == "create_module" for op in plan.get("candidate_ops", [])))
+
+    def test_slot_plan_design_upgrade_respects_selected_view_target(self) -> None:
+        manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [{"id": "contact.name", "label": "Name", "type": "string"}],
+                }
+            ],
+            "views": [
+                {"id": "contact.list", "kind": "list", "entity": "entity.contact", "columns": [{"field_id": "contact.name", "label": "Name"}]},
+                {"id": "contact.form", "kind": "form", "entity": "entity.contact", "sections": [{"id": "primary", "fields": ["contact.name"]}]},
+            ],
+            "pages": [
+                {"id": "contact.list_page", "type": "view", "title": "All Contacts", "view_id": "contact.list"},
+                {"id": "contact.form_page", "type": "view", "title": "Contact", "view_id": "contact.form"},
+            ],
+            "actions": [],
+        }
+        module_index = {"contacts": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "For Contacts, make it list-first with useful views.",
+            [],
+            module_index,
+            answer_hints={"planned_view_id": "contact.list"},
+        )
+
+        self.assertEqual(plan.get("questions"), [])
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_view_id"), "contact.list")
+        ops = [op for op in (plan.get("candidate_ops") or []) if isinstance(op, dict)]
+        self.assertTrue(ops)
+        self.assertTrue(all(op.get("op") in {"update_view", "update_page"} for op in ops))
+        self.assertTrue(any(op.get("op") == "update_view" and op.get("view_id") == "contact.list" for op in ops))
+        self.assertFalse(any(op.get("op") == "update_view" and op.get("view_id") == "contact.form" for op in ops))
+
+    def test_preflight_candidate_ops_respects_selected_page_target_for_page_surface_ops(self) -> None:
+        manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "fields": [{"id": "contact.name", "label": "Name", "type": "string"}],
+                }
+            ],
+            "views": [
+                {"id": "contact.list", "kind": "list", "entity": "entity.contact", "columns": [{"field_id": "contact.name", "label": "Name"}]},
+                {"id": "contact.form", "kind": "form", "entity": "entity.contact", "sections": [{"id": "main", "fields": ["contact.name"]}]},
+            ],
+            "pages": [
+                {"id": "contact.dashboard_page", "title": "Dashboard", "content": [{"kind": "view", "target": "contact.list"}]},
+                {"id": "contact.record_page", "title": "Record", "content": [{"kind": "view", "target": "contact.form"}]},
+            ],
+        }
+        module_index = {"contacts": {"manifest": manifest}}
+        candidate_ops = [
+            {
+                "op": "add_page_block",
+                "artifact_type": "module",
+                "artifact_id": "contacts",
+                "page_id": "contact.dashboard_page",
+                "block": {"kind": "metric", "title": "Open Contacts"},
+            },
+            {
+                "op": "add_page_block",
+                "artifact_type": "module",
+                "artifact_id": "contacts",
+                "page_id": "contact.record_page",
+                "block": {"kind": "metric", "title": "Record Insights"},
+            },
+            {
+                "op": "update_view",
+                "artifact_type": "module",
+                "artifact_id": "contacts",
+                "view_id": "contact.list",
+                "changes": {"columns": [{"field_id": "contact.name", "label": "Full Name"}]},
+            },
+            {
+                "op": "update_view",
+                "artifact_type": "module",
+                "artifact_id": "contacts",
+                "view_id": "contact.form",
+                "changes": {"title": "Contact Record"},
+            },
+        ]
+
+        valid_ops, errors = _ai_preflight_candidate_ops(
+            module_index,
+            candidate_ops,
+            answer_hints={"planned_page_id": "contact.dashboard_page"},
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual([op.get("op") for op in valid_ops], ["add_page_block", "update_view"])
+        self.assertEqual(valid_ops[0].get("page_id"), "contact.dashboard_page")
+        self.assertEqual(valid_ops[1].get("view_id"), "contact.list")
+
+    def test_slot_plan_builds_dashboard_page_block_for_selected_page_target(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [{"id": "job.title", "label": "Title", "type": "string"}],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show jobs by status and overdue jobs.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        self.assertEqual(plan.get("questions"), [])
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "update_dashboard_page")
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_page_id"), "job.dashboard_page")
+        ops = plan.get("candidate_ops") or []
+        self.assertEqual([op.get("op") for op in ops], ["add_page_block"])
+        block = ops[0].get("block") if isinstance(ops[0], dict) else {}
+        self.assertEqual(block.get("kind"), "stat_cards")
+        cards = block.get("cards") or []
+        self.assertEqual([card.get("label") for card in cards], ["jobs by status", "overdue jobs"])
+        self.assertTrue(all(card.get("entity_id") == "entity.job" for card in cards))
+        self.assertTrue(all(card.get("measure") == "count" for card in cards))
+
+    def test_slot_plan_dashboard_page_block_adds_measure_advisory_for_complex_metric_words(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [{"id": "job.title", "label": "Title", "type": "string"}],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show total labour hours today and total cost today.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        advisories = plan.get("advisories") or []
+        self.assertTrue(any("total labour hours today" in item.lower() for item in advisories))
+        self.assertTrue(any("total cost today" in item.lower() for item in advisories))
+
+    def test_slot_plan_builds_dashboard_sum_measures_from_real_numeric_fields(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.total_cost", "label": "Total Cost", "type": "currency"},
+                        {"id": "job.labour_hours", "label": "Labour Hours", "type": "number"},
+                    ],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show total labour hours today and total cost today.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        cards = (((plan.get("candidate_ops") or [{}])[0]).get("block") or {}).get("cards") or []
+        card_measures = {card.get("label"): card.get("measure") for card in cards if isinstance(card, dict)}
+        card_formats = {card.get("label"): card.get("format") for card in cards if isinstance(card, dict)}
+        self.assertEqual(card_measures.get("total labour hours today"), "sum:job.labour_hours")
+        self.assertEqual(card_measures.get("total cost today"), "sum:job.total_cost")
+        self.assertEqual(card_formats.get("total cost today"), "currency")
+        self.assertEqual(plan.get("advisories") or [], [])
+
+    def test_slot_plan_dashboard_request_returns_metric_choice_for_ambiguous_numeric_kpi(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.labour_hours", "label": "Labour Hours", "type": "number"},
+                        {"id": "job.billable_hours", "label": "Billable Hours", "type": "number"},
+                    ],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show total hours today.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("slot_kind"), "dashboard_metric_choice")
+        self.assertEqual(meta.get("hint_field"), "dashboard_metric_choice")
+        option_values = [option.get("value") for option in (meta.get("options") or []) if isinstance(option, dict)]
+        decoded = [main._ai_decode_dashboard_metric_choice(value) for value in option_values]
+        self.assertEqual([item.get("field_id") for item in decoded if isinstance(item, dict)], ["job.billable_hours", "job.labour_hours"])
+
+    def test_slot_plan_dashboard_request_applies_selected_numeric_metric_choice(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.labour_hours", "label": "Labour Hours", "type": "number"},
+                        {"id": "job.billable_hours", "label": "Billable Hours", "type": "number"},
+                    ],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+        selected = main._ai_encode_dashboard_metric_choice(
+            {
+                "label": "total hours today",
+                "measure": "sum:job.labour_hours",
+                "group_by": None,
+                "field_id": "job.labour_hours",
+            }
+        )
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show total hours today.",
+            ["jobs"],
+            module_index,
+            answer_hints={
+                "module_target": "jobs",
+                "planned_page_id": "job.dashboard_page",
+                "dashboard_metric_choice": selected,
+            },
+        )
+
+        self.assertEqual(plan.get("questions"), [])
+        cards = (((plan.get("candidate_ops") or [{}])[0]).get("block") or {}).get("cards") or []
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].get("measure"), "sum:job.labour_hours")
+
+    def test_slot_plan_builds_dashboard_distinct_measure_for_people_style_grouping(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                    ],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show jobs by technician and jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        cards = (((plan.get("candidate_ops") or [{}])[0]).get("block") or {}).get("cards") or []
+        card_measures = {card.get("label"): card.get("measure") for card in cards if isinstance(card, dict)}
+        self.assertEqual(card_measures.get("jobs by technician"), "count_distinct:job.technician_id")
+        self.assertEqual(card_measures.get("jobs by status"), "count")
+
+    def test_slot_plan_dashboard_request_returns_metric_choice_for_ambiguous_grouping(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.primary_owner_id", "label": "Primary Owner", "type": "lookup"},
+                        {"id": "job.secondary_owner_id", "label": "Secondary Owner", "type": "lookup"},
+                    ],
+                }
+            ],
+            "pages": [
+                {"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []},
+            ],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show jobs by owner.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("slot_kind"), "dashboard_metric_choice")
+        option_values = [option.get("value") for option in (meta.get("options") or []) if isinstance(option, dict)]
+        decoded = [main._ai_decode_dashboard_metric_choice(value) for value in option_values]
+        self.assertEqual([item.get("group_by") for item in decoded if isinstance(item, dict)], ["job.primary_owner_id", "job.secondary_owner_id"])
+
+    def test_slot_plan_dashboard_request_applies_selected_grouping_choice_to_grouped_surfaces(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.primary_owner_id", "label": "Primary Owner", "type": "lookup"},
+                        {"id": "job.secondary_owner_id", "label": "Secondary Owner", "type": "lookup"},
+                    ],
+                }
+            ],
+            "views": [
+                {
+                    "id": "job.graph",
+                    "kind": "graph",
+                    "entity": "entity.job",
+                    "default": {"type": "bar", "group_by": "job.primary_owner_id", "measure": "count"},
+                }
+            ],
+            "pages": [
+                {
+                    "id": "job.dashboard_page",
+                    "title": "Jobs Dashboard",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "graph",
+                                    "modes": [
+                                        {"mode": "graph", "target": "view:job.graph"},
+                                        {"mode": "pivot", "target": "view:job.graph"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+        selected = main._ai_encode_dashboard_metric_choice(
+            {
+                "label": "jobs by owner",
+                "measure": "count_distinct:job.secondary_owner_id",
+                "group_by": "job.secondary_owner_id",
+                "field_id": "job.secondary_owner_id",
+            }
+        )
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show jobs by owner.",
+            ["jobs"],
+            module_index,
+            answer_hints={
+                "module_target": "jobs",
+                "planned_page_id": "job.dashboard_page",
+                "dashboard_metric_choice": selected,
+            },
+        )
+
+        self.assertEqual([op.get("op") for op in (plan.get("candidate_ops") or [])], ["add_page_block", "update_view", "update_page"])
+        graph_update = next(op for op in (plan.get("candidate_ops") or []) if op.get("op") == "update_view")
+        self.assertEqual(((graph_update.get("changes") or {}).get("default") or {}).get("group_by"), "job.secondary_owner_id")
+        self.assertEqual(((graph_update.get("changes") or {}).get("default") or {}).get("measure"), "count_distinct:job.secondary_owner_id")
+
+    def test_slot_plan_builds_dashboard_surface_bundle_for_existing_grouped_surfaces(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+                {"id": "job.graph", "kind": "graph", "entity": "entity.job", "default": {"type": "bar", "group_by": "job.status", "measure": "count"}},
+            ],
+            "pages": [
+                {
+                    "id": "job.dashboard_page",
+                    "title": "Jobs Dashboard",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "graph",
+                                    "modes": [
+                                        {"mode": "graph", "target": "view:job.graph"},
+                                        {"mode": "list", "target": "view:job.list"},
+                                        {"mode": "pivot", "target": "view:job.list"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "In Jobs, update the dashboard page to show jobs by technician and jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "job.dashboard_page"},
+        )
+
+        ops = plan.get("candidate_ops") or []
+        self.assertEqual([op.get("op") for op in ops], ["add_page_block", "update_view", "update_page"])
+        graph_update = next(op for op in ops if op.get("op") == "update_view")
+        self.assertEqual(graph_update.get("view_id"), "job.graph")
+        self.assertEqual(((graph_update.get("changes") or {}).get("default") or {}).get("group_by"), "job.technician_id")
+        self.assertEqual(((graph_update.get("changes") or {}).get("default") or {}).get("measure"), "count_distinct:job.technician_id")
+        page_update = next(op for op in ops if op.get("op") == "update_page")
+        updated_content = (page_update.get("changes") or {}).get("content") or []
+        view_modes_block = (((updated_content[0] if updated_content else {}).get("content") or [])[0] if updated_content else {})
+        modes = view_modes_block.get("modes") or []
+        grouped_modes = {mode.get("mode"): mode.get("default_group_by") for mode in modes if isinstance(mode, dict)}
+        self.assertEqual(grouped_modes.get("graph"), "job.technician_id")
+        self.assertEqual(grouped_modes.get("pivot"), "job.technician_id")
+
+    def test_slot_plan_dashboard_request_auto_targets_existing_dashboard_page(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+                {"id": "job.graph", "kind": "graph", "entity": "entity.job", "default": {"type": "bar", "group_by": "job.status", "measure": "count"}},
+            ],
+            "pages": [
+                {"id": "job.list_page", "title": "Jobs", "content": [{"kind": "view", "target": "view:job.list"}]},
+                {
+                    "id": "job.dashboard_page",
+                    "title": "Jobs Dashboard",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "graph",
+                                    "modes": [
+                                        {"mode": "graph", "target": "view:job.graph"},
+                                        {"mode": "list", "target": "view:job.list"},
+                                        {"mode": "pivot", "target": "view:job.list"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "app": {"home": "page:job.dashboard_page"},
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build a Jobs dashboard showing jobs by technician and jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs"},
+        )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "update_dashboard_page")
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_page_id"), "job.dashboard_page")
+        self.assertEqual([op.get("op") for op in (plan.get("candidate_ops") or [])], ["add_page_block", "update_view", "update_page"])
+
+    def test_slot_plan_dashboard_request_creates_new_dashboard_page_when_none_exists(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+                {"id": "job.graph", "kind": "graph", "entity": "entity.job", "default": {"type": "bar", "group_by": "job.status", "measure": "count"}},
+            ],
+            "pages": [
+                {"id": "job.list_page", "title": "Jobs", "content": [{"kind": "view", "target": "view:job.list"}]},
+            ],
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build a Jobs dashboard showing jobs by technician and jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs"},
+        )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "create_dashboard_page")
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_page_id"), "job.dashboard_page")
+        ops = plan.get("candidate_ops") or []
+        self.assertEqual([op.get("op") for op in ops], ["add_page", "add_page_block", "update_view", "update_page"])
+        self.assertEqual(((ops[0].get("page") or {}).get("title")), "Jobs Dashboard")
+        self.assertIn("creating a new dashboard page", " ".join(plan.get("assumptions") or []).lower())
+
+    def test_slot_plan_dashboard_request_returns_reuse_or_create_choice_for_soft_existing_page(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+            ],
+            "pages": [
+                {
+                    "id": "job.home_page",
+                    "title": "Operations Overview",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "list",
+                                    "modes": [{"mode": "list", "target": "view:job.list"}],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "app": {"home": "page:job.home_page"},
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build a Jobs dashboard showing jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs"},
+        )
+
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("slot_kind"), "dashboard_page_choice")
+        options = meta.get("options") or []
+        self.assertEqual([option.get("value") for option in options], ["job.home_page", "__create_new__"])
+
+    def test_slot_plan_dashboard_request_auto_targets_single_reporting_entity_in_multi_entity_module(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.labour_hours", "label": "Labour Hours", "type": "number"},
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                    ],
+                },
+                {
+                    "id": "entity.job_note",
+                    "label": "Job Note",
+                    "fields": [
+                        {"id": "job_note.note", "label": "Note", "type": "text"},
+                    ],
+                },
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+                {"id": "job.graph", "kind": "graph", "entity": "entity.job", "default": {"type": "bar", "group_by": "job.title", "measure": "count"}},
+            ],
+            "pages": [
+                {
+                    "id": "job.dashboard_page",
+                    "title": "Jobs Dashboard",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "graph",
+                                    "modes": [
+                                        {"mode": "graph", "target": "view:job.graph"},
+                                        {"mode": "list", "target": "view:job.list"},
+                                        {"mode": "pivot", "target": "view:job.list"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "interfaces": {"dashboardable": [{"entity_id": "entity.job", "enabled": True}]},
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build a Jobs dashboard showing labour hours today and jobs by technician.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs"},
+        )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "update_dashboard_page")
+        self.assertFalse(plan.get("questions"))
+        cards = (((plan.get("candidate_ops") or [{}])[0]).get("block") or {}).get("cards") or []
+        self.assertTrue(all(card.get("entity_id") == "entity.job" for card in cards if isinstance(card, dict)))
+
+    def test_slot_plan_dashboard_request_returns_entity_choice_for_multiple_reporting_entities(self) -> None:
+        manifest = {
+            "module": {"id": "operations", "key": "operations", "name": "Operations"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                        {"id": "job.assignment_count", "label": "Assignment Count", "type": "number"},
+                    ],
+                },
+                {
+                    "id": "entity.dispatch_run",
+                    "label": "Dispatch Run",
+                    "fields": [
+                        {"id": "dispatch_run.technician_id", "label": "Technician", "type": "lookup"},
+                        {"id": "dispatch_run.assignment_count", "label": "Assignment Count", "type": "number"},
+                    ],
+                },
+            ],
+            "views": [],
+            "pages": [],
+            "interfaces": {
+                "dashboardable": [
+                    {"entity_id": "entity.job", "enabled": True},
+                    {"entity_id": "entity.dispatch_run", "enabled": True},
+                ]
+            },
+        }
+        module_index = {"operations": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build an operations dashboard showing technician workload and open assignments.",
+            ["operations"],
+            module_index,
+            answer_hints={"module_target": "operations"},
+        )
+
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("slot_kind"), "dashboard_entity_choice")
+        option_values = [option.get("value") for option in (meta.get("options") or [])]
+        self.assertEqual(option_values, ["entity.dispatch_run", "entity.job"])
+
+    def test_slot_plan_dashboard_request_respects_create_new_choice_when_soft_page_exists(self) -> None:
+        manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "fields": [
+                        {"id": "job.title", "label": "Title", "type": "string"},
+                        {"id": "job.status", "label": "Status", "type": "status"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+            ],
+            "pages": [
+                {
+                    "id": "job.home_page",
+                    "title": "Operations Overview",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "list",
+                                    "modes": [{"mode": "list", "target": "view:job.list"}],
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+            "app": {"home": "page:job.home_page"},
+        }
+        module_index = {"jobs": {"manifest": manifest}}
+
+        plan = _ai_slot_based_plan(
+            "Build a Jobs dashboard showing jobs by status.",
+            ["jobs"],
+            module_index,
+            answer_hints={"module_target": "jobs", "planned_page_id": "__create_new__"},
+        )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "create_dashboard_page")
+        self.assertEqual((plan.get("planner_state") or {}).get("planned_page_id"), "job.dashboard_page")
+        self.assertEqual([op.get("op") for op in (plan.get("candidate_ops") or [])], ["add_page", "add_page_block", "update_page"])
+
+    def test_shared_dashboard_widget_builder_reuses_group_by_and_measure_inference(self) -> None:
+        entity = {
+            "id": "entity.job",
+            "fields": [
+                {"id": "job.status", "label": "Status", "type": "status"},
+                {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                {"id": "job.total_cost", "label": "Total Cost", "type": "currency"},
+            ],
+        }
+
+        widgets, group_bys, advisories = main._ai_build_dashboard_default_widgets(
+            entity,
+            ["jobs by status", "jobs by technician", "total cost today"],
+        )
+
+        self.assertEqual(
+            [widget.get("group_by") for widget in widgets if isinstance(widget, dict)],
+            ["job.status", "job.technician_id"],
+        )
+        widget_measures = {widget.get("id"): widget.get("measure") for widget in widgets if isinstance(widget, dict)}
+        self.assertEqual(widget_measures.get("jobs_by_status"), "count")
+        self.assertEqual(widget_measures.get("jobs_by_technician"), "count_distinct:job.technician_id")
+        self.assertEqual(group_bys, ["job.status", "job.technician_id"])
+        self.assertEqual(advisories, [])
+
+    def test_shared_dashboard_graph_default_reuses_first_grouped_metric(self) -> None:
+        entity = {
+            "id": "entity.job",
+            "fields": [
+                {"id": "job.status", "label": "Status", "type": "status"},
+                {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                {"id": "job.total_cost", "label": "Total Cost", "type": "currency"},
+            ],
+        }
+
+        graph_default, advisories = main._ai_build_dashboard_graph_default(
+            entity,
+            ["jobs by technician", "total cost today"],
+        )
+
+        self.assertEqual(
+            graph_default,
+            {"type": "bar", "group_by": "job.technician_id", "measure": "count_distinct:job.technician_id"},
+        )
+        self.assertEqual(advisories, [])
+
+    def test_shared_dashboard_grouped_surface_defaults_reuse_first_grouped_metric(self) -> None:
+        entity = {
+            "id": "entity.job",
+            "fields": [
+                {"id": "job.status", "label": "Status", "type": "status"},
+                {"id": "job.technician_id", "label": "Technician", "type": "lookup"},
+                {"id": "job.total_cost", "label": "Total Cost", "type": "currency"},
+            ],
+        }
+
+        grouped_defaults, advisories = main._ai_build_dashboard_grouped_surface_defaults(
+            entity,
+            ["jobs by technician", "total cost today"],
+        )
+
+        self.assertEqual(
+            grouped_defaults,
+            {"group_by": "job.technician_id", "measure": "count_distinct:job.technician_id"},
+        )
+        self.assertEqual(advisories, [])
 
     def test_plan_from_message_forces_preview_confirm_when_style_review_preflight_is_technical(self) -> None:
         documents_manifest = {
@@ -8027,22 +10740,31 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             "contacts": {"manifest": contacts_manifest},
         }
         message = "In Sales, when a quote is approved, create a Job in Jobs, copy the customer and site details from Contacts, and notify the coordinator."
+        request = SimpleNamespace(state=SimpleNamespace(actor={}, cache={}))
 
         with (
             patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
             patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
             patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
         ):
-            plan, _derived = _ai_plan_from_message(
-                None,
+            plan, derived = _ai_plan_from_message(
+                request,
                 {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
                 message,
                 answer_hints={},
             )
 
         ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
-        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
-        self.assertIn("Notify the coordinator automatically.", _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []}))
+        update_action = next(op for op in ops if op.get("op") == "update_action")
+        self.assertEqual(update_action.get("artifact_id"), "sales")
+        self.assertEqual((update_action.get("changes") or {}).get("label"), "Create Job and Notify Coordinator")
+        self.assertEqual((((update_action.get("changes") or {}).get("confirm")) or {}).get("title"), "Create Job and Notify Coordinator")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "cross_module_quote_job_handoff")
+        self.assertEqual(set(derived.get("affected_modules") or []), {"sales", "jobs", "contacts"})
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Create a Job automatically when that rule is met.", text)
+        self.assertIn("Carry across the customer and site details from Contacts.", text)
+        self.assertIn("Notify the coordinator automatically.", text)
 
     def test_cross_module_job_completion_documents_prefers_action_update_plan(self) -> None:
         jobs_manifest = main.json.loads((main.ROOT / "manifests" / "marketplace" / "jobs.json").read_text(encoding="utf-8"))
@@ -8054,21 +10776,27 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             "contacts": {"manifest": contacts_manifest},
         }
         message = "In Jobs, when a job is completed, generate a completion pack in Documents, attach the service report PDF, and mark the customer follow-up in Contacts."
+        request = SimpleNamespace(state=SimpleNamespace(actor={}, cache={}))
 
         with (
             patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
             patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
             patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
         ):
-            plan, _derived = _ai_plan_from_message(
-                None,
+            plan, derived = _ai_plan_from_message(
+                request,
                 {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
                 message,
                 answer_hints={},
             )
 
         ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
-        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
+        update_action = next(op for op in ops if op.get("op") == "update_action")
+        self.assertEqual(update_action.get("artifact_id"), "jobs")
+        self.assertEqual((update_action.get("changes") or {}).get("label"), "Complete and Generate Completion Pack")
+        self.assertEqual((((update_action.get("changes") or {}).get("confirm")) or {}).get("title"), "Complete Job and Generate Completion Pack")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "cross_module_job_completion_documents")
+        self.assertEqual(set(derived.get("affected_modules") or []), {"jobs", "documents", "contacts"})
         text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
         self.assertIn("Generate the completion pack in Documents automatically.", text)
         self.assertIn("Attach the service report PDF", text)
@@ -8084,24 +10812,71 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             "contacts": {"manifest": contacts_manifest},
         }
         message = "When a CRM lead becomes qualified, add the flow to create a draft quote in Sales and carry over contact details from Contacts."
+        request = SimpleNamespace(state=SimpleNamespace(actor={}, cache={}))
 
         with (
             patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
             patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
             patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
         ):
-            plan, _derived = _ai_plan_from_message(
-                None,
+            plan, derived = _ai_plan_from_message(
+                request,
                 {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
                 message,
                 answer_hints={},
             )
 
         ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
-        self.assertTrue(any(op.get("op") == "update_action" for op in ops))
+        update_action = next(op for op in ops if op.get("op") == "update_action")
+        self.assertEqual(update_action.get("artifact_id"), "crm")
+        self.assertEqual((update_action.get("changes") or {}).get("label"), "Create Draft Quote from Qualified Lead")
+        self.assertEqual((((update_action.get("changes") or {}).get("confirm")) or {}).get("title"), "Create Draft Quote from Qualified Lead")
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "cross_module_crm_lead_to_quote")
+        self.assertEqual(set(derived.get("affected_modules") or []), {"crm", "sales", "contacts"})
         text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
         self.assertIn("Create a draft quote in Sales automatically.", text)
         self.assertIn("Carry over the contact details from Contacts.", text)
+
+    def test_long_guide_purchasing_inventory_request_mentions_stock_handoffs_and_phasing(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
+        module_index = _ai_module_manifest_index(req)
+        message = (
+            "Plan a stock and purchasing workspace for me: products have suppliers, purchase orders have line items, "
+            "receipts should update stock on hand, open supplier orders should show on order quantities, and sales should "
+            "reserve stock before fulfilment. I want the module and handoff roadmap before anything is built."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                req,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(plan.get("candidate_operations"), [])
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": module_id, "manifest": (module_index.get(module_id) or {}).get("manifest")}
+                    for module_id in (derived.get("affected_modules") or [])
+                ],
+            },
+        )
+        self.assertTrue("rollout" in text.lower() or "roadmap" in text.lower() or "phase 1" in text.lower())
+        self.assertTrue("Phase 1" in text or "first delivery slice" in text.lower())
+        self.assertIn("Purchasing", text)
+        self.assertTrue("supplier tracking" in text.lower() or "suppliers" in text.lower())
+        self.assertTrue("i need one clarification" in text.lower() or "concrete module" in text.lower() or "still need" in text.lower())
+        self.assertNotIn("What should the new field be called?", text)
 
     def test_template_preview_request_lists_named_template_and_requested_content(self) -> None:
         jobs_manifest = {
@@ -8542,6 +11317,137 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("workers on site today", text)
         self.assertNotIn("Which module should receive this change?", text)
 
+    def test_dashboard_request_auto_scopes_to_single_plausible_module_before_preview(self) -> None:
+        jobs_manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.title", "type": "string", "label": "Title"},
+                        {"id": "job.labour_hours", "type": "number", "label": "Labour Hours"},
+                        {"id": "job.technician_id", "type": "lookup", "label": "Technician"},
+                    ],
+                }
+            ],
+            "views": [
+                {"id": "job.list", "kind": "list", "entity": "entity.job", "columns": [{"field_id": "job.title"}]},
+                {"id": "job.graph", "kind": "graph", "entity": "entity.job", "default": {"type": "bar", "group_by": "job.title", "measure": "count"}},
+            ],
+            "pages": [
+                {
+                    "id": "job.dashboard_page",
+                    "title": "Jobs Dashboard",
+                    "content": [
+                        {
+                            "kind": "container",
+                            "variant": "card",
+                            "content": [
+                                {
+                                    "kind": "view_modes",
+                                    "entity_id": "entity.job",
+                                    "default_mode": "graph",
+                                    "modes": [
+                                        {"mode": "graph", "target": "view:job.graph"},
+                                        {"mode": "list", "target": "view:job.list"},
+                                        {"mode": "pivot", "target": "view:job.list"},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "interfaces": {"dashboardable": [{"entity_id": "entity.job", "enabled": True}]},
+        }
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "label": "Contact", "fields": [{"id": "contact.name", "type": "string", "label": "Name"}]}],
+            "views": [],
+        }
+        module_index = {"jobs": {"manifest": jobs_manifest}, "contacts": {"manifest": contacts_manifest}}
+        message = "Build an operations dashboard showing labour hours today and jobs by technician."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("affected_modules"), ["jobs"])
+        self.assertIn((plan.get("planner_state") or {}).get("intent"), {"update_dashboard_page", "create_dashboard_page"})
+        self.assertNotEqual((plan.get("required_question_meta") or {}).get("slot_kind"), "dashboard_module_choice")
+
+    def test_dashboard_request_returns_narrowed_module_choice_for_multiple_plausible_modules(self) -> None:
+        jobs_manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.technician_id", "type": "lookup", "label": "Technician"},
+                        {"id": "job.labour_hours", "type": "number", "label": "Labour Hours"},
+                    ],
+                }
+            ],
+            "views": [],
+            "pages": [{"id": "job.dashboard_page", "title": "Jobs Dashboard", "content": []}],
+            "interfaces": {"dashboardable": [{"entity_id": "entity.job", "enabled": True}]},
+        }
+        dispatch_manifest = {
+            "module": {"id": "dispatch", "key": "dispatch", "name": "Dispatch"},
+            "entities": [
+                {
+                    "id": "entity.dispatch_run",
+                    "label": "Dispatch Run",
+                    "fields": [
+                        {"id": "dispatch_run.technician_id", "type": "lookup", "label": "Technician"},
+                        {"id": "dispatch_run.assignment_count", "type": "number", "label": "Assignment Count"},
+                    ],
+                }
+            ],
+            "views": [],
+            "pages": [{"id": "dispatch.dashboard_page", "title": "Dispatch Dashboard", "content": []}],
+            "interfaces": {"dashboardable": [{"entity_id": "entity.dispatch_run", "enabled": True}]},
+        }
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [{"id": "entity.contact", "label": "Contact", "fields": [{"id": "contact.name", "type": "string", "label": "Name"}]}],
+            "views": [],
+        }
+        module_index = {
+            "jobs": {"manifest": jobs_manifest},
+            "dispatch": {"manifest": dispatch_manifest},
+            "contacts": {"manifest": contacts_manifest},
+        }
+        message = "Build an operations dashboard showing technician workload and open assignments."
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("affected_modules"), [])
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("slot_kind"), "dashboard_module_choice")
+        option_values = [option.get("value") for option in (meta.get("options") or [])]
+        self.assertEqual(option_values, ["dispatch", "jobs"])
+
     def test_workspace_graph_preview_keeps_approval_and_conditional_wording(self) -> None:
         jobs_manifest = {
             "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
@@ -8979,6 +11885,221 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_noop")
         self.assertEqual(derived.get("status"), "ready_to_apply")
 
+    def test_confirmed_workspace_brief_promoted_automation_op_matches_reference_contract(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        req = type("R", (), {"state": type("S", (), {"cache": {}, "actor": {"workspace_id": "default"}})()})()
+        module_index = _ai_module_manifest_index(req)
+        message = (
+            "Use this brief to design the workspace: approved quotes should trigger job setup and send a customer confirmation email. "
+            "Show me the draft plan first."
+        )
+
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "add_field",
+                    "artifact_type": "module",
+                    "artifact_id": "sales",
+                    "entity_id": "entity.quote",
+                    "field": {"id": "quote.job_ready", "label": "Job Ready", "type": "boolean"},
+                },
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "quote_approved_job_handoff",
+                    "automation": {
+                        "name": "Quote Approved Job Handoff",
+                        "description": "Create the downstream job and send the customer confirmation when a quote is approved.",
+                        "status": "draft",
+                        "trigger": {
+                            "kind": "event",
+                            "event_types": ["sales.workflow.quote.status_changed"],
+                            "filters": [
+                                {"path": "entity_id", "op": "eq", "value": "entity.quote"},
+                                {"path": "to", "op": "eq", "value": "approved"},
+                            ],
+                            "expr": {
+                                "op": "eq",
+                                "left": {"var": "trigger.after.fields.quote.status"},
+                                "right": {"literal": "approved"},
+                            },
+                        },
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.create_record",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "values": {
+                                        "job.source_quote_id": "{{trigger.record_id}}",
+                                        "job.contact_id": "{{trigger.record.fields.quote.contact_id}}",
+                                        "job.status": "new",
+                                    },
+                                },
+                            },
+                            {
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.quote",
+                                    "template_id": "email_tpl_quote_customer_confirmation",
+                                    "to_lookup_field_ids": ["quote.contact_id"],
+                                    "subject": "Your quote is approved",
+                                },
+                            },
+                        ],
+                    },
+                },
+                {
+                    "op": "create_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "quote_customer_confirmation",
+                    "email_template": {
+                        "name": "Quote Customer Confirmation",
+                        "subject": "Your quote is approved",
+                        "body_html": "<p>Your quote is approved and job setup is underway.</p>",
+                        "body_text": "Your quote is approved and job setup is underway.",
+                    },
+                },
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": ["The approved workspace brief should now become a concrete build draft."],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["sales", "jobs", "contacts"],
+            "plan_v1": {
+                "version": "1",
+                "intent": "cross_module_change",
+                "summary": "Turn the approved workspace brief into a quote handoff automation and confirmation email.",
+                "requested_scope": {
+                    "requested_modules": ["Sales", "Jobs", "Contacts"],
+                    "missing_modules": [],
+                    "requested_artifacts": ["Quote Approved Job Handoff", "Quote Customer Confirmation"],
+                },
+                "artifacts": [
+                    {"artifact_type": "module", "artifact_id": "sales", "artifact_label": "Sales", "status": "planned"},
+                    {"artifact_type": "automation", "artifact_id": "quote_approved_job_handoff", "artifact_label": "Quote Approved Job Handoff", "status": "planned"},
+                    {"artifact_type": "email_template", "artifact_id": "quote_customer_confirmation", "artifact_label": "Quote Customer Confirmation", "status": "planned"},
+                ],
+                "modules": [
+                    {"module_id": "sales", "module_label": "Sales", "status": "planned"},
+                    {"module_id": "jobs", "module_label": "Jobs", "status": "planned"},
+                    {"module_id": "contacts", "module_label": "Contacts", "status": "planned"},
+                ],
+                "changes": [],
+                "sections": [],
+                "clarifications": {"items": [], "meta": {}},
+                "assumptions": [],
+                "risks": [],
+                "noop_notes": [],
+                "operation_families": ["cross_module_change", "automation_change", "template_change"],
+                "primary_operation_family": "cross_module_change",
+                "needs_clarification": False,
+                "architecture_decisions": [],
+                "first_delivery_slice": [],
+            },
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: semantic_plan),
+        ):
+            plan, derived = _ai_plan_from_message(
+                req,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={"confirm_plan": True, "answer_text": "Approved."},
+            )
+
+        automation_op = next(
+            op
+            for op in (plan.get("candidate_operations") or [])
+            if isinstance(op, dict) and op.get("op") == "create_automation_record"
+        )
+        automation = automation_op.get("automation") or {}
+        fake_meta = {
+            "event_types": ["sales.workflow.quote.status_changed"],
+            "event_catalog": [
+                {
+                    "id": "sales.workflow.quote.status_changed",
+                    "label": "Quote status changed",
+                    "event": "workflow.status_changed",
+                    "entity_id": "entity.quote",
+                }
+            ],
+            "system_actions": [
+                {"id": "system.create_record", "label": "Create record"},
+                {"id": "system.send_email", "label": "Send email"},
+            ],
+            "module_actions": [],
+            "entities": [
+                {
+                    "id": "entity.quote",
+                    "label": "Quote",
+                    "fields": [
+                        {"id": "quote.status", "label": "Status", "type": "enum"},
+                        {"id": "quote.contact_id", "label": "Customer", "type": "lookup"},
+                    ],
+                },
+                {
+                    "id": "entity.job",
+                    "label": "Job",
+                    "fields": [
+                        {"id": "job.source_quote_id", "label": "Source Quote", "type": "string"},
+                        {"id": "job.contact_id", "label": "Customer", "type": "lookup"},
+                        {"id": "job.status", "label": "Status", "type": "string"},
+                    ],
+                },
+            ],
+            "field_path_catalog": [
+                {
+                    "entity_id": "entity.quote",
+                    "fields": [
+                        {
+                            "field_id": "quote.status",
+                            "label": "Status",
+                            "type": "enum",
+                            "paths": [
+                                "trigger.record.fields.quote.status",
+                                "trigger.before.fields.quote.status",
+                                "trigger.after.fields.quote.status",
+                            ],
+                        },
+                        {
+                            "field_id": "quote.contact_id",
+                            "label": "Customer",
+                            "type": "lookup",
+                            "paths": [
+                                "trigger.record.fields.quote.contact_id",
+                                "trigger.before.fields.quote.contact_id",
+                                "trigger.after.fields.quote.contact_id",
+                            ],
+                        },
+                    ],
+                }
+            ],
+            "email_templates": [{"id": "email_tpl_quote_customer_confirmation"}],
+            "doc_templates": [],
+        }
+
+        validation = main._artifact_ai_validate_automation_draft(automation, fake_meta)
+
+        self.assertTrue(validation.get("compiled_ok"), validation)
+        self.assertEqual(validation.get("errors"), [], validation)
+        self.assertEqual((automation.get("trigger") or {}).get("event_types"), ["sales.workflow.quote.status_changed"])
+        self.assertEqual(set(derived.get("affected_modules") or []), {"sales", "jobs", "contacts"})
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [],
+            },
+        )
+        self.assertIn("automation_change", structured["operation_families"])
+        self.assertIn("template_change", structured["operation_families"])
+
     def test_requirements_document_prompt_uses_final_ask_not_background_document_noise(self) -> None:
         main._octo_ai_seed_in_memory_baseline_modules()
         req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
@@ -9165,6 +12286,157 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             ["create_module", "cross_module_change", "template_change"],
         )
         self.assertEqual(structured["primary_operation_family"], "create_module")
+
+    def test_service_business_architecture_brief_prefers_reuse_modules_templates_and_automation_preview(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [],
+            "views": [],
+        }
+        module_index = {"contacts": {"manifest": contacts_manifest}}
+        message = (
+            "We are an electrical services company and want OCTO to run the whole business.\n\n"
+            "Architecture decision\n\n"
+            "Reuse the shared contacts module for customers and site contacts.\n\n"
+            "Build only these custom modules:\n\n"
+            "sales\n"
+            "jobs\n"
+            "billing\n\n"
+            "Also include these shared deliverables:\n\n"
+            "quote approved customer email template\n"
+            "completion pack document template\n"
+            "quote accepted to job handoff automation\n\n"
+            "Build order\n\n"
+            "reuse shared contacts\n"
+            "build sales\n"
+            "build jobs\n"
+            "build billing\n"
+            "build the quote approved email template\n"
+            "build the completion pack document template\n"
+            "build the quote accepted to job handoff automation\n\n"
+            "Show me the draft plan first."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        self.assertEqual((plan.get("planner_state") or {}).get("requested_module_labels"), ["Contacts", "Sales", "Jobs", "Billing"])
+        self.assertEqual((plan.get("planner_state") or {}).get("missing_module_labels"), ["Sales", "Jobs", "Billing"])
+        self.assertEqual(derived.get("affected_modules"), ["contacts"])
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts", "manifest": contacts_manifest},
+                ],
+            },
+        )
+
+        self.assertTrue(
+            any("Reuse existing Contacts" in item and "Sales" in item and "Jobs" in item and "Billing" in item for item in structured["architecture_decisions"])
+        )
+        self.assertTrue(any(item.startswith("Phase 1: start with reuse shared contacts and build Sales") for item in structured["first_delivery_slice"]))
+        self.assertIn("automation_change", structured["operation_families"])
+        self.assertIn("template_change", structured["operation_families"])
+
+    def test_trade_services_architecture_brief_builds_clear_self_serve_preview_plan(self) -> None:
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [],
+            "views": [],
+        }
+        documents_manifest = {
+            "module": {"id": "documents", "key": "documents", "name": "Documents"},
+            "entities": [],
+            "views": [],
+        }
+        module_index = {
+            "contacts": {"manifest": contacts_manifest},
+            "documents": {"manifest": documents_manifest},
+        }
+        message = (
+            "We are a plumbing and maintenance company and want OCTO to run the business end to end.\n\n"
+            "Architecture decision\n\n"
+            "Reuse the shared contacts module for customers and property contacts.\n"
+            "Reuse the shared documents module for completion packs and certificates.\n\n"
+            "Build only these custom modules:\n\n"
+            "sales\n"
+            "jobs\n"
+            "billing\n"
+            "scheduling\n\n"
+            "Also include these shared deliverables:\n\n"
+            "overdue invoice reminder email template\n"
+            "completion pack document template\n"
+            "quote accepted to job handoff automation\n\n"
+            "Build order\n\n"
+            "reuse shared contacts\n"
+            "reuse shared documents\n"
+            "build sales\n"
+            "build jobs\n"
+            "build billing\n"
+            "build scheduling\n"
+            "build the overdue invoice reminder email template\n"
+            "build the completion pack document template\n"
+            "build the quote accepted to job handoff automation\n\n"
+            "Show me the draft plan first so we can review it before you build anything."
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={},
+            )
+
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        self.assertEqual(
+            (plan.get("planner_state") or {}).get("requested_module_labels"),
+            ["Contacts", "Documents", "Sales", "Jobs", "Billing", "Scheduling"],
+        )
+        self.assertEqual((plan.get("planner_state") or {}).get("missing_module_labels"), ["Sales", "Jobs", "Billing", "Scheduling"])
+        self.assertEqual(derived.get("affected_modules"), ["contacts", "documents"])
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(plan.get("candidate_operations"), [])
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": message,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "contacts", "manifest": contacts_manifest},
+                    {"artifact_type": "module", "artifact_id": "documents", "manifest": documents_manifest},
+                ],
+            },
+        )
+
+        self.assertTrue(
+            any("Reuse existing Contacts and Documents" in item for item in structured["architecture_decisions"])
+        )
+        self.assertTrue(
+            any(item.startswith("Phase 1: start with reuse shared contacts and reuse shared documents.") for item in structured["first_delivery_slice"])
+        )
+        self.assertTrue(
+            any(item.startswith("Phase 2: follow with build Sales, build Jobs, and build Billing.") for item in structured["first_delivery_slice"])
+        )
+        self.assertIn("automation_change", structured["operation_families"])
+        self.assertIn("template_change", structured["operation_families"])
 
     def test_create_module_structured_plan_adds_first_delivery_slice(self) -> None:
         plan = {
@@ -9609,6 +12881,122 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("I understand this as:", answer_body.get("assistant_text") or "")
         self.assertNotIn("draft patchset for sandbox validation", answer_body.get("assistant_text") or "")
 
+    def test_decision_slot_answer_maps_selected_option_into_replan_hints(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "decision_slot_selection",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-19T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a contact is marked inactive, send a notification.",
+                    "created_at": "2026-04-19T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-19T00:01:00Z",
+                    "questions_json": ["Who should receive this notification?"],
+                    "required_question_meta": {
+                        "id": "automation_recipient",
+                        "kind": "decision_slot",
+                        "slot_kind": "recipient_email",
+                        "prompt": "Who should receive this notification?",
+                        "hint_field": "recipient_email",
+                        "options": [
+                            {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                        ],
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": ["Who should receive this notification?"],
+                            "required_question_meta": {
+                                "id": "automation_recipient",
+                                "kind": "decision_slot",
+                                "slot_kind": "recipient_email",
+                                "prompt": "Who should receive this notification?",
+                                "hint_field": "recipient_email",
+                                "options": [
+                                    {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                                ],
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "hints": {
+                            "selected_option_id": "member:nick",
+                            "selected_option_value": "nick@octodrop.com",
+                            "selected_option_label": "Nick",
+                        },
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("recipient_email"), "nick@octodrop.com")
+        self.assertEqual(captured_hints.get("selected_option_id"), "member:nick")
+        self.assertEqual(captured_hints.get("answer_text"), "Nick")
+
     def test_confirm_plan_answer_accepts_plain_english_approval_when_meta_is_missing(self) -> None:
         actor = {
             "user_id": "test-user",
@@ -9881,6 +13269,132 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("If this looks right, confirm the plan", answer_body.get("assistant_text") or "")
         self.assertNotIn("Plan confirmed.", answer_body.get("assistant_text") or "")
 
+    def test_confirm_plan_revision_reply_for_influencer_module_keeps_corrected_name(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        prompt = (
+            "hi, i want to add a new module to our collection, i want to track instagram influencers "
+            "that we are sending products too, we need to track their handle, their coupon code, "
+            "maybe track if they were good or not, maybe how many followers / purchases etc, and "
+            "line items on what we sent them from our catalog. look at our other modules but dont change them"
+        )
+        wrong_manifest = {
+            "module": {"id": "spend_sales_tracker", "key": "spend_sales_tracker", "name": "Spend & Sales Tracker"},
+            "entities": [
+                {
+                    "id": "entity.spend_sales_tracker",
+                    "fields": [
+                        {"id": "spend_sales_tracker.name", "label": "Entry", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [
+                {
+                    "id": "spend_sales_tracker.list",
+                    "kind": "list",
+                    "entity": "entity.spend_sales_tracker",
+                    "columns": [{"field_id": "spend_sales_tracker.name"}],
+                },
+                {
+                    "id": "spend_sales_tracker.form",
+                    "kind": "form",
+                    "entity": "entity.spend_sales_tracker",
+                    "sections": [{"id": "primary", "fields": ["spend_sales_tracker.name"]}],
+                },
+            ],
+        }
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: actor),
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+            patch.object(main, "_ai_match_named_workspace_artifacts", lambda *_args, **_kwargs: []),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "confirm_plan_influencer_revision",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "last_activity_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": prompt,
+                    "created_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-03-18T00:01:00Z",
+                    "questions_json": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "spend_sales_tracker"}],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": ["Confirm this plan?"],
+                            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                            "candidate_operations": [
+                                {
+                                    "op": "create_module",
+                                    "artifact_type": "module",
+                                    "artifact_id": "spend_sales_tracker",
+                                    "manifest": wrong_manifest,
+                                }
+                            ],
+                            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "spend_sales_tracker"}],
+                            "planner_state": {
+                                "intent": "create_module",
+                                "module_id": "spend_sales_tracker",
+                                "module_name": "Spend & Sales Tracker",
+                            },
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            answer_res = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={"action": "custom", "text": "that is not what i asked for... call it influencers"},
+            )
+            answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        plan = answer_body.get("plan") or {}
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual([op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)], ["create_module"])
+        create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
+        self.assertEqual(create_op.get("artifact_id"), "influencers")
+        manifest = copy.deepcopy(create_op.get("manifest") or {})
+        self.assertEqual(((manifest.get("module") or {}).get("name")), "Influencers")
+        self.assertIn("entity.influencer", [entity.get("id") for entity in (manifest.get("entities") or []) if isinstance(entity, dict)])
+        assistant_text = answer_body.get("assistant_text") or ""
+        self.assertIn("Influencers", assistant_text)
+        self.assertNotIn("What should the new module be called?", assistant_text)
+        self.assertNotIn("Spend & Sales Tracker", assistant_text)
+
     def test_collect_answer_hints_does_not_guess_one_module_from_cross_module_plan(self) -> None:
         session = _ai_create_record(
             _AI_ENTITY_SESSION,
@@ -10083,6 +13597,254 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
         field_ids = [field.get("id") for field in (vendor_entity.get("fields") or []) if isinstance(field, dict)]
         self.assertIn("vendor.due_date", field_ids)
+
+    def test_preflight_candidate_ops_rejects_legacy_list_search_regression(self) -> None:
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "app": {"home": "page:contact.list_page"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "display_field": "contact.name",
+                    "fields": [{"id": "contact.name", "label": "Name", "type": "string"}],
+                }
+            ],
+            "views": [
+                {
+                    "id": "contact.list",
+                    "kind": "list",
+                    "entity": "entity.contact",
+                    "header": {"primary_actions": [{"action_id": "action.contact_new"}]},
+                    "columns": [{"field_id": "contact.name"}],
+                },
+                {
+                    "id": "contact.form",
+                    "kind": "form",
+                    "entity": "entity.contact",
+                    "sections": [{"id": "primary", "fields": ["contact.name"]}],
+                },
+            ],
+            "pages": [
+                {"id": "contact.list_page", "title": "Contacts", "header": {"variant": "none"}, "content": []},
+                {"id": "contact.form_page", "title": "Contact", "header": {"variant": "none"}, "content": []},
+            ],
+            "actions": [{"id": "action.contact_new", "kind": "open_form", "label": "New", "target": "contact.form"}],
+            "relations": [],
+        }
+        ops = [
+            {
+                "op": "update_view",
+                "artifact_type": "module",
+                "artifact_id": "contacts",
+                "view_id": "contact.list",
+                "changes": {
+                    "header": {
+                        "search": {"enabled": True, "placeholder": "Search contacts...", "fields": ["contact.name"]},
+                        "primary_actions": [{"action_id": "action.contact_new"}],
+                    }
+                },
+            }
+        ]
+        valid_ops, errors = _ai_preflight_candidate_ops(
+            {"contacts": {"manifest": manifest}},
+            ops,
+        )
+        self.assertEqual(valid_ops, ops)
+        self.assertFalse(any(err.get("code") == "AI_MODULE_AUTHORING_LEGACY_LIST_SEARCH" for err in errors), errors)
+
+    def test_patchset_validation_accepts_list_search_backed_by_real_fields(self) -> None:
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "app": {"home": "page:contact.list_page"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "display_field": "contact.name",
+                    "fields": [
+                        {"id": "contact.id", "label": "ID", "type": "uuid"},
+                        {"id": "contact.name", "label": "Name", "type": "string"},
+                        {"id": "contact.company_name", "label": "Company", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [
+                {
+                    "id": "contact.list",
+                    "kind": "list",
+                    "entity": "entity.contact",
+                    "header": {"primary_actions": [{"action_id": "action.contact_new"}]},
+                    "columns": [{"field_id": "contact.name"}],
+                },
+                {
+                    "id": "contact.form",
+                    "kind": "form",
+                    "entity": "entity.contact",
+                    "sections": [{"id": "primary", "fields": ["contact.name"]}],
+                },
+            ],
+            "pages": [
+                {"id": "contact.list_page", "title": "Contacts", "header": {"variant": "none"}, "content": []},
+                {"id": "contact.form_page", "title": "Contact", "header": {"variant": "none"}, "content": []},
+            ],
+            "actions": [{"id": "action.contact_new", "kind": "open_form", "label": "New", "target": "contact.form"}],
+            "relations": [],
+        }
+        module_index = {"contacts": {"manifest": manifest, "module": {"current_hash": "sha256:contacts"}}}
+
+        with patch.object(main, "_ai_module_manifest_index", lambda _request: module_index), patch.object(main, "_validate_dependency_state", lambda *_args, **_kwargs: ([], [])):
+            validation = _ai_validate_patchset_against_workspace(
+                None,
+                {
+                    "base_snapshot_refs_json": [{"artifact_type": "module", "artifact_key": "contacts", "artifact_version": "sha256:contacts"}],
+                    "patch_json": {
+                        "operations": [
+                            {
+                                "op": "update_view",
+                                "artifact_type": "module",
+                                "artifact_id": "contacts",
+                                "view_id": "contact.list",
+                                "changes": {
+                                    "header": {
+                                        "search": {
+                                            "enabled": True,
+                                            "placeholder": "Search contacts...",
+                                            "fields": ["contact.name", "contact.company_name"],
+                                        }
+                                    }
+                                },
+                            }
+                        ],
+                        "noop": False,
+                    },
+                },
+            )
+
+        self.assertTrue(validation.get("ok"), validation)
+
+    def test_patchset_validation_rejects_list_search_without_fields(self) -> None:
+        manifest = {
+            "manifest_version": "1.3",
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "app": {"home": "page:contact.list_page"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "display_field": "contact.name",
+                    "fields": [{"id": "contact.name", "label": "Name", "type": "string"}],
+                }
+            ],
+            "views": [
+                {
+                    "id": "contact.list",
+                    "kind": "list",
+                    "entity": "entity.contact",
+                    "header": {"primary_actions": [{"action_id": "action.contact_new"}]},
+                    "columns": [{"field_id": "contact.name"}],
+                }
+            ],
+            "pages": [{"id": "contact.list_page", "title": "Contacts", "header": {"variant": "none"}, "content": []}],
+            "actions": [{"id": "action.contact_new", "kind": "open_form", "label": "New", "target": "contact.form"}],
+            "relations": [],
+        }
+        module_index = {"contacts": {"manifest": manifest, "module": {"current_hash": "sha256:contacts"}}}
+
+        with patch.object(main, "_ai_module_manifest_index", lambda _request: module_index), patch.object(main, "_validate_dependency_state", lambda *_args, **_kwargs: ([], [])):
+            validation = _ai_validate_patchset_against_workspace(
+                None,
+                {
+                    "base_snapshot_refs_json": [{"artifact_type": "module", "artifact_key": "contacts", "artifact_version": "sha256:contacts"}],
+                    "patch_json": {
+                        "operations": [
+                            {
+                                "op": "update_view",
+                                "artifact_type": "module",
+                                "artifact_id": "contacts",
+                                "view_id": "contact.list",
+                                "changes": {
+                                    "header": {
+                                        "search": {
+                                            "enabled": True,
+                                            "placeholder": "Search contacts...",
+                                            "fields": [],
+                                        }
+                                    }
+                                },
+                            }
+                        ],
+                        "noop": False,
+                    },
+                },
+            )
+
+        self.assertFalse(validation.get("ok"), validation)
+        self.assertTrue(any(err.get("code") == "AI_MODULE_AUTHORING_LIST_SEARCH_FIELDS" for err in (validation.get("errors") or [])), validation)
+
+    def test_patchset_validation_rejects_entity_specific_create_labels(self) -> None:
+        with patch.object(main, "_ai_module_manifest_index", lambda _request: {}), patch.object(main, "_validate_dependency_state", lambda *_args, **_kwargs: ([], [])):
+            validation = _ai_validate_patchset_against_workspace(
+                None,
+                {
+                    "patch_json": {
+                        "operations": [
+                            {
+                                "op": "create_module",
+                                "artifact_type": "module",
+                                "artifact_id": "vendor_compliance",
+                                "manifest": {
+                                    "manifest_version": "1.3",
+                                    "module": {"id": "vendor_compliance", "name": "Vendor Compliance", "key": "vendor_compliance", "version": "0.1.0"},
+                                    "app": {
+                                        "home": "page:vendor.list_page",
+                                        "nav": [{"group": "Vendor Compliance", "items": [{"label": "Vendor Compliance", "to": "page:vendor.list_page"}]}],
+                                    },
+                                    "entities": [
+                                        {
+                                            "id": "entity.vendor",
+                                            "label": "Vendor",
+                                            "display_field": "vendor.name",
+                                            "fields": [
+                                                {"id": "vendor.id", "label": "ID", "type": "uuid"},
+                                                {"id": "vendor.name", "label": "Name", "type": "string"},
+                                            ],
+                                        }
+                                    ],
+                                    "views": [
+                                        {
+                                            "id": "vendor.list",
+                                            "kind": "list",
+                                            "entity": "entity.vendor",
+                                            "header": {"primary_actions": [{"action_id": "action.vendor_new"}]},
+                                            "columns": [{"field_id": "vendor.name"}],
+                                        },
+                                        {
+                                            "id": "vendor.form",
+                                            "kind": "form",
+                                            "entity": "entity.vendor",
+                                            "sections": [{"id": "primary", "title": "Primary", "fields": ["vendor.name"]}],
+                                        },
+                                    ],
+                                    "pages": [
+                                        {"id": "vendor.list_page", "title": "Vendor Compliance", "header": {"variant": "none"}, "content": []},
+                                        {"id": "vendor.form_page", "title": "Vendor", "header": {"variant": "none"}, "content": []},
+                                    ],
+                                    "actions": [
+                                        {"id": "action.vendor_new", "kind": "open_form", "label": "New Vendor", "target": "vendor.form"}
+                                    ],
+                                    "relations": [],
+                                },
+                            }
+                        ]
+                    }
+                },
+            )
+
+        self.assertFalse(validation.get("ok"), validation)
+        self.assertTrue(any(err.get("code") == "AI_MODULE_AUTHORING_CREATE_LABEL" for err in (validation.get("errors") or [])), validation)
 
     def test_patchset_validation_applies_tab_creation_then_field_placement_sequentially(self) -> None:
         manifest = {
@@ -10321,6 +14083,40 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         session = _ai_get_record(_AI_ENTITY_SESSION, session_id)
         self.assertEqual(session.get("release_status"), "draft")
         self.assertEqual(session.get("sandbox_status"), "ready")
+
+    def test_apply_draft_patchset_revalidates_for_sandbox_apply(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "Draft patchset apply"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+            _ai_update_record(
+                _AI_ENTITY_SESSION,
+                session_id,
+                {"sandbox_workspace_id": "ws_sandbox_apply_draft", "sandbox_status": "active"},
+            )
+            patchset = _ai_create_record(
+                _AI_ENTITY_PATCHSET,
+                {
+                    "session_id": session_id,
+                    "status": "draft",
+                    "base_snapshot_refs_json": [],
+                    "patch_json": {"operations": [], "noop": True, "reason": "No changes required."},
+                    "validation_json": None,
+                    "apply_log_json": [],
+                    "created_at": "2026-03-23T00:00:00Z",
+                    "applied_at": None,
+                },
+            )
+            patchset_id = _ai_record_data(patchset)["id"]
+
+            apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
+            self.assertEqual(apply_response.status_code, 200, apply_response.text)
+            body = apply_response.json()
+
+        self.assertTrue(body.get("ok"), body)
+        self.assertEqual((body.get("apply") or {}).get("scope"), "sandbox")
+        patchset_record = _ai_get_record(_AI_ENTITY_PATCHSET, patchset_id)
+        self.assertEqual(patchset_record.get("status"), "applied")
 
     def test_apply_patchset_fails_closed_without_real_sandbox_workspace(self) -> None:
         with TestClient(main.app) as client:
@@ -10966,6 +14762,310 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("draft patchset for sandbox validation", text)
         self.assertNotIn("Which module should receive this change?", text)
 
+    def test_workspace_change_returns_module_choice_decision_slot_with_real_options(self) -> None:
+        message = "Add a priority field and show it on the form."
+        req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
+        module_index = {
+            "contacts": {
+                "manifest": {
+                    "module": {"id": "contacts", "name": "Contacts"},
+                    "entities": [{"id": "entity.contact", "label": "Contact", "fields": []}],
+                }
+            },
+            "jobs": {
+                "manifest": {
+                    "module": {"id": "jobs", "name": "Jobs"},
+                    "entities": [{"id": "entity.job", "label": "Job", "fields": []}],
+                }
+            },
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: module_index),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                req,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                message,
+                answer_hints={"module_target": "operations"},
+            )
+
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("id"), "module_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "module_target_choice")
+        slots = plan.get("decision_slots") or []
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["contacts", "jobs"])
+
+    def test_workspace_change_returns_entity_choice_decision_slot_for_multi_entity_module(self) -> None:
+        message = "In operations, add a priority field and show it on the form."
+        req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
+        module_index = {
+            "operations": {
+                "manifest": {
+                    "module": {"id": "operations", "name": "Operations"},
+                    "entities": [
+                        {"id": "entity.job", "label": "Job", "fields": []},
+                        {"id": "entity.job_task", "label": "Job Task", "fields": []},
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["operations"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["operations"],
+                module_index,
+                answer_hints={"module_target": "operations"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "entity_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "entity_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["entity.job", "entity.job_task"])
+
+    def test_workspace_change_returns_field_choice_decision_slot_for_ambiguous_existing_field(self) -> None:
+        message = "In projects, rename the status field to Lifecycle Stage."
+        module_index = {
+            "projects": {
+                "manifest": {
+                    "module": {"id": "projects", "name": "Projects"},
+                    "entities": [
+                        {
+                            "id": "entity.project",
+                            "label": "Project",
+                            "fields": [
+                                {"id": "project.status", "label": "Status", "type": "string"},
+                                {"id": "project.delivery_status", "label": "Status", "type": "string"},
+                            ],
+                        }
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["projects"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["projects"],
+                module_index,
+                answer_hints={"module_target": "projects"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "field_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "field_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["project.status", "project.delivery_status"])
+
+    def test_workspace_change_returns_tab_choice_decision_slot_for_ambiguous_form_tabs(self) -> None:
+        message = "In dispatch, add a budget field but not in the first tab."
+        module_index = {
+            "dispatch": {
+                "manifest": {
+                    "module": {"id": "dispatch", "name": "Dispatch"},
+                    "entities": [
+                        {
+                            "id": "entity.dispatch",
+                            "label": "Dispatch",
+                            "fields": [
+                                {"id": "dispatch.title", "label": "Title", "type": "string"},
+                                {"id": "dispatch.status", "label": "Status", "type": "string"},
+                            ],
+                        }
+                    ],
+                    "views": [
+                        {
+                            "id": "dispatch.form",
+                            "kind": "form",
+                            "entity": "entity.dispatch",
+                            "sections": [
+                                {"id": "summary", "title": "Summary", "fields": ["dispatch.title"]},
+                                {"id": "planning", "title": "Planning", "fields": ["dispatch.status"]},
+                            ],
+                            "header": {
+                                "tabs": {
+                                    "style": "lifted",
+                                    "default_tab": "summary_tab",
+                                    "tabs": [
+                                        {"id": "summary_tab", "label": "Summary", "sections": ["summary"]},
+                                        {"id": "planning_tab", "label": "Planning", "sections": ["planning"]},
+                                    ],
+                                }
+                            },
+                        }
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["dispatch"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["dispatch"],
+                module_index,
+                answer_hints={"module_target": "dispatch"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "tab_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "tab_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["summary_tab", "planning_tab"])
+
+    def test_workspace_change_returns_section_choice_decision_slot_for_ambiguous_form_sections(self) -> None:
+        message = "In dispatch, add a budget field to the section on the form."
+        module_index = {
+            "dispatch": {
+                "manifest": {
+                    "module": {"id": "dispatch", "name": "Dispatch"},
+                    "entities": [
+                        {
+                            "id": "entity.dispatch",
+                            "label": "Dispatch",
+                            "fields": [
+                                {"id": "dispatch.title", "label": "Title", "type": "string"},
+                                {"id": "dispatch.status", "label": "Status", "type": "string"},
+                            ],
+                        }
+                    ],
+                    "views": [
+                        {
+                            "id": "dispatch.form",
+                            "kind": "form",
+                            "entity": "entity.dispatch",
+                            "sections": [
+                                {"id": "summary", "title": "Summary", "fields": ["dispatch.title"]},
+                                {"id": "planning", "title": "Planning", "fields": ["dispatch.status"]},
+                            ],
+                        }
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["dispatch"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["dispatch"],
+                module_index,
+                answer_hints={"module_target": "dispatch"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "section_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "section_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["summary", "planning"])
+
+    def test_workspace_change_returns_page_choice_decision_slot_for_ambiguous_pages(self) -> None:
+        message = "In dispatch, update the page layout."
+        module_index = {
+            "dispatch": {
+                "manifest": {
+                    "module": {"id": "dispatch", "name": "Dispatch"},
+                    "entities": [
+                        {
+                            "id": "entity.dispatch",
+                            "label": "Dispatch",
+                            "fields": [
+                                {"id": "dispatch.title", "label": "Title", "type": "string"},
+                            ],
+                        }
+                    ],
+                    "views": [
+                        {"id": "dispatch.list", "kind": "list", "entity": "entity.dispatch", "columns": [{"field_id": "dispatch.title"}]},
+                        {"id": "dispatch.form", "kind": "form", "entity": "entity.dispatch", "sections": [{"id": "main", "title": "Main", "fields": ["dispatch.title"]}]},
+                    ],
+                    "pages": [
+                        {"id": "dispatch.list_page", "title": "Dispatch Board", "content": [{"kind": "view", "target": "dispatch.list"}]},
+                        {"id": "dispatch.form_page", "title": "Dispatch Record", "content": [{"kind": "view", "target": "dispatch.form"}]},
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["dispatch"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["dispatch"],
+                module_index,
+                answer_hints={"module_target": "dispatch"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "page_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "page_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["dispatch.list_page", "dispatch.form_page"])
+
+    def test_workspace_change_returns_view_choice_decision_slot_for_ambiguous_views(self) -> None:
+        message = "In dispatch, update the view layout."
+        module_index = {
+            "dispatch": {
+                "manifest": {
+                    "module": {"id": "dispatch", "name": "Dispatch"},
+                    "entities": [
+                        {
+                            "id": "entity.dispatch",
+                            "label": "Dispatch",
+                            "fields": [
+                                {"id": "dispatch.title", "label": "Title", "type": "string"},
+                            ],
+                        }
+                    ],
+                    "views": [
+                        {"id": "dispatch.list", "kind": "list", "entity": "entity.dispatch", "columns": [{"field_id": "dispatch.title"}]},
+                        {"id": "dispatch.kanban", "kind": "kanban", "entity": "entity.dispatch", "title_field": "dispatch.title"},
+                    ],
+                }
+            }
+        }
+
+        with patch.object(main, "_ai_extract_explicit_module_targets_from_text", lambda *_args, **_kwargs: ["dispatch"]):
+            plan = _ai_slot_based_plan(
+                message,
+                ["dispatch"],
+                module_index,
+                answer_hints={"module_target": "dispatch"},
+            )
+
+        self.assertIsInstance(plan, dict)
+        meta = plan.get("question_meta") or {}
+        self.assertEqual(meta.get("id"), "view_target")
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("slot_kind"), "view_target_choice")
+        slots = main._ai_normalize_required_decision_slots(meta, plan.get("questions") or [])
+        self.assertTrue(slots, plan)
+        values = [item.get("value") for item in (slots[0].get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(values, ["dispatch.list", "dispatch.kanban"])
+
     def test_missing_named_module_stays_missing_even_when_workspace_has_attachment_modules(self) -> None:
         req = type("R", (), {"state": type("S", (), {"cache": {}})()})()
         main._octo_ai_seed_in_memory_baseline_modules()
@@ -11523,6 +15623,780 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(len(ops), 1)
         self.assertEqual(ops[0].get("op"), "create_automation_record")
         self.assertEqual((ops[0].get("automation") or {}).get("name"), "Contacts Inactive Notification")
+
+    def test_status_notification_request_returns_decision_slot_with_workspace_member_options(self) -> None:
+        manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [
+                        {
+                            "id": "contact.status",
+                            "label": "Status",
+                            "type": "enum",
+                            "options": [
+                                {"label": "Active", "value": "active"},
+                                {"label": "Inactive", "value": "inactive"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.contact_status",
+                    "entity": "entity.contact",
+                    "status_field": "contact.status",
+                    "states": [
+                        {"id": "active", "label": "Active"},
+                        {"id": "inactive", "label": "Inactive"},
+                    ],
+                    "transitions": [],
+                }
+            ],
+        }
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick", "role": "admin"},
+                {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly", "role": "member"},
+            ],
+        ):
+            candidate = main._ai_build_status_notification_automation_candidate(
+                "hey can you make an automation for when i mark a contact inactive, it sends a notification?",
+                "contacts",
+                manifest,
+                "entity.contact",
+                workspace_id="default",
+            )
+
+        self.assertIsInstance(candidate, dict)
+        self.assertEqual(candidate.get("candidate_ops"), [])
+        self.assertEqual(candidate.get("questions"), ["Who should receive this notification?"])
+        meta = candidate.get("question_meta") or {}
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("hint_field"), "recipient_email")
+        option_values = [item.get("value") for item in (meta.get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(option_values, ["nick@octodrop.com", "kelly@octodrop.com"])
+
+    def test_status_notification_request_uses_recipient_email_answer_hint(self) -> None:
+        manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [
+                        {
+                            "id": "contact.status",
+                            "label": "Status",
+                            "type": "enum",
+                            "options": [
+                                {"label": "Active", "value": "active"},
+                                {"label": "Inactive", "value": "inactive"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "workflows": [
+                {
+                    "id": "workflow.contact_status",
+                    "entity": "entity.contact",
+                    "status_field": "contact.status",
+                    "states": [
+                        {"id": "active", "label": "Active"},
+                        {"id": "inactive", "label": "Inactive"},
+                    ],
+                    "transitions": [],
+                }
+            ],
+        }
+
+        candidate = main._ai_build_status_notification_automation_candidate(
+            "hey can you make an automation for when i mark a contact inactive, it sends a notification?",
+            "contacts",
+            manifest,
+            "entity.contact",
+            answer_hints={"recipient_email": "nick@octodrop.com"},
+        )
+
+        self.assertIsInstance(candidate, dict)
+        ops = [op for op in (candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        step_inputs = (((ops[0].get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("to"), "nick@octodrop.com")
+
+    def test_plan_from_message_returns_document_template_decision_slot_for_automation_candidate(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_pack",
+                    "automation": {
+                        "name": "Job Completion Pack",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {"record_id": "{{trigger.record_id}}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {"id": "doc_tpl_completion_pack", "label": "Completion Pack", "value": "doc_tpl_completion_pack"},
+                    {"id": "doc_tpl_service_report", "label": "Service Report", "value": "doc_tpl_service_report"},
+                ]
+                if kind == "document_template"
+                else [],
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, generate a document template for the customer pack.",
+                answer_hints={},
+            )
+
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("hint_field"), "template_choice")
+        option_values = [item.get("value") for item in (meta.get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(option_values, ["doc_tpl_completion_pack", "doc_tpl_service_report", "__create_new__"])
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        self.assertEqual(ops[0].get("op"), "create_automation_record")
+
+    def test_plan_from_message_returns_email_template_decision_slot_when_template_requested(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "quote_approval_email",
+                    "automation": {
+                        "name": "Quote Approval Email",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "to": "sales@octodrop.com",
+                                    "subject": "Quote approved",
+                                    "body_text": "A quote was approved.",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["sales"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"sales": {"manifest": {"module": {"id": "sales", "name": "Sales"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {"id": "email_tpl_quote_approved", "label": "Quote Approved", "value": "email_tpl_quote_approved"},
+                {"id": "email_tpl_customer_notice", "label": "Customer Notice", "value": "email_tpl_customer_notice"},
+                ]
+                if kind == "email_template"
+                else [],
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "In Sales, when a quote is approved, send an email template to the customer.",
+                answer_hints={},
+            )
+
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("kind"), "decision_slot")
+        self.assertEqual(meta.get("hint_field"), "template_choice")
+        option_values = [item.get("value") for item in (meta.get("options") or []) if isinstance(item, dict)]
+        self.assertEqual(option_values, ["email_tpl_quote_approved", "email_tpl_customer_notice", "__create_new__"])
+
+    def test_plan_from_message_auto_selects_named_document_template_for_automation_candidate(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_pack",
+                    "automation": {
+                        "name": "Job Completion Pack",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {"record_id": "{{trigger.record_id}}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {
+                        "id": "doc_tpl_completion_pack",
+                        "label": "Completion Pack",
+                        "value": "doc_tpl_completion_pack",
+                        "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                    },
+                    {
+                        "id": "doc_tpl_service_report",
+                        "label": "Service Report",
+                        "value": "doc_tpl_service_report",
+                        "hints": {"document_template_id": "doc_tpl_service_report"},
+                    },
+                ]
+                if kind == "document_template"
+                else [],
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, generate the Completion Pack document template for the customer.",
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        step_inputs = (((ops[0].get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("template_id"), "doc_tpl_completion_pack")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(
+            [
+                item
+                for item in (plan.get("required_questions") or [])
+                if isinstance(item, str) and "template" in item.lower()
+            ],
+            [],
+        )
+
+    def test_plan_from_message_auto_selects_named_email_template_for_automation_candidate(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "quote_approval_email",
+                    "automation": {
+                        "name": "Quote Approval Email",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "to": "sales@octodrop.com",
+                                    "subject": "Quote approved",
+                                    "body_text": "A quote was approved.",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["sales"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"sales": {"manifest": {"module": {"id": "sales", "name": "Sales"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {
+                        "id": "email_tpl_quote_approved",
+                        "label": "Quote Approved",
+                        "value": "email_tpl_quote_approved",
+                        "hints": {"email_template_id": "email_tpl_quote_approved"},
+                    },
+                    {
+                        "id": "email_tpl_customer_notice",
+                        "label": "Customer Notice",
+                        "value": "email_tpl_customer_notice",
+                        "hints": {"email_template_id": "email_tpl_customer_notice"},
+                    },
+                ]
+                if kind == "email_template"
+                else [],
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "In Sales, when a quote is approved, send the Quote Approved email template to the customer.",
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        step_inputs = (((ops[0].get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("template_id"), "email_tpl_quote_approved")
+        self.assertNotIn("subject", step_inputs)
+        self.assertNotIn("body_text", step_inputs)
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(
+            [
+                item
+                for item in (plan.get("required_questions") or [])
+                if isinstance(item, str) and "template" in item.lower()
+            ],
+            [],
+        )
+
+    def test_plan_from_message_auto_selects_named_email_and_document_templates_for_same_automation(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_handoff",
+                    "automation": {
+                        "name": "Job Completion Handoff",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "to": "ops@octodrop.com",
+                                    "subject": "Job complete",
+                                    "body_text": "The job is complete.",
+                                },
+                            },
+                            {
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {"record_id": "{{trigger.record_id}}"},
+                            },
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_follow_up",
+                            "label": "Completion Follow-up",
+                            "value": "email_tpl_completion_follow_up",
+                            "hints": {"email_template_id": "email_tpl_completion_follow_up"},
+                        },
+                        {
+                            "id": "email_tpl_customer_notice",
+                            "label": "Customer Notice",
+                            "value": "email_tpl_customer_notice",
+                            "hints": {"email_template_id": "email_tpl_customer_notice"},
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_completion_pack",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack",
+                            "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                        },
+                        {
+                            "id": "doc_tpl_service_report",
+                            "label": "Service Report",
+                            "value": "doc_tpl_service_report",
+                            "hints": {"document_template_id": "doc_tpl_service_report"},
+                        },
+                    ]
+                ),
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, send the Completion Follow-up email template to the customer and generate the Completion Pack document template.",
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if len(steps) > 0 and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_follow_up")
+        self.assertNotIn("subject", email_inputs)
+        self.assertNotIn("body_text", email_inputs)
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_completion_pack")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(
+            [
+                item
+                for item in (plan.get("required_questions") or [])
+                if isinstance(item, str) and "template" in item.lower()
+            ],
+            [],
+        )
+
+    def test_plan_from_message_applies_selected_document_template_hint_to_automation_candidate(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_pack",
+                    "automation": {
+                        "name": "Job Completion Pack",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {"record_id": "{{trigger.record_id}}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, generate a document template for the customer pack.",
+                answer_hints={"document_template_id": "doc_tpl_completion_pack"},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        step_inputs = (((ops[0].get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("template_id"), "doc_tpl_completion_pack")
+        meta = plan.get("required_question_meta") or {}
+        self.assertEqual(meta.get("id"), "confirm_plan")
+
+    def test_plan_from_message_creates_companion_document_template_when_requested(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_pack",
+                    "automation": {
+                        "name": "Job Completion Pack",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {"record_id": "{{trigger.record_id}}"},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(main, "_ai_workspace_template_decision_options", lambda kind, workspace_id, limit=8: []),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, generate a document template for the customer pack.",
+                answer_hints={"create_new_document_template": True, "document_template_id": "__create_new__"},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_document_template_record", "create_automation_record"])
+        template_op = ops[0]
+        automation_op = ops[1]
+        self.assertEqual(template_op.get("artifact_type"), "document_template")
+        template_id = template_op.get("artifact_id")
+        self.assertTrue(isinstance(template_id, str) and template_id.startswith("doc_tpl_"))
+        step_inputs = (((automation_op.get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("template_id"), template_id)
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+
+    def test_plan_from_message_creates_companion_email_template_when_requested(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "quote_approval_email",
+                    "automation": {
+                        "name": "Quote Approval Email",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"]},
+                        "steps": [
+                            {
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "to": "sales@octodrop.com",
+                                    "subject": "Quote approved",
+                                    "body_text": "A quote was approved.",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["sales"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"sales": {"manifest": {"module": {"id": "sales", "name": "Sales"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(main, "_ai_workspace_template_decision_options", lambda kind, workspace_id, limit=8: []),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "In Sales, when a quote is approved, send an email template to the customer.",
+                answer_hints={"create_new_email_template": True, "email_template_id": "__create_new__"},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_email_template_record", "create_automation_record"])
+        template_op = ops[0]
+        automation_op = ops[1]
+        self.assertEqual(template_op.get("artifact_type"), "email_template")
+        template_id = template_op.get("artifact_id")
+        self.assertTrue(isinstance(template_id, str) and template_id.startswith("email_tpl_"))
+        step_inputs = (((automation_op.get("automation") or {}).get("steps") or [{}])[0].get("inputs") or {})
+        self.assertEqual(step_inputs.get("template_id"), template_id)
+        self.assertNotIn("subject", step_inputs)
+        self.assertNotIn("body_text", step_inputs)
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+
+    def test_decision_slot_answer_maps_selected_document_template_into_replan_hints(self) -> None:
+        session_id = f"decision-slot-document-template-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, generate a document template for the customer pack.",
+                "message_type": "chat",
+                "created_at": "2026-04-19T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-19T00:00:10Z",
+                "affected_artifacts_json": [],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which document template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_document_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "doc_tpl_completion_pack",
+                                    "label": "Completion Pack",
+                                    "value": "doc_tpl_completion_pack",
+                                    "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                                },
+                                {"id": "doc_tpl_service_report", "label": "Service Report", "value": "doc_tpl_service_report"},
+                            ],
+                        },
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(answer_hints)
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with patch.object(main, "_ai_plan_from_message", side_effect=fake_plan):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "hints": {
+                        "selected_option_id": "doc_tpl_completion_pack",
+                        "selected_option_value": "doc_tpl_completion_pack",
+                        "selected_option_label": "Completion Pack",
+                        "document_template_id": "doc_tpl_completion_pack",
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("document_template_id"), "doc_tpl_completion_pack")
+        self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_completion_pack")
+        self.assertEqual(captured_hints.get("answer_text"), "Completion Pack")
 
     def test_apply_and_promote_automation_patchset_creates_draft_then_published_record(self) -> None:
         class ScopedAutomationStore:

@@ -40,7 +40,9 @@ export function startAgentStream({
   message,
   chatHistory = null,
   buildSpec = null,
+  draftText = null,
   focus = null,
+  hints = null,
   onEvent,
 }) {
   const controller = new AbortController();
@@ -65,7 +67,9 @@ export function startAgentStream({
         message,
         chat_history: chatHistory,
         build_spec: buildSpec || undefined,
+        draft_text: draftText || undefined,
         focus,
+        hints,
       }),
       signal: controller.signal,
     });

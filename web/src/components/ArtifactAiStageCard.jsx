@@ -1,13 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import AiActionStrip from "./AiActionStrip.jsx";
-
-function toneClass(tone) {
-  if (tone === "primary") return "badge badge-primary";
-  if (tone === "success") return "badge badge-success";
-  if (tone === "warning") return "badge badge-warning";
-  if (tone === "error") return "badge badge-error";
-  return "badge badge-ghost";
-}
 
 function normalizeInfoItems(items) {
   const normalized = typeof items === "string"
@@ -127,12 +119,11 @@ function validationDetailItems(validation) {
 export default function ArtifactAiStageCard({
   title = "AI Plan",
   summary = "",
-  stageLabel = "Ready",
-  stageTone = "ghost",
-  statusTitle = "Current Work",
-  statusItems = [],
   detailsTitle = "",
   details = [],
+  advisories = [],
+  risks = [],
+  requiredQuestions = [],
   assumptions = [],
   warnings = [],
   validation = null,
@@ -140,58 +131,37 @@ export default function ArtifactAiStageCard({
   busy = false,
   embedded = false,
 }) {
-  const liveStatusItems = useMemo(() => normalizeInfoItems(statusItems), [statusItems]);
-  const liveStatusSignature = liveStatusItems.join("|");
-  const [statusIndex, setStatusIndex] = useState(0);
   const validationItems = validationSummary(validation);
   const validationDetails = validationDetailItems(validation);
   const combinedValidationItems = [...validationItems, ...validationDetails];
-  const activeStatus = liveStatusItems[statusIndex] || "";
   const hasBody =
     summary ||
-    activeStatus ||
     details.length > 0 ||
+    advisories.length > 0 ||
+    risks.length > 0 ||
+    requiredQuestions.length > 0 ||
     combinedValidationItems.length > 0 ||
     assumptions.length > 0 ||
     warnings.length > 0 ||
     actions.length > 0;
-  useEffect(() => {
-    setStatusIndex(0);
-  }, [liveStatusSignature]);
-  useEffect(() => {
-    if (!busy || liveStatusItems.length < 2) return undefined;
-    const timer = window.setInterval(() => {
-      setStatusIndex((current) => (current + 1) % liveStatusItems.length);
-    }, 1600);
-    return () => window.clearInterval(timer);
-  }, [busy, liveStatusItems.length, liveStatusSignature]);
   if (!hasBody) return null;
   return (
-    <div className={embedded ? "space-y-3 p-3" : "rounded-box border border-base-200 bg-base-100 p-3 space-y-3"}>
+    <div className={embedded ? "space-y-3 p-3" : "rounded-box border border-base-200 bg-base-200 p-3 space-y-3"}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-wide opacity-60">Plan Stage</div>
           <div className="text-sm font-semibold">{title}</div>
           {summary ? <div className="mt-1 whitespace-pre-wrap text-sm leading-6">{summary}</div> : null}
         </div>
-        <span className={`${toneClass(stageTone)} inline-flex min-w-[7.5rem] items-center justify-center whitespace-nowrap px-3 text-center`}>
-          {stageLabel}
-        </span>
       </div>
-      {activeStatus ? (
-        <div className="rounded-box border border-base-200 bg-base-100 p-3">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide opacity-60">
-            <span className={`inline-block h-2 w-2 rounded-full ${busy ? "animate-pulse bg-warning" : "bg-primary"}`} />
-            <span>{statusTitle}</span>
-          </div>
-          <div className="mt-2 text-sm leading-6">{activeStatus}</div>
-        </div>
-      ) : null}
       {details.length > 0 ? <InfoBlock title={detailsTitle || "Details"} items={details} /> : null}
+      {requiredQuestions.length > 0 ? <InfoBlock title="Required Input" items={requiredQuestions} /> : null}
+      {risks.length > 0 ? <InfoBlock title="Risks" items={risks} /> : null}
+      {advisories.length > 0 ? <InfoBlock title="Advisories" items={advisories} /> : null}
       {combinedValidationItems.length > 0 ? <InfoBlock title="Validation" items={combinedValidationItems} /> : null}
       {assumptions.length > 0 ? <InfoBlock title="Assumptions" items={assumptions} /> : null}
       {warnings.length > 0 ? <InfoBlock title="Warnings" items={warnings} /> : null}
-      <AiActionStrip actions={actions} busy={busy} compact />
+      {!busy && actions.length > 0 ? <AiActionStrip actions={actions} busy={busy} compact /> : null}
     </div>
   );
 }

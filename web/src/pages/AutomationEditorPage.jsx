@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "lucide-react";
-import { apiFetch } from "../api";
+import { apiFetch, startArtifactAiPlanStream } from "../api";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import AppSelect from "../components/AppSelect.jsx";
 import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
@@ -54,6 +54,93 @@ function parseStoredAutomationAiState(raw) {
   } catch {
     return null;
   }
+}
+
+function humanizeAutomationProgressLabel(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  return value.trim().replaceAll("_", " ").replaceAll("-", " ");
+}
+
+function summarizeAutomationPlanProgressEvent(evt) {
+  if (!evt || typeof evt !== "object") return "";
+  const data = evt.data && typeof evt.data === "object" ? evt.data : {};
+  if (typeof data.summary === "string" && data.summary.trim()) {
+    return data.summary.trim();
+  }
+  if (evt.event === "run_started") return "";
+  if (evt.event === "context_resolved") {
+    if (typeof data.profile_summary === "string" && data.profile_summary.trim()) {
+      return data.profile_summary.trim();
+    }
+    const focusLabel = humanizeAutomationProgressLabel(data.requested_focus_label || data.requested_focus);
+    const stepCount = Number(data.step_count || 0);
+    const triggerKind = humanizeAutomationProgressLabel(data.trigger_kind);
+    const conditionCount = Number(data.condition_step_count || 0);
+    const delayCount = Number(data.delay_step_count || 0);
+    const foreachCount = Number(data.foreach_step_count || 0);
+    const traits = [];
+    if (conditionCount > 0) traits.push(`${conditionCount} condition${conditionCount === 1 ? "" : "s"}`);
+    if (delayCount > 0) traits.push(`${delayCount} delay${delayCount === 1 ? "" : "s"}`);
+    if (foreachCount > 0) traits.push(`${foreachCount} loop${foreachCount === 1 ? "" : "s"}`);
+    const traitText = traits.slice(0, 2).join(" and ");
+    if (stepCount > 0 && triggerKind && traitText && focusLabel) {
+      return `Reviewing the current ${triggerKind}-triggered ${stepCount}-step automation with ${traitText} for ${focusLabel} changes.`;
+    }
+    if (stepCount > 0 && triggerKind && focusLabel) {
+      return `Reviewing the current ${triggerKind}-triggered ${stepCount}-step automation for ${focusLabel} changes.`;
+    }
+    if (stepCount > 0) {
+      return `Reviewing the current ${stepCount}-step automation.`;
+    }
+    if (focusLabel) {
+      return `Reviewing the current automation for ${focusLabel} changes.`;
+    }
+    return "";
+  }
+  if (evt.event === "draft_loaded") return "";
+  if (evt.event === "plan_requested") return "";
+  if (evt.event === "draft_refined") {
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    if (Number(data.hint_count || 0) > 0) {
+      return "Applying your answer to the current automation draft.";
+    }
+    return "";
+  }
+  if (evt.event === "decision_required") {
+    if (typeof data.slot_label === "string" && data.slot_label.trim()) {
+      return `Waiting on one decision: ${data.slot_label.trim()}.`;
+    }
+    if (typeof data.question === "string" && data.question.trim()) {
+      return `Waiting on one decision: ${data.question.trim()}`;
+    }
+    return "Checking which automation decision is still needed.";
+  }
+  if (evt.event === "stage_started") {
+    if (evt.phase === "planning") return "";
+    if (evt.phase === "validating") return "Validating the proposed automation draft.";
+  }
+  if (evt.event === "plan_result") {
+    if (Number(data.required_questions || 0) > 0) return "";
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    const questions = Number(data.required_questions || 0);
+    if (questions > 0) return "Prepared an automation proposal and need one decision to continue.";
+    return "Prepared an automation proposal.";
+  }
+  if (evt.event === "validate_result") {
+    if (typeof data.summary === "string" && data.summary.trim()) {
+      return data.summary.trim();
+    }
+    const total = Number(data?.error_counts?.total || 0);
+    if (total > 0) return `Validation found ${total} issue${total === 1 ? "" : "s"} in the proposed automation draft.`;
+    return "Validation passed for the proposed automation draft.";
+  }
+  if (evt.event === "final_done") return "Finalizing the automation proposal.";
+  if (evt.event === "stopped") return "Stopping the current run.";
+  return "";
 }
 
 function AutomationLookupValueInput({ fieldDef, value, onChange, placeholder = "" }) {
@@ -362,6 +449,7 @@ export default function AutomationEditorPage({ user }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [automationProgressEvents, setAutomationProgressEvents] = useState([]);
   const [pendingAiPlan, setPendingAiPlan] = useState(null);
   const [chatHistoryHydrated, setChatHistoryHydrated] = useState(false);
   const [openAiModalOpen, setOpenAiModalOpen] = useState(false);
@@ -377,6 +465,7 @@ export default function AutomationEditorPage({ user }) {
   const [jsonEditorText, setJsonEditorText] = useState("");
   const [jsonEditorError, setJsonEditorError] = useState("");
   const [jsonEditorDirty, setJsonEditorDirty] = useState(false);
+  const automationStreamCancelRef = useRef(null);
   const [meta, setMeta] = useState({
     event_types: [],
     event_catalog: [],
@@ -1766,11 +1855,24 @@ export default function AutomationEditorPage({ user }) {
     return next;
   }, [validationErrors, jsonEditorError, error]);
 
-  const automationPlanningStatusItems = useMemo(() => ([
-    `Reviewing ${name.trim() || "the current automation"} and the current draft`,
-    "Checking triggers, rules, and step configuration",
-    "Preparing a validated automation proposal",
-  ]), [name]);
+  const [activeAutomationRequestMode, setActiveAutomationRequestMode] = useState("");
+  const pendingAutomationAssistantMessage = useMemo(() => {
+    if (!chatLoading) return "";
+    for (let index = automationProgressEvents.length - 1; index >= 0; index -= 1) {
+      const summary = summarizeAutomationPlanProgressEvent(automationProgressEvents[index]);
+      if (summary) return summary;
+    }
+    if (activeAutomationRequestMode === "validation") {
+      return "Checking the current automation validation issues and preparing a targeted fix.";
+    }
+    if (activeAutomationRequestMode === "decision") {
+      return "Applying your answer and updating the current automation draft.";
+    }
+    if (activeAutomationRequestMode) {
+      return activeAutomationRequestMode;
+    }
+    return "Reviewing the current automation draft and planning the requested changes.";
+  }, [activeAutomationRequestMode, automationProgressEvents, chatLoading]);
 
   const buildAutomationAiRepairPrompt = useCallback((validation, summary) => {
     const items = Array.isArray(validation?.errors) ? validation.errors : [];
@@ -1806,37 +1908,84 @@ export default function AutomationEditorPage({ user }) {
     },
   ), [aiCapabilities, name]);
 
+  const cancelAutomationAiRun = useCallback(() => {
+    automationStreamCancelRef.current?.();
+  }, []);
+
   const runAutomationAiPlan = useCallback(async (rawText, draftOverride = null, options = null) => {
-    const prompt = String(rawText || "").trim();
+    const prompt = String(options?.requestPrompt || rawText || "").trim();
+    const displayText = String(options?.displayText || rawText || "").trim();
     if (!prompt || !automationId || chatLoading) return;
     const focus = options?.focus || null;
+    const hints = options?.hints && typeof options.hints === "object" ? options.hints : null;
+    const requestMode = focus === "validation"
+      ? "validation"
+      : (options?.requestPrompt ? "decision" : "");
     setPendingAiPlan(null);
-    setChatMessages((prev) => [...prev, { role: "user", text: prompt }]);
+    if (displayText) {
+      setChatMessages((prev) => [...prev, { role: "user", text: displayText }]);
+    }
     setChatInput("");
+    setAutomationProgressEvents([]);
+    setActiveAutomationRequestMode(requestMode);
     setChatLoading(true);
     try {
-      const res = await apiFetch(`/automations/${automationId}/ai/plan`, {
-        method: "POST",
-        body: {
-          prompt,
-          draft: draftOverride && typeof draftOverride === "object" ? draftOverride : buildAutomationDefinition(),
-          focus,
-        },
-      });
+      const requestBody = {
+        prompt,
+        draft: draftOverride && typeof draftOverride === "object" ? draftOverride : buildAutomationDefinition(),
+        focus,
+        hints,
+      };
+      let res = null;
+      try {
+        const { cancel, promise } = startArtifactAiPlanStream({
+          path: `/automations/${automationId}/ai/plan/stream`,
+          body: requestBody,
+          onEvent: (evt) => {
+            setAutomationProgressEvents((prev) => [...prev, evt].slice(-200));
+          },
+        });
+        automationStreamCancelRef.current = cancel;
+        res = await promise;
+      } catch (streamErr) {
+        if (streamErr?.name === "AbortError") return;
+        res = await apiFetch(`/automations/${automationId}/ai/plan`, {
+          method: "POST",
+          body: { ...requestBody, include_progress: true },
+        });
+        if (Array.isArray(res?.progress)) {
+          setAutomationProgressEvents(res.progress.slice(-200));
+        }
+      }
+      const requiredQuestions = Array.isArray(res?.required_questions) ? res.required_questions.filter((item) => typeof item === "string" && item.trim()) : [];
+      const questionMeta = res?.required_question_meta && typeof res.required_question_meta === "object" ? res.required_question_meta : null;
+      const decisionSlots = Array.isArray(res?.decision_slots)
+        ? res.decision_slots.filter((item) => item && typeof item === "object")
+        : (questionMeta?.kind === "decision_slot" ? [questionMeta] : []);
       setPendingAiPlan({
         draft: res?.draft || null,
         validation: res?.validation || null,
         summary: String(res?.summary || "Automation draft ready to apply."),
         assumptions: Array.isArray(res?.assumptions) ? res.assumptions : [],
         warnings: Array.isArray(res?.warnings) ? res.warnings : [],
+        advisories: Array.isArray(res?.warnings) ? res.warnings : [],
+        risks: res?.validation?.compiled_ok === false ? ["The draft still has validation issues and needs review before apply."] : [],
+        requiredQuestions,
+        questionMeta,
+        decisionSlots,
+        prompt,
+        focus,
       });
       setChatMessages((prev) => [
         ...prev,
         { role: "assistant", text: String(res?.summary || "Automation draft ready to apply.") },
       ]);
     } catch (err) {
+      if (err?.name === "AbortError") return;
       setChatMessages((prev) => [...prev, { role: "assistant", text: err?.message || t("common.error") }]);
     } finally {
+      automationStreamCancelRef.current = null;
+      setActiveAutomationRequestMode("");
       setChatLoading(false);
     }
   }, [automationId, buildAutomationDefinition, chatLoading, t]);
@@ -1856,6 +2005,49 @@ export default function AutomationEditorPage({ user }) {
     const repairPrompt = buildAutomationAiRepairPrompt(validation, summary);
     return runAutomationAiPlan(repairPrompt, draft, { focus: "validation" });
   }, [buildAutomationAiRepairPrompt, buildAutomationDefinition, runAutomationAiPlan, validationPanelErrors]);
+
+  const pendingAutomationDecisionSlots = useMemo(() => (
+    Array.isArray(pendingAiPlan?.decisionSlots)
+      ? pendingAiPlan.decisionSlots.filter((item) => item && typeof item === "object")
+      : []
+  ), [pendingAiPlan?.decisionSlots]);
+
+  const submitAutomationDecisionSlotOption = useCallback(async (slot, option) => {
+    if (!pendingAiPlan?.prompt || !slot || !option) return;
+    const optionValue = typeof option?.value === "string" ? option.value.trim() : "";
+    const optionLabel = typeof option?.label === "string" && option.label.trim() ? option.label.trim() : optionValue;
+    const hints = {
+      ...(option?.hints && typeof option.hints === "object" ? option.hints : {}),
+      selected_option_id: typeof option?.id === "string" ? option.id : undefined,
+      selected_option_value: optionValue || undefined,
+      selected_option_label: optionLabel || undefined,
+    };
+    if (typeof slot?.hint_field === "string" && slot.hint_field.trim() && optionValue) {
+      hints[slot.hint_field.trim()] = optionValue;
+    }
+    await runAutomationAiPlan(optionLabel || optionValue, pendingAiPlan?.draft, {
+      requestPrompt: pendingAiPlan?.prompt,
+      displayText: optionLabel || optionValue,
+      focus: pendingAiPlan?.focus || null,
+      hints,
+    });
+  }, [pendingAiPlan?.draft, pendingAiPlan?.focus, pendingAiPlan?.prompt, runAutomationAiPlan]);
+
+  const submitAutomationDecisionText = useCallback(async (rawText) => {
+    const text = String(rawText || "").trim();
+    const slot = pendingAutomationDecisionSlots[0];
+    if (!text || !pendingAiPlan?.prompt || !slot?.allow_free_text) return;
+    const hints = {};
+    if (typeof slot?.hint_field === "string" && slot.hint_field.trim()) {
+      hints[slot.hint_field.trim()] = text;
+    }
+    await runAutomationAiPlan(text, pendingAiPlan?.draft, {
+      requestPrompt: pendingAiPlan?.prompt,
+      displayText: text,
+      focus: pendingAiPlan?.focus || null,
+      hints,
+    });
+  }, [pendingAiPlan?.draft, pendingAiPlan?.focus, pendingAiPlan?.prompt, pendingAutomationDecisionSlots, runAutomationAiPlan]);
 
   const triggerSummaryText = useMemo(() => {
     if (trigger?.kind === "schedule") {
@@ -2159,6 +2351,9 @@ export default function AutomationEditorPage({ user }) {
           stageTone: "success",
           detailsTitle: "Planned Changes",
           details: pendingAutomationPlanDetails,
+          advisories: pendingAiPlan.advisories,
+          risks: pendingAiPlan.risks,
+          requiredQuestions: pendingAiPlan.requiredQuestions,
           assumptions: pendingAiPlan.assumptions,
           warnings: pendingAiPlan.warnings,
           validation: pendingAiPlan.validation,
@@ -2181,6 +2376,9 @@ export default function AutomationEditorPage({ user }) {
             stageTone: "ghost",
             detailsTitle: "Planned Changes",
             details: pendingAutomationPlanDetails,
+            advisories: pendingAiPlan.advisories,
+            risks: pendingAiPlan.risks,
+            requiredQuestions: pendingAiPlan.requiredQuestions,
             assumptions: pendingAiPlan.assumptions,
             warnings: pendingAiPlan.warnings,
             validation: pendingAiPlan.validation,
@@ -2192,8 +2390,34 @@ export default function AutomationEditorPage({ user }) {
   }, [pendingAiPlan, pendingAutomationPlanDetails]);
 
   const automationAgentActionStrip = useMemo(() => {
-    if (chatLoading) return null;
+    if (chatLoading) {
+      return {
+        title: "Actions",
+        actions: [
+          {
+            key: "cancel-run",
+            label: "Stop",
+            onClick: cancelAutomationAiRun,
+            allowWhileBusy: true,
+            outline: true,
+          },
+        ],
+      };
+    }
     if (pendingAiPlan) {
+      if (pendingAutomationDecisionSlots.length > 0) {
+        return {
+          title: "Actions",
+          actions: [
+            {
+              key: "discard-proposal",
+              label: "Discard",
+              onClick: discardPendingAutomationPlan,
+              outline: true,
+            },
+          ],
+        };
+      }
       return {
         title: "Actions",
         actions: [
@@ -2244,10 +2468,12 @@ export default function AutomationEditorPage({ user }) {
   }, [
     applyPendingAutomationPlan,
     automationQuickActions,
+    cancelAutomationAiRun,
     chatLoading,
     discardPendingAutomationPlan,
     name,
     pendingAiPlan,
+    pendingAutomationDecisionSlots.length,
     pendingAutomationPlanInvalid,
     runAutomationAiFix,
     runAutomationAiPlan,
@@ -2271,36 +2497,42 @@ export default function AutomationEditorPage({ user }) {
           assistantLabel="AI Automation Assistant"
           userLabel={userLabel}
           messages={chatMessages}
-          autoScrollKey={`${chatMessages.length}:${chatLoading ? "loading" : "idle"}:${pendingAiPlan ? "proposal" : "none"}`}
-          stageCard={chatLoading ? (
+          autoScrollKey={`${chatMessages.length}:${automationProgressEvents.length}:${chatLoading ? "loading" : "idle"}:${pendingAiPlan ? "proposal" : "none"}`}
+          stageCard={!chatLoading && pendingAiPlan ? (
             <ArtifactAiStageCard
               title="Automation Plan"
-              summary="Working through the request and preparing a validated automation proposal."
-              stageLabel="Planning"
-              stageTone="warning"
-              statusItems={automationPlanningStatusItems}
-              busy
-            />
-          ) : (!chatLoading && pendingAiPlan ? (
-            <ArtifactAiStageCard
-              title="Automation Plan"
-              summary={pendingAiPlan.summary}
-              stageLabel={pendingAutomationPlanInvalid ? "Needs Fix" : "Ready to Apply"}
-              stageTone={pendingAutomationPlanInvalid ? "error" : "primary"}
+              summary=""
+              stageLabel={pendingAutomationDecisionSlots.length > 0 ? "Decision Needed" : (pendingAutomationPlanInvalid ? "Needs Fix" : "Ready to Apply")}
+              stageTone={pendingAutomationDecisionSlots.length > 0 ? "warning" : (pendingAutomationPlanInvalid ? "error" : "primary")}
               detailsTitle="Planned Changes"
               details={pendingAutomationPlanDetails}
+              advisories={pendingAiPlan.advisories}
+              risks={pendingAiPlan.risks}
+              requiredQuestions={pendingAiPlan.requiredQuestions}
               assumptions={pendingAiPlan.assumptions}
               warnings={pendingAiPlan.warnings}
               validation={pendingAiPlan.validation}
             />
-          ) : null)}
+          ) : null}
+          decisionSlots={pendingAutomationDecisionSlots}
+          onSelectDecisionSlotOption={submitAutomationDecisionSlotOption}
           inputValue={chatInput}
           onInputChange={setChatInput}
-          onSend={() => runAutomationAiPlan(chatInput)}
+          onSend={() => {
+            if (pendingAutomationDecisionSlots.length > 0 && pendingAutomationDecisionSlots[0]?.allow_free_text) {
+              submitAutomationDecisionText(chatInput);
+              return;
+            }
+            runAutomationAiPlan(chatInput);
+          }}
           inputDisabled={chatLoading}
           inputPlaceholder={t("settings.automation_editor.describe_change")}
-          minRows={4}
+          minRows={1}
           actionStrip={automationAgentActionStrip}
+          pendingAssistantMessage={pendingAutomationAssistantMessage}
+          pendingAssistantMessages={[]}
+          inputBusy={chatLoading}
+          inputBusyLabel={pendingAutomationAssistantMessage}
         />
       ) : (
         providerStatusLoading ? (
@@ -2317,7 +2549,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [automationAgentActionStrip, automationAiEnabled, automationPlanningStatusItems, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, pendingAiPlan, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, t, userLabel]);
+  ), [automationAgentActionStrip, automationAiEnabled, automationProgressEvents.length, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, pendingAiPlan, pendingAutomationDecisionSlots, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, submitAutomationDecisionSlotOption, submitAutomationDecisionText, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {

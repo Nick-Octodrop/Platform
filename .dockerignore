@@ -1,5 +1,15 @@
 .git
 .gitignore
+.venv
+.venv/
+.venv-linux
+.venv-linux/
+.pytest_cache
+__pycache__
+storage/
+Projects/
+docs/
+construction-worker-pwa/
 
 # OS/editor
 **/.DS_Store
@@ -18,6 +28,7 @@
 **/.coverage.*
 **/htmlcov
 **/.venv
+**/.venv-linux
 **/venv
 **/env
 

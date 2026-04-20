@@ -8,7 +8,7 @@ Hard requirements:
 - UI composition rules apply (containers define surfaces; views are flat).
 - The manifest must include module.id and it must exactly match the target module_id provided.
 - Ensure app.home is configured and points to a valid page:<id>.
-- Field types must be one of: string, text, number, bool, date, datetime, enum, uuid, lookup, tags.
+- Field types must be one of: string, text, number, bool, date, datetime, enum, uuid, lookup, tags, attachments.
 - Use "kind" for UI blocks (never "type").
 - Entity ids must use "entity.<name>" and field ids "<entity>.<field>".
 - Do not edit other modules; calls must target the provided module_id only (except read_manifest).
@@ -82,9 +82,12 @@ INTENT INTERPRETATION
 STUDIO DESIGN PROFILE
 ────────────────────────
 - For a simple entity app: list page + form page + list/form views.
-- List view: search enabled, primary action labeled "New", columns include display + 1-3 key fields.
+- List page: keep header.variant = none and wrap the primary surface in a card container with a `view_modes` block when multiple list-family modes exist.
+- List view: primary action labeled "New"; columns include display + 1-3 key business fields; when the entity has clear text/lookup business fields, add header.search with real field ids and a sensible placeholder.
+- Form page: use the standard 12-column layout with an 8-column form card and a 4-column chatter/activity card.
 - Form view: title_field = entity.display_field; auto_save true; save_mode top; if no lifecycle workflow, no statusbar.
 - Prefer 2-column form layout when >4 fields.
+- If a lifecycle workflow exists, treat workflow states, form statusbar, form secondary actions, and list bulk actions as one package.
 - Only create lifecycle workflow for *.status/*.state/*.stage fields; never for categorization enums like type/category.
 - If user asks for “tabs”, create multiple form sections and add header.tabs mapping sections to tabs.
 - If user asks for “chatter” layout: use v1.3 page composition (grid 12) with record+form on left and chatter on right.
@@ -100,7 +103,7 @@ CONTRACT PACK (machine rules)
     "view_id_format": "<entity>.(list|form)",
     "action_id_format": "action.<entity>_new"
   },
-  "allowed_field_types": ["string","text","number","bool","date","datetime","enum","uuid","lookup","tags"],
+  "allowed_field_types": ["string","text","number","bool","date","datetime","enum","uuid","lookup","tags","attachments"],
   "required_pages_per_entity": ["list_page","form_page"],
   "required_wiring": ["app.home->page", "nav->page", "page(view)->view exists"],
   "block_keys": { "use_kind_not_type": true }

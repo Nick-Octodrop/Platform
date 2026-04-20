@@ -10,6 +10,21 @@ import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
+const DOCUMENT_TEMPLATE_STARTER_HTML = `
+<div data-octo-starter="document-template" style="font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif; color:#0f172a; padding:28px 32px; background:#ffffff;">
+  <div style="max-width:760px; margin:0 auto;">
+    <div style="margin-bottom:24px; padding-bottom:18px; border-bottom:2px solid #e2e8f0;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#f97316;">Document Template</div>
+      <h1 style="margin:12px 0 8px; font-size:30px; line-height:1.15; font-weight:700; color:#0f172a;">Untitled Document</h1>
+      <p style="margin:0; max-width:620px; font-size:15px; line-height:1.7; color:#475569;">Use this clean sans-serif starter as the foundation for a well-structured, printable business document.</p>
+    </div>
+    <div style="padding:18px 20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px;">
+      <div style="font-size:15px; font-weight:600; margin-bottom:8px; color:#0f172a;">Start designing here</div>
+      <p style="margin:0; font-size:14px; line-height:1.7; color:#475569;">Add your masthead, metadata, sections, tables, and totals while keeping the layout clear and print-friendly.</p>
+    </div>
+  </div>
+</div>`.trim();
+
 export default function DocumentsPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
@@ -41,7 +56,7 @@ export default function DocumentsPage() {
     try {
       const payload = {
         name: t("settings.documents_templates_page.untitled_template"),
-        html: "<p>Hello</p>",
+        html: DOCUMENT_TEMPLATE_STARTER_HTML,
         format: "html",
       };
       const res = await apiFetch("/documents/templates", { method: "POST", body: payload });

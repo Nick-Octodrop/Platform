@@ -3,6 +3,7 @@ import { MessageSquare, MoreHorizontal, ShieldCheck } from "lucide-react";
 import Tabs from "../../components/Tabs.jsx";
 import ValidationPanel from "../../components/ValidationPanel.jsx";
 import TemplateAgentPane from "./TemplateAgentPane.jsx";
+import { getTemplateEntityId, syncSampleToTemplateEntity } from "./templateEntityState.js";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM } from "../../components/buttonStyles.js";
 import { apiFetch } from "../../api.js";
 import { useAccessContext } from "../../access.js";
@@ -196,20 +197,17 @@ export default function TemplateStudioShell({
   }, [sample, sampleStorageKey]);
 
   useEffect(() => {
-    if (!entities.length) return;
-    const currentEntityId = sample?.entity_id || "";
-    const hasCurrentEntity = currentEntityId && entities.some((ent) => ent.id === currentEntityId);
-    if (hasCurrentEntity) return;
-    const templateEntityId = draft?.variables_schema?.entity_id;
-    const hasTemplateEntity = templateEntityId && entities.some((ent) => ent.id === templateEntityId);
-    if (hasTemplateEntity) {
-      setSample((prev) => ({ ...(prev || {}), entity_id: templateEntityId, record_id: "" }));
-      return;
+    const draftEntityId = getTemplateEntityId(draft);
+    if (!draftEntityId && !entities.length) return;
+    const nextSample = syncSampleToTemplateEntity({
+      sample,
+      draftEntityId,
+      entities,
+    });
+    if (nextSample) {
+      setSample(nextSample);
     }
-    if (currentEntityId) {
-      setSample(DEFAULT_SAMPLE);
-    }
-  }, [entities, draft?.variables_schema?.entity_id, sample?.entity_id]);
+  }, [draft, entities, sample]);
 
   useEffect(() => {
     if (!sample?.entity_id) {

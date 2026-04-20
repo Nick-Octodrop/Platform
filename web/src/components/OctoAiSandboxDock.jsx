@@ -22,7 +22,24 @@ function questionKind(meta) {
 }
 
 function questionNeedsTypedReply(meta) {
-  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(questionKind(meta));
+  const kind = questionKind(meta);
+  if (kind === "decision_slot") {
+    const options = Array.isArray(meta?.options) ? meta.options.filter((item) => item && typeof item === "object") : [];
+    return options.length === 0 || Boolean(meta?.allow_free_text);
+  }
+  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(kind);
+}
+
+function extractDecisionSlots(latestPlan) {
+  const direct = Array.isArray(latestPlan?.plan_json?.plan?.decision_slots) ? latestPlan.plan_json.plan.decision_slots : [];
+  if (direct.length > 0) return direct.filter((item) => item && typeof item === "object");
+  const planV1Direct = Array.isArray(latestPlan?.plan_json?.plan?.plan_v1?.decision_slots) ? latestPlan.plan_json.plan.plan_v1.decision_slots : [];
+  if (planV1Direct.length > 0) return planV1Direct.filter((item) => item && typeof item === "object");
+  const structured = Array.isArray(latestPlan?.plan_json?.plan?.structured_plan?.decision_slots) ? latestPlan.plan_json.plan.structured_plan.decision_slots : [];
+  if (structured.length > 0) return structured.filter((item) => item && typeof item === "object");
+  const clarificationSlots = Array.isArray(latestPlan?.plan_json?.plan?.plan_v1?.clarifications?.slots) ? latestPlan.plan_json.plan.plan_v1.clarifications.slots : [];
+  if (clarificationSlots.length > 0) return clarificationSlots.filter((item) => item && typeof item === "object");
+  return [];
 }
 
 function summarizeAnswer(msg, translate = translateRuntime) {
@@ -34,6 +51,12 @@ function summarizeAnswer(msg, translate = translateRuntime) {
     return answer.confirm_plan
       ? translate("settings.octo_ai.sandbox_dock.answers.approved")
       : body || translate("settings.octo_ai.sandbox_dock.answers.needs_changes");
+  }
+  if (typeof answer.selected_option_label === "string" && answer.selected_option_label.trim()) {
+    return `${body || translate("settings.octo_ai.sandbox_dock.answers.answered")}\n${answer.selected_option_label.trim()}`;
+  }
+  if (typeof answer.recipient_email === "string" && answer.recipient_email.trim()) {
+    return `${body || translate("settings.octo_ai.sandbox_dock.answers.answered")}\n${answer.recipient_email.trim()}`;
   }
   return body || translate("settings.octo_ai.sandbox_dock.answers.answered");
 }
@@ -308,6 +331,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     if (nested.length > 0 && typeof nested[0] === "string" && nested[0].trim()) return nested[0].trim();
     return "";
   }, [latestPlan]);
+  const activeDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
   const hasPendingQuestion = Boolean(activeQuestion);
   const structuredPlan = useMemo(() => {
     const plan = latestPlan?.plan_json?.plan;
@@ -561,6 +585,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
       await answerOctoAiQuestion(sessionId, {
         action,
         text: payload?.text || undefined,
+        hints: payload?.hints && typeof payload.hints === "object" ? payload.hints : undefined,
         question_id: activeQuestionMeta?.id || undefined,
       });
       setMessage("");
@@ -570,6 +595,25 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitDecisionSlotOption(slot, option) {
+    if (!slot || !option || !sessionId) return;
+    const optionValue = typeof option?.value === "string" ? option.value.trim() : "";
+    const optionLabel = typeof option?.label === "string" && option.label.trim() ? option.label.trim() : optionValue;
+    const hints = {
+      ...(option?.hints && typeof option.hints === "object" ? option.hints : {}),
+      selected_option_id: typeof option?.id === "string" ? option.id : undefined,
+      selected_option_value: optionValue || undefined,
+      selected_option_label: optionLabel || undefined,
+    };
+    if (typeof slot?.hint_field === "string" && slot.hint_field.trim() && optionValue) {
+      hints[slot.hint_field.trim()] = optionValue;
+    }
+    await submitQuestionAnswer("custom", {
+      text: optionLabel || optionValue,
+      hints,
+    });
   }
 
   async function sendMessage() {
@@ -746,6 +790,36 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
               {questionKind(activeQuestionMeta) === "confirm_plan" ? t("settings.octo_ai.sandbox_dock.labels.plan_review") : t("settings.octo_ai.sandbox_dock.labels.clarification_needed")}
             </div>
             <div className="text-sm leading-6">{activeQuestionMeta?.prompt || activeQuestion}</div>
+            {activeDecisionSlots.length > 0 ? (
+              <div className="space-y-3">
+                {activeDecisionSlots.map((slot) => {
+                  const options = Array.isArray(slot?.options) ? slot.options.filter((item) => item && typeof item === "object") : [];
+                  return (
+                    <div key={slot?.slot_id || slot?.label || slot?.prompt} className="rounded-box border border-base-300 bg-base-100 p-3">
+                      <div className="text-sm font-medium">{slot?.label || slot?.prompt || "Decision required"}</div>
+                      {typeof slot?.why_needed === "string" && slot.why_needed.trim() ? (
+                        <div className="mt-1 text-xs opacity-70">{slot.why_needed.trim()}</div>
+                      ) : null}
+                      {options.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {options.map((option) => (
+                            <button
+                              key={option.id || option.value || option.label}
+                              type="button"
+                              className="btn btn-xs"
+                              disabled={busy || streaming}
+                              onClick={() => submitDecisionSlotOption(slot, option)}
+                            >
+                              {option.label || option.value}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
             {questionNeedsTypedReply(activeQuestionMeta) ? (
               <div className="text-xs opacity-70">{t("settings.octo_ai.sandbox_dock.hints.reply_with_missing_detail")}</div>
             ) : null}

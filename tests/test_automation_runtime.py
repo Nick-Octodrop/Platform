@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 import app.main as app_main
 from app.stores import MemoryAutomationStore, MemoryJobStore
@@ -615,6 +616,384 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(captured["request_config"]["headers"]["X-Test"], "1")
         self.assertEqual(captured["request_config"]["query"]["page"], 1)
         self.assertEqual(captured["request_config"]["query"]["where"], "Status==\"ACTIVE\"")
+
+    def test_send_email_step_renders_record_placeholders_at_action_runtime(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Quote Accepted Email",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"]},
+                "steps": [
+                    {
+                        "id": "step_send_email",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "to_field_ids": ["biz_quote.customer_email"],
+                            "subject": "Your Quote {{ record['biz_quote.quote_number'] }} has been Accepted",
+                            "body_html": "<p>Dear {{ record['biz_quote.customer_name'] }},</p><p>Your quote <strong>{{ record['biz_quote.quote_number'] }}</strong> has been accepted.</p>",
+                            "body_text": "Dear {{ record['biz_quote.customer_name'] }},\n\nYour quote {{ record['biz_quote.quote_number'] }} has been accepted.",
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.action.quote_mark_accepted.clicked",
+                "trigger_payload": {
+                    "event": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                    "record": {
+                        "fields": {
+                            "biz_quote.quote_number": "QUO-2026-0028",
+                            "biz_quote.customer_name": "Neetones",
+                            "biz_quote.customer_email": "customer@example.com",
+                        },
+                        "flat": {
+                            "biz_quote.quote_number": "QUO-2026-0028",
+                            "biz_quote.customer_name": "Neetones",
+                            "biz_quote.customer_email": "customer@example.com",
+                        }
+                    },
+                },
+            }
+        )
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        class _FakeRecordStore:
+            def get(self, entity_id, record_id):
+                if entity_id in {"entity.biz_quote", "biz_quote"} and record_id == "quote_1":
+                    return {
+                        "record": {
+                            "id": "quote_1",
+                            "biz_quote.quote_number": "QUO-2026-0028",
+                            "biz_quote.customer_name": "Neetones",
+                            "biz_quote.customer_email": "customer@example.com",
+                        }
+                    }
+                return None
+
+        entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                {"id": "biz_quote.customer_name", "label": "Customer Name", "type": "string"},
+                {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+            ],
+        }
+
+        with (
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker.DbGenericRecordStore", return_value=_FakeRecordStore()),
+            patch("app.worker._find_entity_def", return_value=entity_def),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["customer@example.com"])
+        self.assertEqual(created_outbox[0]["subject"], "Your Quote QUO-2026-0028 has been Accepted")
+        self.assertIn("Dear Neetones", created_outbox[0]["body_html"])
+        self.assertIn("QUO-2026-0028", created_outbox[0]["body_text"])
+
+    def test_create_record_step_renders_trigger_field_templates_at_action_runtime(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Create Job From Quote",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"]},
+                "steps": [
+                    {
+                        "id": "step_create_job",
+                        "kind": "action",
+                        "action_id": "system.create_record",
+                        "inputs": {
+                            "entity_id": "entity.biz_job",
+                            "values": {
+                                "biz_job.reference": "JOB-{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.source_quote_number": "{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.customer_name": "{{trigger.record.fields.biz_quote.customer_name}}",
+                                "biz_job.customer_email": "{{trigger.record.fields.biz_quote.customer_email}}",
+                                "biz_job.status": "new",
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.action.quote_mark_accepted.clicked",
+                "trigger_payload": {
+                    "event": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                    "record": {
+                        "fields": {
+                            "biz_quote": {
+                                "quote_number": "QUO-2026-0028",
+                                "customer_name": "Neetones",
+                                "customer_email": "customer@example.com",
+                            },
+                            "quote_number": "QUO-2026-0028",
+                            "customer_name": "Neetones",
+                            "customer_email": "customer@example.com",
+                        },
+                        "flat": {
+                            "biz_quote.quote_number": "QUO-2026-0028",
+                            "biz_quote.customer_name": "Neetones",
+                            "biz_quote.customer_email": "customer@example.com",
+                        }
+                    },
+                },
+            }
+        )
+        created_records: list[dict] = []
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.reference", "label": "Reference", "type": "string"},
+                {"id": "biz_job.source_quote_number", "label": "Source Quote Number", "type": "string"},
+                {"id": "biz_job.customer_name", "label": "Customer Name", "type": "string"},
+                {"id": "biz_job.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_job.status", "label": "Status", "type": "string"},
+            ],
+        }
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "job_1", **dict(clean)}
+                created_records.append(record)
+                return {"record_id": "job_1", "record": record}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data)}
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker._find_entity_context", return_value=("jobs_module", entity_def, {"module": {"id": "jobs_module"}})),
+            patch("app.worker._emit_automation_event"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(len(created_records), 1, created_records)
+        self.assertEqual(created_records[0]["biz_job.reference"], "JOB-QUO-2026-0028")
+        self.assertEqual(created_records[0]["biz_job.source_quote_number"], "QUO-2026-0028")
+        self.assertEqual(created_records[0]["biz_job.customer_name"], "Neetones")
+        self.assertEqual(created_records[0]["biz_job.customer_email"], "customer@example.com")
+        self.assertEqual(created_records[0]["biz_job.status"], "new")
+
+    def test_create_then_update_record_steps_share_outputs_and_render_templates(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Create Then Update Job",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"]},
+                "steps": [
+                    {
+                        "id": "step_create_job",
+                        "kind": "action",
+                        "action_id": "system.create_record",
+                        "store_as": "create_job",
+                        "inputs": {
+                            "entity_id": "entity.biz_job",
+                            "values": {
+                                "biz_job.reference": "JOB-{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.source_quote_number": "{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.customer_name": "{{trigger.record.fields.biz_quote.customer_name}}",
+                                "biz_job.status": "draft",
+                            },
+                        },
+                    },
+                    {
+                        "id": "step_update_job",
+                        "kind": "action",
+                        "action_id": "system.update_record",
+                        "inputs": {
+                            "entity_id": "entity.biz_job",
+                            "record_id": "{{steps.step_create_job.record_id}}",
+                            "patch": {
+                                "biz_job.status": "scheduled",
+                                "biz_job.customer_name": "{{trigger.after.fields.biz_quote.customer_name}}",
+                            },
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.action.quote_mark_accepted.clicked",
+                "trigger_payload": {
+                    "event": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                    "record": {
+                        "fields": {
+                            "biz_quote": {
+                                "quote_number": "QUO-2026-0042",
+                                "customer_name": "Northwind",
+                            },
+                            "quote_number": "QUO-2026-0042",
+                            "customer_name": "Northwind",
+                        },
+                        "flat": {
+                            "biz_quote.quote_number": "QUO-2026-0042",
+                            "biz_quote.customer_name": "Northwind",
+                        }
+                    },
+                    "after": {
+                        "fields": {
+                            "biz_quote": {
+                                "customer_name": "Northwind Holdings",
+                            },
+                            "customer_name": "Northwind Holdings",
+                        },
+                        "flat": {
+                            "biz_quote.customer_name": "Northwind Holdings",
+                        }
+                    },
+                },
+            }
+        )
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.reference", "label": "Reference", "type": "string"},
+                {"id": "biz_job.source_quote_number", "label": "Source Quote Number", "type": "string"},
+                {"id": "biz_job.customer_name", "label": "Customer Name", "type": "string"},
+                {"id": "biz_job.status", "label": "Status", "type": "string"},
+            ],
+        }
+        records_by_id: dict[str, dict] = {}
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "job_1", **dict(clean)}
+                records_by_id["job_1"] = record
+                return {"record_id": "job_1", "record": dict(record)}
+
+            def _validate_patch_payload(self, entity_def, patch, before_record, workflow=None):
+                updated = dict(before_record or {})
+                updated.update(dict(patch))
+                return [], updated
+
+            def _update_record_with_computed_fields(self, request, entity_id, entity_def, record_id, updated):
+                records_by_id[record_id] = dict(updated)
+                return {"record_id": record_id, "record": dict(updated)}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data)}
+
+            def _changed_fields(self, before_record, after_record):
+                changed = []
+                before_record = before_record or {}
+                after_record = after_record or {}
+                for key in sorted(set(before_record) | set(after_record)):
+                    if before_record.get(key) != after_record.get(key):
+                        changed.append(key)
+                return changed
+
+        def fake_find_existing_record(entity_id, record_id):
+            record = records_by_id.get(record_id)
+            if not isinstance(record, dict):
+                return None
+            return entity_id, {"record": dict(record)}
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker._find_entity_context", return_value=("jobs_module", entity_def, {"module": {"id": "jobs_module"}})),
+            patch("app.worker._find_existing_record", side_effect=fake_find_existing_record),
+            patch("app.worker._emit_automation_event"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(records_by_id["job_1"]["biz_job.reference"], "JOB-QUO-2026-0042")
+        self.assertEqual(records_by_id["job_1"]["biz_job.source_quote_number"], "QUO-2026-0042")
+        self.assertEqual(records_by_id["job_1"]["biz_job.customer_name"], "Northwind Holdings")
+        self.assertEqual(records_by_id["job_1"]["biz_job.status"], "scheduled")
 
 
 if __name__ == "__main__":

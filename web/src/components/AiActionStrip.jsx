@@ -18,7 +18,7 @@ export default function AiActionStrip({
     : [];
   if (!visible.length) return null;
   return (
-    <div className={`rounded-box border border-base-200 bg-base-100 ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`}>
+    <div className={`rounded-box border border-base-200 bg-base-200 ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`}>
       {title ? <div className="mb-2 text-[10px] uppercase tracking-wide opacity-60">{title}</div> : null}
       <div className="flex flex-wrap gap-2">
         {visible.map((action) => (

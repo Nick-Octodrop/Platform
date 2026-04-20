@@ -94,6 +94,13 @@ class TestStudio2Normalize(unittest.TestCase):
         orphan_pages = [i for i in issues if i.get("code") == "INCOMPLETE_ORPHAN_PAGE"]
         self.assertEqual(orphan_pages, [])
 
+    def test_sanitize_manifest_drops_unused_placeholder_home_page(self):
+        manifest = base_manifest()
+        manifest["pages"].insert(0, {"id": "home", "title": "Home", "layout": "single", "content": []})
+        sanitized = main._sanitize_manifest(manifest)
+        page_ids = {page.get("id") for page in (sanitized.get("pages") or []) if isinstance(page, dict)}
+        self.assertNotIn("home", page_ids)
+
     def test_view_header_defaults(self):
         manifest = base_manifest()
         # strip headers to force normalization
@@ -103,7 +110,7 @@ class TestStudio2Normalize(unittest.TestCase):
         normalized, warnings = main.normalize_manifest_v13(manifest, module_id="task", cache={})
         list_view = normalized["views"][0]
         form_view = normalized["views"][1]
-        self.assertIn("search", list_view.get("header", {}))
+        self.assertNotIn("search", list_view.get("header", {}))
         self.assertIn("primary_actions", list_view.get("header", {}))
         self.assertIn("title_field", form_view.get("header", {}))
         self.assertIn("statusbar", form_view.get("header", {}))

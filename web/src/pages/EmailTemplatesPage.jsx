@@ -10,6 +10,22 @@ import { buildSavedViewDomain } from "../utils/savedViews.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
+const EMAIL_TEMPLATE_STARTER_HTML = `
+<div data-octo-starter="email-template" style="margin:0; padding:24px; background:#f8fafc; font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif; color:#0f172a;">
+  <div style="max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:18px; overflow:hidden;">
+    <div style="padding:28px 32px 16px; border-bottom:1px solid #e2e8f0;">
+      <div style="font-size:12px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:#f97316;">Email Template</div>
+      <h1 style="margin:12px 0 8px; font-size:28px; line-height:1.2; font-weight:700; color:#0f172a;">Untitled Email</h1>
+      <p style="margin:0; font-size:15px; line-height:1.6; color:#475569;">Start with a polished, readable email layout and shape the message from here.</p>
+    </div>
+    <div style="padding:24px 32px 32px;">
+      <div style="padding:16px 18px; background:#fff7ed; border:1px solid #fdba74; border-radius:14px; font-size:14px; line-height:1.6; color:#9a3412;">
+        Replace this starter with your actual content, metadata, and branded call to action.
+      </div>
+    </div>
+  </div>
+</div>`.trim();
+
 export default function EmailTemplatesPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
@@ -43,7 +59,7 @@ export default function EmailTemplatesPage() {
         subject: t("settings.email_templates.new_template"),
         name: t("settings.email_templates.untitled_template"),
         description: "",
-        body_html: "<p>Hello</p>",
+        body_html: EMAIL_TEMPLATE_STARTER_HTML,
       };
       const res = await apiFetch("/email/templates", { method: "POST", body: payload });
       setItems((prev) => [res.template, ...prev]);

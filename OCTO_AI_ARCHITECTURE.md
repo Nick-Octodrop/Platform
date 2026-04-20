@@ -124,9 +124,28 @@ Planner contract:
   - first delivery slice
   - assumptions
   - clarifications
+  - unresolved decision slots
   - risks
   - user-facing summary
 - The planner should not assume a single artifact type when the request clearly spans several.
+- The planner should prefer `plan first, resolve slots second` for missing but non-destructive decisions.
+- Missing inputs such as notification recipients, template choices, or target artifacts should be represented as structured decision slots with real system options when available.
+- Current slot-backed paths include notification-recipient selection, module/entity target selection for ambiguous workspace changes, shared field-target selection for ambiguous module edits, shared tab-target/section-target/page-target/view-target selection for ambiguous module placement and layout changes, plus email/document template selection for automation drafts that still need a concrete workspace template before apply, including existing-vs-new template resolution where the planner can create a companion template draft.
+- When a page/view target is already selected, executable module-edit plans and module-op preflight should narrow the resulting `update_page` / `add_page_block` / `update_view` / `remove_view` ops to that chosen surface instead of broadening the patchset across the whole module.
+- Existing-page dashboard requests with a resolved page target may emit a deterministic starter `add_page_block` change using `stat_cards` on the real module entity.
+- Dashboard stat cards should infer `count`, `sum:<field>`, or `count_distinct:<field>` from real manifest-backed entity fields when the request and schema support it, and only fall back to advisories when no safe richer measure can be inferred.
+- Scoped Studio AI should reuse that same dashboard stat-card inference through `ensure_ui_pattern` for existing dashboard-page requests, so Studio and Octo share one backend page-authoring contract instead of diverging on stat-card generation.
+- The same shared dashboard metric specs should also drive `interfaces.dashboardable.default_widgets` where a grouped widget is possible, so page-level cards and dashboardable grouped widgets stay aligned on `group_by` and `measure`.
+- When an entity already has a graph view, those same shared dashboard metric specs should also be able to seed the graph view `default` (`type`, `group_by`, `measure`) so Studio and Octo converge on one grouped dashboard interpretation.
+- Where a dashboard page already exposes grouped surfaces through `view_modes`, those same shared grouped defaults should also seed the `graph` / `pivot` mode `default_group_by` values so page-level grouped experiences stay aligned with widgets and graph defaults.
+- Octo workspace planning should reuse that same shared dashboard bundle for existing dashboard-page requests, so executable workspace ops can emit aligned `add_page_block`, `update_view`, and `update_page` changes from one deterministic dashboard interpretation.
+- Broader Octo dashboard/reporting requests should also be able to resolve a matching existing dashboard page automatically when one clear candidate exists, ask for a dashboard page choice when several candidates exist, offer a structured `reuse existing page vs create new dashboard page` decision when a soft home/overview page is plausible, or create a starter dashboard page and then reuse that same shared dashboard bundle when the module context is clear but no dashboard page exists yet.
+- Broader Octo dashboard/reporting requests should also narrow module targeting before page targeting: if one module is the clear analytics match, OCTO AI may scope to it automatically; if several modules are plausible, it should return a structured dashboard-module choice slot with narrowed real module options instead of falling back to a generic preview or the full workspace module list.
+- After the analytics module is chosen, broader Octo dashboard/reporting requests should also narrow entity targeting before page targeting: if one entity is the clear reporting match, OCTO AI may scope to it automatically; if several entities are plausible, it should return a structured dashboard-entity choice slot with narrowed real entity options instead of defaulting to the first entity in the module.
+- After analytics module/entity/page targeting is resolved, broader Octo dashboard/reporting requests should also narrow KPI/grouping selection before emitting dashboard ops: if one numeric field or grouping field is the clear match, OCTO AI may infer it automatically; if several real fields are plausible, it should return a structured dashboard-metric choice slot and thread the selected measure/grouping back through the shared dashboard bundle instead of silently picking one.
+- Scoped template AI should follow the same slot contract for missing template entity selection and email-connection selection instead of falling back to ad hoc chat questions.
+- Scoped Studio AI should follow the same slot contract for module entity, field, tab, section, page, and view disambiguation before it enters the builder loop.
+- Decision slots should only gate apply when the missing value changes correctness or execution behavior.
 
 UX policy:
 - Freeform natural language should remain the default entry point.
@@ -167,6 +186,28 @@ When to add a clarifying question:
   - forcing a single category for a mixed request
   - asking for information the compiler does not actually need
 
+Clarification UX policy:
+- Prefer structured decision slots over open-ended follow-up chat when the system can present real choices.
+- Good slot candidates include:
+  - module target selection
+  - entity target selection
+  - field target selection
+  - tab target selection
+  - recipient selection
+  - existing-vs-new template choice
+  - scoped template entity or connection choice
+  - module/entity/field disambiguation
+  - tab/section placement disambiguation
+  - page/view target disambiguation
+  - placement or dedupe resolutions
+- A slot should carry:
+  - stable id
+  - prompt and user-facing label
+  - why the choice is needed
+  - available options and recommended option when possible
+  - whether free text is allowed
+  - whether it must be resolved before apply or only before execution
+
 Evaluation policy:
 - Improvement should be measured by capability, not by memorizing prompt phrasings.
 - Core eval dimensions should include:
@@ -176,6 +217,7 @@ Evaluation policy:
   - compiler validity
   - sandbox validation pass rate
   - truthfulness of preview/plan text
+  - scoped-editor feedback quality, including required-input, advisories, and risks
   - resistance to prompt-specific overfitting
 
 Architecture review questions for every Octo AI change:

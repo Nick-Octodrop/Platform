@@ -201,6 +201,18 @@ body {
     word-break: break-word;
     pointer-events: none;
   }
+
+  .chat-start .chat-bubble::before {
+    left: -0.7rem;
+    background-color: oklch(var(--b2));
+    transform: translateX(1px);
+  }
+
+  .chat-end .chat-bubble::before {
+    right: -0.7rem;
+    background-color: oklch(var(--p));
+    transform: translateX(-1px);
+  }
 }
 
 @layer utilities {

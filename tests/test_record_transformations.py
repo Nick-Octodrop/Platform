@@ -2,6 +2,7 @@ import os
 import sys
 import unittest
 import uuid
+from unittest.mock import patch
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
@@ -17,6 +18,9 @@ import app.main as main
 
 
 class TestRecordTransformations(unittest.TestCase):
+    def _no_document_sequences(self):
+        return patch.object(main, "list_document_sequences", return_value=[])
+
     def _install_manifest(self, module_id: str) -> None:
         manifest = {
             "manifest_version": "1.3",
@@ -128,7 +132,15 @@ class TestRecordTransformations(unittest.TestCase):
                         "title": "Convert Quote",
                         "body": "This will create a new job from this quote.",
                     },
-                }
+                },
+                {
+                    "id": "action.quote_to_job_guarded",
+                    "kind": "transform_record",
+                    "entity_id": "entity.quote",
+                    "label": "Convert To Job Guarded",
+                    "transformation_key": "quote_to_job",
+                    "enabled_when": {"op": "eq", "field": "quote.status", "value": "accepted"},
+                },
             ],
             "views": [],
             "pages": [],
@@ -258,190 +270,247 @@ class TestRecordTransformations(unittest.TestCase):
     def test_quote_to_job_transform(self):
         module_id = f"quote_to_job_{uuid.uuid4().hex[:8]}"
         self._install_manifest(module_id)
-        client = TestClient(main.app)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
 
-        quote_res = client.post(
-            "/records/entity.quote",
-            json={"record": {"quote.number": "Q-001", "quote.status": "accepted", "quote.customer_id": "customer-1"}},
-        )
-        quote_body = quote_res.json()
-        self.assertTrue(quote_body.get("ok"), quote_body)
-        quote_id = quote_body.get("record_id")
-        self.assertTrue(isinstance(quote_id, str) and quote_id)
+            quote_res = client.post(
+                "/records/entity.quote",
+                json={"record": {"quote.number": "Q-001", "quote.status": "accepted", "quote.customer_id": "customer-1"}},
+            )
+            quote_body = quote_res.json()
+            self.assertTrue(quote_body.get("ok"), quote_body)
+            quote_id = quote_body.get("record_id")
+            self.assertTrue(isinstance(quote_id, str) and quote_id)
 
-        line1 = client.post(
-            "/records/entity.quote_line",
-            json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Cabinet A", "quote_line.qty": 2}},
-        )
-        self.assertTrue(line1.json().get("ok"), line1.json())
-        line2 = client.post(
-            "/records/entity.quote_line",
-            json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Cabinet B", "quote_line.qty": 1}},
-        )
-        self.assertTrue(line2.json().get("ok"), line2.json())
+            line1 = client.post(
+                "/records/entity.quote_line",
+                json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Cabinet A", "quote_line.qty": 2}},
+            )
+            self.assertTrue(line1.json().get("ok"), line1.json())
+            line2 = client.post(
+                "/records/entity.quote_line",
+                json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Cabinet B", "quote_line.qty": 1}},
+            )
+            self.assertTrue(line2.json().get("ok"), line2.json())
 
-        run_res = client.post(
-            "/actions/run",
-            json={
-                "module_id": module_id,
-                "action_id": "action.quote_to_job",
-                "context": {"record_id": quote_id},
-            },
-        )
-        run_body = run_res.json()
-        self.assertTrue(run_body.get("ok"), run_body)
-        result = run_body.get("result") or {}
-        job_id = result.get("record_id")
-        self.assertTrue(isinstance(job_id, str) and job_id)
-        self.assertEqual(result.get("entity_id"), "entity.job")
-        self.assertEqual(result.get("child_created"), 2)
+            run_res = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.quote_to_job",
+                    "context": {"record_id": quote_id},
+                },
+            )
+            run_body = run_res.json()
+            self.assertTrue(run_body.get("ok"), run_body)
+            result = run_body.get("result") or {}
+            job_id = result.get("record_id")
+            self.assertTrue(isinstance(job_id, str) and job_id)
+            self.assertEqual(result.get("entity_id"), "entity.job")
+            self.assertEqual(result.get("child_created"), 2)
 
-        quote_after = client.get(f"/records/entity.quote/{quote_id}").json()
-        self.assertTrue(quote_after.get("ok"), quote_after)
-        self.assertEqual(quote_after["record"].get("quote.status"), "converted")
-        self.assertEqual(quote_after["record"].get("quote.job_id"), job_id)
+            quote_after = client.get(f"/records/entity.quote/{quote_id}").json()
+            self.assertTrue(quote_after.get("ok"), quote_after)
+            self.assertEqual(quote_after["record"].get("quote.status"), "converted")
+            self.assertEqual(quote_after["record"].get("quote.job_id"), job_id)
 
-        job_after = client.get(f"/records/entity.job/{job_id}").json()
-        self.assertTrue(job_after.get("ok"), job_after)
-        self.assertEqual(job_after["record"].get("job.number"), "Q-001")
-        self.assertEqual(job_after["record"].get("job.customer_id"), "customer-1")
-        self.assertEqual(job_after["record"].get("job.source_quote_id"), quote_id)
+            job_after = client.get(f"/records/entity.job/{job_id}").json()
+            self.assertTrue(job_after.get("ok"), job_after)
+            self.assertEqual(job_after["record"].get("job.number"), "Q-001")
+            self.assertEqual(job_after["record"].get("job.customer_id"), "customer-1")
+            self.assertEqual(job_after["record"].get("job.source_quote_id"), quote_id)
 
-        job_lines = client.get("/records/entity.job_line").json()
-        self.assertTrue(job_lines.get("ok"), job_lines)
-        scoped_job_lines = [
-            row
-            for row in job_lines.get("records", [])
-            if isinstance(row, dict)
-            and isinstance(row.get("record"), dict)
-            and row.get("record", {}).get("job_line.job_id") == job_id
-        ]
-        self.assertEqual(len(scoped_job_lines), 2)
+            job_lines = client.get("/records/entity.job_line").json()
+            self.assertTrue(job_lines.get("ok"), job_lines)
+            scoped_job_lines = [
+                row
+                for row in job_lines.get("records", [])
+                if isinstance(row, dict)
+                and isinstance(row.get("record"), dict)
+                and row.get("record", {}).get("job_line.job_id") == job_id
+            ]
+            self.assertEqual(len(scoped_job_lines), 2)
 
-        activity_res = client.get(f"/activity/events?entity_id=entity.quote&record_id={quote_id}&limit=20").json()
-        self.assertTrue(activity_res.get("ok"), activity_res)
-        self.assertTrue(
-            any(event.get("event_type") == "transform" for event in activity_res.get("items", [])),
-            activity_res,
-        )
+            activity_res = client.get(f"/activity/events?entity_id=entity.quote&record_id={quote_id}&limit=20").json()
+            self.assertTrue(activity_res.get("ok"), activity_res)
+            self.assertTrue(
+                any(event.get("event_type") == "transform" for event in activity_res.get("items", [])),
+                activity_res,
+            )
 
-        duplicate_run = client.post(
-            "/actions/run",
-            json={
-                "module_id": module_id,
-                "action_id": "action.quote_to_job",
-                "context": {"record_id": quote_id},
-            },
-        ).json()
-        self.assertFalse(duplicate_run.get("ok"), duplicate_run)
-        self.assertEqual((duplicate_run.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_ALREADY_LINKED")
+            duplicate_run = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.quote_to_job",
+                    "context": {"record_id": quote_id},
+                },
+            ).json()
+            self.assertFalse(duplicate_run.get("ok"), duplicate_run)
+            self.assertEqual((duplicate_run.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_ALREADY_LINKED")
 
     def test_selected_records_transform_creates_one_invoice_with_multiple_lines(self):
         module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
         self._install_group_invoice_manifest(module_id)
-        client = TestClient(main.app)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
 
-        first = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
-        second = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
-        self.assertTrue(first.get("ok"), first)
-        self.assertTrue(second.get("ok"), second)
+            first = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
+            second = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
+            self.assertTrue(first.get("ok"), first)
+            self.assertTrue(second.get("ok"), second)
 
-        run_body = client.post(
-            "/actions/run",
-            json={
-                "module_id": module_id,
-                "action_id": "action.time_entry_create_invoice",
-                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
-            },
-        ).json()
-        self.assertTrue(run_body.get("ok"), run_body)
-        result = run_body.get("result") or {}
-        invoice_id = result.get("record_id")
-        self.assertTrue(isinstance(invoice_id, str) and invoice_id)
-        self.assertEqual(result.get("entity_id"), "entity.invoice")
-        self.assertEqual(result.get("child_created"), 2)
-        self.assertEqual(result.get("source_record_ids"), [first["record_id"], second["record_id"]])
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.time_entry_create_invoice",
+                    "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+                },
+            ).json()
+            self.assertTrue(run_body.get("ok"), run_body)
+            result = run_body.get("result") or {}
+            invoice_id = result.get("record_id")
+            self.assertTrue(isinstance(invoice_id, str) and invoice_id)
+            self.assertEqual(result.get("entity_id"), "entity.invoice")
+            self.assertEqual(result.get("child_created"), 2)
+            self.assertEqual(result.get("source_record_ids"), [first["record_id"], second["record_id"]])
 
-        invoice_after = client.get(f"/records/entity.invoice/{invoice_id}").json()
-        self.assertTrue(invoice_after.get("ok"), invoice_after)
-        self.assertEqual(invoice_after["record"].get("invoice.contact_id"), "contact-1")
-        self.assertEqual(invoice_after["record"].get("invoice.subtotal"), 300)
-        self.assertEqual(invoice_after["record"].get("invoice.total"), 300)
-        self.assertEqual(invoice_after["record"].get("invoice.status"), "draft")
+            invoice_after = client.get(f"/records/entity.invoice/{invoice_id}").json()
+            self.assertTrue(invoice_after.get("ok"), invoice_after)
+            self.assertEqual(invoice_after["record"].get("invoice.contact_id"), "contact-1")
+            self.assertEqual(invoice_after["record"].get("invoice.subtotal"), 300)
+            self.assertEqual(invoice_after["record"].get("invoice.total"), 300)
+            self.assertEqual(invoice_after["record"].get("invoice.status"), "draft")
 
-        first_after = client.get(f"/records/entity.time_entry/{first['record_id']}").json()
-        second_after = client.get(f"/records/entity.time_entry/{second['record_id']}").json()
-        self.assertEqual(first_after["record"].get("time_entry.status"), "invoiced")
-        self.assertEqual(second_after["record"].get("time_entry.status"), "invoiced")
+            first_after = client.get(f"/records/entity.time_entry/{first['record_id']}").json()
+            second_after = client.get(f"/records/entity.time_entry/{second['record_id']}").json()
+            self.assertEqual(first_after["record"].get("time_entry.status"), "invoiced")
+            self.assertEqual(second_after["record"].get("time_entry.status"), "invoiced")
 
-        invoice_lines = client.get("/records/entity.invoice_line").json()
-        self.assertTrue(invoice_lines.get("ok"), invoice_lines)
-        scoped_lines = [
-            row
-            for row in invoice_lines.get("records", [])
-            if isinstance(row, dict)
-            and isinstance(row.get("record"), dict)
-            and row.get("record", {}).get("invoice_line.invoice_id") == invoice_id
-        ]
-        self.assertEqual(len(scoped_lines), 2)
+            invoice_lines = client.get("/records/entity.invoice_line").json()
+            self.assertTrue(invoice_lines.get("ok"), invoice_lines)
+            scoped_lines = [
+                row
+                for row in invoice_lines.get("records", [])
+                if isinstance(row, dict)
+                and isinstance(row.get("record"), dict)
+                and row.get("record", {}).get("invoice_line.invoice_id") == invoice_id
+            ]
+            self.assertEqual(len(scoped_lines), 2)
 
     def test_selected_records_transform_requires_uniform_fields(self):
         module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
         self._install_group_invoice_manifest(module_id)
-        client = TestClient(main.app)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
 
-        first = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
-        second = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-2", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
+            first = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
+            second = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-2", "time_entry.description": "Build", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
 
-        run_body = client.post(
-            "/actions/run",
-            json={
-                "module_id": module_id,
-                "action_id": "action.time_entry_create_invoice",
-                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
-            },
-        ).json()
-        self.assertFalse(run_body.get("ok"), run_body)
-        self.assertEqual((run_body.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_SOURCE_MISMATCH")
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.time_entry_create_invoice",
+                    "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+                },
+            ).json()
+            self.assertFalse(run_body.get("ok"), run_body)
+            self.assertEqual((run_body.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_SOURCE_MISMATCH")
 
     def test_selected_records_transform_requires_source_fields_for_each_selected_row(self):
         module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
         self._install_group_invoice_manifest(module_id)
-        client = TestClient(main.app)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
 
-        first = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
-        second = client.post(
-            "/records/entity.time_entry",
-            json={"record": {"time_entry.contact_id": "contact-1", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
-        ).json()
+            first = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
+            second = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.amount": 175, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
 
-        run_body = client.post(
-            "/actions/run",
-            json={
-                "module_id": module_id,
-                "action_id": "action.time_entry_create_invoice",
-                "context": {"selected_ids": [first["record_id"], second["record_id"]]},
-            },
-        ).json()
-        self.assertFalse(run_body.get("ok"), run_body)
-        first_error = (run_body.get("errors") or [{}])[0]
-        self.assertEqual(first_error.get("code"), "TRANSFORMATION_SOURCE_REQUIRED")
-        self.assertEqual(first_error.get("path"), "selected_ids[1].time_entry.description")
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.time_entry_create_invoice",
+                    "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+                },
+            ).json()
+            self.assertFalse(run_body.get("ok"), run_body)
+            first_error = (run_body.get("errors") or [{}])[0]
+            self.assertEqual(first_error.get("code"), "TRANSFORMATION_SOURCE_REQUIRED")
+            self.assertEqual(first_error.get("path"), "selected_ids[1].time_entry.description")
+
+    def test_transform_action_guard_blocks_when_source_status_not_allowed(self):
+        module_id = f"quote_to_job_{uuid.uuid4().hex[:8]}"
+        self._install_manifest(module_id)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
+
+            quote_res = client.post(
+                "/records/entity.quote",
+                json={"record": {"quote.number": "Q-002", "quote.status": "draft", "quote.customer_id": "customer-1"}},
+            ).json()
+            self.assertTrue(quote_res.get("ok"), quote_res)
+
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.quote_to_job_guarded",
+                    "context": {"record_id": quote_res["record_id"]},
+                },
+            ).json()
+            self.assertFalse(run_body.get("ok"), run_body)
+            first_error = (run_body.get("errors") or [{}])[0]
+            self.assertEqual(first_error.get("code"), "ACTION_DISABLED")
+
+    def test_selected_records_transform_rejects_rows_outside_domain(self):
+        module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
+        self._install_group_invoice_manifest(module_id)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
+
+            first = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Design", "time_entry.amount": 125, "time_entry.billable": True, "time_entry.status": "approved"}},
+            ).json()
+            second = client.post(
+                "/records/entity.time_entry",
+                json={"record": {"time_entry.contact_id": "contact-1", "time_entry.description": "Admin", "time_entry.amount": 60, "time_entry.billable": False, "time_entry.status": "approved"}},
+            ).json()
+            self.assertTrue(first.get("ok"), first)
+            self.assertTrue(second.get("ok"), second)
+
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.time_entry_create_invoice",
+                    "context": {"selected_ids": [first["record_id"], second["record_id"]]},
+                },
+            ).json()
+            self.assertFalse(run_body.get("ok"), run_body)
+            first_error = (run_body.get("errors") or [{}])[0]
+            self.assertEqual(first_error.get("code"), "TRANSFORMATION_SELECTION_INVALID")
 
 
 if __name__ == "__main__":

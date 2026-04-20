@@ -213,7 +213,24 @@ function questionKind(meta) {
 }
 
 function questionNeedsTypedReply(meta) {
-  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(questionKind(meta));
+  const kind = questionKind(meta);
+  if (kind === "decision_slot") {
+    const options = Array.isArray(meta?.options) ? meta.options.filter((item) => item && typeof item === "object") : [];
+    return options.length === 0 || Boolean(meta?.allow_free_text);
+  }
+  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(kind);
+}
+
+function extractDecisionSlots(latestPlan) {
+  const direct = Array.isArray(latestPlan?.plan_json?.plan?.decision_slots) ? latestPlan.plan_json.plan.decision_slots : [];
+  if (direct.length > 0) return direct.filter((item) => item && typeof item === "object");
+  const planV1Direct = Array.isArray(latestPlan?.plan_json?.plan?.plan_v1?.decision_slots) ? latestPlan.plan_json.plan.plan_v1.decision_slots : [];
+  if (planV1Direct.length > 0) return planV1Direct.filter((item) => item && typeof item === "object");
+  const structured = Array.isArray(latestPlan?.plan_json?.plan?.structured_plan?.decision_slots) ? latestPlan.plan_json.plan.structured_plan.decision_slots : [];
+  if (structured.length > 0) return structured.filter((item) => item && typeof item === "object");
+  const clarificationSlots = Array.isArray(latestPlan?.plan_json?.plan?.plan_v1?.clarifications?.slots) ? latestPlan.plan_json.plan.plan_v1.clarifications.slots : [];
+  if (clarificationSlots.length > 0) return clarificationSlots.filter((item) => item && typeof item === "object");
+  return [];
 }
 
 function chatTextLooksLikeNewRequest(text) {
@@ -251,6 +268,12 @@ function summarizeAnswer(msg, t) {
   }
   if (typeof answer.confirm_plan === "boolean") {
     return answer.confirm_plan ? t("answers.approved") : body || t("answers.needs_changes");
+  }
+  if (typeof answer.selected_option_label === "string" && answer.selected_option_label.trim()) {
+    return `${body || t("answers.answered")}\n${answer.selected_option_label.trim()}`;
+  }
+  if (typeof answer.recipient_email === "string" && answer.recipient_email.trim()) {
+    return `${body || t("answers.answered")}\n${answer.recipient_email.trim()}`;
   }
   if (typeof answer.tab_target === "string" && answer.tab_target.trim()) {
     return `${body || t("answers.answered")}\n${t("answers.tab_value", { value: answer.tab_target.trim() })}`;
@@ -490,6 +513,7 @@ export default function OctoAiWorkspacePage() {
     if (nested.length > 0 && typeof nested[0] === "string" && nested[0].trim()) return nested[0].trim();
     return "";
   }, [latestPlan]);
+  const activeDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
   const hasPendingQuestion = useMemo(() => {
     if (!activeQuestion) return false;
     return !questionSupersededByAppliedRevision(latestPlan, latestPatchset);
@@ -668,6 +692,25 @@ export default function OctoAiWorkspacePage() {
       setPendingAssistantState("");
       setBusy(false);
     }
+  }
+
+  async function submitDecisionSlotOption(slot, option) {
+    if (!slot || !option) return;
+    const optionValue = typeof option?.value === "string" ? option.value.trim() : "";
+    const optionLabel = typeof option?.label === "string" && option.label.trim() ? option.label.trim() : optionValue;
+    const hints = {
+      ...(option?.hints && typeof option.hints === "object" ? option.hints : {}),
+      selected_option_id: typeof option?.id === "string" ? option.id : undefined,
+      selected_option_value: optionValue || undefined,
+      selected_option_label: optionLabel || undefined,
+    };
+    if (typeof slot?.hint_field === "string" && slot.hint_field.trim() && optionValue) {
+      hints[slot.hint_field.trim()] = optionValue;
+    }
+    await submitQuestionAnswer("custom", {
+      text: optionLabel || optionValue,
+      hints,
+    });
   }
 
   async function submitChatRequest(rawText, options = {}) {
@@ -993,6 +1036,12 @@ export default function OctoAiWorkspacePage() {
           { label: octoT("actions.view_scope"), onClick: openChangesView },
         ];
       }
+      if (activeDecisionSlots.length > 0) {
+        return [
+          { label: "Use custom answer", primary: true, onClick: () => composerRef.current?.focus(), hint: "Pick an option below or type a custom value." },
+          { label: octoT("actions.view_scope"), onClick: openChangesView },
+        ];
+      }
       return [
         { label: octoT("actions.answer_in_chat"), primary: true, onClick: () => composerRef.current?.focus(), hint: octoT("hints.answer_in_chat") },
         { label: octoT("actions.view_scope"), onClick: openChangesView },
@@ -1045,7 +1094,7 @@ export default function OctoAiWorkspacePage() {
       ];
     }
     return [];
-  }, [activeQuestionMeta?.kind, appliedRevisions.length, currentSandboxRevision?.id, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate, t]);
+  }, [activeDecisionSlots.length, activeQuestionMeta?.kind, appliedRevisions.length, currentSandboxRevision?.id, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate, t]);
 
   const previewPane = (
     <div className={`relative h-full min-h-0 overflow-hidden ${isMobile ? "bg-base-100" : DESKTOP_PANEL_SHELL}`}>
@@ -1135,6 +1184,47 @@ export default function OctoAiWorkspacePage() {
               <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
                 <div className="text-xs font-medium uppercase tracking-wide opacity-60">{octoT("chat.needs_input")}</div>
                 <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
+                {activeDecisionSlots.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {activeDecisionSlots.map((slot) => {
+                      const options = Array.isArray(slot?.options) ? slot.options.filter((item) => item && typeof item === "object") : [];
+                      return (
+                        <div key={slot?.slot_id || slot?.label || slot?.prompt} className="rounded-lg border border-base-200 bg-base-100 px-3 py-3">
+                          <div className="text-sm font-medium">{slot?.label || slot?.prompt || "Decision required"}</div>
+                          {typeof slot?.why_needed === "string" && slot.why_needed.trim() ? (
+                            <div className="mt-1 text-xs opacity-70">{slot.why_needed.trim()}</div>
+                          ) : null}
+                          {options.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {options.map((option) => (
+                                <button
+                                  key={option.id || option.value || option.label}
+                                  type="button"
+                                  className="btn btn-sm btn-outline"
+                                  disabled={busy || streaming || applyingRevision || publishingRevision || restoringRevision}
+                                  onClick={() => submitDecisionSlotOption(slot, option)}
+                                >
+                                  {option.label || option.value}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          {options.some((option) => typeof option?.description === "string" && option.description.trim()) ? (
+                            <div className="mt-2 space-y-1">
+                              {options.map((option) => (
+                                typeof option?.description === "string" && option.description.trim() ? (
+                                  <div key={`${option.id || option.value || option.label}:description`} className="text-xs opacity-60">
+                                    <span className="font-medium">{option.label || option.value}</span>: {option.description.trim()}
+                                  </div>
+                                ) : null
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {artifactFocusActions.length > 0 ? (
@@ -1189,7 +1279,7 @@ export default function OctoAiWorkspacePage() {
               onSend={sendMessage}
               placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? octoT("placeholders.question_reply") : octoT("placeholders.question_clarification")) : composerPlaceholder}
               disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
-              minRows={4}
+              minRows={1}
             />
           </div>
         </>

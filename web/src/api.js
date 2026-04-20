@@ -901,7 +901,8 @@ export async function studio2AgentChat(
   draftManifestJson = null,
   chatHistory = null,
   includeProgress = false,
-  focus = null
+  focus = null,
+  hints = null
 ) {
   return apiFetch("/studio2/agent/chat", {
     method: "POST",
@@ -914,6 +915,7 @@ export async function studio2AgentChat(
       chat_history: chatHistory,
       include_progress: includeProgress,
       focus,
+      hints,
     },
     timeoutMs: 60000,
   });
@@ -1139,5 +1141,82 @@ export function startOctoAiChatStream({ sessionId, message, scopeMode = null, on
       return data;
     });
   });
+  return { cancel: () => controller.abort(), promise };
+}
+
+export function startArtifactAiPlanStream({ path, body, onEvent }) {
+  const controller = new AbortController();
+  const promise = (async () => {
+    const headers = await getAuthHeaders();
+    headers.Accept = "text/event-stream";
+    let sawAnyEvent = false;
+    const res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body || {}),
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const payload = await res.json();
+        detail = payload?.errors?.[0]?.message || payload?.error || payload?.message || "";
+      } catch {
+        try {
+          detail = await res.text();
+        } catch {
+          detail = "";
+        }
+      }
+      throw new Error(detail || `Stream failed (${res.status})`);
+    }
+    if (!res.body) throw new Error(`Stream failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let donePayload = null;
+    let streamError = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        let eventName = "";
+        const dataLines = [];
+        for (const rawLine of lines) {
+          const line = rawLine.trimEnd();
+          if (line.startsWith("event:")) eventName = line.replace("event:", "").trim();
+          if (line.startsWith("data:")) dataLines.push(line.replace("data:", "").trim());
+        }
+        if (!eventName || dataLines.length === 0) continue;
+        try {
+          const payload = JSON.parse(dataLines.join("\n"));
+          const evt = { event: eventName, ...payload };
+          sawAnyEvent = true;
+          onEvent?.(evt);
+          if (eventName === "error") {
+            streamError = payload?.data?.message || payload?.data?.error || payload?.message || "Stream failed";
+          }
+          if (eventName === "done") {
+            donePayload = payload?.data?.final_payload || payload?.data?.finalPayload || payload?.data || payload || null;
+          }
+        } catch {
+          // ignore malformed frames
+        }
+      }
+      if (donePayload) break;
+    }
+    if (streamError) throw new Error(streamError);
+    if (!donePayload) {
+      const err = new Error("Stream ended without done event");
+      err.transport = !sawAnyEvent;
+      throw err;
+    }
+    return donePayload;
+  })();
   return { cancel: () => controller.abort(), promise };
 }
