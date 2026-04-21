@@ -1189,6 +1189,33 @@ def _lookup_path(ctx: dict, path: str) -> object:
     return current
 
 
+def _find_recent_record_target(ctx: dict) -> tuple[str | None, str | None]:
+    if not isinstance(ctx, dict):
+        return None, None
+    trigger = ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {}
+    trigger_entity_id = trigger.get("entity_id")
+    trigger_record_id = trigger.get("record_id")
+    if isinstance(trigger_entity_id, str) and trigger_entity_id.strip() and isinstance(trigger_record_id, str) and trigger_record_id.strip():
+        return trigger_entity_id.strip(), trigger_record_id.strip()
+
+    candidates: list[object] = []
+    last_value = ctx.get("last")
+    if isinstance(last_value, dict):
+        candidates.append(last_value)
+    step_values = ctx.get("steps")
+    if isinstance(step_values, dict):
+        candidates.extend(reversed(list(step_values.values())))
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        entity_id = candidate.get("entity_id")
+        record_id = candidate.get("record_id")
+        if isinstance(entity_id, str) and entity_id.strip() and isinstance(record_id, str) and record_id.strip():
+            return entity_id.strip(), record_id.strip()
+    return None, None
+
+
 def _lookup_nested_path(value: object, path: str) -> object:
     current = value
     for part in str(path or "").split("."):
@@ -1238,7 +1265,12 @@ def _resolve_value(value: object, ctx: dict) -> object:
     if isinstance(value, dict):
         return {key: _resolve_value(val, ctx) for key, val in value.items()}
     if isinstance(value, str) and "{{" in value:
-        return render_template(value, ctx, strict=True)
+        try:
+            return render_template(value, ctx, strict=True)
+        except Exception as exc:
+            if ("record[" in value or "record." in value) and "record" in str(exc).lower():
+                return value
+            raise
     return value
 
 
@@ -2237,8 +2269,9 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             "first": records[0] if records else None,
         }
     if action_id == "system.add_chatter":
-        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
-        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        fallback_entity_id, fallback_record_id = _find_recent_record_target(ctx)
+        entity_id = inputs.get("entity_id") or fallback_entity_id
+        record_id = inputs.get("record_id") or fallback_record_id
         body = inputs.get("body")
         entry_type = inputs.get("entry_type") or "note"
         if not isinstance(entity_id, str) or not entity_id:
@@ -2253,8 +2286,9 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
     if action_id == "system.notify":
         store = DbNotificationStore()
         app_main = _get_app_main()
-        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
-        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        fallback_entity_id, fallback_record_id = _find_recent_record_target(ctx)
+        entity_id = inputs.get("entity_id") or fallback_entity_id
+        record_id = inputs.get("record_id") or fallback_record_id
         if not isinstance(entity_id, str):
             entity_id = None
         if not isinstance(record_id, str):
@@ -2335,8 +2369,9 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             template = email_store.get_template(inputs.get("template_id"))
             if not template:
                 raise RuntimeError("Email template not found")
-        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
-        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        fallback_entity_id, fallback_record_id = _find_recent_record_target(ctx)
+        entity_id = inputs.get("entity_id") or fallback_entity_id
+        record_id = inputs.get("record_id") or fallback_record_id
         if not isinstance(entity_id, str):
             entity_id = None
         if not isinstance(record_id, str):
@@ -2414,8 +2449,9 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
 
     if action_id == "system.generate_document":
         template_id = inputs.get("template_id")
-        entity_id = inputs.get("entity_id") or _lookup_path(ctx, "trigger.entity_id")
-        record_id = inputs.get("record_id") or _lookup_path(ctx, "trigger.record_id")
+        fallback_entity_id, fallback_record_id = _find_recent_record_target(ctx)
+        entity_id = inputs.get("entity_id") or fallback_entity_id
+        record_id = inputs.get("record_id") or fallback_record_id
         if not template_id or not entity_id or not record_id:
             raise RuntimeError("template_id, entity_id, record_id required")
         job = job_store.enqueue(

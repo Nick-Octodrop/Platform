@@ -62,7 +62,7 @@ test("manifest localisation resolves translation keys and keeps plain labels for
   };
 
   const localized = await localizeManifest(manifest);
-  assert.equal(localized.module.name, "Contacts");
+  assert.equal(localized.module.name, "Répertoire");
   assert.equal(localized.entities[0].fields[0].label, "Nom");
   assert.equal(localized.entities[0].fields[1].label, "Legacy code");
   assert.equal(localized.actions[0].label, "Nouveau contact");

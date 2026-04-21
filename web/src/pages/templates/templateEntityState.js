@@ -32,6 +32,22 @@ export function syncSampleToTemplateEntity({ sample, draftEntityId, entities }) 
   return null;
 }
 
+export function buildEffectiveTemplateSample(sample, draft) {
+  const nextSample = sample && typeof sample === "object" ? { ...sample } : {};
+  const draftEntityId = getTemplateEntityId(draft);
+  if (!draftEntityId) {
+    return nextSample;
+  }
+  if (nextSample.entity_id === draftEntityId) {
+    return nextSample;
+  }
+  return {
+    ...nextSample,
+    entity_id: draftEntityId,
+    record_id: "",
+  };
+}
+
 export function buildTemplateEntityOptions(entities, selectedEntityId) {
   const base = Array.isArray(entities) ? entities.filter((item) => item && typeof item.id === "string" && item.id) : [];
   const selected = typeof selectedEntityId === "string" ? selectedEntityId : "";

@@ -6494,7 +6494,231 @@ def _ai_infer_design_related_entities_from_message(primary_entity_slug: str, mes
     return inferred[:3]
 
 
-def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug: str, message: str, statuses: list[dict]) -> list[dict]:
+def _ai_design_lookup_display_field(entity_def: dict | None) -> str | None:
+    if not isinstance(entity_def, dict):
+        return None
+    fields = entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []
+    preferred_suffixes = ("name", "title", "label", "sku", "code", "number")
+    for suffix in preferred_suffixes:
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+            field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else ""
+            if not isinstance(field_id, str) or field_type not in {"string", "text", "enum"}:
+                continue
+            if field_id.split(".")[-1] == suffix:
+                return field_id
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
+        field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else ""
+        if isinstance(field_id, str) and field_type in {"string", "text", "enum"}:
+            return field_id
+    return None
+
+
+def _ai_find_workspace_lookup_target(
+    module_index: dict[str, dict] | None,
+    *,
+    module_terms: tuple[str, ...],
+    entity_terms: tuple[str, ...],
+) -> dict | None:
+    if not isinstance(module_index, dict) or not module_index:
+        return None
+    best_match: dict | None = None
+    best_score = 0
+    for module_id, info in module_index.items():
+        if not isinstance(module_id, str) or not isinstance(info, dict):
+            continue
+        manifest = info.get("manifest") if isinstance(info.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        module_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else module_id
+        module_text = f"{module_id} {module_name}".lower()
+        module_score = 0
+        for idx, term in enumerate(module_terms):
+            if term in module_text:
+                module_score += max(2, 5 - idx)
+        for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+            if not isinstance(entity, dict):
+                continue
+            entity_id = entity.get("id") if isinstance(entity.get("id"), str) and entity.get("id").strip() else None
+            entity_label = entity.get("label") if isinstance(entity.get("label"), str) and entity.get("label").strip() else None
+            if not isinstance(entity_id, str):
+                continue
+            entity_text = f"{entity_id} {entity_label or ''}".lower()
+            score = module_score
+            for idx, term in enumerate(entity_terms):
+                if term in entity_text:
+                    score += max(2, 4 - idx)
+            field_ids = [
+                field.get("id")
+                for field in (entity.get("fields") or [])
+                if isinstance(field, dict) and isinstance(field.get("id"), str)
+            ]
+            field_suffixes = {field_id.split(".")[-1] for field_id in field_ids}
+            if "sku" in field_suffixes:
+                score += 2
+            if field_suffixes.intersection({"name", "title", "label"}):
+                score += 1
+            display_field = _ai_design_lookup_display_field(entity)
+            if score > best_score and isinstance(display_field, str) and display_field:
+                best_score = score
+                best_match = {
+                    "entity_id": entity_id,
+                    "entity_label": entity_label or _ai_titleize_slug(entity_id.split(".")[-1]),
+                    "display_field": display_field,
+                }
+    return copy.deepcopy(best_match) if isinstance(best_match, dict) and best_score > 0 else None
+
+
+def _ai_find_workspace_product_lookup_target(module_index: dict[str, dict] | None) -> dict | None:
+    return _ai_find_workspace_lookup_target(
+        module_index,
+        module_terms=("catalog", "products", "product", "inventory", "stock"),
+        entity_terms=("catalog item", "product", "item", "inventory"),
+    )
+
+
+def _ai_find_workspace_supplier_lookup_target(module_index: dict[str, dict] | None) -> dict | None:
+    return _ai_find_workspace_lookup_target(
+        module_index,
+        module_terms=("suppliers", "supplier", "vendors", "vendor"),
+        entity_terms=("supplier", "vendor"),
+    )
+
+
+def _ai_specialize_design_fields_for_workspace(
+    entity_slug: str,
+    message: str,
+    fields: list[dict],
+    module_index: dict[str, dict] | None = None,
+) -> list[dict]:
+    items = [copy.deepcopy(item) for item in fields if isinstance(item, dict)]
+    if not items or not isinstance(message, str) or not message.strip():
+        return items
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    wants_supplier_link = bool(
+        re.search(r"\b(supplier|suppliers|vendor|vendors)\b", lower)
+        and re.search(r"\b(order|orders|purchase|purchasing|replenish|reorder|procurement|materials?)\b", lower)
+    )
+    if not wants_supplier_link:
+        return items
+    target = _ai_find_workspace_supplier_lookup_target(module_index)
+    if not isinstance(target, dict):
+        return items
+    target_entity_id = target.get("entity_id")
+    target_display_field = target.get("display_field")
+    if not isinstance(target_entity_id, str) or not isinstance(target_display_field, str):
+        return items
+    matched = False
+    for field in items:
+        field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else ""
+        suffix = field_id.split(".")[-1]
+        label_text = str(field.get("label") or "").strip().lower()
+        if suffix not in {"supplier_name", "supplier", "vendor_name", "vendor", "supplier_id", "vendor_id"} and label_text not in {"supplier", "vendor"}:
+            continue
+        field["id"] = f"{entity_slug}.supplier_id"
+        field["type"] = "lookup"
+        field["label"] = "Supplier"
+        field["entity"] = target_entity_id
+        field["display_field"] = target_display_field
+        matched = True
+        break
+    if not matched:
+        insert_at = 1 if len(items) > 1 else len(items)
+        items.insert(
+            insert_at,
+            {
+                "id": f"{entity_slug}.supplier_id",
+                "type": "lookup",
+                "label": "Supplier",
+                "entity": target_entity_id,
+                "display_field": target_display_field,
+            },
+        )
+    return items
+
+
+def _ai_specialize_design_related_entities_for_workspace(
+    primary_entity_slug: str,
+    message: str,
+    related_entities: list[dict],
+    module_index: dict[str, dict] | None = None,
+) -> list[dict]:
+    items = [copy.deepcopy(item) for item in related_entities if isinstance(item, dict)]
+    if not items or not isinstance(message, str) or not message.strip():
+        return items
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    wants_line_items = bool(re.search(r"\b(line items?|products? sent|sent products?|gifted products?|seeded products?|quote lines?|order lines?)\b", lower))
+    wants_workspace_product_rows = bool(
+        wants_line_items
+        and (
+            re.search(r"\bcatalog\b", lower)
+            or re.search(r"\bproducts?\s+module\b", lower)
+            or re.search(r"\binventory\b", lower)
+            or re.search(r"\bproducts?\b", lower)
+            or re.search(r"\bsku\b", lower)
+        )
+    )
+    if not wants_workspace_product_rows:
+        return items
+    target = _ai_find_workspace_product_lookup_target(module_index)
+    if not isinstance(target, dict):
+        return items
+    target_entity_id = target.get("entity_id")
+    target_display_field = target.get("display_field")
+    if not isinstance(target_entity_id, str) or not isinstance(target_display_field, str):
+        return items
+    for item in items:
+        entity_slug = item.get("entity_slug") if isinstance(item.get("entity_slug"), str) and item.get("entity_slug").strip() else ""
+        title_bits = " ".join(
+            str(item.get(key) or "").strip().lower()
+            for key in ("entity_label", "nav_label", "related_title", "related_tab_label")
+        )
+        if entity_slug not in {"sent_product", "line_item"} and not any(token in title_bits for token in ("product", "line item", "item")):
+            continue
+        fields = [copy.deepcopy(field) for field in (item.get("fields") or []) if isinstance(field, dict)]
+        if not fields:
+            continue
+        matched = False
+        for field in fields:
+            field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else ""
+            suffix = field_id.split(".")[-1]
+            label_text = str(field.get("label") or "").strip().lower()
+            if suffix not in {"catalog_item", "product", "product_id", "item", "item_id"} and label_text not in {"catalog item", "product", "item"}:
+                continue
+            field["type"] = "lookup"
+            field["entity"] = target_entity_id
+            field["display_field"] = target_display_field
+            field["required"] = True
+            matched = True
+            break
+        if not matched:
+            fields.insert(
+                0,
+                {
+                    "id": f"{entity_slug}.catalog_item",
+                    "type": "lookup",
+                    "label": "Catalog Item",
+                    "entity": target_entity_id,
+                    "display_field": target_display_field,
+                    "required": True,
+                },
+            )
+        item["fields"] = fields
+    return items
+
+
+def _ai_infer_design_automation_intents_from_message(
+    module_id: str,
+    entity_slug: str,
+    message: str,
+    statuses: list[dict],
+    request: Request | None = None,
+    workspace_id: str | None = None,
+) -> list[dict]:
     if not isinstance(module_id, str) or not module_id or not isinstance(entity_slug, str) or not entity_slug:
         return []
     if not isinstance(message, str) or not message.strip():
@@ -6522,7 +6746,8 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
         elif re.search(r"\bowner\b", lower):
             recipient_notify = f"{entity_slug}.owner_id"
     if not recipient_email and not recipient_notify:
-        matched_member = _ai_match_workspace_member_option_from_message(message, None)
+        resolved_workspace_id = workspace_id.strip() if isinstance(workspace_id, str) and workspace_id.strip() else None
+        matched_member = _ai_match_workspace_member_option_from_message(message, resolved_workspace_id, request=request)
         if isinstance(matched_member, dict):
             matched_hints = matched_member.get("hints") if isinstance(matched_member.get("hints"), dict) else {}
             matched_user_ids = matched_hints.get("recipient_user_ids")
@@ -7881,6 +8106,8 @@ def _ai_build_deterministic_module_design_spec(
     module_name: str,
     message: str,
     module_index: dict[str, dict] | None = None,
+    request: Request | None = None,
+    workspace_id: str | None = None,
 ) -> dict:
     family = _ai_detect_new_module_family(module_name, message, module_index=module_index)
     entity_slug, entity_label = _ai_design_primary_entity_for_family(module_id, module_name, message, family)
@@ -7900,6 +8127,12 @@ def _ai_build_deterministic_module_design_spec(
     _ai_append_unique_fields(fields, _ai_extra_fields_from_prompt(entity_slug, message))
     _ai_append_unique_fields(fields, _ai_infer_design_conditional_fields_from_message(entity_slug, message, statuses))
     fields = _ai_prune_family_specific_generic_fields(family, entity_slug, fields)
+    fields = _ai_specialize_design_fields_for_workspace(
+        entity_slug,
+        message,
+        fields,
+        module_index=module_index,
+    )
     raw_related_entities = [
         *_ai_family_design_related_entities(family),
         *_ai_entity_specific_design_related_entities(entity_slug, family, message),
@@ -7910,12 +8143,25 @@ def _ai_build_deterministic_module_design_spec(
         _ai_coerce_design_related_entities(entity_slug, raw_related_entities),
     )
     related_entities = _ai_prune_generic_related_entities(related_entities)
+    related_entities = _ai_specialize_design_related_entities_for_workspace(
+        entity_slug,
+        message,
+        related_entities,
+        module_index=module_index,
+    )
     _ai_append_unique_fields(fields, _ai_infer_design_rollup_fields_from_message(entity_slug, message, related_entities))
     _ai_append_unique_fields(fields, [_ai_module_design_field(f"{entity_slug}.created_at", "datetime", "Created At")])
     view_modes = _ai_design_view_modes(fields, statuses, family)
     if _ai_should_include_pivot_view(message, family, fields) and "pivot" not in view_modes:
         view_modes.append("pivot")
-    automation_intents = _ai_infer_design_automation_intents_from_message(module_id, entity_slug, message, statuses)
+    automation_intents = _ai_infer_design_automation_intents_from_message(
+        module_id,
+        entity_slug,
+        message,
+        statuses,
+        request=request,
+        workspace_id=workspace_id,
+    )
     workflow = {
         "enabled": bool(statuses),
         "status_field": f"{entity_slug}.status",
@@ -8084,8 +8330,18 @@ def _ai_request_module_design_spec_from_model(module_id: str, module_name: str, 
     return parsed
 
 
-def _ai_normalize_module_design_spec(module_id: str, module_name: str, message: str, raw_spec: dict | None) -> dict:
-    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message)
+def _ai_normalize_module_design_spec(
+    module_id: str,
+    module_name: str,
+    message: str,
+    raw_spec: dict | None,
+    base_spec: dict | None = None,
+) -> dict:
+    base_spec = (
+        copy.deepcopy(base_spec)
+        if isinstance(base_spec, dict)
+        else _ai_build_deterministic_module_design_spec(module_id, module_name, message)
+    )
     if not isinstance(raw_spec, dict):
         return base_spec
     family = raw_spec.get("family") if isinstance(raw_spec.get("family"), str) and raw_spec.get("family").strip() else base_spec["family"]
@@ -8234,11 +8490,24 @@ def _ai_generate_module_design_spec(
     module_name: str,
     message: str,
     module_index: dict[str, dict] | None = None,
+    request: Request | None = None,
+    workspace_id: str | None = None,
 ) -> dict:
-    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message, module_index=module_index)
+    base_spec = _ai_build_deterministic_module_design_spec(
+        module_id,
+        module_name,
+        message,
+        module_index=module_index,
+        request=request,
+        workspace_id=workspace_id,
+    )
     model_spec = _ai_request_module_design_spec_from_model(module_id, module_name, message, base_spec)
-    normalized_base = _ai_normalize_module_design_spec(module_id, module_name, message, base_spec)
-    normalized_model = _ai_normalize_module_design_spec(module_id, module_name, message, model_spec) if isinstance(model_spec, dict) else None
+    normalized_base = _ai_normalize_module_design_spec(module_id, module_name, message, base_spec, base_spec=base_spec)
+    normalized_model = (
+        _ai_normalize_module_design_spec(module_id, module_name, message, model_spec, base_spec=base_spec)
+        if isinstance(model_spec, dict)
+        else None
+    )
     return _ai_select_best_module_design_spec(normalized_base, normalized_model)
 
 
@@ -8847,7 +9116,8 @@ def _ai_build_record_notification_automation_candidate(
         if recipients:
             recipient_hint = recipients[0]
 
-    member_options = _ai_workspace_member_decision_options_for_request(request, workspace_id)
+    members = _ai_workspace_members_for_request(request, workspace_id)
+    member_options = _ai_workspace_member_decision_options_from_members(members)
     entity_label = _ai_entity_label_from_manifest(manifest, entity_id)
     module_name = _ai_module_name_from_manifest(module_id, manifest)
     entity_slug = entity_id.split(".")[-1] if "." in entity_id else entity_id
@@ -8888,12 +9158,6 @@ def _ai_build_record_notification_automation_candidate(
         "title": title,
         "body": body,
     }
-    members = []
-    if isinstance(workspace_id, str) and workspace_id.strip():
-        try:
-            members = list_workspace_members(workspace_id) or []
-        except Exception:
-            members = []
     _artifact_ai_resolve_notify_recipients(notify_inputs, {"members": members}, fallback_current_user=False)
 
     if not _artifact_ai_notify_step_has_recipient(notify_inputs):
@@ -10772,8 +11036,25 @@ def _ai_build_design_automation_candidate_ops(module_id: str, manifest: dict, de
     return ops
 
 
-def _ai_build_rich_module_scaffold(module_id: str, module_name: str, message: str, design_spec: dict | None = None) -> tuple[dict, str, dict]:
-    design_spec = design_spec if isinstance(design_spec, dict) else _ai_generate_module_design_spec(module_id, module_name, message)
+def _ai_build_rich_module_scaffold(
+    module_id: str,
+    module_name: str,
+    message: str,
+    design_spec: dict | None = None,
+    request: Request | None = None,
+    workspace_id: str | None = None,
+) -> tuple[dict, str, dict]:
+    design_spec = (
+        design_spec
+        if isinstance(design_spec, dict)
+        else _ai_generate_module_design_spec(
+            module_id,
+            module_name,
+            message,
+            request=request,
+            workspace_id=workspace_id,
+        )
+    )
     entity_slug = (
         design_spec.get("entity_slug")
         if isinstance(design_spec.get("entity_slug"), str)
@@ -10969,9 +11250,25 @@ def _ai_build_new_module_package(
     module_name: str,
     message: str,
     module_index: dict[str, dict] | None = None,
+    request: Request | None = None,
+    workspace_id: str | None = None,
 ) -> dict:
-    design_spec = _ai_generate_module_design_spec(module_id, module_name, message, module_index=module_index)
-    manifest, family, design_spec = _ai_build_rich_module_scaffold(module_id, module_name, message, design_spec=design_spec)
+    design_spec = _ai_generate_module_design_spec(
+        module_id,
+        module_name,
+        message,
+        module_index=module_index,
+        request=request,
+        workspace_id=workspace_id,
+    )
+    manifest, family, design_spec = _ai_build_rich_module_scaffold(
+        module_id,
+        module_name,
+        message,
+        design_spec=design_spec,
+        request=request,
+        workspace_id=workspace_id,
+    )
     if not isinstance(manifest.get("triggers"), list) or not manifest.get("triggers"):
         manifest["triggers"] = _ai_build_module_lifecycle_triggers(manifest, module_id, message)
     automation_ops = _ai_build_design_automation_candidate_ops(module_id, manifest, design_spec)
@@ -10988,6 +11285,50 @@ def _ai_build_new_module_package(
         "quality": quality,
         "automation_ops": automation_ops,
     }
+
+
+def _ai_design_spec_requested_change_lines(module_name: str, design_spec: dict | None) -> list[str]:
+    if not isinstance(module_name, str) or not module_name.strip() or not isinstance(design_spec, dict):
+        return []
+    primary_slug = design_spec.get("entity_slug") if isinstance(design_spec.get("entity_slug"), str) and design_spec.get("entity_slug").strip() else ""
+    primary_entity_id = f"entity.{primary_slug}" if primary_slug else None
+    lines: list[str] = []
+    for related in design_spec.get("related_entities") if isinstance(design_spec.get("related_entities"), list) else []:
+        if not isinstance(related, dict):
+            continue
+        related_slug = related.get("entity_slug") if isinstance(related.get("entity_slug"), str) and related.get("entity_slug").strip() else ""
+        fields = [field for field in (related.get("fields") or []) if isinstance(field, dict)]
+        lookup_candidates = [
+            field
+            for field in fields
+            if str(field.get("type") or "").strip().lower() == "lookup"
+            and isinstance(field.get("entity"), str)
+            and field.get("entity").strip()
+        ]
+        lookup_field = next(
+            (
+                field for field in lookup_candidates
+                if field.get("entity") != primary_entity_id
+            ),
+            lookup_candidates[0] if lookup_candidates else None,
+        )
+        if not isinstance(lookup_field, dict):
+            continue
+        lookup_target_entity = lookup_field.get("entity") if isinstance(lookup_field.get("entity"), str) and lookup_field.get("entity").strip() else ""
+        if isinstance(lookup_target_entity, str) and lookup_target_entity.startswith("entity."):
+            target_label = _ai_titleize_slug(lookup_target_entity.split(".", 1)[1])
+        else:
+            target_label = lookup_field.get("label") if isinstance(lookup_field.get("label"), str) and lookup_field.get("label").strip() else "linked record"
+        if primary_slug == "influencer" and related_slug == "sent_product":
+            lines.append("Track catalog-backed line items for products sent to influencers.")
+            lines.append(f"Link each sent-product line item to {target_label} records.")
+            continue
+        related_title = related.get("related_title") if isinstance(related.get("related_title"), str) and related.get("related_title").strip() else related.get("entity_label")
+        if isinstance(related_title, str) and related_title.strip():
+            lines.append(f"Add repeatable '{related_title.strip()}' rows in {module_name} linked to {target_label} records.")
+        else:
+            lines.append(f"Add related rows in {module_name} linked to {target_label} records.")
+    return list(dict.fromkeys(lines))
 
 
 def _ai_create_module_bundle_aliases(module_name: str, module_id: str, manifest: dict | None = None, design_spec: dict | None = None) -> list[str]:
@@ -11783,6 +12124,8 @@ def _ai_build_create_module_bundle(
     module_ids: list[str],
     module_index: dict[str, dict],
     answer_hints: dict | None = None,
+    request: Request | None = None,
+    workspace_id: str | None = None,
 ) -> dict | None:
     target_labels = _ai_extract_requested_new_module_labels(message, module_ids, module_index, answer_hints=answer_hints)
     if not target_labels:
@@ -11811,11 +12154,24 @@ def _ai_build_create_module_bundle(
             quality = _ai_module_manifest_quality_report(module_id, manifest)
         else:
             try:
-                package = _ai_build_new_module_package(module_id, module_name, scoped_message, module_index=working_module_index)
+                package = _ai_build_new_module_package(
+                    module_id,
+                    module_name,
+                    scoped_message,
+                    module_index=working_module_index,
+                    request=request,
+                    workspace_id=workspace_id,
+                )
             except TypeError as exc:
                 if "unexpected keyword argument 'module_index'" not in str(exc):
                     raise
-                package = _ai_build_new_module_package(module_id, module_name, scoped_message)
+                package = _ai_build_new_module_package(
+                    module_id,
+                    module_name,
+                    scoped_message,
+                    request=request,
+                    workspace_id=workspace_id,
+                )
             manifest = package.get("manifest")
             design_spec = package.get("design_spec") if isinstance(package.get("design_spec"), dict) else None
             quality = package.get("quality") if isinstance(package.get("quality"), dict) else {}
@@ -11888,6 +12244,17 @@ def _ai_build_create_module_bundle(
 
     if not candidate_ops or not module_details:
         return None
+
+    for detail in module_details:
+        if not isinstance(detail, dict):
+            continue
+        module_name = detail.get("module_name") if isinstance(detail.get("module_name"), str) and detail.get("module_name").strip() else None
+        design_spec = detail.get("design_spec") if isinstance(detail.get("design_spec"), dict) else None
+        if not isinstance(module_name, str):
+            continue
+        for line in _ai_design_spec_requested_change_lines(module_name, design_spec):
+            if isinstance(line, str) and line not in requested_change_lines:
+                requested_change_lines.append(line)
 
     handoff_bundle = _ai_build_create_module_handoff_ops(
         message,
@@ -29270,7 +29637,15 @@ def _ai_slot_based_plan(
         ):
             create_module_intent = True
     if create_module_intent:
-        create_module_bundle = _ai_build_create_module_bundle(combined, module_ids, module_index, answer_hints=answer_hints)
+        request_actor = getattr(request.state, "actor", None) if request is not None and hasattr(request, "state") else None
+        create_module_bundle = _ai_build_create_module_bundle(
+            combined,
+            module_ids,
+            module_index,
+            answer_hints=answer_hints,
+            request=request,
+            workspace_id=_ai_resolve_workspace_id(request_actor, answer_hints=answer_hints),
+        )
         if not isinstance(create_module_bundle, dict):
             return {
                 "candidate_ops": [],
@@ -31755,7 +32130,15 @@ def _ai_extract_candidate_ops(
             create_module_intent = False
 
     if create_module_intent:
-        create_module_bundle = _ai_build_create_module_bundle(msg, module_ids, module_index, answer_hints=answer_hints)
+        request_actor = getattr(request.state, "actor", None) if request is not None and hasattr(request, "state") else None
+        create_module_bundle = _ai_build_create_module_bundle(
+            msg,
+            module_ids,
+            module_index,
+            answer_hints=answer_hints,
+            request=request,
+            workspace_id=_ai_resolve_workspace_id(request_actor, answer_hints=answer_hints),
+        )
         if not isinstance(create_module_bundle, dict):
             _push_question(
                 "What should the new module be called?",
@@ -32502,6 +32885,12 @@ def _ai_plan_from_message(
             affected_modules,
             module_index,
             answer_hints=planner_hints,
+            request=request,
+            workspace_id=_ai_resolve_workspace_id(
+                actor,
+                session=session,
+                answer_hints=planner_hints,
+            ),
         )
         if isinstance(direct_create_bundle, dict):
             slot_plan = {
@@ -35574,40 +35963,13 @@ def _ai_workspace_member_decision_options(workspace_id: str | None, limit: int =
     return _ai_workspace_member_decision_options_for_request(None, workspace_id, limit=limit)
 
 
-def _ai_workspace_members_for_request(request: Request | None, workspace_id: str | None) -> list[dict]:
-    if not isinstance(workspace_id, str) or not workspace_id.strip():
-        return []
-    cache_key = f"ai:workspace_members:{workspace_id.strip()}"
-    if request is not None:
-        cached = _req_cache_get(request, cache_key)
-        if isinstance(cached, list):
-            return copy.deepcopy(cached)
-    try:
-        members = list_workspace_members(workspace_id) or []
-    except Exception:
-        members = []
-    normalized_members = [copy.deepcopy(member) for member in members if isinstance(member, dict)]
-    if request is not None:
-        _req_cache_set(request, cache_key, copy.deepcopy(normalized_members))
-    return normalized_members
-
-
-def _ai_workspace_member_decision_options_for_request(
-    request: Request | None,
-    workspace_id: str | None,
+def _ai_workspace_member_decision_options_from_members(
+    members: list[dict] | None,
     limit: int = 8,
 ) -> list[dict]:
-    if not isinstance(workspace_id, str) or not workspace_id.strip():
-        return []
-    cache_key = f"ai:workspace_member_options:{workspace_id.strip()}"
-    if request is not None:
-        cached = _req_cache_get(request, cache_key)
-        if isinstance(cached, list):
-            return copy.deepcopy(cached[: max(int(limit or 0), 0)])
-    members = _ai_workspace_members_for_request(request, workspace_id)
     options: list[dict] = []
     seen_values: set[str] = set()
-    for member in members:
+    for member in members or []:
         if not isinstance(member, dict):
             continue
         email = member.get("email") if isinstance(member.get("email"), str) and member.get("email").strip() else None
@@ -35648,6 +36010,41 @@ def _ai_workspace_member_decision_options_for_request(
         )
         if len(options) >= max(int(limit or 0), 0):
             break
+    return options
+
+
+def _ai_workspace_members_for_request(request: Request | None, workspace_id: str | None) -> list[dict]:
+    if not isinstance(workspace_id, str) or not workspace_id.strip():
+        return []
+    cache_key = f"ai:workspace_members:{workspace_id.strip()}"
+    if request is not None:
+        cached = _req_cache_get(request, cache_key)
+        if isinstance(cached, list):
+            return copy.deepcopy(cached)
+    try:
+        members = list_workspace_members(workspace_id) or []
+    except Exception:
+        members = []
+    normalized_members = [copy.deepcopy(member) for member in members if isinstance(member, dict)]
+    if request is not None:
+        _req_cache_set(request, cache_key, copy.deepcopy(normalized_members))
+    return normalized_members
+
+
+def _ai_workspace_member_decision_options_for_request(
+    request: Request | None,
+    workspace_id: str | None,
+    limit: int = 8,
+) -> list[dict]:
+    if not isinstance(workspace_id, str) or not workspace_id.strip():
+        return []
+    cache_key = f"ai:workspace_member_options:{workspace_id.strip()}"
+    if request is not None:
+        cached = _req_cache_get(request, cache_key)
+        if isinstance(cached, list):
+            return copy.deepcopy(cached[: max(int(limit or 0), 0)])
+    members = _ai_workspace_members_for_request(request, workspace_id)
+    options = _ai_workspace_member_decision_options_from_members(members, limit=limit)
     if request is not None:
         _req_cache_set(request, cache_key, copy.deepcopy(options))
     return options
@@ -35934,8 +36331,6 @@ def _ai_message_requests_existing_template(message: str, template_kind: str) -> 
     if not isinstance(message, str) or not message.strip():
         return False
     lowered = re.sub(r"\s+", " ", message.lower()).strip()
-    if _ai_message_prefers_template_selection(lowered, template_kind):
-        return True
     if template_kind == "email_template":
         return bool(
             re.search(r"\b(?:use|send)\b.*\b(?:our|existing|current|same)\b.*\b(?:email|template)\b", lowered)
@@ -38244,6 +38639,9 @@ def _artifact_ai_apply_scoped_automation_hints(
                 break
 
     request_current_user = _artifact_ai_prompt_requests_current_user(prompt)
+    member_options = _ai_workspace_member_decision_options_from_members(
+        meta.get("members") if isinstance(meta, dict) and isinstance(meta.get("members"), list) else [],
+    )
 
     for step in _artifact_ai_iter_automation_steps(normalized_draft.get("steps")):
         action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
@@ -38298,7 +38696,7 @@ def _artifact_ai_apply_scoped_automation_hints(
                         assumptions.append("Defaulted the notification recipient to the current user because the request explicitly asked for it.")
                 if not _artifact_ai_notify_step_has_recipient(inputs) and question_meta is None:
                     options = _ai_notify_recipient_selection_options_for_step(
-                        _ai_workspace_member_decision_options(workspace_id),
+                        member_options,
                         normalized_draft,
                         step,
                     )
@@ -38320,8 +38718,8 @@ def _artifact_ai_apply_scoped_automation_hints(
             template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else ""
             has_inline_content = _ai_send_email_step_has_inline_content(inputs)
             if not template_id:
-                if isinstance(email_template_hint, str) and email_template_hint and email_template_hint != "__create_new__":
-                    inputs["template_id"] = email_template_hint.strip()
+                if isinstance(global_email_template_hint, str) and global_email_template_hint and global_email_template_hint != "__create_new__":
+                    inputs["template_id"] = global_email_template_hint.strip()
                     for key in ("subject", "body_html", "body_text"):
                         inputs.pop(key, None)
                     assumptions.append("Used the selected email template for the automation email step.")
@@ -38352,8 +38750,8 @@ def _artifact_ai_apply_scoped_automation_hints(
         elif action_id == "system.generate_document":
             template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else ""
             if not template_id:
-                if isinstance(document_template_hint, str) and document_template_hint and document_template_hint != "__create_new__":
-                    inputs["template_id"] = document_template_hint.strip()
+                if isinstance(global_document_template_hint, str) and global_document_template_hint and global_document_template_hint != "__create_new__":
+                    inputs["template_id"] = global_document_template_hint.strip()
                     assumptions.append("Used the selected document template for the document generation step.")
                 elif question_meta is None:
                     options = _ai_template_selection_options_for_step(
@@ -40260,10 +40658,428 @@ def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived:
     return plan_data, assistant_text
 
 
+def _ai_plan_body_from_record_data(plan_record: dict | None) -> dict:
+    if not isinstance(plan_record, dict):
+        return {}
+    plan_json = plan_record.get("plan_json") if isinstance(plan_record.get("plan_json"), dict) else {}
+    plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+    return copy.deepcopy(plan_body) if isinstance(plan_body, dict) else {}
+
+
+def _ai_plan_context_from_record_data(plan_record: dict | None) -> dict:
+    if not isinstance(plan_record, dict):
+        return {}
+    plan_json = plan_record.get("plan_json") if isinstance(plan_record.get("plan_json"), dict) else {}
+    context = plan_json.get("context") if isinstance(plan_json.get("context"), dict) else {}
+    return copy.deepcopy(context) if isinstance(context, dict) else {}
+
+
+def _ai_plan_primary_module_name(plan: dict) -> str | None:
+    if not isinstance(plan, dict):
+        return None
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    module_name = planner_state.get("module_name") if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip() else None
+    if isinstance(module_name, str) and module_name:
+        return _ai_norm_token(module_name)
+    for op in (plan.get("candidate_operations") or []):
+        if not isinstance(op, dict) or op.get("op") != "create_module":
+            continue
+        manifest = op.get("manifest") if isinstance(op.get("manifest"), dict) else {}
+        module_def = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        manifest_name = module_def.get("name") if isinstance(module_def.get("name"), str) and module_def.get("name").strip() else None
+        if isinstance(manifest_name, str) and manifest_name:
+            return _ai_norm_token(manifest_name)
+    return None
+
+
+def _ai_plan_scope_tokens(plan: dict) -> set[str]:
+    if not isinstance(plan, dict):
+        return set()
+    tokens: set[str] = set()
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    for module_id in planner_state.get("requested_module_labels") or []:
+        normalized = _ai_norm_token(module_id) if isinstance(module_id, str) else ""
+        if normalized:
+            tokens.add(normalized)
+    for artifact in (plan.get("affected_artifacts") or []):
+        if not isinstance(artifact, dict):
+            continue
+        if artifact.get("artifact_type") != "module":
+            continue
+        artifact_id = artifact.get("artifact_id") if isinstance(artifact.get("artifact_id"), str) else ""
+        normalized = _ai_norm_token(artifact_id)
+        if normalized:
+            tokens.add(normalized)
+    primary_module = _ai_plan_primary_module_name(plan)
+    if isinstance(primary_module, str) and primary_module:
+        tokens.add(primary_module)
+    return tokens
+
+
+def _ai_latest_patchset_for_plan(session_id: str, plan_id: str) -> dict | None:
+    if not isinstance(session_id, str) or not session_id or not isinstance(plan_id, str) or not plan_id:
+        return None
+    return _ai_latest_session_record(
+        _AI_ENTITY_PATCHSET,
+        session_id,
+        limit=500,
+        predicate=lambda data: data.get("plan_id") == plan_id,
+    )
+
+
+def _ai_should_preserve_latest_concrete_plan(
+    message_text: str,
+    latest_plan_record: dict | None,
+    new_plan: dict | None,
+    latest_context: dict | None = None,
+) -> bool:
+    if not isinstance(new_plan, dict) or not isinstance(latest_plan_record, dict):
+        return False
+    latest_plan = _ai_plan_body_from_record_data(latest_plan_record)
+    if not isinstance(latest_plan, dict):
+        return False
+    latest_intent = ((latest_plan.get("planner_state") or {}).get("intent") if isinstance(latest_plan.get("planner_state"), dict) else "") or ""
+    new_intent = ((new_plan.get("planner_state") or {}).get("intent") if isinstance(new_plan.get("planner_state"), dict) else "") or ""
+    latest_has_concrete_changes = bool(
+        [op for op in (latest_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        or latest_plan.get("resolved_without_changes")
+    )
+    new_has_concrete_changes = bool(
+        [op for op in (new_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        or new_plan.get("resolved_without_changes")
+    )
+    new_has_questions = bool([item for item in (new_plan.get("required_questions") or []) if isinstance(item, str) and item.strip()])
+    if not latest_has_concrete_changes or new_has_concrete_changes:
+        return False
+    if latest_intent in {"preview_only_plan", "preview_only_noop"}:
+        return False
+    if new_intent not in {"preview_only_plan", "preview_only_noop"} or not new_has_questions:
+        return False
+    normalized_message = _ai_norm_token(_ai_focus_request_text(message_text))
+    latest_request_summary = ""
+    if isinstance(latest_context, dict) and isinstance(latest_context.get("request_summary"), str):
+        latest_request_summary = _ai_norm_token(_ai_focus_request_text(latest_context.get("request_summary")))
+    same_request = bool(normalized_message and latest_request_summary and normalized_message == latest_request_summary)
+    latest_scope_tokens = _ai_plan_scope_tokens(latest_plan)
+    new_scope_tokens = _ai_plan_scope_tokens(new_plan)
+    same_scope = bool(latest_scope_tokens and new_scope_tokens and latest_scope_tokens == new_scope_tokens)
+    same_create_module = bool(
+        _ai_is_create_module_request(message_text)
+        and _ai_plan_primary_module_name(latest_plan)
+        and _ai_plan_primary_module_name(latest_plan) == _ai_plan_primary_module_name(new_plan)
+    )
+    return same_request or same_scope or same_create_module
+
+
+def _ai_reuse_existing_plan_result(
+    session_id: str,
+    latest_plan_record: dict,
+    *,
+    context: dict | None = None,
+    message_style: str = "default",
+) -> tuple[dict, dict, str]:
+    plan_data = copy.deepcopy(latest_plan_record)
+    persisted_plan = _ai_plan_body_from_record_data(plan_data)
+    persisted_context = copy.deepcopy(context) if isinstance(context, dict) else _ai_plan_context_from_record_data(plan_data)
+    if not isinstance(persisted_plan.get("structured_plan"), dict):
+        normalized_plan_v1 = _ai_build_structured_plan(persisted_plan, persisted_context)
+        persisted_plan["plan_v1"] = normalized_plan_v1
+        persisted_plan["structured_plan"] = normalized_plan_v1
+    assistant_text = (
+        _ai_ready_revision_status_text(persisted_plan, persisted_context)
+        if message_style == "ready_revision"
+        else _ai_plan_assistant_text(persisted_plan, persisted_context)
+    )
+    _ai_create_record(
+        _AI_ENTITY_MESSAGE,
+        {
+            "session_id": session_id,
+            "role": "assistant",
+            "body": assistant_text,
+            "message_type": "question" if (persisted_plan.get("required_questions") or []) else "plan",
+            "created_at": _ai_now(),
+        },
+    )
+    session_updates = {
+        "status": "waiting_input"
+        if (persisted_plan.get("required_questions") or [])
+        else "ready_to_apply"
+        if (persisted_plan.get("candidate_operations") or persisted_plan.get("resolved_without_changes"))
+        else "planning",
+        "summary": assistant_text,
+        "last_activity_at": _ai_now(),
+        "last_error": None,
+    }
+    _ai_update_record(_AI_ENTITY_SESSION, session_id, session_updates)
+    return persisted_plan, persisted_context, assistant_text
+
+
 def _ai_operations_signature(operations: Any) -> str:
     encoded = jsonable_encoder(operations)
     payload = json.dumps(encoded, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _artifact_ai_payload_signature(value: Any) -> str:
+    encoded = jsonable_encoder(value)
+    return json.dumps(encoded, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _artifact_ai_is_diagnostic_prompt(prompt: Any) -> bool:
+    text = str(prompt or "").strip().lower()
+    if not text:
+        return False
+    diagnostic_phrases = (
+        "how come",
+        "why",
+        "not getting",
+        "not notified",
+        "not receiving",
+        "im not receiving",
+        "i'm not receiving",
+        "isn't working",
+        "isnt working",
+        "not working",
+        "broken",
+        "failing",
+        "failed",
+        "doesn't work",
+        "doesnt work",
+        "not sending",
+        "fix the send",
+    )
+    return any(phrase in text for phrase in diagnostic_phrases)
+
+
+def _artifact_ai_requests_new_automation(prompt: Any) -> bool:
+    text = str(prompt or "").strip().lower()
+    if not text:
+        return False
+    text = re.sub(r"\s+", " ", text)
+    patterns = (
+        r"\b(?:create|build|make)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?automation\b",
+        r"\bnew\s+automation\b",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _artifact_ai_is_placeholder_automation_draft(draft: Any) -> bool:
+    if not isinstance(draft, dict):
+        return False
+    name = str(draft.get("name") or "").strip().lower()
+    description = str(draft.get("description") or "").strip()
+    trigger = draft.get("trigger") if isinstance(draft.get("trigger"), dict) else {}
+    trigger_kind = str(trigger.get("kind") or "event").strip().lower()
+    event_types = [
+        str(item).strip()
+        for item in (trigger.get("event_types") or [])
+        if isinstance(item, str) and str(item).strip()
+    ]
+    filters = trigger.get("filters") if isinstance(trigger.get("filters"), list) else []
+    steps = draft.get("steps") if isinstance(draft.get("steps"), list) else []
+    if steps:
+        return False
+    if description:
+        return False
+    if filters:
+        return False
+    if trigger_kind == "event" and not event_types:
+        return name in {"", "new automation"}
+    if trigger_kind == "schedule":
+        raw_every_minutes = trigger.get("every_minutes")
+        try:
+            every_minutes = int(raw_every_minutes) if raw_every_minutes not in (None, "") else None
+        except (TypeError, ValueError):
+            every_minutes = None
+        default_schedule = every_minutes in {None, 60}
+        return default_schedule and name in {"", "new automation"}
+    return False
+
+
+def _artifact_ai_automation_diagnostic_advisories(draft: dict | None, meta: dict | None) -> list[str]:
+    if not isinstance(draft, dict):
+        return []
+    steps = draft.get("steps") if isinstance(draft.get("steps"), list) else []
+    trigger = draft.get("trigger") if isinstance(draft.get("trigger"), dict) else {}
+    event_types = [
+        item.strip()
+        for item in (trigger.get("event_types") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    members = meta.get("members") if isinstance(meta, dict) and isinstance(meta.get("members"), list) else []
+    member_ids = {
+        str(item.get("user_id") or "").strip()
+        for item in members
+        if isinstance(item, dict) and isinstance(item.get("user_id"), str) and item.get("user_id").strip()
+    }
+    connections = meta.get("connections") if isinstance(meta, dict) and isinstance(meta.get("connections"), list) else []
+    connection_ids = {
+        str(item.get("id") or "").strip()
+        for item in connections
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item.get("id").strip()
+    }
+
+    advisories: list[str] = []
+    has_shopify_order_webhook = any(item.startswith("integration.webhook.shopify.orders.") for item in event_types)
+    has_new_order_copy = False
+    has_create_event = any(item.endswith(".create") for item in event_types)
+    has_non_create_event = any(item.endswith(".updated") or item.endswith(".cancelled") for item in event_types)
+
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        action_id = step.get("action_id")
+        inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+        combined_copy = " ".join(
+            str(inputs.get(key) or "").strip().lower()
+            for key in ("title", "subject", "body", "body_text", "body_html")
+        )
+        if "new order" in combined_copy or "new shopify order" in combined_copy:
+            has_new_order_copy = True
+        if action_id == "system.send_email":
+            connection_id = str(inputs.get("connection_id") or "").strip()
+            if connection_id and connection_id not in connection_ids:
+                advisories.append("The email step references a connection that is not available in this workspace, so it will not send until that connection is fixed.")
+            elif not connections:
+                advisories.append("No active email connection is configured in this workspace, so email steps cannot send yet.")
+        if action_id == "system.notify":
+            resolved_recipient_ids: list[str] = []
+            if isinstance(inputs.get("recipient_user_ids"), list):
+                resolved_recipient_ids.extend(
+                    str(item).strip()
+                    for item in inputs.get("recipient_user_ids")
+                    if isinstance(item, str) and str(item).strip()
+                )
+            single_recipient = str(inputs.get("recipient_user_id") or "").strip()
+            if single_recipient:
+                resolved_recipient_ids.append(single_recipient)
+            literal_recipient_ids = [
+                item for item in resolved_recipient_ids
+                if not item.startswith("{") and "." not in item and ":" not in item
+            ]
+            missing_ids = [item for item in literal_recipient_ids if item not in member_ids]
+            if missing_ids and member_ids:
+                advisories.append("One or more notification recipients no longer exist in this workspace, so those users will not receive the alert.")
+    if has_shopify_order_webhook and has_new_order_copy and has_create_event and has_non_create_event:
+        advisories.append("This automation is wired to Shopify order create, update, and cancelled webhooks, so the 'new order' notify/email steps are not limited to brand new orders.")
+    return list(dict.fromkeys(item for item in advisories if isinstance(item, str) and item.strip()))
+
+
+def _artifact_ai_validation_issue_summary(validation: dict | None) -> str:
+    if not isinstance(validation, dict):
+        return ""
+    errors = validation.get("errors") if isinstance(validation.get("errors"), list) else []
+    for item in errors:
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path") if isinstance(item.get("path"), str) and item.get("path").strip() else ""
+        message = item.get("message") if isinstance(item.get("message"), str) and item.get("message").strip() else ""
+        code = item.get("code") if isinstance(item.get("code"), str) and item.get("code").strip() else ""
+        combined = f"{path}: {message or code}".strip(": ").strip()
+        if combined:
+            return combined
+    return ""
+
+
+def _artifact_ai_template_kind_label(artifact_kind: str) -> str:
+    return "document template" if artifact_kind == "document_template" else "email template"
+
+
+def _artifact_ai_template_ready_fallbacks() -> set[str]:
+    return {"", "Draft updated.", "Draft ready to apply."}
+
+
+def _artifact_ai_template_draft_for_comparison(artifact_kind: str, draft: dict | None) -> dict | None:
+    if not isinstance(draft, dict):
+        return None
+    if artifact_kind == "document_template":
+        return _artifact_ai_normalize_doc_template_draft({}, draft)
+    return _artifact_ai_normalize_email_template_draft({}, draft)
+
+
+def _artifact_ai_template_plan_is_effectively_noop(
+    artifact_kind: str,
+    current: dict | None,
+    next_draft: dict | None,
+) -> bool:
+    baseline = _artifact_ai_template_draft_for_comparison(artifact_kind, current)
+    proposed = _artifact_ai_template_draft_for_comparison(artifact_kind, next_draft)
+    if not isinstance(baseline, dict) or not isinstance(proposed, dict):
+        return False
+    try:
+        return json.dumps(baseline, sort_keys=True) == json.dumps(proposed, sort_keys=True)
+    except Exception:
+        return False
+
+
+def _artifact_ai_normalize_template_plan_result(
+    artifact_kind: str,
+    plan: dict,
+    *,
+    current: dict | None,
+) -> dict:
+    if not isinstance(plan, dict):
+        return plan
+    label = _artifact_ai_template_kind_label(artifact_kind)
+    summary = plan.get("summary") if isinstance(plan.get("summary"), str) else ""
+    raw_summary = summary.strip()
+    weak_summary = raw_summary in _artifact_ai_template_ready_fallbacks()
+    advisories = [
+        item
+        for item in (
+            *(_artifact_ai_text_lines(plan.get("advisories"))),
+            *(_artifact_ai_text_lines(plan.get("warnings"))),
+        )
+        if isinstance(item, str) and item.strip()
+    ]
+    advisories = list(dict.fromkeys(advisories))
+    required_questions = [
+        item for item in (plan.get("required_questions") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    validation = plan.get("validation") if isinstance(plan.get("validation"), dict) else {}
+    validation_issue_summary = _artifact_ai_validation_issue_summary(validation)
+    validation_failed = bool(validation.get("compiled_ok") is False)
+    next_draft = plan.get("draft") if isinstance(plan.get("draft"), dict) else None
+    noop = bool(plan.get("noop")) or _artifact_ai_template_plan_is_effectively_noop(artifact_kind, current, next_draft)
+    plan["noop"] = noop
+    plan["advisories"] = advisories
+    if noop:
+        if weak_summary:
+            if advisories:
+                plan["summary"] = advisories[0]
+            elif validation_issue_summary:
+                plan["summary"] = (
+                    f"No {label} changes were proposed yet. "
+                    f"The current draft still has validation issues: {validation_issue_summary}"
+                )
+            else:
+                plan["summary"] = (
+                    f"No {label} changes were proposed from this request yet. "
+                    "Describe the exact change you want."
+                )
+        return plan
+    if required_questions:
+        if weak_summary:
+            if advisories:
+                plan["summary"] = f"Needs input before apply. Likely issue: {advisories[0]}"
+            else:
+                plan["summary"] = f"Needs input before apply: {required_questions[0]}"
+        return plan
+    if validation_failed:
+        if weak_summary:
+            if advisories:
+                plan["summary"] = f"Draft updated but still needs fixes before apply. Likely issue: {advisories[0]}"
+            elif validation_issue_summary:
+                plan["summary"] = f"Draft updated but still needs fixes before apply: {validation_issue_summary}"
+            else:
+                plan["summary"] = "Draft updated but still needs fixes before apply."
+        return plan
+    if weak_summary:
+        plan["summary"] = f"Prepared an updated {label} draft."
+    return plan
 
 
 def _ai_latest_applied_patchset_for_session(session_id: str) -> dict | None:
@@ -42499,6 +43315,25 @@ def _octo_ai_chat_plan_payload(request: Request, session_id: str, session_data: 
         explicit_scope=explicit_scope,
         answer_hints=answer_hints,
     )
+    latest_plan_record = _ai_latest_plan_for_session(session_id)
+    latest_context = _ai_plan_context_from_record_data(latest_plan_record)
+    if _ai_should_preserve_latest_concrete_plan(message_text, latest_plan_record, plan, latest_context):
+        latest_patchset = _ai_latest_patchset_for_plan(
+            session_id,
+            latest_plan_record.get("id") if isinstance(latest_plan_record, dict) and isinstance(latest_plan_record.get("id"), str) else "",
+        )
+        message_style = (
+            "ready_revision"
+            if isinstance(latest_patchset, dict) and str(latest_patchset.get("status") or "") in {"validated", "approved", "applied"}
+            else "default"
+        )
+        reused_plan, reused_context, assistant_text = _ai_reuse_existing_plan_result(
+            session_id,
+            latest_plan_record,
+            context=latest_context or context,
+            message_style=message_style,
+        )
+        return reused_context, reused_plan, latest_plan_record, assistant_text
     session_workspace_id = session_data.get("workspace_id") if isinstance(session_data.get("workspace_id"), str) else None
     token = None
     if session_workspace_id and session_workspace_id != get_org_id():
@@ -43041,6 +43876,43 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
             and _ai_text_requests_patchset_generation(custom_text if isinstance(custom_text, str) else None)
         ):
             message_style = "ready_revision"
+        latest_plan_record = _ai_latest_plan_for_session(session_id)
+        latest_context = _ai_plan_context_from_record_data(latest_plan_record)
+        if _ai_should_preserve_latest_concrete_plan(replan_prompt, latest_plan_record, plan, latest_context):
+            latest_patchset = _ai_latest_patchset_for_plan(
+                session_id,
+                latest_plan_record.get("id") if isinstance(latest_plan_record, dict) and isinstance(latest_plan_record.get("id"), str) else "",
+            )
+            preserve_message_style = (
+                "ready_revision"
+                if isinstance(latest_patchset, dict) and str(latest_patchset.get("status") or "") in {"validated", "approved", "applied"}
+                else message_style
+            )
+            persisted_plan, persisted_context, assistant_text = _ai_reuse_existing_plan_result(
+                session_id,
+                latest_plan_record,
+                context=latest_context or context,
+                message_style=preserve_message_style,
+            )
+            next_question = None
+            next_question_meta = persisted_plan.get("required_question_meta") if isinstance(persisted_plan.get("required_question_meta"), dict) else None
+            questions = persisted_plan.get("required_questions")
+            if isinstance(questions, list):
+                for question in questions:
+                    if isinstance(question, str) and question.strip():
+                        next_question = question.strip()
+                        break
+            return _ok_response(
+                {
+                    "resolved_question": active_question,
+                    "next_question": next_question,
+                    "next_question_meta": next_question_meta,
+                    "assistant_text": assistant_text,
+                    "plan": persisted_plan,
+                    "plan_record": latest_plan_record,
+                    "context": persisted_context,
+                }
+            )
         plan_data, assistant_text = _ai_persist_plan_result(session_id, plan, context, derived, message_style=message_style)
         next_question = None
         next_question_meta = plan.get("required_question_meta") if isinstance(plan.get("required_question_meta"), dict) else None
@@ -44903,7 +45775,12 @@ async def system_dashboard_query(request: Request) -> dict:
         logger.info("cache_hit=dashboard_query key=%s", cache_key)
         return cached
     sql_result = None
-    if not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True):
+    grouped_query = isinstance(group_by, str) and bool(group_by)
+    if (
+        not grouped_query
+        and not entity_has_computed
+        and _records_sql_fast_path_allowed(actor, entity_id, source_filter, allow_simple_domain=True)
+    ):
         try:
             sql_result = _dashboard_query_sql_fast(
                 entity_id=entity_id,
@@ -44921,10 +45798,25 @@ async def system_dashboard_query(request: Request) -> dict:
             logger.exception("dashboard_query_fast_failed entity=%s source_key=%s", entity_id, source_key)
             sql_result = None
     if sql_result is not None:
-        response = _ok_response(sql_result)
-        _resp_cache_set(cache_key, response)
-        logger.info("cache_miss=dashboard_query key=%s", cache_key)
-        return response
+        inconsistent_grouped_result = (
+            isinstance(group_by, str)
+            and bool(group_by)
+            and isinstance(sql_result, dict)
+            and int(sql_result.get("count") or 0) > 0
+            and not (sql_result.get("groups") or [])
+        )
+        if not inconsistent_grouped_result:
+            response = _ok_response(sql_result)
+            _resp_cache_set(cache_key, response)
+            logger.info("cache_miss=dashboard_query key=%s", cache_key)
+            return response
+        logger.warning(
+            "dashboard_query_fast_inconsistent entity=%s source_key=%s group_by=%s count=%s; falling back to python aggregation",
+            entity_id,
+            source_key,
+            group_by,
+            sql_result.get("count"),
+        )
     items = _records_list_page_all(
         entity_id,
         fields=None if entity_has_computed else (fields or None),
@@ -49961,7 +50853,6 @@ def _artifact_ai_infer_template_prompt_entity(
             invalid_prefixes.append(_ai_norm_token(prefix[: -len("_line")]))
     invalid_prefixes = [item for item in invalid_prefixes if item]
 
-    current_norm = _ai_norm_token(current_entity_id) if isinstance(current_entity_id, str) and current_entity_id.strip() else ""
     scored: list[tuple[int, str]] = []
     for entity in entities:
         if not isinstance(entity, dict):
@@ -49979,8 +50870,6 @@ def _artifact_ai_infer_template_prompt_entity(
                 score += 10
             elif short_norm and prefix.startswith(f"{short_norm} "):
                 score += 6
-        if current_norm and short_norm and short_norm == current_norm:
-            score -= 1
         for alias in aliases:
             if not alias or len(alias) < 4:
                 continue
@@ -53935,22 +54824,33 @@ def _artifact_ai_resolve_scoped_template_entity_id(
         if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip()
         else None
     )
-    if isinstance(current_entity_id, str) and current_entity_id.strip():
-        return current_entity_id.strip()
     sample_entity_id = (
         sample.get("entity_id")
         if isinstance(sample, dict) and isinstance(sample.get("entity_id"), str) and sample.get("entity_id").strip()
         else None
     )
-    if isinstance(sample_entity_id, str) and sample_entity_id.strip():
-        return sample_entity_id.strip()
+    anchor_entity_id = None
+    if isinstance(current_entity_id, str) and current_entity_id.strip():
+        anchor_entity_id = current_entity_id.strip()
+    elif isinstance(sample_entity_id, str) and sample_entity_id.strip():
+        anchor_entity_id = sample_entity_id.strip()
     inferred_entity_id = _artifact_ai_infer_template_prompt_entity(
         prompt,
         _artifact_ai_entities(request),
-        current_entity_id=None,
+        current_entity_id=anchor_entity_id,
     )
-    if isinstance(inferred_entity_id, str) and inferred_entity_id.strip():
+    has_invalid_key_evidence = bool(isinstance(prompt, str) and _TEMPLATE_INVALID_KEY_RE.search(prompt))
+    if (
+        isinstance(inferred_entity_id, str)
+        and inferred_entity_id.strip()
+        and isinstance(anchor_entity_id, str)
+        and anchor_entity_id
+        and has_invalid_key_evidence
+        and not _match_entity_id(anchor_entity_id, inferred_entity_id)
+    ):
         return inferred_entity_id.strip()
+    if isinstance(anchor_entity_id, str) and anchor_entity_id:
+        return anchor_entity_id
     return None
 
 
@@ -54798,6 +55698,11 @@ async def _email_template_ai_plan_run(
     plan["required_questions"] = slot_questions
     plan["required_question_meta"] = slot_question_meta if isinstance(slot_question_meta, dict) else None
     plan["decision_slots"] = _ai_normalize_required_decision_slots(slot_question_meta, slot_questions)
+    plan = _artifact_ai_normalize_template_plan_result(
+        "email_template",
+        plan,
+        current=current,
+    )
     validation_counts = _artifact_ai_progress_validation_counts(plan.get("validation"))
     validation_summary = _artifact_ai_validation_progress_summary(
         "email_template",
@@ -55558,6 +56463,11 @@ async def _document_template_ai_plan_run(
     plan["required_questions"] = slot_questions
     plan["required_question_meta"] = slot_question_meta if isinstance(slot_question_meta, dict) else None
     plan["decision_slots"] = _ai_normalize_required_decision_slots(slot_question_meta, slot_questions)
+    plan = _artifact_ai_normalize_template_plan_result(
+        "document_template",
+        plan,
+        current=current,
+    )
     validation_counts = _artifact_ai_progress_validation_counts(plan.get("validation"))
     validation_summary = _artifact_ai_validation_progress_summary(
         "document_template",
@@ -55970,6 +56880,56 @@ async def _automation_ai_plan_run(
     if not isinstance(prompt, str) or not prompt.strip():
         return _error_response("PROMPT_REQUIRED", "prompt is required", "prompt", status=400)
     current = body.get("draft") if isinstance(body.get("draft"), dict) else item
+    if _artifact_ai_requests_new_automation(prompt) and not _artifact_ai_is_placeholder_automation_draft(current):
+        summary = (
+            "No automation changes were proposed from this request. "
+            "This editor can only update the current automation; create a new automation from the Automations screen."
+        )
+        response = {
+            "summary": summary,
+            "draft": current,
+            "assumptions": [],
+            "warnings": [],
+            "advisories": [summary],
+            "required_questions": [],
+            "required_question_meta": None,
+            "decision_slots": [],
+            "noop": True,
+            "validation": _artifact_ai_validate_automation_draft(current, _artifact_ai_automation_meta(request, actor)),
+            "errors": [],
+        }
+        if progress:
+            progress.emit("stage_started", "planning", None, {"stage": "planning"})
+            progress.emit(
+                "plan_result",
+                "planning",
+                None,
+                {
+                    "artifact_kind": "automation",
+                    "requested_focus": _artifact_ai_requested_focus("automation", body.get("focus"), prompt),
+                    "requested_focus_label": _artifact_ai_progress_focus_label("automation", _artifact_ai_requested_focus("automation", body.get("focus"), prompt)),
+                    "required_questions": 0,
+                    "decision_slots": 0,
+                    "summary": summary,
+                },
+            )
+            progress.emit("stage_done", "planning", None, {"stage": "planning"})
+            progress.emit("stage_started", "validating", None, {"stage": "validating"})
+            validation_counts = _artifact_ai_progress_validation_counts(response.get("validation"))
+            progress.emit(
+                "validate_result",
+                "validating",
+                None,
+                {
+                    "artifact_kind": "automation",
+                    "error_counts": validation_counts,
+                    "summary": _artifact_ai_validation_progress_summary("automation", validation_counts, required_questions=0),
+                },
+            )
+            progress.emit("stage_done", "validating", None, {"stage": "validating"})
+            if include_progress:
+                response["progress"] = progress.to_progress_list()
+        return _ok_response(response)
     answer_hints = body.get("hints") if isinstance(body.get("hints"), dict) else {}
     user_hint_count = _artifact_ai_progress_user_hint_count(answer_hints)
     requested_focus = _artifact_ai_requested_focus("automation", body.get("focus"), prompt)
@@ -56032,6 +56992,7 @@ async def _automation_ai_plan_run(
     except Exception as exc:
         return _error_response("AI_PLAN_FAILED", str(exc), None, status=500)
     automation_meta = _artifact_ai_automation_meta(request, actor)
+    current_normalized = _artifact_ai_normalize_automation_draft(current, current, automation_meta)
     next_draft, slot_assumptions, slot_advisories, slot_questions, slot_question_meta = _artifact_ai_apply_scoped_automation_hints(
         plan.get("draft") if isinstance(plan.get("draft"), dict) else current,
         prompt,
@@ -56072,7 +57033,56 @@ async def _automation_ai_plan_run(
     plan["required_questions"] = slot_questions
     plan["required_question_meta"] = slot_question_meta if isinstance(slot_question_meta, dict) else None
     plan["decision_slots"] = _ai_normalize_required_decision_slots(slot_question_meta, slot_questions)
+    plan["noop"] = False
     validation_counts = _artifact_ai_progress_validation_counts(plan.get("validation"))
+    validation_issue_summary = _artifact_ai_validation_issue_summary(plan.get("validation"))
+    default_ready_summary = "Automation draft ready to apply."
+    current_signature = _artifact_ai_payload_signature(current_normalized)
+    next_signature = _artifact_ai_payload_signature(next_draft)
+    diagnostic_advisories = (
+        _artifact_ai_automation_diagnostic_advisories(next_draft, automation_meta)
+        if _artifact_ai_is_diagnostic_prompt(prompt)
+        else []
+    )
+    if slot_questions:
+        first_question = slot_questions[0] if isinstance(slot_questions[0], str) else ""
+        current_summary = str(plan.get("summary") or "").strip()
+        if diagnostic_advisories:
+            plan["summary"] = f"Needs input before apply. Likely issue: {diagnostic_advisories[0]}"
+        elif first_question and (not current_summary or current_summary == default_ready_summary):
+            plan["summary"] = f"Needs input before apply: {first_question}"
+        plan["advisories"] = list(dict.fromkeys([
+            *(_artifact_ai_text_lines(plan.get("advisories"))),
+            *diagnostic_advisories,
+        ]))
+    elif current_signature == next_signature:
+        total_issues = int(validation_counts.get("total") or 0)
+        if diagnostic_advisories:
+            noop_summary = f"No draft changes were proposed yet. Likely issue: {diagnostic_advisories[0]}"
+        elif total_issues > 0:
+            noop_summary = f"No automation changes were proposed yet. The current draft still has {total_issues} validation issue{'s' if total_issues != 1 else ''}."
+        else:
+            noop_summary = "No automation changes were proposed from this request yet. Describe the exact change you want."
+        plan["summary"] = noop_summary
+        plan["noop"] = True
+        plan["advisories"] = list(dict.fromkeys([
+            *(_artifact_ai_text_lines(plan.get("advisories"))),
+            *diagnostic_advisories,
+            noop_summary,
+        ]))
+    elif int(validation_counts.get("total") or 0) > 0:
+        current_summary = str(plan.get("summary") or "").strip()
+        if not current_summary or current_summary == default_ready_summary:
+            if diagnostic_advisories:
+                plan["summary"] = f"Draft updated but still needs fixes before apply. Likely issue: {diagnostic_advisories[0]}"
+            elif validation_issue_summary:
+                plan["summary"] = f"Draft updated but still needs fixes before apply: {validation_issue_summary}"
+            else:
+                plan["summary"] = "Draft updated but still needs fixes before apply."
+        plan["advisories"] = list(dict.fromkeys([
+            *(_artifact_ai_text_lines(plan.get("advisories"))),
+            *diagnostic_advisories,
+        ]))
     validation_summary = _artifact_ai_validation_progress_summary(
         "automation",
         validation_counts,
@@ -57310,10 +58320,29 @@ async def system_notify(request: Request) -> dict:
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
-    if not body.get("recipient_user_id"):
-        return _error_response("RECIPIENT_REQUIRED", "recipient_user_id required", "recipient_user_id", status=400)
-    item = notification_store.create(body)
-    return _ok_response({"notification": item})
+    recipients: list[str] = []
+    if isinstance(body.get("recipient_user_ids"), list):
+        recipients.extend(
+            item.strip()
+            for item in body.get("recipient_user_ids")
+            if isinstance(item, str) and item.strip()
+        )
+    if isinstance(body.get("recipient_user_id"), str) and body.get("recipient_user_id").strip():
+        recipients.append(body.get("recipient_user_id").strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for recipient in recipients:
+        if recipient in seen:
+            continue
+        seen.add(recipient)
+        deduped.append(recipient)
+    if not deduped:
+        return _error_response("RECIPIENT_REQUIRED", "recipient_user_id or recipient_user_ids required", "recipient_user_ids", status=400)
+    notifications = [
+        notification_store.create({**body, "recipient_user_id": recipient})
+        for recipient in deduped
+    ]
+    return _ok_response({"notification": notifications[0], "notifications": notifications})
 
 
 @app.post("/system/send_email")

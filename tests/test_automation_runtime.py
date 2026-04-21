@@ -718,6 +718,116 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertIn("Dear Neetones", created_outbox[0]["body_html"])
         self.assertIn("QUO-2026-0028", created_outbox[0]["body_text"])
 
+    def test_notify_step_uses_last_step_record_when_trigger_has_no_record(self):
+        created_notifications: list[dict] = []
+
+        class _FakeNotificationStore:
+            def create(self, payload):
+                item = {"id": f"notif_{len(created_notifications) + 1}", **payload}
+                created_notifications.append(item)
+                return item
+
+        fake_app = SimpleNamespace(
+            _enrich_template_record=lambda record_data, entity_def: dict(record_data or {}),
+            _branding_context_for_org=lambda _org_id: {},
+        )
+
+        with (
+            patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker._fetch_record_payload", return_value={"te_sales_order.order_number": "SO-1001"}),
+            patch("app.worker._find_entity_def", return_value=None),
+        ):
+            result = _handle_system_action(
+                "system.notify",
+                {
+                    "recipient_user_ids": ["user-ops", "user-nick"],
+                    "title": "New order {{ record['te_sales_order.order_number'] }}",
+                    "body": "A new order is ready.",
+                    "link_mode": "trigger_record",
+                },
+                {
+                    "trigger": {"event": "integration.webhook.shopify.orders.create"},
+                    "steps": {
+                        "upsert_shopify_order": {
+                            "entity_id": "entity.te_sales_order",
+                            "record_id": "sales_order_1",
+                        }
+                    },
+                    "last": {
+                        "entity_id": "entity.te_sales_order",
+                        "record_id": "sales_order_1",
+                    },
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_notifications), 2, created_notifications)
+        self.assertEqual(created_notifications[0]["title"], "New order SO-1001")
+        self.assertEqual(created_notifications[0]["link_to"], "/data/te_sales_order/sales_order_1")
+        self.assertEqual(result["notifications"][0]["recipient_user_id"], "user-ops")
+
+    def test_send_email_step_uses_last_step_record_when_trigger_has_no_record(self):
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", return_value={"te_sales_order.order_number": "SO-1001"}),
+            patch("app.worker._find_entity_def", return_value=None),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "to_internal_emails": ["ops@example.com"],
+                    "subject": "New order {{ record['te_sales_order.order_number'] }}",
+                    "body_text": "A new order has arrived.",
+                },
+                {
+                    "trigger": {"event": "integration.webhook.shopify.orders.create"},
+                    "steps": {
+                        "upsert_shopify_order": {
+                            "entity_id": "entity.te_sales_order",
+                            "record_id": "sales_order_1",
+                        }
+                    },
+                    "last": {
+                        "entity_id": "entity.te_sales_order",
+                        "record_id": "sales_order_1",
+                    },
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["subject"], "New order SO-1001")
+        self.assertEqual(created_outbox[0]["to"], ["ops@example.com"])
+        self.assertIn("job", result)
+
     def test_create_record_step_renders_trigger_field_templates_at_action_runtime(self):
         store = MemoryAutomationStore()
         job_store = MemoryJobStore()

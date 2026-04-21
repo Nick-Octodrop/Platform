@@ -769,6 +769,132 @@ class TestAiEndToEndScenarios(unittest.TestCase):
         self.assertEqual(created_outbox[0]["subject"], "Quote QUO-2026-3001 accepted")
         self.assertIn("Dear Fabrikam", created_outbox[0]["body_html"])
 
+    def test_shopify_inbound_runtime_notifies_and_emails_from_upserted_sales_order_record(self) -> None:
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Shopify Phase 2 - Orders Inbound",
+                "status": "published",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": [
+                        "integration.webhook.shopify.orders.create",
+                        "integration.webhook.shopify.orders.updated",
+                        "integration.webhook.shopify.orders.cancelled",
+                    ],
+                    "filters": [],
+                },
+                "steps": [
+                    {
+                        "id": "upsert_shopify_order",
+                        "kind": "action",
+                        "action_id": "system.shopify_upsert_order_webhook",
+                        "inputs": {
+                            "payload": {"var": "trigger.payload"},
+                            "connection_id": {"var": "trigger.connection_id"},
+                        },
+                    },
+                    {
+                        "id": "notify_team",
+                        "kind": "action",
+                        "action_id": "system.notify",
+                        "inputs": {
+                            "title": "New Shopify Order {{ record['te_sales_order.order_number'] }}",
+                            "body": "A new Shopify order is ready.",
+                            "link_mode": "trigger_record",
+                            "recipient_user_ids": ["user-nick", "user-kelly"],
+                        },
+                    },
+                    {
+                        "id": "email_team",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "subject": "New Shopify order {{ record['te_sales_order.order_number'] }}",
+                            "body_text": "A new Shopify order has arrived.",
+                            "to_internal_emails": ["ops@example.com"],
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "integration.webhook.shopify.orders.create",
+                "trigger_payload": {
+                    "event": "integration.webhook.shopify.orders.create",
+                    "connection_id": "conn_shopify",
+                    "payload": {"id": "shopify-order-1"},
+                },
+            }
+        )
+
+        created_notifications: list[dict] = []
+        created_outbox: list[dict] = []
+
+        class _FakeNotificationStore:
+            def create(self, payload):
+                item = {"id": f"notif_{len(created_notifications) + 1}", **payload}
+                created_notifications.append(item)
+                return item
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, connection_id):
+                if connection_id == "conn_shopify":
+                    return {"id": "conn_shopify", "provider": "shopify", "config": {}}
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _enrich_template_record=lambda record_data, entity_def: dict(record_data or {}),
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+
+        with (
+            patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker.DbAttachmentStore", return_value=MemoryAttachmentStore()),
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch(
+                "app.worker._shopify_upsert_order_record",
+                return_value={
+                    "ok": True,
+                    "entity_id": "entity.te_sales_order",
+                    "record_id": "sales_order_1",
+                    "action": "created",
+                },
+            ),
+            patch("app.worker._fetch_record_payload", return_value={"te_sales_order.order_number": "SO-1001"}),
+            patch("app.worker._find_entity_def", return_value=None),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(len(created_notifications), 2, created_notifications)
+        self.assertEqual(created_notifications[0]["title"], "New Shopify Order SO-1001")
+        self.assertEqual(created_notifications[0]["link_to"], "/data/te_sales_order/sales_order_1")
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["subject"], "New Shopify order SO-1001")
+        self.assertEqual(created_outbox[0]["to"], ["ops@example.com"])
+
     def test_studio_agent_chat_rewrites_legacy_source_list_page_when_adding_field(self) -> None:
         client = TestClient(main.app)
         module_id = f"inventory_{uuid.uuid4().hex[:6]}"

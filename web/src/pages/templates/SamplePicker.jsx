@@ -54,6 +54,7 @@ export default function SamplePicker({
   setSample,
   entities = [],
   showEntitySelect = true,
+  entityIdOverride = "",
   rightAction = null,
   size = "md", // md | sm
 }) {
@@ -63,7 +64,9 @@ export default function SamplePicker({
   const [loading, setLoading] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState("");
   const [opened, setOpened] = useState(false);
-  const entityId = sample?.entity_id || "";
+  const entityId = typeof entityIdOverride === "string" && entityIdOverride
+    ? entityIdOverride
+    : (sample?.entity_id || "");
 
   const selectedEntity = useMemo(() => {
     return entities.find((ent) => ent.id === entityId);
@@ -99,7 +102,13 @@ export default function SamplePicker({
   useEffect(() => {
     let cancelled = false;
     async function loadSelectedLabel() {
-      if (!entityId || !sample?.record_id) return;
+      if (!entityId || !sample?.record_id) {
+        if (!cancelled) {
+          setSelectedLabel("");
+          setSearchText("");
+        }
+        return;
+      }
       try {
         const res = await apiFetch(`/records/${encodeURIComponent(entityId)}/${encodeURIComponent(sample.record_id)}`);
         const rec = res?.record || {};

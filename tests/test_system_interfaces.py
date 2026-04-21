@@ -116,7 +116,14 @@ class TestSystemInterfaces(unittest.TestCase):
 
         dashboard_sources = client.get("/system/dashboard/sources").json()
         self.assertTrue(dashboard_sources.get("ok"), dashboard_sources)
-        first_source = (dashboard_sources.get("sources") or [None])[0]
+        first_source = next(
+            (
+                item
+                for item in (dashboard_sources.get("sources") or [])
+                if isinstance(item, dict) and item.get("module_id") == module_id and item.get("entity_id") == "entity.job"
+            ),
+            None,
+        )
         self.assertTrue(isinstance(first_source, dict), dashboard_sources)
         query = client.post(
             "/system/dashboard/query",
@@ -124,6 +131,27 @@ class TestSystemInterfaces(unittest.TestCase):
         ).json()
         self.assertTrue(query.get("ok"), query)
         self.assertTrue(len(query.get("groups", [])) >= 1, query)
+
+    def test_system_notify_accepts_multi_recipient_payload_shapes(self):
+        client = TestClient(main.app)
+        res = client.post(
+            "/system/notify",
+            json={
+                "title": "New Shopify Order!",
+                "body": "A new Shopify order was received.",
+                "recipient_user_id": "user-nick",
+                "recipient_user_ids": ["user-nick", "user-kelly"],
+            },
+        )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        notifications = body.get("notifications") or []
+        self.assertEqual(len(notifications), 2, body)
+        self.assertEqual(
+            [item.get("recipient_user_id") for item in notifications],
+            ["user-nick", "user-kelly"],
+        )
 
 
 if __name__ == "__main__":

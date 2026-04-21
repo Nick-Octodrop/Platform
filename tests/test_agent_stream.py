@@ -76,7 +76,6 @@ class TestAgentStreamEndpoint(unittest.TestCase):
         return frames
 
     def test_stream_event_order(self) -> None:
-        client = TestClient(main.app)
         build_spec = {"goal": "Build contacts", "entities": [{"id": "entity.contact"}]}
 
         def fake_openai(_messages, model=None):
@@ -96,7 +95,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             )
             return {"choices": [{"message": {"content": content}}]}
 
-        with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(
+        with TestClient(main.app) as client, patch.object(main, "_openai_chat_completion", fake_openai), patch.object(
             main, "_openai_configured", lambda: True
         ), patch.object(main, "validate_manifest_raw", lambda manifest, expected_module_id=None: (manifest, [], [])), patch.object(
             main, "_studio2_strict_validate", lambda manifest, expected_module_id=None: []
@@ -125,7 +124,6 @@ class TestAgentStreamEndpoint(unittest.TestCase):
                 self.assertIn("done", events)
 
     def test_document_template_ai_plan_stream_event_order(self) -> None:
-        client = TestClient(main.app)
         actor = {
             "user_id": "user-1",
             "email": "templates@example.com",
@@ -137,7 +135,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "api_scopes": ["templates.manage"],
             "claims": {},
         }
-        with patch.object(main, "_resolve_actor", lambda _request: actor):
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
             created = client.post(
                 "/documents/templates",
                 json={
@@ -233,7 +231,6 @@ class TestAgentStreamEndpoint(unittest.TestCase):
         )
 
     def test_email_template_ai_plan_stream_event_order(self) -> None:
-        client = TestClient(main.app)
         actor = {
             "user_id": "user-1",
             "email": "templates@example.com",
@@ -245,7 +242,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "api_scopes": ["templates.manage"],
             "claims": {},
         }
-        with patch.object(main, "_resolve_actor", lambda _request: actor):
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
             created = client.post(
                 "/email/templates",
                 json={
@@ -338,8 +335,64 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "Validation passed for the proposed email template draft.",
         )
 
+    def test_email_template_ai_plan_stream_done_payload_replaces_generic_ready_summary(self) -> None:
+        actor = {
+            "user_id": "user-1",
+            "email": "templates@example.com",
+            "role": "owner",
+            "workspace_role": "owner",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
+            "api_scopes": ["templates.manage"],
+            "claims": {},
+        }
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Welcome",
+                    "description": "",
+                    "subject": "Hello",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_plan(*args, **kwargs):
+                return {
+                    "summary": "Draft ready to apply.",
+                    "draft": {
+                        "name": "Sales Order Email",
+                        "description": "Sent for new sales orders.",
+                        "subject": "Sales order {{ record['sales_order.order_number'] }} received",
+                        "body_html": "<p>New sales order received.</p>",
+                        "body_text": "New sales order received.",
+                        "variables_schema": {"entity_id": "entity.sales_order"},
+                    },
+                    "warnings": [],
+                    "assumptions": [],
+                }
+
+            with patch.object(main, "_artifact_ai_generate_plan", fake_plan), patch.object(main, "_openai_configured", lambda: True):
+                with client.stream(
+                    "POST",
+                    f"/email/templates/{template_id}/ai/plan/stream",
+                    json={
+                        "prompt": "Create a draft email template for sales orders.",
+                        "draft": created["template"],
+                        "hints": {"selected_entity_id": "entity.sales_order"},
+                    },
+                ) as resp:
+                    frames = self._stream_frames(resp)
+
+        done_frame = next(payload for event_name, payload in frames if event_name == "done")
+        final_payload = done_frame.get("data", {}).get("final_payload", {})
+        self.assertEqual(final_payload.get("summary"), "Prepared an updated email template draft.")
+        self.assertFalse(final_payload.get("noop"), final_payload)
+
     def test_automation_ai_plan_stream_event_order(self) -> None:
-        client = TestClient(main.app)
         actor = {
             "user_id": "user-1",
             "email": "admin@example.com",
@@ -350,7 +403,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
             "claims": {},
         }
-        with patch.object(main, "_resolve_actor", lambda _request: actor):
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
             created = client.post(
                 "/automations",
                 json={
@@ -481,8 +534,306 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "Validation found 1 issue in the proposed automation draft.",
         )
 
+    def test_automation_ai_plan_stream_done_payload_preserves_noop_summary(self) -> None:
+        actor = {
+            "user_id": "user-1",
+            "email": "automation@example.com",
+            "role": "owner",
+            "workspace_role": "owner",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
+            "api_scopes": ["automations.manage"],
+            "claims": {},
+        }
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Order Email",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summary": "Automation draft ready to apply.",
+                                    "draft": created["automation"],
+                                    "assumptions": [],
+                                    "warnings": [],
+                                }
+                            )
+                        }
+                    }]
+                }
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                with client.stream(
+                    "POST",
+                    f"/automations/{automation_id}/ai/plan/stream",
+                    json={
+                        "prompt": "can you fix it so we get notified of new orders? its not working",
+                        "draft": created["automation"],
+                    },
+                ) as resp:
+                    frames = self._stream_frames(resp)
+
+        done_frame = next(payload for event_name, payload in frames if event_name == "done")
+        final_payload = done_frame.get("data", {}).get("final_payload", {})
+        self.assertTrue(final_payload.get("noop"), final_payload)
+        self.assertIn("Likely issue:", final_payload.get("summary", ""))
+
+    def test_automation_ai_plan_stream_done_payload_preserves_diagnostic_summary_when_input_is_still_required(self) -> None:
+        actor = {
+            "user_id": "user-1",
+            "email": "automation@example.com",
+            "role": "owner",
+            "workspace_role": "owner",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
+            "api_scopes": ["automations.manage"],
+            "claims": {},
+        }
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Shopify Orders Inbound",
+                    "description": "",
+                    "trigger": {
+                        "kind": "event",
+                        "event_types": [
+                            "integration.webhook.shopify.orders.create",
+                            "integration.webhook.shopify.orders.updated",
+                            "integration.webhook.shopify.orders.cancelled",
+                        ],
+                        "filters": [],
+                    },
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "New Shopify Order!",
+                                "body": "A new Shopify order arrived.",
+                            },
+                        },
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New Shopify Order!",
+                                "body_text": "A new Shopify order arrived.",
+                            },
+                        },
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summary": "Automation draft ready to apply.",
+                                    "draft": created["automation"],
+                                    "assumptions": [],
+                                    "warnings": [],
+                                }
+                            )
+                        }
+                    }]
+                }
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                with client.stream(
+                    "POST",
+                    f"/automations/{automation_id}/ai/plan/stream",
+                    json={
+                        "prompt": "can you fix the send notification and email? im not receiving them?",
+                        "draft": created["automation"],
+                    },
+                ) as resp:
+                    frames = self._stream_frames(resp)
+
+        done_frame = next(payload for event_name, payload in frames if event_name == "done")
+        final_payload = done_frame.get("data", {}).get("final_payload", {})
+        self.assertFalse(final_payload.get("noop"), final_payload)
+        self.assertIn("Needs input before apply", final_payload.get("summary", ""))
+        self.assertIn("Likely issue:", final_payload.get("summary", ""))
+        self.assertTrue(final_payload.get("required_questions"), final_payload)
+
+    def test_automation_ai_plan_stream_done_payload_rejects_create_new_automation_prompt_in_scoped_editor(self) -> None:
+        actor = {
+            "user_id": "user-1",
+            "email": "automation@example.com",
+            "role": "owner",
+            "workspace_role": "owner",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
+            "api_scopes": ["automations.manage"],
+            "claims": {},
+        }
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Order Email",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summary": "Automation draft ready to apply.",
+                                    "draft": created["automation"],
+                                    "assumptions": [],
+                                    "warnings": [],
+                                }
+                            )
+                        }
+                    }]
+                }
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                with client.stream(
+                    "POST",
+                    f"/automations/{automation_id}/ai/plan/stream",
+                    json={
+                        "prompt": "can we create a new automation when we recieve an order to send a notification, and also a email",
+                        "draft": created["automation"],
+                    },
+                ) as resp:
+                    frames = self._stream_frames(resp)
+
+        done_frame = next(payload for event_name, payload in frames if event_name == "done")
+        final_payload = done_frame.get("data", {}).get("final_payload", {})
+        self.assertTrue(final_payload.get("noop"), final_payload)
+        self.assertIn("This editor can only update the current automation", final_payload.get("summary", ""))
+
+    def test_automation_ai_plan_stream_done_payload_rejects_ready_summary_for_invalid_changed_draft(self) -> None:
+        actor = {
+            "user_id": "user-1",
+            "email": "automation@example.com",
+            "role": "owner",
+            "workspace_role": "owner",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "owner", "workspace_name": "Default"}],
+            "api_scopes": ["automations.manage"],
+            "claims": {},
+        }
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "New Automation",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "Automation",
+                                "body": "Body",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+            placeholder_draft = {
+                "name": "New Automation",
+                "description": "",
+                "trigger": {"kind": "event", "event_types": [], "filters": []},
+                "steps": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summary": "Automation draft ready to apply.",
+                                    "draft": {
+                                        **placeholder_draft,
+                                        "name": "Order alerts",
+                                        "steps": [
+                                            {
+                                                "kind": "action",
+                                                "action_id": "system.send_email",
+                                                "inputs": {"subject": "New order received"},
+                                            }
+                                        ],
+                                    },
+                                    "assumptions": [],
+                                    "warnings": [],
+                                }
+                            )
+                        }
+                    }]
+                }
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                with client.stream(
+                    "POST",
+                    f"/automations/{automation_id}/ai/plan/stream",
+                    json={
+                        "prompt": "can we create a new automation when we recieve an order to send a notification, and also a email",
+                        "draft": placeholder_draft,
+                    },
+                ) as resp:
+                    frames = self._stream_frames(resp)
+
+        done_frame = next(payload for event_name, payload in frames if event_name == "done")
+        final_payload = done_frame.get("data", {}).get("final_payload", {})
+        self.assertIn("still needs fixes before apply", final_payload.get("summary", ""))
+        self.assertNotEqual(final_payload.get("summary"), "Automation draft ready to apply.")
+
     def test_document_template_ai_plan_stream_decision_event_includes_label(self) -> None:
-        client = TestClient(main.app)
         actor = {
             "user_id": "user-1",
             "email": "templates@example.com",
@@ -494,7 +845,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "api_scopes": ["templates.manage"],
             "claims": {},
         }
-        with patch.object(main, "_resolve_actor", lambda _request: actor):
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
             created = client.post(
                 "/documents/templates",
                 json={
@@ -553,7 +904,6 @@ class TestAgentStreamEndpoint(unittest.TestCase):
         )
 
     def test_email_template_ai_plan_stream_decision_event_includes_label(self) -> None:
-        client = TestClient(main.app)
         actor = {
             "user_id": "user-1",
             "email": "templates@example.com",
@@ -565,7 +915,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             "api_scopes": ["templates.manage"],
             "claims": {},
         }
-        with patch.object(main, "_resolve_actor", lambda _request: actor):
+        with TestClient(main.app) as client, patch.object(main, "_resolve_actor", lambda _request: actor):
             created = client.post(
                 "/email/templates",
                 json={

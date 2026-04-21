@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "lucide-react";
 import { apiFetch, startArtifactAiPlanStream } from "../api";
+import {
+  getAutomationPlanAdvisories,
+  getAutomationPlanSummary,
+  isAutomationPlanEffectivelyNoop,
+} from "./automationAiPlanState.js";
 import TemplateStudioShell from "./templates/TemplateStudioShell.jsx";
 import AppSelect from "../components/AppSelect.jsx";
 import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
@@ -1962,23 +1967,28 @@ export default function AutomationEditorPage({ user }) {
       const decisionSlots = Array.isArray(res?.decision_slots)
         ? res.decision_slots.filter((item) => item && typeof item === "object")
         : (questionMeta?.kind === "decision_slot" ? [questionMeta] : []);
+      const inferredNoop = !requiredQuestions.length && isAutomationPlanEffectivelyNoop(res, requestBody.draft);
+      const normalizedResult = inferredNoop ? { ...res, noop: true } : res;
+      const planSummary = getAutomationPlanSummary(normalizedResult);
+      const planAdvisories = getAutomationPlanAdvisories(normalizedResult);
       setPendingAiPlan({
         draft: res?.draft || null,
         validation: res?.validation || null,
-        summary: String(res?.summary || "Automation draft ready to apply."),
+        summary: planSummary,
         assumptions: Array.isArray(res?.assumptions) ? res.assumptions : [],
         warnings: Array.isArray(res?.warnings) ? res.warnings : [],
-        advisories: Array.isArray(res?.warnings) ? res.warnings : [],
+        advisories: planAdvisories,
         risks: res?.validation?.compiled_ok === false ? ["The draft still has validation issues and needs review before apply."] : [],
         requiredQuestions,
         questionMeta,
         decisionSlots,
+        noop: normalizedResult?.noop === true,
         prompt,
         focus,
       });
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", text: String(res?.summary || "Automation draft ready to apply.") },
+        { role: "assistant", text: planSummary },
       ]);
     } catch (err) {
       if (err?.name === "AbortError") return;
@@ -2336,6 +2346,7 @@ export default function AutomationEditorPage({ user }) {
       ].filter(Boolean)
     : [];
   const pendingAutomationPlanInvalid = pendingAiPlan?.validation?.compiled_ok === false;
+  const pendingAutomationPlanNoop = pendingAiPlan?.noop === true;
 
   const applyPendingAutomationPlan = useCallback(() => {
     if (!pendingAiPlan?.draft) return;
@@ -2426,7 +2437,7 @@ export default function AutomationEditorPage({ user }) {
             label: "Apply draft",
             onClick: applyPendingAutomationPlan,
             primary: true,
-            disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid,
+            disabled: !pendingAiPlan?.draft || pendingAutomationPlanInvalid || pendingAutomationPlanNoop,
           },
           ...(pendingAutomationPlanInvalid
             ? [{
@@ -2502,8 +2513,8 @@ export default function AutomationEditorPage({ user }) {
             <ArtifactAiStageCard
               title="Automation Plan"
               summary=""
-              stageLabel={pendingAutomationDecisionSlots.length > 0 ? "Decision Needed" : (pendingAutomationPlanInvalid ? "Needs Fix" : "Ready to Apply")}
-              stageTone={pendingAutomationDecisionSlots.length > 0 ? "warning" : (pendingAutomationPlanInvalid ? "error" : "primary")}
+              stageLabel={pendingAutomationDecisionSlots.length > 0 ? "Decision Needed" : (pendingAutomationPlanInvalid ? "Needs Fix" : (pendingAutomationPlanNoop ? "No Changes" : "Ready to Apply"))}
+              stageTone={pendingAutomationDecisionSlots.length > 0 ? "warning" : (pendingAutomationPlanInvalid ? "error" : (pendingAutomationPlanNoop ? "ghost" : "primary"))}
               detailsTitle="Planned Changes"
               details={pendingAutomationPlanDetails}
               advisories={pendingAiPlan.advisories}
@@ -2549,7 +2560,7 @@ export default function AutomationEditorPage({ user }) {
         )
       )}
     </div>
-  ), [automationAgentActionStrip, automationAiEnabled, automationProgressEvents.length, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, pendingAiPlan, pendingAutomationDecisionSlots, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, providerStatusLoading, runAutomationAiPlan, submitAutomationDecisionSlotOption, submitAutomationDecisionText, t, userLabel]);
+  ), [automationAgentActionStrip, automationAiEnabled, automationProgressEvents.length, canManageSettings, chatInput, chatLoading, chatMessages, isSuperadmin, pendingAiPlan, pendingAutomationDecisionSlots, pendingAutomationPlanDetails, pendingAutomationPlanInvalid, pendingAutomationPlanNoop, providerStatusLoading, runAutomationAiPlan, submitAutomationDecisionSlotOption, submitAutomationDecisionText, t, userLabel]);
 
   function stepTone(step) {
     if (!step) {

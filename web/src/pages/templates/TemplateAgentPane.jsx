@@ -10,6 +10,7 @@ import ScopedAiAssistantPane from "../../components/ScopedAiAssistantPane.jsx";
 import { apiFetch, startArtifactAiPlanStream } from "../../api.js";
 import { getArtifactQuickActions } from "../../aiCapabilities.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
+import { getTemplatePlanAdvisories, getTemplatePlanSummary } from "./templateAiPlanState.js";
 
 function formatValidationLines(items = []) {
   return items
@@ -339,13 +340,14 @@ export default function TemplateAgentPane({
       const decisionSlots = Array.isArray(res?.decision_slots)
         ? res.decision_slots.filter((item) => item && typeof item === "object")
         : [];
+      const resolvedSummary = getTemplatePlanSummary(res, nextDraft, agentKind);
       setProposal({
         draft: res?.draft || null,
         validation: res?.validation || null,
-        summary: String(res?.summary || "Draft ready to apply."),
+        summary: resolvedSummary,
         assumptions: Array.isArray(res?.assumptions) ? res.assumptions : [],
         warnings: Array.isArray(res?.warnings) ? res.warnings : [],
-        advisories: Array.isArray(res?.warnings) ? res.warnings : [],
+        advisories: getTemplatePlanAdvisories(res),
         risks: res?.validation?.compiled_ok === false ? ["The draft still has validation issues and needs review before apply."] : [],
         requiredQuestions,
         questionMeta,
@@ -353,7 +355,7 @@ export default function TemplateAgentPane({
         prompt: requestPrompt,
         focus,
       });
-      setMessages((prev) => [...prev, { role: "assistant", text: String(res?.summary || "Draft ready to apply.") }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: resolvedSummary }]);
     } catch (err) {
       if (err?.name === "AbortError") return;
       setMessages((prev) => [...prev, { role: "assistant", text: err?.message || t("common.error") }]);

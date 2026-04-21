@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test \"src/**/*.test.js\""
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

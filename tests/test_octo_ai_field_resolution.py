@@ -173,6 +173,60 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIsInstance(matched, dict)
         self.assertEqual(((matched or {}).get("hints") or {}).get("recipient_user_id"), "user-1")
 
+    def test_create_module_bundle_reuses_workspace_member_cache_for_design_automation_intents(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={"workspace_id": "default"}))
+        session = {
+            "id": "session-1",
+            "workspace_id": "default",
+            "selected_artifact_type": None,
+            "selected_artifact_key": None,
+        }
+        call_count = 0
+
+        def fake_members(_workspace_id: str) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops User",
+                    "role": "admin",
+                    "department": "Operations",
+                }
+            ]
+
+        message = "Create an Incidents module and notify ops when a critical incident is reported."
+
+        with patch.object(main, "list_workspace_members", side_effect=fake_members), patch.object(
+            main,
+            "_ai_module_manifest_index",
+            return_value={},
+        ), patch.object(
+            main,
+            "_ai_build_workspace_graph",
+            return_value={"nodes": [], "edges": []},
+        ):
+            main._ai_build_shared_context(
+                request,
+                request.state.actor,
+                session=session,
+                message=message,
+                answer_hints=None,
+            )
+            bundle = main._ai_build_create_module_bundle(
+                message,
+                [],
+                {},
+                request=request,
+                workspace_id="default",
+            )
+
+        self.assertEqual(call_count, 1)
+        self.assertIsInstance(bundle, dict)
+        candidate_ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self.assertTrue(any(op.get("op") == "create_automation_record" for op in candidate_ops))
+
     def test_artifact_ai_automation_meta_reuses_request_scoped_member_cache(self) -> None:
         request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={"workspace_id": "default"}))
         actor = {"workspace_id": "default", "user_id": "user-1"}
@@ -6041,6 +6095,120 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("Spend & Sales Tracker", text)
         self.assertNotIn("What should the new module be called?", text)
 
+    def test_octo_ai_chat_reuses_latest_concrete_plan_when_same_request_regresses_to_preview_only(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        prompt = (
+            "create me a module to track instagram influencers we give products to, "
+            "we should be able to use our catalog items as line items for the products we give them "
+            "in our new influencers module"
+        )
+        weak_preview_plan = {
+            "candidate_operations": [],
+            "proposed_changes": [],
+            "affected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "influencers"},
+                {"artifact_type": "module", "artifact_id": "catalog"},
+            ],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "requested_module_labels": ["Influencers", "Catalog"],
+                "request_summary": prompt,
+            },
+            "resolved_without_changes": False,
+        }
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "influencer_repeat_prompt",
+                    "status": "ready_to_apply",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-21T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            bundle = main._ai_build_create_module_bundle(prompt, [], {})
+            create_module_op = next(
+                op for op in (bundle.get("candidate_ops") or [])
+                if isinstance(op, dict) and op.get("op") == "create_module"
+            )
+            concrete_plan = {
+                "candidate_operations": [copy.deepcopy(create_module_op)],
+                "proposed_changes": [copy.deepcopy(create_module_op)],
+                "affected_artifacts": [{"artifact_type": "module", "artifact_id": "influencers"}],
+                "required_questions": [],
+                "required_question_meta": None,
+                "planner_state": {
+                    "intent": "create_module",
+                    "module_name": "Influencers",
+                    "request_summary": prompt,
+                },
+                "requested_change_lines": [
+                    "Create a new module 'Influencers'.",
+                    "Track catalog-backed line items for products sent to influencers.",
+                ],
+                "resolved_without_changes": False,
+            }
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-21T00:01:00Z",
+                    "questions_json": [],
+                    "required_question_meta": None,
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "influencers"}],
+                    "plan_json": {"plan": concrete_plan, "context": {"request_summary": prompt, "full_selected_artifacts": []}},
+                },
+            )
+            plan_id = _ai_record_data(plan)["id"]
+            patchset = _ai_create_record(
+                _AI_ENTITY_PATCHSET,
+                {
+                    "session_id": session_id,
+                    "plan_id": plan_id,
+                    "status": "validated",
+                    "patch_json": {"operations": [copy.deepcopy(create_module_op)]},
+                    "created_at": "2026-04-21T00:02:00Z",
+                },
+            )
+            patchset_id = _ai_record_data(patchset)["id"]
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": plan_id, "latest_patchset_id": patchset_id})
+
+            with patch.object(main, "_ai_context_package", return_value={"request_summary": prompt, "full_selected_artifacts": []}), patch.object(
+                main,
+                "_ai_plan_from_message",
+                return_value=(weak_preview_plan, {"status": "waiting_input", "affected_modules": ["influencers", "catalog"]}),
+            ):
+                res = client.post(f"/octo-ai/sessions/{session_id}/chat", json={"message": prompt})
+                body = res.json()
+
+        self.assertTrue(body.get("ok"), body)
+        returned_plan = body.get("plan") or {}
+        returned_plan_record = body.get("plan_record") or {}
+        self.assertEqual((returned_plan.get("planner_state") or {}).get("intent"), "create_module")
+        self.assertEqual(returned_plan_record.get("id"), plan_id)
+        self.assertIn("Apply to Sandbox", body.get("assistant_text") or "")
+        self.assertNotIn("Make coordinated changes across", body.get("assistant_text") or "")
+        session_data = _ai_record_data(_ai_get_record(_AI_ENTITY_SESSION, session_id))
+        self.assertEqual(session_data.get("latest_plan_id"), plan_id)
+        self.assertEqual(session_data.get("latest_patchset_id"), patchset_id)
+
     def test_plan_from_message_existing_influencers_catalog_line_items_stays_out_of_field_spec(self) -> None:
         influencers_manifest = {
             "module": {"id": "influencers", "key": "influencers", "name": "Influencers"},
@@ -6190,6 +6358,171 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("brand_ambassador.sales_amount", fields)
         related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
         self.assertTrue(any(item.get("entity_slug") == "sent_product" for item in related_entities))
+
+    def test_generate_module_design_spec_specializes_influencer_sent_product_to_catalog_lookup(self) -> None:
+        prompt = (
+            "Create an Influencers module to track instagram creators we send products to. "
+            "We should be able to use our catalog items as line items for the products we give them."
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "influencers",
+            "Influencers",
+            prompt,
+            module_index={"catalog": {"manifest": catalog_manifest}},
+        )
+
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        sent_product = next(item for item in related_entities if item.get("entity_slug") == "sent_product")
+        field_map = {
+            field.get("id"): field
+            for field in (sent_product.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        catalog_field = field_map.get("sent_product.catalog_item")
+        self.assertIsInstance(catalog_field, dict)
+        self.assertEqual(catalog_field.get("type"), "lookup")
+        self.assertEqual(catalog_field.get("entity"), "entity.catalog_item")
+        self.assertEqual(catalog_field.get("display_field"), "catalog_item.name")
+
+    def test_plan_from_message_influencer_catalog_line_items_describes_catalog_backed_sent_products(self) -> None:
+        prompt = (
+            "create me a module to track instagram influencers we give products to, "
+            "we should be able to use our catalog items as line items for the products we give them "
+            "in our new influencers module"
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"catalog": {"manifest": catalog_manifest}}),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
+        manifest = copy.deepcopy(create_op.get("manifest") or {})
+        sent_product = next(
+            entity
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and entity.get("id") == "entity.sent_product"
+        )
+        field_map = {
+            field.get("id"): field
+            for field in (sent_product.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((field_map.get("sent_product.catalog_item") or {}).get("type"), "lookup")
+        self.assertEqual((field_map.get("sent_product.catalog_item") or {}).get("entity"), "entity.catalog_item")
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Track catalog-backed line items for products sent to influencers.", text)
+        self.assertIn("Link each sent-product line item to Catalog Item records.", text)
+
+    def test_generate_module_design_spec_specializes_generic_line_items_to_products_lookup(self) -> None:
+        prompt = (
+            "Create a Sales Quote Studio module with customer quotes and line items from our products module. "
+            "Each quote line should let us pick a product, quantity, and price."
+        )
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "sales_quote_studio",
+            "Sales Quote Studio",
+            prompt,
+            module_index={"products": {"manifest": products_manifest}},
+        )
+
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        line_item = next(item for item in related_entities if item.get("entity_slug") == "line_item")
+        field_map = {
+            field.get("id"): field
+            for field in (line_item.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        product_field = field_map.get("line_item.product_id") or field_map.get("line_item.catalog_item")
+        self.assertIsInstance(product_field, dict)
+        self.assertEqual(product_field.get("type"), "lookup")
+        self.assertEqual(product_field.get("entity"), "entity.product")
+        self.assertEqual(product_field.get("display_field"), "product.name")
+
+    def test_plan_from_message_quote_products_line_items_describes_product_linked_rows(self) -> None:
+        prompt = (
+            "create a sales quote studio module with customer quotes and line items from our products module, "
+            "so each quote line can pick a product, quantity, and price"
+        )
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"products": {"manifest": products_manifest}}),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Add repeatable 'Line Items' rows in Quotes linked to Product records.", text)
 
     def test_detect_new_module_family_prefers_recruiting_for_applicant_interview_offer_brief(self) -> None:
         prompt = (
@@ -17295,7 +17628,8 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertTrue(answer_body.get("ok"), answer_body)
         plan = answer_body.get("plan") or {}
         self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
-        self.assertEqual([op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)], ["create_module"])
+        op_names = [op.get("op") for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertIn("create_module", op_names)
         create_op = next(op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict) and op.get("op") == "create_module")
         self.assertEqual(create_op.get("artifact_id"), "influencers")
         manifest = copy.deepcopy(create_op.get("manifest") or {})

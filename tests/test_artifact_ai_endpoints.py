@@ -124,6 +124,54 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertIn("compiled_ok", validation)
 
+    def test_email_template_ai_plan_replaces_generic_ready_summary_for_changed_draft(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Welcome",
+                    "description": "",
+                    "subject": "Hello",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Draft ready to apply.",
+                        "draft": {
+                            "name": "Sales Order Email",
+                            "description": "Sent for new sales orders.",
+                            "subject": "Sales order {{ record['sales_order.order_number'] }} received",
+                            "body_html": "<p>New sales order received.</p>",
+                            "body_text": "New sales order received.",
+                            "variables_schema": {"entity_id": "entity.sales_order"},
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/email/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Create a draft email template for sales orders.",
+                        "draft": created["template"],
+                        "hints": {"selected_entity_id": "entity.sales_order"},
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertEqual(body.get("summary"), "Prepared an updated email template draft.")
+            self.assertFalse(body.get("noop"), body)
+            self.assertEqual(body.get("draft", {}).get("name"), "Sales Order Email")
+
     def test_ai_capabilities_endpoint_returns_shared_quick_actions(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -2654,6 +2702,328 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             self.assertEqual(body.get("draft", {}).get("trigger", {}).get("kind"), "event")
             validation = body.get("validation") or {}
             self.assertTrue(validation.get("compiled_ok"))
+
+    def test_automation_ai_plan_marks_unchanged_draft_as_noop(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Order Email",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Automation draft ready to apply.",
+                        "draft": created["automation"],
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Tighten the wording for this automation.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertTrue(body.get("noop"), body)
+            self.assertIn("No automation changes were proposed", body.get("summary", ""))
+
+    def test_automation_ai_plan_returns_diagnostic_noop_summary_for_runtime_issue_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Shopify Orders Inbound",
+                    "description": "",
+                    "trigger": {
+                        "kind": "event",
+                        "event_types": [
+                            "integration.webhook.shopify.orders.create",
+                            "integration.webhook.shopify.orders.updated",
+                            "integration.webhook.shopify.orders.cancelled",
+                        ],
+                        "filters": [],
+                    },
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New Shopify Order!",
+                                "body_text": "A new Shopify order arrived.",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Automation draft ready to apply.",
+                        "draft": created["automation"],
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "How come we are not getting notified of new orders?",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertTrue(body.get("noop"), body)
+            self.assertIn("Likely issue:", body.get("summary", ""))
+            advisories = body.get("advisories") or []
+            self.assertTrue(any("No active email connection is configured" in item for item in advisories), advisories)
+            self.assertTrue(any("not limited to brand new orders" in item for item in advisories), advisories)
+
+    def test_automation_ai_plan_returns_diagnostic_noop_summary_for_not_receiving_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Shopify Orders Inbound",
+                    "description": "",
+                    "trigger": {
+                        "kind": "event",
+                        "event_types": [
+                            "integration.webhook.shopify.orders.create",
+                            "integration.webhook.shopify.orders.updated",
+                            "integration.webhook.shopify.orders.cancelled",
+                        ],
+                        "filters": [],
+                    },
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "New Shopify Order!",
+                                "body": "A new Shopify order arrived.",
+                            },
+                        },
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New Shopify Order!",
+                                "body_text": "A new Shopify order arrived.",
+                            },
+                        },
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Automation draft ready to apply.",
+                        "draft": created["automation"],
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "can you fix the send notification and email? im not receiving them?",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertFalse(body.get("noop"), body)
+            self.assertIn("Likely issue:", body.get("summary", ""))
+            self.assertIn("Needs input before apply", body.get("summary", ""))
+            required_questions = body.get("required_questions") or []
+            self.assertTrue(required_questions, body)
+            self.assertIn("Who should receive this notification?", required_questions[0])
+            advisories = body.get("advisories") or []
+            self.assertTrue(any("No active email connection is configured" in item for item in advisories), advisories)
+            self.assertTrue(any("not limited to brand new orders" in item for item in advisories), advisories)
+
+    def test_automation_ai_plan_rejects_create_new_automation_prompt_in_scoped_editor(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Order Email",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Automation draft ready to apply.",
+                        "draft": created["automation"],
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "can we create a new automation when we recieve an order to send a notification, and also a email",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertTrue(body.get("noop"), body)
+            self.assertIn("This editor can only update the current automation", body.get("summary", ""))
+
+    def test_automation_ai_plan_does_not_report_ready_when_changed_draft_is_invalid(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "New Automation",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "Automation",
+                                "body": "Body",
+                            },
+                        }
+                    ],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+            placeholder_draft = {
+                "name": "New Automation",
+                "description": "",
+                "trigger": {"kind": "event", "event_types": [], "filters": []},
+                "steps": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Automation draft ready to apply.",
+                        "draft": {
+                            **placeholder_draft,
+                            "name": "Order alerts",
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "subject": "New order received",
+                                    },
+                                }
+                            ],
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "can we create a new automation when we recieve an order to send a notification, and also a email",
+                        "draft": placeholder_draft,
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertFalse(body.get("noop"), body)
+            self.assertIn("still needs fixes before apply", body.get("summary", ""))
+            self.assertNotEqual(body.get("summary"), "Automation draft ready to apply.")
+
+    def test_workspace_member_option_helpers_reuse_cached_members(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}))
+        calls: list[str] = []
+
+        def fake_list_workspace_members(workspace_id: str):
+            calls.append(workspace_id)
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops",
+                    "role": "admin",
+                }
+            ]
+
+        with patch.object(main, "list_workspace_members", fake_list_workspace_members):
+            members = main._ai_workspace_members_for_request(request, "default")
+            options = main._ai_workspace_member_decision_options_for_request(request, "default")
+
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(len(members), 1)
+        self.assertEqual((options[0].get("hints") or {}).get("recipient_email"), "ops@example.com")
 
     def test_automation_ai_plan_normalizes_contact_email_recipient_to_field_source(self) -> None:
         client = TestClient(main.app)

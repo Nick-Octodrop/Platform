@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildEffectiveTemplateSample,
   buildTemplateEntityOptions,
   getTemplateEntityId,
   setTemplateEntityId,
@@ -62,6 +63,22 @@ test("syncSampleToTemplateEntity clears invalid sample entities when no template
     entities: [{ id: "entity.biz_quote", label: "Quote" }],
   });
   assert.deepEqual(next, { entity_id: "", record_id: "" });
+});
+
+test("buildEffectiveTemplateSample follows the draft entity and clears stale record ids", () => {
+  const next = buildEffectiveTemplateSample(
+    { entity_id: "entity.biz_purchase_order", record_id: "po-1" },
+    { variables_schema: { entity_id: "entity.biz_supplier_order" } },
+  );
+  assert.deepEqual(next, { entity_id: "entity.biz_supplier_order", record_id: "" });
+});
+
+test("buildEffectiveTemplateSample preserves aligned sample state", () => {
+  const next = buildEffectiveTemplateSample(
+    { entity_id: "entity.biz_supplier_order", record_id: "so-1" },
+    { variables_schema: { entity_id: "entity.biz_supplier_order" } },
+  );
+  assert.deepEqual(next, { entity_id: "entity.biz_supplier_order", record_id: "so-1" });
 });
 
 test("buildTemplateEntityOptions includes the selected entity when meta options are incomplete", () => {

@@ -11,7 +11,12 @@ import ListViewRenderer from "../../ui/ListViewRenderer.jsx";
 import SystemListToolbar from "../../ui/SystemListToolbar.jsx";
 import { translateRuntime } from "../../i18n/runtime.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
-import { buildTemplateEntityOptions, getTemplateEntityId, setTemplateEntityId } from "./templateEntityState.js";
+import {
+  buildEffectiveTemplateSample,
+  buildTemplateEntityOptions,
+  getTemplateEntityId,
+  setTemplateEntityId,
+} from "./templateEntityState.js";
 
 function Fieldset({ label, hint, optional = false, className = "", children }) {
   return (
@@ -310,13 +315,14 @@ export function getEmailTemplateProfile(t = translateRuntime) {
     {
       id: "preview",
       label: t("common.preview"),
-      render: ({ sample, setSample, entities, previewState, runPreview }) => (
+      render: ({ sample, setSample, entities, previewState, runPreview, draft }) => (
         <EmailPreviewTab
           sample={sample}
           setSample={setSample}
           entities={entities}
           previewState={previewState}
           runPreview={runPreview}
+          draft={draft}
         />
       ),
     },
@@ -367,7 +373,7 @@ export function getDocumentTemplateProfile(t = translateRuntime) {
     {
       id: "preview",
       label: t("common.preview"),
-      render: ({ sample, setSample, entities, previewState, setPreviewState, runPreviewOnce }) => (
+      render: ({ sample, setSample, entities, previewState, setPreviewState, runPreviewOnce, draft }) => (
         <DocPreviewTab
           sample={sample}
           setSample={setSample}
@@ -375,6 +381,7 @@ export function getDocumentTemplateProfile(t = translateRuntime) {
           previewState={previewState}
           setPreviewState={setPreviewState}
           runPreviewOnce={runPreviewOnce}
+          draft={draft}
         />
       ),
     },
@@ -407,12 +414,17 @@ function EmailTestTab({ sample, setSample, entities, previewState, sendTest, dra
   const [toEmail, setToEmail] = React.useState("");
   const [status, setStatus] = React.useState(null);
   const [result, setResult] = React.useState(null);
+  const effectiveSample = React.useMemo(
+    () => buildEffectiveTemplateSample(sample, draft),
+    [sample, draft],
+  );
+  const effectiveEntityId = effectiveSample?.entity_id || "";
 
   async function handleSend() {
     setStatus("sending");
     setResult(null);
     try {
-      const res = await sendTest?.(toEmail, sample, draft);
+      const res = await sendTest?.(toEmail, effectiveSample, draft);
       setResult(res || null);
       setStatus("sent");
     } catch {
@@ -428,16 +440,17 @@ function EmailTestTab({ sample, setSample, entities, previewState, sendTest, dra
       </label>
       <div>
         <SamplePicker
-          sample={sample}
+          sample={effectiveSample}
           setSample={setSample}
           entities={entities}
           showEntitySelect={false}
+          entityIdOverride={effectiveEntityId}
           size="sm"
           rightAction={
             <button
               className="btn btn-sm"
               onClick={handleSend}
-              disabled={!toEmail || !sample?.entity_id || !sample?.record_id || status === "sending"}
+              disabled={!toEmail || !effectiveEntityId || !effectiveSample?.record_id || status === "sending"}
             >
               {status === "sending" ? translateRuntime("settings.template_studio.sending") : translateRuntime("settings.template_studio.send_test")}
             </button>
@@ -464,9 +477,15 @@ function EmailPreviewTab({
   entities,
   previewState,
   runPreview,
+  draft,
 }) {
   const [zoomPct, setZoomPct] = useState(100);
   const [rendering, setRendering] = useState(false);
+  const effectiveSample = useMemo(
+    () => buildEffectiveTemplateSample(sample, draft),
+    [sample, draft],
+  );
+  const effectiveEntityId = effectiveSample?.entity_id || "";
   const zoom = Math.max(0.5, Math.min(1, zoomPct / 100));
   const showPreviewFrame = Boolean(previewState?.rendered_html);
   const previewError = typeof previewState?.error === "string" ? previewState.error.trim() : "";
@@ -475,21 +494,22 @@ function EmailPreviewTab({
     <div className="h-full min-h-0 flex flex-col gap-4">
       <div className="border border-base-200 rounded-box p-3 bg-base-100">
         <SamplePicker
-          sample={sample}
+          sample={effectiveSample}
           setSample={setSample}
           entities={entities}
           showEntitySelect={false}
+          entityIdOverride={effectiveEntityId}
           size="sm"
           rightAction={
             <button
               className="btn btn-sm"
-              disabled={!sample?.entity_id || rendering}
+              disabled={!effectiveEntityId || rendering}
               onClick={async () => {
                 setRendering(true);
                 try {
                   await runPreview({
-                    ...(sample || {}),
-                    placeholder: !sample?.record_id,
+                    ...(effectiveSample || {}),
+                    placeholder: !effectiveSample?.record_id,
                   });
                 } finally {
                   setRendering(false);
@@ -501,7 +521,7 @@ function EmailPreviewTab({
           }
         />
       </div>
-      {!sample?.entity_id && (
+      {!effectiveEntityId && (
         <div className="text-sm opacity-70">
           {translateRuntime("settings.template_studio.choose_entity_preview_email")}
         </div>
@@ -554,11 +574,17 @@ function DocPreviewTab({
   previewState,
   setPreviewState,
   runPreviewOnce,
+  draft,
 }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const effectiveSample = useMemo(
+    () => buildEffectiveTemplateSample(sample, draft),
+    [sample, draft],
+  );
+  const effectiveEntityId = effectiveSample?.entity_id || "";
 
   useEffect(() => {
     let revokedUrl = "";
@@ -637,25 +663,26 @@ function DocPreviewTab({
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-4">
-      {!sample?.entity_id && (
+      {!effectiveEntityId && (
         <div className="text-sm opacity-70">
           {translateRuntime("settings.template_studio.select_entity_template_tab_preview")}
         </div>
       )}
       <div className="border border-base-200 rounded-box p-3 bg-base-100">
         <SamplePicker
-          sample={sample}
+          sample={effectiveSample}
           setSample={setSample}
           entities={entities}
           showEntitySelect={false}
+          entityIdOverride={effectiveEntityId}
           rightAction={
             <button
               className="btn btn-sm"
-              disabled={!sample?.entity_id || !sample?.record_id || rendering}
+              disabled={!effectiveEntityId || !effectiveSample?.record_id || rendering}
               onClick={async () => {
                 setRendering(true);
                 try {
-                  const res = await runPreviewOnce(sample);
+                  const res = await runPreviewOnce(effectiveSample);
                   if (res) setPreviewState?.(res);
                 } finally {
                   setRendering(false);
