@@ -354,6 +354,10 @@ export default function TemplateStudioShell({
     const nextSample = sampleOverride || sample || DEFAULT_SAMPLE;
     if (!nextSample || typeof nextSample !== "object") return DEFAULT_SAMPLE;
     const payload = { ...nextSample };
+    const draftEntityId = getTemplateEntityId(draft);
+    if (!payload.entity_id && draftEntityId) {
+      payload.entity_id = draftEntityId;
+    }
     if (
       sampleRecord
       && payload.entity_id

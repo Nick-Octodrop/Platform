@@ -323,13 +323,14 @@ export function getEmailTemplateProfile(t = translateRuntime) {
     {
       id: "test",
       label: t("settings.template_studio.send_test"),
-      render: ({ sample, setSample, entities, previewState, sendTest }) => (
+      render: ({ sample, setSample, entities, previewState, sendTest, draft }) => (
         <EmailTestTab
           sample={sample}
           setSample={setSample}
           entities={entities}
           previewState={previewState}
           sendTest={sendTest}
+          draft={draft}
         />
       ),
     },
@@ -402,7 +403,7 @@ export function getSmsTemplateProfile(t = translateRuntime) {
   };
 }
 
-function EmailTestTab({ sample, setSample, entities, previewState, sendTest }) {
+function EmailTestTab({ sample, setSample, entities, previewState, sendTest, draft }) {
   const [toEmail, setToEmail] = React.useState("");
   const [status, setStatus] = React.useState(null);
   const [result, setResult] = React.useState(null);
@@ -411,7 +412,7 @@ function EmailTestTab({ sample, setSample, entities, previewState, sendTest }) {
     setStatus("sending");
     setResult(null);
     try {
-      const res = await sendTest?.(toEmail, sample);
+      const res = await sendTest?.(toEmail, sample, draft);
       setResult(res || null);
       setStatus("sent");
     } catch {

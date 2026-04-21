@@ -593,6 +593,7 @@
       },
       "actions": {
         "apply_to_sandbox": "Apply to Sandbox",
+        "save_detail": "Save Detail",
         "view_scope": "View Scope",
         "answer_in_chat": "Answer in Chat",
         "publish_selected_revision": "Publish Selected Revision",
@@ -613,6 +614,7 @@
       },
       "hints": {
         "confirm_plan": "Approve the plan, validate the revision, and apply it to sandbox.",
+        "save_detail": "Save the missing detail directly from the inline fields.",
         "answer_in_chat": "This request needs one more detail before it can be applied.",
         "view_scope": "Review the current scope while you keep refining the request in chat.",
         "apply_revision": "Apply the validated revision and refresh the preview automatically.",

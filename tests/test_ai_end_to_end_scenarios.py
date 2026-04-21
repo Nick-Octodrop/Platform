@@ -245,6 +245,32 @@ class TestAiEndToEndScenarios(unittest.TestCase):
             self.assertTrue(entity_pages, pages)
             self.assertTrue(any((page.get("content") or []) for page in entity_pages), entity_pages)
 
+    def _assert_entity_field_semantics(
+        self,
+        manifest: dict,
+        *,
+        entity_id: str,
+        required_suffixes: list[str],
+        banned_suffixes: list[str] | None = None,
+    ) -> None:
+        entities = {
+            entity.get("id"): entity
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        }
+        self.assertIn(entity_id, entities)
+        entity = entities[entity_id]
+        slug = entity_id.split(".", 1)[1]
+        field_ids = [
+            field.get("id")
+            for field in (entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        for suffix in required_suffixes:
+            self.assertIn(f"{slug}.{suffix}", field_ids, field_ids)
+        for suffix in banned_suffixes or []:
+            self.assertNotIn(f"{slug}.{suffix}", field_ids, field_ids)
+
     def _assert_automation_quality(
         self,
         automation: dict,
@@ -269,11 +295,18 @@ class TestAiEndToEndScenarios(unittest.TestCase):
         if expected_action_ids is not None:
             self.assertEqual([step.get("action_id") for step in steps], expected_action_ids)
 
-    def _assert_candidate_plan_quality(self, ops: list[dict]) -> None:
+    def _assert_candidate_plan_quality(
+        self,
+        ops: list[dict],
+        allowed_email_template_ids: set[str] | None = None,
+        allowed_document_template_ids: set[str] | None = None,
+    ) -> None:
         self.assertTrue(ops, ops)
         module_entity_ids: set[str] = set()
         email_template_ids: set[str] = set()
         document_template_ids: set[str] = set()
+        allowed_email_template_ids = set(allowed_email_template_ids or set())
+        allowed_document_template_ids = set(allowed_document_template_ids or set())
 
         for op in ops:
             op_name = op.get("op")
@@ -327,9 +360,9 @@ class TestAiEndToEndScenarios(unittest.TestCase):
                     template_id = inputs.get("template_id")
                     action_id = step.get("action_id")
                     if action_id == "system.send_email" and template_id:
-                        self.assertIn(template_id, email_template_ids)
+                        self.assertIn(template_id, email_template_ids | allowed_email_template_ids)
                     if action_id == "system.generate_document" and template_id:
-                        self.assertIn(template_id, document_template_ids)
+                        self.assertIn(template_id, document_template_ids | allowed_document_template_ids)
 
     def test_email_template_ai_plan_preview_renders_quote_values_end_to_end(self) -> None:
         client = TestClient(main.app)
@@ -3778,16 +3811,28 @@ class TestAiEndToEndScenarios(unittest.TestCase):
         }
         self.assertIn("entity.influencer", entities)
         self.assertIn("entity.sent_product", entities)
-        influencer_field_ids = [
-            field.get("id")
-            for field in (entities["entity.influencer"].get("fields") or [])
-            if isinstance(field, dict) and isinstance(field.get("id"), str)
-        ]
-        self.assertIn("influencer.instagram_handle", influencer_field_ids)
-        self.assertIn("influencer.coupon_code", influencer_field_ids)
-        self.assertIn("influencer.follower_count", influencer_field_ids)
-        self.assertIn("influencer.purchase_count", influencer_field_ids)
-        self.assertIn("influencer.performance_rating", influencer_field_ids)
+        self.assertNotIn("entity.line_item", entities)
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.influencer",
+            required_suffixes=[
+                "instagram_handle",
+                "coupon_code",
+                "follower_count",
+                "purchase_count",
+                "performance_rating",
+            ],
+            banned_suffixes=[
+                "catalog_item",
+                "spent_by",
+                "purchase_amount",
+                "sales_amount",
+                "amount_owed",
+                "margin_amount",
+                "owed_to",
+                "supplier_name",
+            ],
+        )
         sent_product_field_ids = [
             field.get("id")
             for field in (entities["entity.sent_product"].get("fields") or [])
@@ -3797,6 +3842,1356 @@ class TestAiEndToEndScenarios(unittest.TestCase):
         self.assertIn("sent_product.catalog_item", sent_product_field_ids)
         self.assertIn("sent_product.quantity", sent_product_field_ids)
         self.assertIn("sent_product.sent_on", sent_product_field_ids)
+
+    def test_octo_ai_create_module_bundle_for_creator_ambassadors_with_catalog_context_keeps_influencer_family(self) -> None:
+        request_message = (
+            "create a Creator Partners module to track brand ambassadors we send products to from our catalog. "
+            "we need their instagram handle, promo code, followers, purchases, whether they were good or not, "
+            "and line items for the products sent"
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {"catalog": {"manifest": catalog_manifest}})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "influencer")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.creator_partner")
+        entities = {
+            entity.get("id"): entity
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        }
+        self.assertIn("entity.creator_partner", entities)
+        self.assertIn("entity.sent_product", entities)
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.creator_partner",
+            required_suffixes=[
+                "instagram_handle",
+                "coupon_code",
+                "follower_count",
+                "purchase_count",
+            ],
+            banned_suffixes=[
+                "catalog_item",
+                "spent_by",
+                "purchase_amount",
+                "sales_amount",
+                "amount_owed",
+                "margin_amount",
+                "owed_to",
+            ],
+        )
+
+    def test_octo_ai_create_module_bundle_for_brand_ambassadors_with_catalog_context_avoids_commerce_sludge(self) -> None:
+        request_message = (
+            "Create a Brand Ambassadors module. We gift products from our catalog to creators and want to track "
+            "their instagram handle, promo code, followers, purchases, whether they were a good fit, and the "
+            "products we sent them."
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {"catalog": {"manifest": catalog_manifest}})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "influencer")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.brand_ambassador")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.brand_ambassador",
+            required_suffixes=[
+                "instagram_handle",
+                "coupon_code",
+                "follower_count",
+                "purchase_count",
+                "performance_rating",
+            ],
+            banned_suffixes=[
+                "catalog_item",
+                "spent_by",
+                "purchase_amount",
+                "sales_amount",
+                "amount_owed",
+                "margin_amount",
+                "owed_to",
+                "sales_channel",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.sent_product", entity_ids)
+        self.assertNotIn("entity.line_item", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_hiring_pipeline_avoids_sales_pipeline_sludge(self) -> None:
+        request_message = (
+            "Create a Hiring Pipeline module to track applicants from resume to interview to offer. "
+            "We need candidate email, phone number, CV, recruiter owner, interview date, and expected start date."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "recruiting")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.hiring_pipeline")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.hiring_pipeline",
+            required_suffixes=[
+                "candidate_email",
+                "phone_number",
+                "recruiter_name",
+                "resume_url",
+                "interview_date",
+                "offer_status",
+                "expected_start_date",
+            ],
+            banned_suffixes=[
+                "company_name",
+                "contact_name",
+                "value",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.interview_round", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_supplier_onboarding_avoids_request_sludge(self) -> None:
+        request_message = (
+            "Create a Supplier Onboarding module for insurance expiry, safety documents, approved categories, "
+            "onboarding status, certificate renewals, and review notes before vendors can be approved."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "compliance")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.supplier_onboarding")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.supplier_onboarding",
+            required_suffixes=[
+                "insurance_expiry",
+                "safety_docs",
+                "onboarding_status",
+                "approved_categories",
+                "review_notes",
+                "next_review_date",
+            ],
+            banned_suffixes=[
+                "request_type",
+                "priority",
+                "requested_date",
+                "due_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+            ],
+        )
+
+    def test_octo_ai_create_module_bundle_for_service_operations_avoids_request_sludge(self) -> None:
+        request_message = (
+            "Create a Service Operations module for work orders, technician scheduling, customer visits, "
+            "job notes, service reports, and completion status."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "field_service")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.work_order")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.work_order",
+            required_suffixes=[
+                "customer_name",
+                "site_address",
+                "technician_name",
+                "scheduled_start",
+                "scheduled_end",
+                "completion_notes",
+            ],
+            banned_suffixes=[
+                "client_name",
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.job_note", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_dispatch_board_keeps_dispatch_shape(self) -> None:
+        request_message = (
+            "Create a Dispatch Board module for technician assignments, route planning, daily routes, "
+            "service windows, crew assignment, and dispatch notes."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "field_service")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.dispatch")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.dispatch",
+            required_suffixes=[
+                "assigned_technician",
+                "route_name",
+                "dispatch_date",
+                "service_window_start",
+                "service_window_end",
+                "dispatch_notes",
+            ],
+            banned_suffixes=[
+                "technician_name",
+                "scheduled_start",
+                "scheduled_end",
+                "completion_notes",
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.route_stop", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_service_desk_keeps_ticket_shape(self) -> None:
+        request_message = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "SLA response times, assigned agents, and resolution notes."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "service_desk")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.ticket")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.ticket",
+            required_suffixes=[
+                "customer_name",
+                "customer_email",
+                "issue_type",
+                "assigned_agent",
+                "response_due_at",
+                "resolution_summary",
+            ],
+            banned_suffixes=[
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+                "technician_name",
+                "scheduled_start",
+                "scheduled_end",
+                "service_window_start",
+                "service_window_end",
+                "route_name",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.internal_note", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_equipment_maintenance_register_avoids_request_sludge(self) -> None:
+        request_message = (
+            "Create an Equipment Maintenance Register to track tools and equipment, service history, "
+            "next service dates, condition, location, and maintenance logs."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "fleet")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.asset")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.asset",
+            required_suffixes=[
+                "service_due_date",
+                "last_service_date",
+                "location",
+                "condition",
+            ],
+            banned_suffixes=[
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+            ],
+        )
+        entity_ids = [
+            entity.get("id")
+            for entity in (manifest.get("entities") or [])
+            if isinstance(entity, dict) and isinstance(entity.get("id"), str)
+        ]
+        self.assertIn("entity.maintenance_record", entity_ids)
+
+    def test_octo_ai_create_module_bundle_for_audit_findings_avoids_compliance_sludge(self) -> None:
+        request_message = (
+            "Create an Audit Findings module to track audit findings, severity, root cause analysis, "
+            "corrective actions, corrective due dates, and follow up actions."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "incident")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.audit_finding")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.audit_finding",
+            required_suffixes=[
+                "reported_on",
+                "severity",
+                "root_cause",
+                "follow_up",
+                "corrective_action_owner",
+                "corrective_due_date",
+            ],
+            banned_suffixes=[
+                "insurance_expiry",
+                "safety_docs",
+                "approved_categories",
+                "review_notes",
+                "approval_date",
+                "next_review_date",
+                "certificate_reference",
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+                "amount",
+            ],
+        )
+        workflow = next(
+            (
+                item
+                for item in (manifest.get("workflows") or [])
+                if isinstance(item, dict) and item.get("entity") == "entity.audit_finding"
+            ),
+            None,
+        )
+        self.assertIsInstance(workflow, dict)
+        state_ids = [
+            item.get("id")
+            for item in (workflow.get("states") or [])
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        self.assertEqual(state_ids, ["reported", "investigating", "corrective_action_pending", "closed"])
+        action_labels = [
+            item.get("label")
+            for item in (manifest.get("actions") or [])
+            if isinstance(item, dict)
+            and item.get("kind") == "update_record"
+            and item.get("entity_id") == "entity.audit_finding"
+            and isinstance(item.get("label"), str)
+        ]
+        self.assertIn("Start Investigation", action_labels)
+        self.assertIn("Assign Corrective Action", action_labels)
+        self.assertIn("Close", action_labels)
+
+    def test_octo_ai_create_module_bundle_for_safety_incidents_includes_closeout_workflow(self) -> None:
+        request_message = (
+            "Create a Safety Incidents module to track incidents and near misses with incident type, severity, "
+            "reported on date, root cause analysis, corrective action owner, corrective due date, closeout summary, and closure date."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "incident")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.safety_incident")
+        self._assert_entity_field_semantics(
+            manifest,
+            entity_id="entity.safety_incident",
+            required_suffixes=[
+                "incident_type",
+                "severity",
+                "root_cause",
+                "corrective_action_owner",
+                "corrective_due_date",
+                "closeout_summary",
+                "closed_on",
+            ],
+            banned_suffixes=[
+                "approved_categories",
+                "review_notes",
+                "request_type",
+                "requested_date",
+                "requester_name",
+                "approver_name",
+            ],
+        )
+        workflow = next(
+            (
+                item
+                for item in (manifest.get("workflows") or [])
+                if isinstance(item, dict) and item.get("entity") == "entity.safety_incident"
+            ),
+            None,
+        )
+        self.assertIsInstance(workflow, dict)
+        state_ids = [
+            item.get("id")
+            for item in (workflow.get("states") or [])
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        self.assertEqual(state_ids, ["reported", "investigating", "corrective_action_pending", "closed"])
+
+    def test_octo_ai_create_module_bundle_for_safety_incidents_adds_alert_and_reminder_automations(self) -> None:
+        request_message = (
+            "Create a Safety Incidents module to track incidents and near misses with incident type, severity, "
+            "reported on date, root cause analysis, corrective action owner, corrective due date, closeout summary, and closure date. "
+            "Email safety@octodrop.com when a critical incident is reported, and send a reminder email to safety@octodrop.com "
+            "when corrective action is pending."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "incident")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 2)
+
+        automations_by_name = {
+            (op.get("automation") or {}).get("name"): (op.get("automation") or {})
+            for op in automation_ops
+            if isinstance((op.get("automation") or {}).get("name"), str)
+        }
+        critical = automations_by_name.get("Critical Incident Alert") or {}
+        reminder = automations_by_name.get("Corrective Action Reminder") or {}
+
+        self._assert_automation_quality(critical, expected_action_ids=["system.send_email"], expected_trigger_kind="event")
+        critical_filters = ((critical.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "reported" for item in critical_filters))
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "record.severity" and item.get("value") == "critical" for item in critical_filters))
+        critical_inputs = (((critical.get("steps") or [{}])[-1].get("inputs")) or {})
+        self.assertEqual(critical_inputs.get("to"), "safety@octodrop.com")
+
+        reminder_trigger = reminder.get("trigger") or {}
+        self.assertEqual(reminder_trigger.get("kind"), "event")
+        reminder_filters = ((reminder.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "corrective_action_pending" for item in reminder_filters))
+        reminder_steps = reminder.get("steps") or []
+        self.assertEqual(reminder_steps[0].get("kind"), "delay")
+        self.assertEqual(reminder_steps[0].get("seconds"), 86400)
+        self.assertEqual(reminder_steps[-1].get("action_id"), "system.send_email")
+        reminder_inputs = (((reminder_steps[-1].get("inputs")) or {}))
+        self.assertEqual(reminder_inputs.get("to"), "safety@octodrop.com")
+
+    def test_octo_ai_create_module_bundle_for_service_desk_notifies_assigned_agent(self) -> None:
+        request_message = (
+            "Create a Service Desk module for customer tickets, issue type, priority, SLA response times, "
+            "assigned agents, and resolution notes. Notify the assigned agent when a ticket is resolved."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "service_desk")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.ticket")
+        ticket_entity = next(
+            item for item in (manifest.get("entities") or [])
+            if isinstance(item, dict) and item.get("id") == "entity.ticket"
+        )
+        ticket_fields = {
+            field.get("id"): field
+            for field in (ticket_entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((ticket_fields.get("ticket.assigned_agent") or {}).get("type"), "user")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(automation, expected_action_ids=["system.notify"], expected_trigger_kind="event")
+        filters = ((automation.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "resolved" for item in filters))
+        step_inputs = (((automation.get("steps") or [{}])[-1].get("inputs")) or {})
+        self.assertEqual(step_inputs.get("recipient_user_ids"), [{"var": "trigger.record.fields.assigned_agent"}])
+
+    def test_octo_ai_create_module_bundle_for_service_desk_notifies_named_workspace_member(self) -> None:
+        request_message = (
+            "Create a Service Desk module for customer tickets, issue type, priority, SLA response times, "
+            "assigned agents, and resolution notes. Notify Ops when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {"user_id": "user-ops", "email": "ops@example.com", "full_name": "Ops", "role": "member"},
+                {"user_id": "user-admin", "email": "admin@example.com", "full_name": "Admin", "role": "admin"},
+            ],
+        ):
+            bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "service_desk")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(automation, expected_action_ids=["system.notify"], expected_trigger_kind="event")
+        filters = ((automation.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "resolved" for item in filters))
+        step_inputs = (((automation.get("steps") or [{}])[-1].get("inputs")) or {})
+        self.assertEqual(step_inputs.get("recipient_user_ids"), ["user-ops"])
+
+    def test_octo_ai_create_module_bundle_for_service_desk_notifies_named_workspace_team(self) -> None:
+        request_message = (
+            "Create a Service Desk module for customer tickets, issue type, priority, SLA response times, "
+            "assigned agents, and resolution notes. Notify Finance when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {
+                    "user_id": "user-finance-lead",
+                    "email": "finance.lead@example.com",
+                    "full_name": "Finance Lead",
+                    "title": "Finance",
+                    "role": "member",
+                },
+                {
+                    "user_id": "user-finance-analyst",
+                    "email": "finance.analyst@example.com",
+                    "full_name": "Finance Analyst",
+                    "department": "Finance",
+                    "role": "member",
+                },
+                {"user_id": "user-ops", "email": "ops@example.com", "full_name": "Ops", "role": "member"},
+            ],
+        ):
+            bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "service_desk")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(automation, expected_action_ids=["system.notify"], expected_trigger_kind="event")
+        filters = ((automation.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "resolved" for item in filters))
+        step_inputs = (((automation.get("steps") or [{}])[-1].get("inputs")) or {})
+        self.assertEqual(step_inputs.get("recipient_user_ids"), ["user-finance-lead", "user-finance-analyst"])
+
+    def test_octo_ai_create_module_bundle_for_service_desk_notifies_indirect_role_group(self) -> None:
+        request_message = (
+            "Create a Service Desk module for customer tickets, issue type, priority, SLA response times, "
+            "assigned agents, and resolution notes. Notify the account managers when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {
+                    "user_id": "user-csm",
+                    "email": "ava@example.com",
+                    "full_name": "Ava Cole",
+                    "title": "Customer Success Manager",
+                    "role": "member",
+                },
+                {
+                    "user_id": "user-client-success",
+                    "email": "milo@example.com",
+                    "full_name": "Milo Hart",
+                    "job_title": "Client Success Manager",
+                    "role": "member",
+                },
+                {
+                    "user_id": "user-finance",
+                    "email": "finance@example.com",
+                    "full_name": "Finance Lead",
+                    "department": "Finance",
+                    "role": "member",
+                },
+            ],
+        ):
+            bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "service_desk")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(automation, expected_action_ids=["system.notify"], expected_trigger_kind="event")
+        filters = ((automation.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "resolved" for item in filters))
+        step_inputs = (((automation.get("steps") or [{}])[-1].get("inputs")) or {})
+        self.assertEqual(step_inputs.get("recipient_user_ids"), ["user-csm", "user-client-success"])
+
+    def test_octo_ai_create_module_bundle_for_safety_incidents_reminds_corrective_action_owner(self) -> None:
+        request_message = (
+            "Create a Safety Incidents module to track incidents and near misses with incident type, severity, "
+            "root cause analysis, corrective action owner, corrective due date, and closeout summary. "
+            "Remind the corrective action owner when corrective action is pending."
+        )
+
+        bundle = main._ai_build_create_module_bundle(request_message, [], {})
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_module_op = next(op for op in candidate_ops if op.get("op") == "create_module")
+        self.assertEqual(((create_module_op.get("design_spec") or {}).get("family")), "incident")
+        manifest = copy.deepcopy(create_module_op.get("manifest") or {})
+        self._assert_manifest_quality(manifest, primary_entity_id="entity.safety_incident")
+        incident_entity = next(
+            item for item in (manifest.get("entities") or [])
+            if isinstance(item, dict) and item.get("id") == "entity.safety_incident"
+        )
+        incident_fields = {
+            field.get("id"): field
+            for field in (incident_entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((incident_fields.get("safety_incident.corrective_action_owner") or {}).get("type"), "user")
+
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        reminder_op = next(op for op in automation_ops if ((op.get("automation") or {}).get("name")) == "Corrective Action Reminder")
+        reminder = reminder_op.get("automation") or {}
+        reminder_filters = ((reminder.get("trigger") or {}).get("filters") or [])
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "to" and item.get("value") == "corrective_action_pending" for item in reminder_filters))
+        reminder_steps = reminder.get("steps") or []
+        self.assertEqual(reminder_steps[0].get("kind"), "delay")
+        self.assertEqual(reminder_steps[0].get("seconds"), 86400)
+        self.assertEqual(reminder_steps[-1].get("action_id"), "system.notify")
+        reminder_inputs = (((reminder_steps[-1].get("inputs")) or {}))
+        self.assertEqual(reminder_inputs.get("recipient_user_ids"), [{"var": "trigger.record.fields.corrective_action_owner"}])
+
+    def test_octo_ai_create_module_bundle_reuses_named_workspace_templates_for_existing_draft_steps(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the completion pack.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_follow_up",
+                            "label": "Completion Follow-up",
+                            "value": "email_tpl_completion_follow_up",
+                            "hints": {"email_template_id": "email_tpl_completion_follow_up"},
+                        }
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_completion_pack",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack",
+                            "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                        }
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed send the Completion Follow-up email template to the customer and generate the Completion Pack document template.",
+                [],
+                {},
+            )
+
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self._assert_candidate_plan_quality(
+            candidate_ops,
+            allowed_email_template_ids={"email_tpl_completion_follow_up"},
+            allowed_document_template_ids={"doc_tpl_completion_pack"},
+        )
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(
+            automation,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        steps = automation.get("steps") or []
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_follow_up")
+        self.assertNotIn("subject", email_inputs)
+        self.assertNotIn("body_text", email_inputs)
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_completion_pack")
+
+    def test_octo_ai_create_module_bundle_matches_existing_workspace_templates_from_partial_aliases(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_approved",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved",
+                            "hints": {"email_template_id": "email_tpl_completion_approved"},
+                        },
+                        {
+                            "id": "email_tpl_customer_notice",
+                            "label": "Customer Notice",
+                            "value": "email_tpl_customer_notice",
+                            "hints": {"email_template_id": "email_tpl_customer_notice"},
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_completion_pack",
+                            "label": "Job Completion Pack",
+                            "value": "doc_tpl_job_completion_pack",
+                            "hints": {"document_template_id": "doc_tpl_job_completion_pack"},
+                        },
+                        {
+                            "id": "doc_tpl_service_report",
+                            "label": "Service Report",
+                            "value": "doc_tpl_service_report",
+                            "hints": {"document_template_id": "doc_tpl_service_report"},
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our completion approval email for the customer and generate the existing completion pack.",
+                [],
+                {},
+            )
+
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self._assert_candidate_plan_quality(
+            candidate_ops,
+            allowed_email_template_ids={"email_tpl_completion_approved"},
+            allowed_document_template_ids={"doc_tpl_job_completion_pack"},
+        )
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(
+            automation,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        steps = automation.get("steps") or []
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_approved")
+        self.assertNotIn("subject", email_inputs)
+        self.assertNotIn("body_text", email_inputs)
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_job_completion_pack")
+
+    def test_octo_ai_create_module_bundle_prefers_workspace_templates_matching_step_entity_when_names_tie(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_approved_quote",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved_quote",
+                            "hints": {
+                                "email_template_id": "email_tpl_completion_approved_quote",
+                                "entity_id": "entity.quote",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_completion_approved_job",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved_job",
+                            "hints": {
+                                "email_template_id": "email_tpl_completion_approved_job",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_completion_pack_quote",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack_quote",
+                            "hints": {
+                                "document_template_id": "doc_tpl_completion_pack_quote",
+                                "entity_id": "entity.quote",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_completion_pack_job",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack_job",
+                            "hints": {
+                                "document_template_id": "doc_tpl_completion_pack_job",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our completion approved email for the customer and generate the existing completion pack.",
+                [],
+                {},
+            )
+
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self._assert_candidate_plan_quality(
+            candidate_ops,
+            allowed_email_template_ids={"email_tpl_completion_approved_job"},
+            allowed_document_template_ids={"doc_tpl_completion_pack_job"},
+        )
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(
+            automation,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        steps = automation.get("steps") or []
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_approved_job")
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_completion_pack_job")
+
+    def test_octo_ai_create_module_bundle_prefers_workspace_templates_matching_message_purpose_when_labels_tie(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_job_customer_update",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update",
+                            "description": "Reminder about upcoming work",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_job_customer_update_approved",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_approved",
+                            "description": "Completion approval sent to customer",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_approved",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_document_bundle",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_document_bundle",
+                            "description": "inspection-report",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_document_bundle",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_job_document_bundle_completion",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_document_bundle_completion",
+                            "description": "completion-pack",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_document_bundle_completion",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our approval email for the customer and generate our completion pack.",
+                [],
+                {},
+            )
+
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self._assert_candidate_plan_quality(
+            candidate_ops,
+            allowed_email_template_ids={"email_tpl_job_customer_update_approved"},
+            allowed_document_template_ids={"doc_tpl_job_document_bundle_completion"},
+        )
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 1)
+        automation = (automation_ops[0].get("automation") or {})
+        self._assert_automation_quality(
+            automation,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        steps = automation.get("steps") or []
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_job_customer_update_approved")
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_job_document_bundle_completion")
+
+    def test_octo_ai_create_module_bundle_reuses_multiple_existing_workspace_templates_across_bundle_steps(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_approved_customer_notice",
+                    "automation": {
+                        "name": "Job Approved Customer Notice",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "approved"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_approval_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job has been approved",
+                                    "body_text": "Approval details.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_inspection_report",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Inspection Report",
+                                },
+                            },
+                        ],
+                    },
+                },
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completed_customer_notice",
+                    "automation": {
+                        "name": "Job Completed Customer Notice",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_completion_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Completion details.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_completion_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Completion Pack",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_job_customer_update_approved",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_approved",
+                            "description": "Approval notice for approved jobs",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_approved",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_job_customer_update_completed",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_completed",
+                            "description": "Completion notice for finished jobs",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_completed",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_bundle_inspection",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_inspection",
+                            "description": "inspection-report",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_bundle_inspection",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_job_bundle_completion",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_completion",
+                            "description": "completion-pack",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_bundle_completion",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is approved, use our approval email and generate our inspection report. "
+                "When a job is completed, use our completion email and generate our completion pack.",
+                [],
+                {},
+            )
+
+        candidate_ops = [copy.deepcopy(op) for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        self._assert_candidate_plan_quality(
+            candidate_ops,
+            allowed_email_template_ids={
+                "email_tpl_job_customer_update_approved",
+                "email_tpl_job_customer_update_completed",
+            },
+            allowed_document_template_ids={
+                "doc_tpl_job_bundle_inspection",
+                "doc_tpl_job_bundle_completion",
+            },
+        )
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 2)
+        by_name = {((op.get("automation") or {}).get("name")): (op.get("automation") or {}) for op in automation_ops}
+        approved = by_name.get("Job Approved Customer Notice") or {}
+        completed = by_name.get("Job Completed Customer Notice") or {}
+        self._assert_automation_quality(
+            approved,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        self._assert_automation_quality(
+            completed,
+            expected_action_ids=["system.send_email", "system.generate_document"],
+            expected_trigger_kind="event",
+        )
+        approved_steps = approved.get("steps") or []
+        completed_steps = completed.get("steps") or []
+        self.assertEqual((((approved_steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_approved")
+        self.assertEqual((((approved_steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_inspection")
+        self.assertEqual((((completed_steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_completed")
+        self.assertEqual((((completed_steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_completion")
 
 
 if __name__ == "__main__":

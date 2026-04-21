@@ -5599,7 +5599,11 @@ def _ai_extract_new_module_name(message: str, answer_hints: dict | None = None) 
 
     if isinstance(answer_hints, dict):
         answer_text = answer_hints.get("answer_text")
-        if isinstance(answer_text, str) and answer_text.strip():
+        answer_looks_like_recipient_selection = bool(
+            isinstance(answer_hints.get("recipient_email"), str)
+            and answer_hints.get("recipient_email").strip()
+        )
+        if isinstance(answer_text, str) and answer_text.strip() and not answer_looks_like_recipient_selection:
             explicit_answer_name = _ai_extract_new_module_name(answer_text, answer_hints=None)
             if isinstance(explicit_answer_name, str) and _ai_is_label_confident(explicit_answer_name):
                 return explicit_answer_name
@@ -5879,6 +5883,20 @@ def _ai_design_primary_entity_for_family(
 ) -> tuple[str, str]:
     entity_slug = _ai_entity_slug_for_module(module_id, module_name)
     entity_label = module_name.strip() if isinstance(module_name, str) and module_name.strip() else _ai_titleize_slug(entity_slug)
+    if family == "field_service":
+        lower = f"{module_name or ''} {message or ''}".lower()
+        if re.search(r"\bdispatch\b", lower) or re.search(r"\broute (?:board|planning|stops?)\b", lower):
+            return "dispatch", "Dispatch"
+        if re.search(r"\b(site|service) visits?\b", lower):
+            return "site_visit", "Site Visit"
+        if re.search(r"\bwork orders?\b", lower):
+            return "work_order", "Work Order"
+        return entity_slug, entity_label
+    if family == "service_desk":
+        lower = f"{module_name or ''} {message or ''}".lower()
+        if re.search(r"\bcases?\b", lower):
+            return "case", "Case"
+        return "ticket", "Ticket"
     if family != "fleet":
         return entity_slug, entity_label
     lower = f"{module_name or ''} {message or ''}".lower()
@@ -5988,21 +6006,146 @@ def _ai_append_unique_fields(fields: list[dict], additions: list[dict]) -> list[
     return fields
 
 
-def _ai_detect_new_module_family(module_name: str, message: str) -> str:
-    lower = f"{module_name} {message}".lower()
+def _ai_design_family_signal_phrases(family_def: dict) -> list[str]:
+    ignored = {
+        "title",
+        "name",
+        "notes",
+        "note",
+        "attachments",
+        "attachment",
+        "status",
+        "owner",
+        "created",
+        "created at",
+        "quantity",
+    }
+    phrases: list[str] = []
+
+    def push(raw: str | None) -> None:
+        if not isinstance(raw, str):
+            return
+        cleaned = re.sub(r"\s+", " ", raw.replace("_", " ")).strip().lower()
+        if not cleaned or cleaned in ignored:
+            return
+        if len(cleaned) < 6 and " " not in cleaned:
+            return
+        if cleaned not in phrases:
+            phrases.append(cleaned)
+
+    for token in family_def.get("detect_any") if isinstance(family_def.get("detect_any"), list) else []:
+        push(token)
+    for rule in family_def.get("detect_all") if isinstance(family_def.get("detect_all"), list) else []:
+        if isinstance(rule, list):
+            for token in rule:
+                push(token)
+    for rule in family_def.get("purpose_name_rules") if isinstance(family_def.get("purpose_name_rules"), list) else []:
+        if not isinstance(rule, dict):
+            continue
+        for token in rule.get("match_any") if isinstance(rule.get("match_any"), list) else []:
+            push(token)
+    for field in family_def.get("fields") if isinstance(family_def.get("fields"), list) else []:
+        if not isinstance(field, dict):
+            continue
+        push(field.get("label"))
+        push(field.get("suffix"))
+    for related in family_def.get("related_entities") if isinstance(family_def.get("related_entities"), list) else []:
+        if not isinstance(related, dict):
+            continue
+        for key in ("entity_label", "nav_label", "related_title", "related_tab_label", "entity_slug"):
+            push(related.get(key))
+        for field in related.get("fields") if isinstance(related.get("fields"), list) else []:
+            if not isinstance(field, dict):
+                continue
+            push(field.get("label"))
+            push(field.get("id"))
+    return phrases
+
+
+def _ai_workspace_design_context_text(module_index: dict[str, dict] | None) -> str:
+    if not isinstance(module_index, dict) or not module_index:
+        return ""
+    parts: list[str] = []
+    for info in module_index.values():
+        manifest = info.get("manifest") if isinstance(info, dict) and isinstance(info.get("manifest"), dict) else None
+        if not isinstance(manifest, dict):
+            continue
+        module_meta = manifest.get("module") if isinstance(manifest.get("module"), dict) else {}
+        if isinstance(module_meta.get("name"), str):
+            parts.append(module_meta.get("name"))
+        if isinstance(module_meta.get("key"), str):
+            parts.append(module_meta.get("key"))
+        for entity in manifest.get("entities") if isinstance(manifest.get("entities"), list) else []:
+            if not isinstance(entity, dict):
+                continue
+            if isinstance(entity.get("label"), str):
+                parts.append(entity.get("label"))
+            if isinstance(entity.get("id"), str):
+                parts.append(entity.get("id"))
+            for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+                if not isinstance(field, dict):
+                    continue
+                if isinstance(field.get("label"), str):
+                    parts.append(field.get("label"))
+                if isinstance(field.get("id"), str):
+                    parts.append(field.get("id"))
+    return re.sub(r"\s+", " ", " ".join(str(part) for part in parts if isinstance(part, str) and part.strip()).lower()).strip()
+
+
+def _ai_score_new_module_family(module_name: str, message: str, family: str, family_def: dict, workspace_text: str = "") -> tuple[int, int, int]:
+    lower = re.sub(r"\s+", " ", f"{module_name} {message}".lower()).strip()
+    score = 0
+    explicit_hits = 0
+    support_hits = 0
+
+    detect_any = family_def.get("detect_any") if isinstance(family_def.get("detect_any"), list) else []
+    for token in detect_any:
+        if not isinstance(token, str):
+            continue
+        normalized = token.strip().lower()
+        if normalized and normalized in lower:
+            score += 10 + min(len(normalized.split()), 3)
+            explicit_hits += 1
+
+    detect_all = family_def.get("detect_all") if isinstance(family_def.get("detect_all"), list) else []
+    for rule in detect_all:
+        tokens = [str(token).strip().lower() for token in rule if isinstance(token, str) and token.strip()] if isinstance(rule, list) else []
+        if tokens and all(token in lower for token in tokens):
+            score += 14 + len(tokens) * 2
+            explicit_hits += 2
+
+    for rule in family_def.get("purpose_name_rules") if isinstance(family_def.get("purpose_name_rules"), list) else []:
+        if not isinstance(rule, dict):
+            continue
+        tokens = [str(token).strip().lower() for token in (rule.get("match_any") or []) if isinstance(token, str) and token.strip()]
+        if any(token in lower for token in tokens):
+            score += 6
+            support_hits += 1
+
+    for phrase in _ai_design_family_signal_phrases(family_def):
+        if phrase in lower:
+            score += 3
+            support_hits += 1
+            if workspace_text and phrase in workspace_text and re.search(r"\b(?:our|existing|current|other)\b", lower):
+                score += 2
+                support_hits += 1
+
+    return score, explicit_hits, support_hits
+
+
+def _ai_detect_new_module_family(module_name: str, message: str, module_index: dict[str, dict] | None = None) -> str:
     catalog = _ai_design_family_catalog()
+    workspace_text = _ai_workspace_design_context_text(module_index)
+    best_family = "generic"
+    best_tuple = (0, 0, 0)
     for family, family_def in catalog.items():
         if not isinstance(family_def, dict) or family == "generic":
             continue
-        detect_any = family_def.get("detect_any") if isinstance(family_def.get("detect_any"), list) else []
-        if any(isinstance(token, str) and token and token in lower for token in detect_any):
-            return family
-        detect_all = family_def.get("detect_all") if isinstance(family_def.get("detect_all"), list) else []
-        for rule in detect_all:
-            tokens = [token for token in rule if isinstance(token, str) and token]
-            if tokens and all(token in lower for token in tokens):
-                return family
-    return "generic"
+        score_tuple = _ai_score_new_module_family(module_name, message, family, family_def, workspace_text=workspace_text)
+        if score_tuple > best_tuple:
+            best_family = family
+            best_tuple = score_tuple
+    return best_family if best_tuple[0] > 0 else "generic"
 
 
 def _ai_default_status_options(family: str) -> list[dict]:
@@ -6049,7 +6192,204 @@ def _ai_family_design_related_entities(family: str) -> list[dict]:
     return [copy.deepcopy(item) for item in raw_related_entities if isinstance(item, dict)]
 
 
-def _ai_module_primary_label(family: str, message: str) -> str:
+def _ai_entity_specific_design_fields(entity_slug: str, family: str, message: str) -> list[dict]:
+    normalized_entity_slug = entity_slug.strip().lower() if isinstance(entity_slug, str) else ""
+    normalized_family = family.strip().lower() if isinstance(family, str) else ""
+    if normalized_family == "field_service" and normalized_entity_slug == "dispatch":
+        return [
+            _ai_module_design_field(f"{entity_slug}.assigned_technician", "string", "Assigned Technician"),
+            _ai_module_design_field(f"{entity_slug}.crew_name", "string", "Crew"),
+            _ai_module_design_field(f"{entity_slug}.route_name", "string", "Route"),
+            _ai_module_design_field(f"{entity_slug}.dispatch_date", "date", "Dispatch Date"),
+            _ai_module_design_field(f"{entity_slug}.service_window_start", "datetime", "Service Window Start"),
+            _ai_module_design_field(f"{entity_slug}.service_window_end", "datetime", "Service Window End"),
+            _ai_module_design_field(f"{entity_slug}.stop_number", "number", "Stop Number"),
+            _ai_module_design_field(f"{entity_slug}.dispatch_notes", "text", "Dispatch Notes"),
+        ]
+    return []
+
+
+def _ai_entity_specific_design_related_entities(entity_slug: str, family: str, message: str) -> list[dict]:
+    normalized_entity_slug = entity_slug.strip().lower() if isinstance(entity_slug, str) else ""
+    normalized_family = family.strip().lower() if isinstance(family, str) else ""
+    if normalized_family == "field_service" and normalized_entity_slug == "dispatch":
+        return [
+            {
+                "entity_slug": "route_stop",
+                "entity_label": "Route Stop",
+                "nav_label": "Route Stops",
+                "related_title": "Route Stops",
+                "related_tab_label": "Route Stops",
+                "fields": [
+                    {"id": "stop_number", "type": "number", "label": "Stop Number"},
+                    {"id": "customer_name", "type": "string", "label": "Customer"},
+                    {"id": "site_address", "type": "string", "label": "Site Address"},
+                    {"id": "service_window_start", "type": "datetime", "label": "Service Window Start"},
+                    {"id": "service_window_end", "type": "datetime", "label": "Service Window End"},
+                    {"id": "notes", "type": "text", "label": "Notes"},
+                ],
+            }
+        ]
+    return []
+
+
+def _ai_prune_family_specific_generic_fields(family: str, entity_slug: str, fields: list[dict]) -> list[dict]:
+    if not isinstance(fields, list) or not fields:
+        return []
+    normalized_family = family.strip().lower() if isinstance(family, str) else ""
+    normalized_entity_slug = entity_slug.strip().lower() if isinstance(entity_slug, str) else ""
+    next_fields = [copy.deepcopy(field) for field in fields if isinstance(field, dict)]
+    field_ids = {
+        str(field.get("id")).strip().lower()
+        for field in next_fields
+        if isinstance(field.get("id"), str) and str(field.get("id")).strip()
+    }
+    if normalized_family == "compliance":
+        has_specific_expiry_tracking = any(
+            field_id.endswith(".insurance_expiry") or field_id.endswith(".next_review_date")
+            for field_id in field_ids
+        )
+        if has_specific_expiry_tracking:
+            next_fields = [
+                field
+                for field in next_fields
+                if not (
+                    isinstance(field.get("id"), str)
+                    and str(field.get("id")).strip().lower().endswith(".due_date")
+                )
+            ]
+    if normalized_family == "field_service":
+        has_customer_name = any(field_id.endswith(".customer_name") for field_id in field_ids)
+        if has_customer_name:
+            next_fields = [
+                field
+                for field in next_fields
+                if not (
+                    isinstance(field.get("id"), str)
+                    and str(field.get("id")).strip().lower().endswith(".client_name")
+                )
+            ]
+        if normalized_entity_slug == "dispatch":
+            next_fields = [
+                field
+                for field in next_fields
+                if not (
+                    isinstance(field.get("id"), str)
+                    and str(field.get("id")).strip().lower().endswith((
+                        ".technician_name",
+                        ".scheduled_start",
+                        ".scheduled_end",
+                        ".completion_notes",
+                    ))
+                )
+            ]
+    if normalized_family in {"fleet", "register"}:
+        has_service_tracking = any(
+            field_id.endswith((
+                ".service_due_date",
+                ".last_service_date",
+                ".service_date",
+                ".odometer",
+                ".condition",
+                ".registration_number",
+            ))
+            for field_id in field_ids
+        )
+        if has_service_tracking:
+            next_fields = [
+                field
+                for field in next_fields
+                if not (
+                    isinstance(field.get("id"), str)
+                    and str(field.get("id")).strip().lower().endswith((
+                        ".request_type",
+                        ".requested_date",
+                        ".requester_name",
+                        ".approver_name",
+                        ".amount",
+                    ))
+                )
+            ]
+    if normalized_family == "service_desk":
+        has_customer_name = any(field_id.endswith(".customer_name") for field_id in field_ids)
+        has_issue_type = any(field_id.endswith(".issue_type") for field_id in field_ids)
+        has_sla_fields = any(field_id.endswith(".response_due_at") or field_id.endswith(".resolution_due_at") for field_id in field_ids)
+        next_fields = [
+            field
+            for field in next_fields
+            if not (
+                isinstance(field.get("id"), str)
+                and (
+                    (has_issue_type and str(field.get("id")).strip().lower().endswith(".request_type"))
+                    or (has_customer_name and str(field.get("id")).strip().lower().endswith(".requester_name"))
+                    or (has_sla_fields and str(field.get("id")).strip().lower().endswith(".due_date"))
+                    or str(field.get("id")).strip().lower().endswith((
+                        ".approver_name",
+                        ".amount",
+                        ".technician_name",
+                        ".scheduled_start",
+                        ".scheduled_end",
+                        ".service_window_start",
+                        ".service_window_end",
+                        ".route_name",
+                    ))
+                )
+            )
+        ]
+    if normalized_family == "incident":
+        has_incident_signals = any(
+            field_id.endswith((
+                ".reported_on",
+                ".incident_type",
+                ".severity",
+                ".root_cause",
+                ".follow_up",
+                ".corrective_action_owner",
+                ".corrective_due_date",
+                ".closeout_summary",
+                ".closed_on",
+            ))
+            for field_id in field_ids
+        )
+        if has_incident_signals:
+            next_fields = [
+                field
+                for field in next_fields
+                if not (
+                    isinstance(field.get("id"), str)
+                    and str(field.get("id")).strip().lower().endswith((
+                        ".insurance_expiry",
+                        ".safety_docs",
+                        ".approved_categories",
+                        ".review_notes",
+                        ".approval_date",
+                        ".next_review_date",
+                        ".certificate_reference",
+                        ".request_type",
+                        ".requested_date",
+                        ".requester_name",
+                        ".approver_name",
+                        ".amount",
+                    ))
+                )
+            ]
+    return next_fields
+
+
+def _ai_module_primary_label(family: str, message: str, entity_slug: str | None = None) -> str:
+    normalized_family = family.strip().lower() if isinstance(family, str) else ""
+    normalized_entity_slug = entity_slug.strip().lower() if isinstance(entity_slug, str) else ""
+    if normalized_family == "field_service":
+        if normalized_entity_slug == "dispatch":
+            return "Dispatch Reference"
+        if normalized_entity_slug == "site_visit":
+            return "Visit Reference"
+        if normalized_entity_slug == "work_order":
+            return "Work Order Number"
+    if normalized_family == "service_desk":
+        if normalized_entity_slug == "case":
+            return "Case Reference"
+        return "Ticket Number"
     family_def = _ai_design_family_definition(family)
     primary_label = family_def.get("primary_label") if isinstance(family_def.get("primary_label"), str) else None
     return primary_label.strip() if isinstance(primary_label, str) and primary_label.strip() else "Title"
@@ -6162,6 +6502,52 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
     lower = re.sub(r"\s+", " ", message.lower()).strip()
     intents: list[dict] = []
     seen: set[str] = set()
+    recipient_email = next(
+        (
+            email.strip()
+            for email in _ai_extract_email_addresses(message)
+            if isinstance(email, str) and email.strip()
+        ),
+        None,
+    )
+    recipient_notify = None
+    workspace_member_recipient: str | list[str] | None = None
+    if not recipient_email:
+        if re.search(r"\bcorrective action owner\b", lower):
+            recipient_notify = f"{entity_slug}.corrective_action_owner"
+        elif re.search(r"\bassigned (agent|assignee|user)\b", lower):
+            recipient_notify = f"{entity_slug}.assigned_agent"
+        elif re.search(r"\bassigned technician\b", lower):
+            recipient_notify = f"{entity_slug}.assigned_technician"
+        elif re.search(r"\bowner\b", lower):
+            recipient_notify = f"{entity_slug}.owner_id"
+    if not recipient_email and not recipient_notify:
+        matched_member = _ai_match_workspace_member_option_from_message(message, None)
+        if isinstance(matched_member, dict):
+            matched_hints = matched_member.get("hints") if isinstance(matched_member.get("hints"), dict) else {}
+            matched_user_ids = matched_hints.get("recipient_user_ids")
+            if isinstance(matched_user_ids, list):
+                resolved_user_ids = [
+                    item.strip()
+                    for item in matched_user_ids
+                    if isinstance(item, str) and item.strip()
+                ]
+                if resolved_user_ids:
+                    workspace_member_recipient = resolved_user_ids
+            matched_user_id = matched_hints.get("recipient_user_id")
+            if workspace_member_recipient is None and isinstance(matched_user_id, str) and matched_user_id.strip():
+                workspace_member_recipient = matched_user_id.strip()
+
+    def recipient_payload() -> dict:
+        if isinstance(recipient_email, str) and recipient_email:
+            return {"channel": "email", "recipient": recipient_email}
+        if isinstance(workspace_member_recipient, list) and workspace_member_recipient:
+            return {"channel": "notify", "recipient": copy.deepcopy(workspace_member_recipient)}
+        if isinstance(workspace_member_recipient, str) and workspace_member_recipient:
+            return {"channel": "notify", "recipient": workspace_member_recipient}
+        if isinstance(recipient_notify, str) and recipient_notify:
+            return {"channel": "notify", "recipient": recipient_notify}
+        return {"channel": "email"}
 
     def add_intent(intent_id: str, payload: dict) -> None:
         normalized_id = _marketplace_slugify(intent_id).replace("-", "_").strip("_")
@@ -6173,15 +6559,54 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
     def matched_status_values(*candidates: str) -> list[str]:
         return _ai_match_design_status_values([item for item in candidates if isinstance(item, str) and item], statuses)
 
-    if any(token in lower for token in ("remind", "reminder", "follow up", "follow-up", "due soon", "expir")):
+    incident_statuses_present = bool(matched_status_values("reported", "investigating", "corrective_action_pending", "closed"))
+    incident_followup_keywords = any(token in lower for token in ("corrective action", "closeout", "closure"))
+
+    if any(token in lower for token in ("remind", "reminder", "follow up", "follow-up", "due soon", "expir")) and not (
+        incident_statuses_present and incident_followup_keywords
+    ):
         add_intent(
             f"{module_id}_follow_up_reminder",
             {
                 "label": "Reminder",
                 "kind": "follow_up_notification",
-                "channel": "email",
+                **recipient_payload(),
                 "event": "record.updated",
                 "description": "Send a reminder when records need follow-up, expiry review, or deadline attention.",
+            },
+        )
+
+    if incident_statuses_present and any(token in lower for token in ("critical incident", "critical incidents", "critical", "severity")) and any(
+        token in lower for token in ("notify", "notification", "email", "alert", "escalat")
+    ):
+        add_intent(
+            f"{module_id}_critical_incident_alert",
+            {
+                "label": "Critical Incident Alert",
+                "kind": "status_notification",
+                **recipient_payload(),
+                "status_values": matched_status_values("reported") or matched_status_values("investigating"),
+                "filters": [{"path": "record.severity", "op": "eq", "value": "critical"}],
+                "subject": "Critical incident reported",
+                "body": "A critical incident has been reported and needs immediate attention.",
+                "description": "Alert the response team when a critical incident is reported.",
+            },
+        )
+
+    if incident_statuses_present and incident_followup_keywords and any(
+        token in lower for token in ("remind", "reminder", "follow up", "follow-up", "overdue", "chase")
+    ):
+        add_intent(
+            f"{module_id}_corrective_action_reminder",
+            {
+                "label": "Corrective Action Reminder",
+                "kind": "status_notification",
+                **recipient_payload(),
+                "status_values": matched_status_values("corrective action pending", "corrective_action_pending"),
+                "delay_seconds": 86400,
+                "subject": "Corrective action follow-up due",
+                "body": "A corrective action is still pending and needs follow-up.",
+                "description": "Send a reminder after incidents enter corrective action follow-up.",
             },
         )
 
@@ -6190,6 +6615,7 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
             matched_status_values("approved", "approve")
             or matched_status_values("rejected", "reject")
             or matched_status_values("under review", "review")
+            or matched_status_values("resolved", "resolve")
             or matched_status_values("completed", "complete", "done")
             or matched_status_values("expired", "expiry", "expir")
             or matched_status_values("submitted", "submit")
@@ -6201,7 +6627,7 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
                 {
                     "label": f"{_ai_titleize_slug(status_value)} Notification",
                     "kind": "status_notification",
-                    "channel": "email",
+                    **recipient_payload(),
                     "event": "workflow.status_changed",
                     "status_values": [status_value],
                     "description": f"Notify stakeholders when the record reaches {_ai_titleize_slug(status_value)}.",
@@ -6213,7 +6639,7 @@ def _ai_infer_design_automation_intents_from_message(module_id: str, entity_slug
                 {
                     "label": "Created Notification",
                     "kind": "record_notification",
-                    "channel": "email",
+                    **recipient_payload(),
                     "event": "record.created",
                     "description": "Notify stakeholders when a new record is created.",
                 },
@@ -6349,6 +6775,33 @@ def _ai_enrich_design_related_entities(primary_entity_slug: str, related_entitie
         related["fields"] = fields
         enriched.append(related)
     return enriched
+
+
+def _ai_prune_generic_related_entities(related_entities: list[dict]) -> list[dict]:
+    items = [copy.deepcopy(item) for item in related_entities if isinstance(related_entities, list) and isinstance(item, dict)]
+    has_specialized_line_entity = False
+    for item in items:
+        entity_slug = item.get("entity_slug") if isinstance(item.get("entity_slug"), str) else ""
+        if entity_slug == "line_item":
+            continue
+        field_suffixes = {
+            str(field.get("id")).split(".")[-1]
+            for field in (item.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        if field_suffixes.intersection({"catalog_item", "sku", "product_id", "sent_on", "service_date", "service_type"}):
+            has_specialized_line_entity = True
+            break
+    if not has_specialized_line_entity:
+        return items
+    return [
+        item
+        for item in items
+        if not (
+            isinstance(item.get("entity_slug"), str)
+            and item.get("entity_slug") == "line_item"
+        )
+    ]
 
 
 def _ai_infer_design_rollup_fields_from_message(entity_slug: str, message: str, related_entities: list[dict]) -> list[dict]:
@@ -6800,6 +7253,59 @@ def _ai_coerce_design_automation_recipient(raw_value: Any, entity_slug: str) -> 
     return "{{ record." + normalized + " }}" if normalized else None
 
 
+def _ai_coerce_design_notify_recipient(raw_value: Any, entity_slug: str) -> str | dict | list[Any] | None:
+    if isinstance(raw_value, list):
+        normalized_items: list[Any] = []
+        for item in raw_value:
+            normalized = _ai_coerce_design_notify_recipient(item, entity_slug)
+            if normalized is None:
+                continue
+            normalized_items.append(copy.deepcopy(normalized))
+        return normalized_items or None
+    if isinstance(raw_value, dict):
+        var_value = raw_value.get("var")
+        if isinstance(var_value, str) and var_value.strip():
+            return {"var": var_value.strip()}
+        if isinstance(raw_value.get("ref"), str):
+            raw_value = raw_value.get("ref")
+        else:
+            return copy.deepcopy(raw_value)
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    recipient = raw_value.strip()
+    if "@" in recipient or "," in recipient:
+        return None
+
+    def _field_var(field_name: str) -> dict | None:
+        normalized = _marketplace_slugify((field_name or "").split(".")[-1]).replace("-", "_").strip("_")
+        if not normalized:
+            return None
+        return {"var": f"trigger.record.fields.{normalized}"}
+
+    if recipient.startswith("$record."):
+        return _field_var(recipient[len("$record.") :])
+    if recipient.startswith("$trigger.record.fields."):
+        return {"var": recipient[len("$") :]}
+    if recipient.startswith("$trigger.record."):
+        return _field_var(recipient[len("$trigger.record.") :])
+    if recipient.startswith("$trigger."):
+        return _field_var(recipient[len("$trigger.") :])
+    if recipient.startswith(f"{entity_slug}."):
+        return _field_var(recipient.split(".", 1)[1])
+    if recipient.startswith("{{") and recipient.endswith("}}"):
+        inner = recipient[2:-2].strip()
+        if inner.startswith("record."):
+            return _field_var(inner[len("record.") :])
+        if inner.startswith("trigger.record.fields."):
+            return {"var": inner}
+        if inner.startswith("trigger.record."):
+            return _field_var(inner[len("trigger.record.") :])
+        if inner.startswith("trigger."):
+            return _field_var(inner[len("trigger.") :])
+        return None
+    return recipient
+
+
 def _ai_normalize_design_automation_event(raw_event: Any, kind: str) -> str:
     if kind == "status_notification":
         return "workflow.status_changed"
@@ -6849,13 +7355,17 @@ def _ai_coerce_design_automation_intents(module_id: str, entity_slug: str, statu
         delay_seconds = item.get("delay_seconds")
         if not isinstance(delay_seconds, int) or delay_seconds < 0:
             delay_seconds = None
-        recipient = _ai_coerce_design_automation_recipient(
+        raw_recipient = (
             item.get("recipient")
             if item.get("recipient") is not None
             else item.get("to")
             if item.get("to") is not None
-            else item.get("recipient_ref"),
-            entity_slug,
+            else item.get("recipient_ref")
+        )
+        recipient = (
+            _ai_coerce_design_notify_recipient(raw_recipient, entity_slug)
+            if channel == "notify"
+            else _ai_coerce_design_automation_recipient(raw_recipient, entity_slug)
         )
         event = _ai_normalize_design_automation_event(item.get("event"), kind)
         intent = {
@@ -6867,8 +7377,8 @@ def _ai_coerce_design_automation_intents(module_id: str, entity_slug: str, statu
         }
         if status_values:
             intent["status_values"] = status_values
-        if isinstance(recipient, str) and recipient:
-            intent["recipient"] = recipient
+        if recipient is not None and (not isinstance(recipient, str) or recipient):
+            intent["recipient"] = copy.deepcopy(recipient)
         if isinstance(delay_seconds, int) and delay_seconds > 0:
             intent["delay_seconds"] = delay_seconds
         if isinstance(item.get("subject"), str) and item.get("subject").strip():
@@ -6877,6 +7387,19 @@ def _ai_coerce_design_automation_intents(module_id: str, entity_slug: str, statu
             intent["body"] = item.get("body").strip()
         if isinstance(item.get("description"), str) and item.get("description").strip():
             intent["description"] = item.get("description").strip()
+        raw_filters = item.get("filters")
+        normalized_filters: list[dict] = []
+        for filter_item in raw_filters if isinstance(raw_filters, list) else []:
+            if not isinstance(filter_item, dict):
+                continue
+            path = filter_item.get("path") if isinstance(filter_item.get("path"), str) and filter_item.get("path").strip() else None
+            op = filter_item.get("op") if isinstance(filter_item.get("op"), str) and filter_item.get("op").strip() else None
+            value = filter_item.get("value")
+            if not isinstance(path, str) or not isinstance(op, str):
+                continue
+            normalized_filters.append({"path": path.strip(), "op": op.strip(), "value": copy.deepcopy(value)})
+        if normalized_filters:
+            intent["filters"] = normalized_filters[:6]
         intents.append(intent)
     return intents[:6]
 
@@ -7353,10 +7876,15 @@ def _ai_select_best_module_design_spec(base_spec: dict, model_spec: dict | None)
     return selected
 
 
-def _ai_build_deterministic_module_design_spec(module_id: str, module_name: str, message: str) -> dict:
-    family = _ai_detect_new_module_family(module_name, message)
+def _ai_build_deterministic_module_design_spec(
+    module_id: str,
+    module_name: str,
+    message: str,
+    module_index: dict[str, dict] | None = None,
+) -> dict:
+    family = _ai_detect_new_module_family(module_name, message, module_index=module_index)
     entity_slug, entity_label = _ai_design_primary_entity_for_family(module_id, module_name, message, family)
-    primary_label = _ai_module_primary_label(family, message)
+    primary_label = _ai_module_primary_label(family, message, entity_slug=entity_slug)
     statuses = _ai_enrich_status_options_from_message(
         _ai_coerce_design_statuses(_ai_extract_status_options(message), family),
         message,
@@ -7368,16 +7896,20 @@ def _ai_build_deterministic_module_design_spec(module_id: str, module_name: str,
         _ai_module_design_field(f"{entity_slug}.owner_id", "user", "Owner"),
     ]
     _ai_append_unique_fields(fields, _ai_family_design_fields(entity_slug, family))
+    _ai_append_unique_fields(fields, _ai_entity_specific_design_fields(entity_slug, family, message))
     _ai_append_unique_fields(fields, _ai_extra_fields_from_prompt(entity_slug, message))
     _ai_append_unique_fields(fields, _ai_infer_design_conditional_fields_from_message(entity_slug, message, statuses))
+    fields = _ai_prune_family_specific_generic_fields(family, entity_slug, fields)
     raw_related_entities = [
         *_ai_family_design_related_entities(family),
+        *_ai_entity_specific_design_related_entities(entity_slug, family, message),
         *_ai_infer_design_related_entities_from_message(entity_slug, message),
     ]
     related_entities = _ai_enrich_design_related_entities(
         entity_slug,
         _ai_coerce_design_related_entities(entity_slug, raw_related_entities),
     )
+    related_entities = _ai_prune_generic_related_entities(related_entities)
     _ai_append_unique_fields(fields, _ai_infer_design_rollup_fields_from_message(entity_slug, message, related_entities))
     _ai_append_unique_fields(fields, [_ai_module_design_field(f"{entity_slug}.created_at", "datetime", "Created At")])
     view_modes = _ai_design_view_modes(fields, statuses, family)
@@ -7697,8 +8229,13 @@ def _ai_normalize_module_design_spec(module_id: str, module_name: str, message: 
     return normalized
 
 
-def _ai_generate_module_design_spec(module_id: str, module_name: str, message: str) -> dict:
-    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message)
+def _ai_generate_module_design_spec(
+    module_id: str,
+    module_name: str,
+    message: str,
+    module_index: dict[str, dict] | None = None,
+) -> dict:
+    base_spec = _ai_build_deterministic_module_design_spec(module_id, module_name, message, module_index=module_index)
     model_spec = _ai_request_module_design_spec_from_model(module_id, module_name, message, base_spec)
     normalized_base = _ai_normalize_module_design_spec(module_id, module_name, message, base_spec)
     normalized_model = _ai_normalize_module_design_spec(module_id, module_name, message, model_spec) if isinstance(model_spec, dict) else None
@@ -7741,6 +8278,7 @@ def _ai_workflow_transitions_for_states(state_ids: list[str]) -> list[dict]:
     add("new", "in_progress", "Start")
     add("open", "in_progress", "Start")
     add("open", "investigating", "Investigate")
+    add("reported", "investigating", "Start Investigation")
     add("planned", "booked", "Book")
     add("planned", "confirmed", "Confirm")
     add("planned", "completed", "Complete")
@@ -7759,8 +8297,10 @@ def _ai_workflow_transitions_for_states(state_ids: list[str]) -> list[dict]:
     add("approved", "published", "Publish")
     add("approved", "expired", "Mark Expired")
     add("investigating", "contained", "Contain")
+    add("investigating", "corrective_action_pending", "Assign Corrective Action")
     add("under_review", "approved", "Approve")
     add("contained", "closed", "Close")
+    add("corrective_action_pending", "closed", "Close")
     add("booked", "completed", "Complete")
     add("review", "done", "Complete")
     add("applied", "screen", "Screen")
@@ -8151,6 +8691,7 @@ def _ai_build_status_notification_automation_candidate(
     entity_id: str,
     answer_hints: dict | None = None,
     workspace_id: str | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     if not all(isinstance(item, str) and item.strip() for item in (message, module_id, entity_id)):
         return None
@@ -8176,7 +8717,7 @@ def _ai_build_status_notification_automation_candidate(
     if not recipients and isinstance(hinted_recipient, str) and hinted_recipient:
         recipients = [hinted_recipient.strip()]
     if not recipients:
-        member_options = _ai_workspace_member_decision_options(workspace_id)
+        member_options = _ai_workspace_member_decision_options_for_request(request, workspace_id)
         return {
             "candidate_ops": [],
             "questions": ["Who should receive this notification?"],
@@ -8280,6 +8821,7 @@ def _ai_build_record_notification_automation_candidate(
     entity_id: str,
     answer_hints: dict | None = None,
     workspace_id: str | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     if not all(isinstance(item, str) and item.strip() for item in (message, module_id, entity_id)):
         return None
@@ -8305,7 +8847,7 @@ def _ai_build_record_notification_automation_candidate(
         if recipients:
             recipient_hint = recipients[0]
 
-    member_options = _ai_workspace_member_decision_options(workspace_id)
+    member_options = _ai_workspace_member_decision_options_for_request(request, workspace_id)
     entity_label = _ai_entity_label_from_manifest(manifest, entity_id)
     module_name = _ai_module_name_from_manifest(module_id, manifest)
     entity_slug = entity_id.split(".")[-1] if "." in entity_id else entity_id
@@ -10120,12 +10662,12 @@ def _ai_build_design_automation_candidate_ops(module_id: str, manifest: dict, de
         intent_id = intent.get("id") if isinstance(intent.get("id"), str) and intent.get("id").strip() else None
         channel = intent.get("channel") if isinstance(intent.get("channel"), str) and intent.get("channel").strip() else "email"
         event = intent.get("event") if isinstance(intent.get("event"), str) and intent.get("event").strip() else None
-        recipient = intent.get("recipient") if isinstance(intent.get("recipient"), str) and intent.get("recipient").strip() else None
+        recipient = copy.deepcopy(intent.get("recipient")) if intent.get("recipient") is not None else None
         if not isinstance(intent_id, str) or not isinstance(event, str):
             continue
         if channel == "email" and not isinstance(recipient, str):
             continue
-        if channel == "notify" and (not isinstance(recipient, str) or "{{" in recipient):
+        if channel == "notify" and not isinstance(recipient, (str, dict, list)):
             continue
         status_values = [item for item in (intent.get("status_values") or []) if isinstance(item, str) and item.strip()]
         if event == "workflow.status_changed" and not status_values:
@@ -10140,6 +10682,19 @@ def _ai_build_design_automation_candidate_ops(module_id: str, manifest: dict, de
                 {"path": "to", "op": "eq", "value": status_values[0]}
                 if len(status_values) == 1
                 else {"path": "to", "op": "in", "value": status_values}
+            )
+        extra_filters = [item for item in (intent.get("filters") or []) if isinstance(item, dict)]
+        for filter_item in extra_filters:
+            path = filter_item.get("path")
+            op = filter_item.get("op")
+            if not isinstance(path, str) or not path.strip() or not isinstance(op, str) or not op.strip():
+                continue
+            filters.append(
+                {
+                    "path": path.strip(),
+                    "op": op.strip(),
+                    "value": copy.deepcopy(filter_item.get("value")),
+                }
             )
         subject = intent.get("subject") if isinstance(intent.get("subject"), str) and intent.get("subject").strip() else None
         body = intent.get("body") if isinstance(intent.get("body"), str) and intent.get("body").strip() else None
@@ -10169,13 +10724,14 @@ def _ai_build_design_automation_candidate_ops(module_id: str, manifest: dict, de
         if isinstance(intent.get("delay_seconds"), int) and intent.get("delay_seconds") > 0:
             steps.append({"id": "step_delay", "kind": "delay", "seconds": intent.get("delay_seconds")})
         if channel == "notify":
+            notify_recipients = recipient if isinstance(recipient, list) else [copy.deepcopy(recipient)]
             steps.append(
                 {
                     "id": "step_send_notify",
                     "kind": "action",
                     "action_id": "system.notify",
                     "inputs": {
-                        "recipient_user_ids": recipient,
+                        "recipient_user_ids": notify_recipients,
                         "title": subject,
                         "body": body,
                     },
@@ -10408,8 +10964,13 @@ def _ai_module_quality_plan_feedback(module_name: str | None, quality: dict | No
     }
 
 
-def _ai_build_new_module_package(module_id: str, module_name: str, message: str) -> dict:
-    design_spec = _ai_generate_module_design_spec(module_id, module_name, message)
+def _ai_build_new_module_package(
+    module_id: str,
+    module_name: str,
+    message: str,
+    module_index: dict[str, dict] | None = None,
+) -> dict:
+    design_spec = _ai_generate_module_design_spec(module_id, module_name, message, module_index=module_index)
     manifest, family, design_spec = _ai_build_rich_module_scaffold(module_id, module_name, message, design_spec=design_spec)
     if not isinstance(manifest.get("triggers"), list) or not manifest.get("triggers"):
         manifest["triggers"] = _ai_build_module_lifecycle_triggers(manifest, module_id, message)
@@ -10818,6 +11379,360 @@ def _ai_build_create_module_handoff_ops(
     }
 
 
+def _ai_apply_workspace_template_reuse_to_bundle_ops(
+    candidate_ops: list[dict],
+    message: str,
+    answer_hints: dict | None = None,
+) -> tuple[list[dict], list[str]]:
+    normalized_ops = [copy.deepcopy(op) for op in candidate_ops if isinstance(op, dict)]
+    if not normalized_ops or not isinstance(message, str) or not message.strip():
+        return normalized_ops, []
+
+    workspace_id = (
+        answer_hints.get("workspace_id")
+        if isinstance(answer_hints, dict) and isinstance(answer_hints.get("workspace_id"), str) and answer_hints.get("workspace_id").strip()
+        else None
+    )
+    email_template_hint = (
+        answer_hints.get("email_template_id")
+        if isinstance(answer_hints, dict) and isinstance(answer_hints.get("email_template_id"), str) and answer_hints.get("email_template_id").strip()
+        else None
+    )
+    document_template_hint = (
+        answer_hints.get("document_template_id")
+        if isinstance(answer_hints, dict) and isinstance(answer_hints.get("document_template_id"), str) and answer_hints.get("document_template_id").strip()
+        else None
+    )
+    assumptions: list[str] = []
+    prepended_ops: list[dict] = []
+    existing_artifact_keys = _ai_candidate_artifact_keys(normalized_ops)
+
+    unresolved_email_steps: list[tuple[dict, dict]] = []
+    unresolved_document_steps: list[tuple[dict, dict]] = []
+    for op in normalized_ops:
+        if not isinstance(op, dict) or op.get("op") != "create_automation_record":
+            continue
+        automation = op.get("automation") if isinstance(op.get("automation"), dict) else None
+        if not isinstance(automation, dict):
+            continue
+        for step in _artifact_ai_iter_automation_steps(automation.get("steps")):
+            action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else ""
+            if template_id:
+                continue
+            if action_id == "system.send_email":
+                unresolved_email_steps.append((automation, step))
+            elif action_id == "system.generate_document":
+                unresolved_document_steps.append((automation, step))
+    for template_kind, unresolved_steps in (
+        ("email_template", unresolved_email_steps),
+        ("document_template", unresolved_document_steps),
+    ):
+        for automation, step in unresolved_steps:
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and op.get("op") == "create_automation_record"
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            step_hint = _ai_find_template_step_hint(
+                answer_hints,
+                template_kind,
+                automation,
+                step,
+                artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+            )
+            if not isinstance(step_hint, dict):
+                continue
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            step["inputs"] = inputs
+            template_id = step_hint.get("template_id") if isinstance(step_hint.get("template_id"), str) and step_hint.get("template_id").strip() else None
+            if isinstance(template_id, str):
+                inputs["template_id"] = template_id.strip()
+                if template_kind == "email_template":
+                    for key in ("subject", "body_html", "body_text"):
+                        inputs.pop(key, None)
+                assumptions.append(f"Reused the step-specific selected {template_kind.replace('_', ' ')} in the draft automation bundle.")
+                continue
+            if step_hint.get("create_new") is not True:
+                continue
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is step
+                ),
+                0,
+            )
+            if template_kind == "email_template":
+                template_op, created_template_id = _ai_build_new_email_template_op(owner_op or {}, inputs, owner_step_index)
+                artifact_kind = "email_template"
+            else:
+                template_op, created_template_id = _ai_build_new_document_template_op(owner_op or {}, inputs, owner_step_index)
+                artifact_kind = "document_template"
+            if not (isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id):
+                continue
+            if (artifact_kind, created_template_id) not in existing_artifact_keys:
+                prepended_ops.append(template_op)
+                existing_artifact_keys.add((artifact_kind, created_template_id))
+            inputs["template_id"] = created_template_id
+            if template_kind == "email_template":
+                for key in ("subject", "body_html", "body_text"):
+                    inputs.pop(key, None)
+            assumptions.append(f"Created a step-specific companion {template_kind.replace('_', ' ')} draft '{created_template_id}' in the draft automation bundle.")
+    preferred_email_entity_id = _ai_single_unresolved_template_step_entity_id([step for _, step in unresolved_email_steps], "system.send_email")
+    preferred_document_entity_id = _ai_single_unresolved_template_step_entity_id([step for _, step in unresolved_document_steps], "system.generate_document")
+
+    if not email_template_hint and len(unresolved_email_steps) == 1:
+        matched_email_template = _ai_match_workspace_template_option_from_message(
+            "email_template",
+            message,
+            workspace_id,
+            preferred_entity_id=preferred_email_entity_id,
+        )
+        if isinstance(matched_email_template, dict):
+            matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
+            matched_email_template_id = matched_email_hint.get("email_template_id")
+            if isinstance(matched_email_template_id, str) and matched_email_template_id.strip():
+                email_template_hint = matched_email_template_id.strip()
+                matched_email_label = matched_email_template.get("label")
+                label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else email_template_hint
+                assumptions.append(f"Matched the requested email template '{label_text}' from the workspace.")
+
+    if not document_template_hint and len(unresolved_document_steps) == 1:
+        matched_document_template = _ai_match_workspace_template_option_from_message(
+            "document_template",
+            message,
+            workspace_id,
+            preferred_entity_id=preferred_document_entity_id,
+        )
+        if isinstance(matched_document_template, dict):
+            matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
+            matched_document_template_id = matched_document_hint.get("document_template_id")
+            if isinstance(matched_document_template_id, str) and matched_document_template_id.strip():
+                document_template_hint = matched_document_template_id.strip()
+                matched_document_label = matched_document_template.get("label")
+                label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else document_template_hint
+                assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
+
+    global_email_template_hint = email_template_hint if len(unresolved_email_steps) == 1 else None
+    global_document_template_hint = document_template_hint if len(unresolved_document_steps) == 1 else None
+    if (
+        isinstance(global_email_template_hint, str)
+        and global_email_template_hint
+        and global_email_template_hint != "__create_new__"
+        and len(unresolved_email_steps) == 1
+    ):
+        _email_automation, email_step = unresolved_email_steps[0]
+        email_inputs = email_step.get("inputs") if isinstance(email_step.get("inputs"), dict) else {}
+        email_step["inputs"] = email_inputs
+        email_inputs["template_id"] = global_email_template_hint.strip()
+        for key in ("subject", "body_html", "body_text"):
+            email_inputs.pop(key, None)
+        assumptions.append("Reused the matched workspace email template in the draft automation bundle.")
+    elif not isinstance(global_email_template_hint, str) and len(unresolved_email_steps) == 1:
+        automation, email_step = unresolved_email_steps[0]
+        if _ai_step_requests_new_template(message, automation, email_step, "email_template", unresolved_step_count=1):
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and op.get("op") == "create_automation_record"
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is email_step
+                ),
+                0,
+            )
+            template_op, created_template_id = _ai_build_new_email_template_op(owner_op or {}, email_step.get("inputs"), owner_step_index)
+            if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                if ("email_template", created_template_id) not in existing_artifact_keys:
+                    prepended_ops.append(template_op)
+                    existing_artifact_keys.add(("email_template", created_template_id))
+                email_inputs = email_step.get("inputs") if isinstance(email_step.get("inputs"), dict) else {}
+                email_step["inputs"] = email_inputs
+                email_inputs["template_id"] = created_template_id
+                for key in ("subject", "body_html", "body_text"):
+                    email_inputs.pop(key, None)
+                assumptions.append(f"Created a companion email template draft '{created_template_id}' in the draft automation bundle.")
+    elif not isinstance(global_email_template_hint, str) and len(unresolved_email_steps) > 1:
+        used_email_template_ids: set[str] = set()
+        unresolved_email_count = len(unresolved_email_steps)
+        for automation, email_step in unresolved_email_steps:
+            email_inputs = email_step.get("inputs") if isinstance(email_step.get("inputs"), dict) else {}
+            if isinstance(email_inputs.get("template_id"), str) and email_inputs.get("template_id").strip():
+                continue
+            matched_email_template = _ai_match_workspace_template_option_for_step(
+                "email_template",
+                message,
+                workspace_id,
+                automation,
+                email_step,
+            )
+            if not isinstance(matched_email_template, dict):
+                continue
+            matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
+            matched_email_template_id = matched_email_hint.get("email_template_id")
+            if not isinstance(matched_email_template_id, str) or not matched_email_template_id.strip():
+                continue
+            template_id = matched_email_template_id.strip()
+            if template_id in used_email_template_ids:
+                continue
+            email_step["inputs"] = email_inputs
+            email_inputs["template_id"] = template_id
+            for key in ("subject", "body_html", "body_text"):
+                email_inputs.pop(key, None)
+            used_email_template_ids.add(template_id)
+            matched_email_label = matched_email_template.get("label")
+            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else template_id
+            assumptions.append(f"Reused the matched workspace email template '{label_text}' in the draft automation bundle.")
+            continue
+            if _ai_step_requests_new_template(message, automation, email_step, "email_template", unresolved_step_count=unresolved_email_count):
+                owner_op = next(
+                    (
+                        op
+                        for op in normalized_ops
+                        if isinstance(op, dict)
+                        and op.get("op") == "create_automation_record"
+                        and op.get("automation") is automation
+                    ),
+                    None,
+                )
+                owner_step_index = next(
+                    (
+                        idx
+                        for idx, candidate in enumerate((automation.get("steps") or []))
+                        if candidate is email_step
+                    ),
+                    0,
+                )
+                template_op, created_template_id = _ai_build_new_email_template_op(owner_op or {}, email_step.get("inputs"), owner_step_index)
+                if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                    if ("email_template", created_template_id) not in existing_artifact_keys:
+                        prepended_ops.append(template_op)
+                        existing_artifact_keys.add(("email_template", created_template_id))
+                    email_inputs = email_step.get("inputs") if isinstance(email_step.get("inputs"), dict) else {}
+                    email_step["inputs"] = email_inputs
+                    email_inputs["template_id"] = created_template_id
+                    for key in ("subject", "body_html", "body_text"):
+                        email_inputs.pop(key, None)
+                    assumptions.append(f"Created a companion email template draft '{created_template_id}' in the draft automation bundle.")
+
+    if (
+        isinstance(global_document_template_hint, str)
+        and global_document_template_hint
+        and global_document_template_hint != "__create_new__"
+        and len(unresolved_document_steps) == 1
+    ):
+        _document_automation, document_step = unresolved_document_steps[0]
+        document_inputs = document_step.get("inputs") if isinstance(document_step.get("inputs"), dict) else {}
+        document_step["inputs"] = document_inputs
+        document_inputs["template_id"] = global_document_template_hint.strip()
+        assumptions.append("Reused the matched workspace document template in the draft automation bundle.")
+    elif not isinstance(global_document_template_hint, str) and len(unresolved_document_steps) == 1:
+        automation, document_step = unresolved_document_steps[0]
+        if _ai_step_requests_new_template(message, automation, document_step, "document_template", unresolved_step_count=1):
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and op.get("op") == "create_automation_record"
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is document_step
+                ),
+                0,
+            )
+            template_op, created_template_id = _ai_build_new_document_template_op(owner_op or {}, document_step.get("inputs"), owner_step_index)
+            if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                if ("document_template", created_template_id) not in existing_artifact_keys:
+                    prepended_ops.append(template_op)
+                    existing_artifact_keys.add(("document_template", created_template_id))
+                document_inputs = document_step.get("inputs") if isinstance(document_step.get("inputs"), dict) else {}
+                document_step["inputs"] = document_inputs
+                document_inputs["template_id"] = created_template_id
+                assumptions.append(f"Created a companion document template draft '{created_template_id}' in the draft automation bundle.")
+    elif not isinstance(global_document_template_hint, str) and len(unresolved_document_steps) > 1:
+        used_document_template_ids: set[str] = set()
+        unresolved_document_count = len(unresolved_document_steps)
+        for automation, document_step in unresolved_document_steps:
+            document_inputs = document_step.get("inputs") if isinstance(document_step.get("inputs"), dict) else {}
+            if isinstance(document_inputs.get("template_id"), str) and document_inputs.get("template_id").strip():
+                continue
+            matched_document_template = _ai_match_workspace_template_option_for_step(
+                "document_template",
+                message,
+                workspace_id,
+                automation,
+                document_step,
+            )
+            if not isinstance(matched_document_template, dict):
+                continue
+            matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
+            matched_document_template_id = matched_document_hint.get("document_template_id")
+            if not isinstance(matched_document_template_id, str) or not matched_document_template_id.strip():
+                continue
+            template_id = matched_document_template_id.strip()
+            if template_id in used_document_template_ids:
+                continue
+            document_step["inputs"] = document_inputs
+            document_inputs["template_id"] = template_id
+            used_document_template_ids.add(template_id)
+            matched_document_label = matched_document_template.get("label")
+            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else template_id
+            assumptions.append(f"Reused the matched workspace document template '{label_text}' in the draft automation bundle.")
+            continue
+            if _ai_step_requests_new_template(message, automation, document_step, "document_template", unresolved_step_count=unresolved_document_count):
+                owner_op = next(
+                    (
+                        op
+                        for op in normalized_ops
+                        if isinstance(op, dict)
+                        and op.get("op") == "create_automation_record"
+                        and op.get("automation") is automation
+                    ),
+                    None,
+                )
+                owner_step_index = next(
+                    (
+                        idx
+                        for idx, candidate in enumerate((automation.get("steps") or []))
+                        if candidate is document_step
+                    ),
+                    0,
+                )
+                template_op, created_template_id = _ai_build_new_document_template_op(owner_op or {}, document_step.get("inputs"), owner_step_index)
+                if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                    if ("document_template", created_template_id) not in existing_artifact_keys:
+                        prepended_ops.append(template_op)
+                        existing_artifact_keys.add(("document_template", created_template_id))
+                    document_inputs = document_step.get("inputs") if isinstance(document_step.get("inputs"), dict) else {}
+                    document_step["inputs"] = document_inputs
+                    document_inputs["template_id"] = created_template_id
+                    assumptions.append(f"Created a companion document template draft '{created_template_id}' in the draft automation bundle.")
+
+    return [*prepended_ops, *normalized_ops], list(dict.fromkeys(assumptions))
+
+
 def _ai_build_create_module_dependency_ops(module_id: str, manifest: dict, module_index: dict[str, dict]) -> list[dict]:
     if not isinstance(module_id, str) or not module_id or not isinstance(manifest, dict) or not isinstance(module_index, dict):
         return []
@@ -10895,7 +11810,12 @@ def _ai_build_create_module_bundle(
             design_spec = None
             quality = _ai_module_manifest_quality_report(module_id, manifest)
         else:
-            package = _ai_build_new_module_package(module_id, module_name, scoped_message)
+            try:
+                package = _ai_build_new_module_package(module_id, module_name, scoped_message, module_index=working_module_index)
+            except TypeError as exc:
+                if "unexpected keyword argument 'module_index'" not in str(exc):
+                    raise
+                package = _ai_build_new_module_package(module_id, module_name, scoped_message)
             manifest = package.get("manifest")
             design_spec = package.get("design_spec") if isinstance(package.get("design_spec"), dict) else None
             quality = package.get("quality") if isinstance(package.get("quality"), dict) else {}
@@ -10994,6 +11914,12 @@ def _ai_build_create_module_bundle(
                     ]
                 )
 
+    candidate_ops, template_assumptions = _ai_apply_workspace_template_reuse_to_bundle_ops(
+        candidate_ops,
+        message,
+        answer_hints=answer_hints,
+    )
+
     advisories: list[str]
     assumptions: list[str]
     if len(module_details) == 1:
@@ -11063,6 +11989,9 @@ def _ai_build_create_module_bundle(
         requested_change_lines.append(f"Prepare coordinated starter scaffolds for {_ai_join_human_list(module_names)}.")
 
     for item in (handoff_bundle.get("assumptions") or []):
+        if isinstance(item, str) and item not in assumptions:
+            assumptions.append(item)
+    for item in template_assumptions:
         if isinstance(item, str) and item not in assumptions:
             assumptions.append(item)
     for item in (handoff_bundle.get("advisories") or []):
@@ -27630,6 +28559,7 @@ def _ai_multi_clause_plan(
     module_ids: list[str],
     module_index: dict[str, dict],
     answer_hints: dict | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     clauses = _ai_split_request_clauses(message)
     if len(clauses) < 2:
@@ -27693,6 +28623,7 @@ def _ai_multi_clause_plan(
                 list(working_module_index.keys()),
                 working_module_index,
                 answer_hints=clause_hints,
+                request=request,
             )
         if not isinstance(clause_plan, dict):
             clause_plan = _ai_slot_based_plan(
@@ -27701,6 +28632,7 @@ def _ai_multi_clause_plan(
                 working_module_index,
                 answer_hints=clause_hints,
                 allow_multi=False,
+                request=request,
             )
         if clause_plan is None:
             continue
@@ -27804,6 +28736,7 @@ def _ai_cross_module_field_rollout_plan(
     module_ids: list[str],
     module_index: dict[str, dict],
     answer_hints: dict | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     field_map = _ai_shared_field_rollout_map(message, module_ids, module_index, answer_hints=answer_hints)
     shared_rollout = bool(field_map)
@@ -27853,6 +28786,7 @@ def _ai_cross_module_field_rollout_plan(
             module_index,
             answer_hints=clause_hints,
             allow_multi=False,
+            request=request,
         )
         if not isinstance(clause_plan, dict):
             return None
@@ -28154,6 +29088,7 @@ def _ai_slot_based_plan(
     answer_hints: dict | None = None,
     allow_multi: bool = True,
     workspace_id: str | None = None,
+    request: Request | None = None,
 ) -> dict | None:
     msg = (message or "").strip()
     if not msg:
@@ -28250,7 +29185,13 @@ def _ai_slot_based_plan(
             return crm_quote_plan
 
     if allow_multi:
-        rollout_plan = _ai_cross_module_field_rollout_plan(combined, module_ids, module_index, answer_hints=answer_hints)
+        rollout_plan = _ai_cross_module_field_rollout_plan(
+            combined,
+            module_ids,
+            module_index,
+            answer_hints=answer_hints,
+            request=request,
+        )
         if isinstance(rollout_plan, dict):
             return rollout_plan
         clauses = [clause.strip() for clause in _ai_split_request_clauses(combined) if isinstance(clause, str) and clause.strip()]
@@ -28283,12 +29224,24 @@ def _ai_slot_based_plan(
                 )
                 should_try_multi = not create_followup_only
         if should_try_multi:
-            multi_plan = _ai_multi_clause_plan(combined, module_ids, module_index, answer_hints=answer_hints)
+            multi_plan = _ai_multi_clause_plan(
+                combined,
+                module_ids,
+                module_index,
+                answer_hints=answer_hints,
+                request=request,
+            )
             if isinstance(multi_plan, dict):
                 return multi_plan
 
     if allow_multi and len(module_ids) > 1 and not create_module_intent:
-        rollout_plan = _ai_cross_module_field_rollout_plan(combined, module_ids, module_index, answer_hints=answer_hints)
+        rollout_plan = _ai_cross_module_field_rollout_plan(
+            combined,
+            module_ids,
+            module_index,
+            answer_hints=answer_hints,
+            request=request,
+        )
         if isinstance(rollout_plan, dict):
             return rollout_plan
 
@@ -29223,6 +30176,7 @@ def _ai_slot_based_plan(
         entity_id,
         answer_hints=answer_hints,
         workspace_id=workspace_id,
+        request=request,
     )
     if isinstance(automation_candidate, dict):
         result["candidate_ops"] = [op for op in (automation_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
@@ -29240,6 +30194,7 @@ def _ai_slot_based_plan(
         entity_id,
         answer_hints=answer_hints,
         workspace_id=workspace_id,
+        request=request,
     )
     if isinstance(record_notification_candidate, dict):
         result["candidate_ops"] = [op for op in (record_notification_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
@@ -30725,6 +31680,7 @@ def _ai_extract_candidate_ops(
     module_index: dict[str, dict],
     answer_hints: dict | None = None,
     workspace_id: str | None = None,
+    request: Request | None = None,
 ) -> tuple[list[dict], list[str], dict | None]:
     candidate_ops: list[dict] = []
     questions: list[str] = []
@@ -30939,6 +31895,7 @@ def _ai_extract_candidate_ops(
         entity_id,
         answer_hints=answer_hints,
         workspace_id=workspace_id,
+        request=request,
     )
     if isinstance(automation_candidate, dict):
         candidate_ops.extend(
@@ -30959,6 +31916,7 @@ def _ai_extract_candidate_ops(
         entity_id,
         answer_hints=answer_hints,
         workspace_id=workspace_id,
+        request=request,
     )
     if isinstance(record_notification_candidate, dict):
         candidate_ops.extend(
@@ -31062,6 +32020,14 @@ def _ai_extract_candidate_ops(
     quote_match = re.search(r"['\"]([^'\"]{1,80})['\"]", msg)
     if quote_match and isinstance(quote_match.group(1), str):
         quoted_label = quote_match.group(1).strip()
+
+    explicit_field_change_intent = bool(explicit_field_id or field_name or hint_field_id)
+    generic_field_change_intent = bool(
+        re.search(r"\b(field|attribute|column|checkbox|toggle|flag)\b", lower)
+        or re.search(r"\b(rename|renamed|rename it|change the type|change type|remove field|delete field)\b", lower)
+    )
+    if not explicit_field_change_intent and not generic_field_change_intent:
+        return candidate_ops, questions, question_meta
 
     field_label = None
     if explicit_field_id:
@@ -31580,6 +32546,7 @@ def _ai_plan_from_message(
             module_index,
             answer_hints=planner_hints,
             workspace_id=workspace_id,
+            request=request,
         )
     if isinstance(slot_plan, dict):
         candidate_ops = [op for op in (slot_plan.get("candidate_ops") or []) if isinstance(op, dict)]
@@ -31692,6 +32659,7 @@ def _ai_plan_from_message(
             module_index,
             answer_hints=planner_hints,
             workspace_id=workspace_id,
+            request=request,
         )
         if heuristic_ops or (not questions and heuristic_questions):
             candidate_ops = heuristic_ops
@@ -32136,17 +33104,80 @@ def _ai_plan_from_message(
     return plan, {"status": session_status, "affected_modules": affected_modules}
 
 
-def _ai_context_package(request: Request, session: dict, message: str, answer_hints: dict | None = None) -> dict:
+def _ai_resolve_workspace_id(
+    actor: dict | None = None,
+    session: dict | None = None,
+    answer_hints: dict | None = None,
+) -> str:
+    for source in (answer_hints, actor, session):
+        if isinstance(source, dict):
+            workspace_id = source.get("workspace_id")
+            if isinstance(workspace_id, str) and workspace_id.strip():
+                return workspace_id.strip()
+    org_id = get_org_id()
+    return org_id if isinstance(org_id, str) and org_id.strip() else "default"
+
+
+def _ai_build_shared_context(
+    request: Request,
+    actor: dict | None,
+    *,
+    session: dict | None = None,
+    message: str | None = None,
+    answer_hints: dict | None = None,
+) -> dict[str, Any]:
     module_index = _ai_module_manifest_index(request)
+    graph = _ai_build_workspace_graph(request)
+    workspace_id = _ai_resolve_workspace_id(actor, session=session, answer_hints=answer_hints)
+    selected_module_id = None
+    selected_key = session.get("selected_artifact_key") if isinstance(session, dict) else None
+    selected_type = session.get("selected_artifact_type") if isinstance(session, dict) else None
+    if isinstance(selected_key, str) and selected_key.strip() and selected_type == "module" and selected_key in module_index:
+        selected_module_id = selected_key.strip()
+    if not isinstance(selected_module_id, str):
+        hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) else None
+        hinted_module = _ai_find_module_by_alias(hint_module_target, list(module_index.keys()), module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
+        if isinstance(hinted_module, str) and hinted_module in module_index:
+            selected_module_id = hinted_module
+    selected_entity_id = None
+    if isinstance(answer_hints, dict):
+        for key in ("selected_entity_id", "entity_target"):
+            value = answer_hints.get(key)
+            if isinstance(value, str) and value.strip():
+                selected_entity_id = value.strip()
+                break
+    return {
+        "workspace_id": workspace_id,
+        "module_index": module_index,
+        "workspace_graph": graph,
+        "member_options": _ai_workspace_member_decision_options_for_request(request, workspace_id),
+        "selected_module_id": selected_module_id,
+        "selected_entity_id": selected_entity_id,
+        "planned_page_id": answer_hints.get("planned_page_id").strip() if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_page_id"), str) and answer_hints.get("planned_page_id").strip() else None,
+        "planned_view_id": answer_hints.get("planned_view_id").strip() if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_view_id"), str) and answer_hints.get("planned_view_id").strip() else None,
+        "planned_section_id": answer_hints.get("planned_section_id").strip() if isinstance(answer_hints, dict) and isinstance(answer_hints.get("planned_section_id"), str) and answer_hints.get("planned_section_id").strip() else None,
+        "tab_target": answer_hints.get("tab_target").strip() if isinstance(answer_hints, dict) and isinstance(answer_hints.get("tab_target"), str) and answer_hints.get("tab_target").strip() else None,
+        "message": message.strip() if isinstance(message, str) and message.strip() else "",
+    }
+
+
+def _ai_context_package(request: Request, session: dict, message: str, answer_hints: dict | None = None) -> dict:
+    actor = getattr(request.state, "actor", None)
+    shared_context = _ai_build_shared_context(
+        request,
+        actor if isinstance(actor, dict) else None,
+        session=session,
+        message=message,
+        answer_hints=answer_hints,
+    )
+    module_index = shared_context.get("module_index") if isinstance(shared_context.get("module_index"), dict) else {}
     selected_key = session.get("selected_artifact_key")
     selected_type = session.get("selected_artifact_type") or "none"
-    actor = getattr(request.state, "actor", None)
-    graph = _ai_build_workspace_graph(request)
+    graph = shared_context.get("workspace_graph") if isinstance(shared_context.get("workspace_graph"), dict) else {}
     relevant_modules = []
     if isinstance(selected_key, str) and selected_type == "module" and selected_key in module_index:
         relevant_modules.append(selected_key)
-    hint_module_target = answer_hints.get("module_target") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("module_target"), str) else None
-    hinted_module = _ai_find_module_by_alias(hint_module_target, list(module_index.keys()), module_index) if isinstance(hint_module_target, str) and hint_module_target.strip() else None
+    hinted_module = shared_context.get("selected_module_id") if isinstance(shared_context.get("selected_module_id"), str) else None
     if isinstance(hinted_module, str) and hinted_module in module_index:
         relevant_modules.append(hinted_module)
     relevant_modules.extend(_ai_extract_explicit_module_targets_from_text(message, list(module_index.keys()), module_index))
@@ -32234,6 +33265,16 @@ def _ai_context_package(request: Request, session: dict, message: str, answer_hi
         "workspace_kernel_digest": kernel_digest,
         "workspace_artifact_catalog": _ai_workspace_artifact_catalog(actor if isinstance(actor, dict) else None),
         "dependency_facts": graph,
+        "workspace_context": {
+            "workspace_id": shared_context.get("workspace_id"),
+            "selected_module_id": shared_context.get("selected_module_id"),
+            "selected_entity_id": shared_context.get("selected_entity_id"),
+            "planned_page_id": shared_context.get("planned_page_id"),
+            "planned_view_id": shared_context.get("planned_view_id"),
+            "planned_section_id": shared_context.get("planned_section_id"),
+            "tab_target": shared_context.get("tab_target"),
+            "workspace_member_count": len(shared_context.get("member_options") or []),
+        },
         "prior_unresolved_questions": unresolved,
     }
 
@@ -32323,12 +33364,20 @@ def _ai_collect_answer_hints(session_id: str) -> dict:
         "field_target": None,
         "module_target": None,
         "entity_target": None,
+        "selected_entity_id": None,
         "tab_target": None,
+        "page_target": None,
+        "planned_page_id": None,
         "planned_section_id": None,
         "planned_view_id": None,
+        "recipient_user_id": None,
+        "recipient_user_ids": [],
         "recipient_email": None,
+        "notify_recipient_step_hints": [],
         "email_template_id": None,
         "document_template_id": None,
+        "email_template_step_hints": [],
+        "document_template_step_hints": [],
         "create_new_email_template": None,
         "create_new_document_template": None,
         "selected_option_id": None,
@@ -32376,6 +33425,10 @@ def _ai_collect_answer_hints(session_id: str) -> dict:
                 hints["planner_intent"] = intent.strip()
             if isinstance(planner_state.get("module_name"), str) and planner_state.get("module_name").strip():
                 hints["module_name"] = planner_state.get("module_name").strip()
+            if isinstance(planner_state.get("entity_target"), str) and planner_state.get("entity_target").strip():
+                hints["entity_target"] = planner_state.get("entity_target").strip()
+            if isinstance(planner_state.get("selected_entity_id"), str) and planner_state.get("selected_entity_id").strip():
+                hints["selected_entity_id"] = planner_state.get("selected_entity_id").strip()
             if isinstance(planner_state.get("field_label"), str) and planner_state.get("field_label").strip():
                 hints["field_label"] = planner_state.get("field_label").strip()
             if isinstance(planner_state.get("field_id"), str) and planner_state.get("field_id").strip():
@@ -32433,48 +33486,7 @@ def _ai_collect_answer_hints(session_id: str) -> dict:
                 except Exception:
                     parsed = None
         if isinstance(parsed, dict):
-            if isinstance(parsed.get("include_form"), bool):
-                hints["include_form"] = parsed.get("include_form")
-            if isinstance(parsed.get("include_list"), bool):
-                hints["include_list"] = parsed.get("include_list")
-            if isinstance(parsed.get("deduplicate_existing"), bool):
-                hints["deduplicate_existing"] = parsed.get("deduplicate_existing")
-            if isinstance(parsed.get("confirm_plan"), bool):
-                hints["confirm_plan"] = parsed.get("confirm_plan")
-            if isinstance(parsed.get("field_label"), str) and parsed.get("field_label").strip():
-                hints["field_label"] = parsed.get("field_label").strip()
-            if isinstance(parsed.get("field_type"), str) and parsed.get("field_type") in _AI_FIELD_TYPES:
-                hints["field_type"] = parsed.get("field_type")
-            if isinstance(parsed.get("field_id"), str) and parsed.get("field_id").strip():
-                hints["field_id"] = parsed.get("field_id").strip()
-            if isinstance(parsed.get("field_target"), str) and parsed.get("field_target").strip():
-                hints["field_target"] = parsed.get("field_target").strip()
-                if not hints.get("field_label"):
-                    hints["field_label"] = parsed.get("field_target").strip()
-            if isinstance(parsed.get("module_target"), str) and parsed.get("module_target").strip():
-                hints["module_target"] = parsed.get("module_target").strip()
-            if isinstance(parsed.get("entity_target"), str) and parsed.get("entity_target").strip():
-                hints["entity_target"] = parsed.get("entity_target").strip()
-            if isinstance(parsed.get("tab_target"), str) and parsed.get("tab_target").strip():
-                hints["tab_target"] = parsed.get("tab_target").strip()
-            if isinstance(parsed.get("recipient_email"), str) and parsed.get("recipient_email").strip():
-                hints["recipient_email"] = parsed.get("recipient_email").strip()
-            if isinstance(parsed.get("email_template_id"), str) and parsed.get("email_template_id").strip():
-                hints["email_template_id"] = parsed.get("email_template_id").strip()
-            if isinstance(parsed.get("document_template_id"), str) and parsed.get("document_template_id").strip():
-                hints["document_template_id"] = parsed.get("document_template_id").strip()
-            if isinstance(parsed.get("create_new_email_template"), bool):
-                hints["create_new_email_template"] = parsed.get("create_new_email_template")
-            if isinstance(parsed.get("create_new_document_template"), bool):
-                hints["create_new_document_template"] = parsed.get("create_new_document_template")
-            if isinstance(parsed.get("selected_option_id"), str) and parsed.get("selected_option_id").strip():
-                hints["selected_option_id"] = parsed.get("selected_option_id").strip()
-            if isinstance(parsed.get("selected_option_value"), str) and parsed.get("selected_option_value").strip():
-                hints["selected_option_value"] = parsed.get("selected_option_value").strip()
-            if isinstance(parsed.get("selected_option_label"), str) and parsed.get("selected_option_label").strip():
-                hints["selected_option_label"] = parsed.get("selected_option_label").strip()
-            if isinstance(parsed.get("answer_text"), str) and parsed.get("answer_text").strip():
-                hints["answer_text"] = parsed.get("answer_text").strip()
+            _ai_apply_structured_answer_hints(hints, parsed)
         question_id = data.get("question_id") if isinstance(data.get("question_id"), str) else None
         body = data.get("body")
         if isinstance(body, str) and body.strip():
@@ -32485,8 +33497,16 @@ def _ai_collect_answer_hints(session_id: str) -> dict:
                 hints["module_target"] = text_value
             if question_id == "entity_target":
                 hints["entity_target"] = text_value
+                hints["selected_entity_id"] = text_value
             if question_id == "tab_target":
                 hints["tab_target"] = text_value
+            if question_id == "section_target":
+                hints["planned_section_id"] = text_value
+            if question_id == "page_target":
+                hints["page_target"] = text_value
+                hints["planned_page_id"] = text_value
+            if question_id == "view_target":
+                hints["planned_view_id"] = text_value
             if question_id == "field_target":
                 hints["field_target"] = text_value
                 hints["field_label"] = text_value
@@ -33180,7 +34200,14 @@ def _ai_preview_field_lines(request_summary: str) -> list[str]:
     if not isinstance(request_summary, str) or not request_summary.strip():
         return []
     lower = request_summary.lower()
-    if "field" not in lower:
+    has_field_wording = "field" in lower
+    has_line_item_request = bool(re.search(r"\bline items?\b", lower))
+    has_catalog_link_request = bool(
+        re.search(r"\bfrom (?:our |the )?catalog\b|\bcatalog module\b|\blink(?:ed)? to (?:our |the )?catalog\b", lower)
+        or (has_line_item_request and "catalog" in lower)
+    )
+    influencer_context = bool(re.search(r"\b(instagram|influencer|influencers|creator|ambassador|ugc)\b", lower))
+    if not any((has_field_wording, has_line_item_request, has_catalog_link_request)):
         return []
     lines: list[str] = []
     condition_match = re.search(
@@ -33209,6 +34236,23 @@ def _ai_preview_field_lines(request_summary: str) -> list[str]:
         if re.search(r"\brequired\b", lower):
             required_condition = condition or "that rule is met"
             lines.append(f"Make {field_text} required when {required_condition}.")
+    if has_line_item_request:
+        lines.append("Add line items so each product sent can be tracked separately.")
+    if has_catalog_link_request:
+        lines.append("Link each sent-product line item back to the Catalog module.")
+    if influencer_context:
+        influencer_fields: list[str] = []
+        for label, pattern in (
+            ("Instagram handle", r"\binstagram handle\b|\bhandle\b"),
+            ("Coupon code", r"\bcoupon code\b|\bpromo code\b|\breferral code\b|\baffiliate code\b"),
+            ("Follower count", r"\bfollowers?\b"),
+            ("Purchase count", r"\bpurchases?\b"),
+            ("Performance rating", r"\bgood fit\b|\bgood or not\b|\bperformance\b|\brating\b"),
+        ):
+            if re.search(pattern, lower) and label not in influencer_fields:
+                influencer_fields.append(label)
+        if influencer_fields:
+            lines.append(f"Track {', '.join(influencer_fields[:5])} on the influencer record.")
     return list(dict.fromkeys(lines))
 
 
@@ -34527,12 +35571,40 @@ def _ai_normalize_required_question_meta(question_meta: dict | None, questions: 
 
 
 def _ai_workspace_member_decision_options(workspace_id: str | None, limit: int = 8) -> list[dict]:
+    return _ai_workspace_member_decision_options_for_request(None, workspace_id, limit=limit)
+
+
+def _ai_workspace_members_for_request(request: Request | None, workspace_id: str | None) -> list[dict]:
     if not isinstance(workspace_id, str) or not workspace_id.strip():
         return []
+    cache_key = f"ai:workspace_members:{workspace_id.strip()}"
+    if request is not None:
+        cached = _req_cache_get(request, cache_key)
+        if isinstance(cached, list):
+            return copy.deepcopy(cached)
     try:
         members = list_workspace_members(workspace_id) or []
     except Exception:
         members = []
+    normalized_members = [copy.deepcopy(member) for member in members if isinstance(member, dict)]
+    if request is not None:
+        _req_cache_set(request, cache_key, copy.deepcopy(normalized_members))
+    return normalized_members
+
+
+def _ai_workspace_member_decision_options_for_request(
+    request: Request | None,
+    workspace_id: str | None,
+    limit: int = 8,
+) -> list[dict]:
+    if not isinstance(workspace_id, str) or not workspace_id.strip():
+        return []
+    cache_key = f"ai:workspace_member_options:{workspace_id.strip()}"
+    if request is not None:
+        cached = _req_cache_get(request, cache_key)
+        if isinstance(cached, list):
+            return copy.deepcopy(cached[: max(int(limit or 0), 0)])
+    members = _ai_workspace_members_for_request(request, workspace_id)
     options: list[dict] = []
     seen_values: set[str] = set()
     for member in members:
@@ -34568,12 +35640,190 @@ def _ai_workspace_member_decision_options(workspace_id: str | None, limit: int =
                 "label": display_name or email.strip(),
                 "value": email.strip(),
                 "description": description,
-                "hints": {"recipient_email": email.strip()},
+                "hints": {
+                    "recipient_email": email.strip(),
+                    "recipient_user_id": option_id,
+                },
             }
         )
         if len(options) >= max(int(limit or 0), 0):
             break
+    if request is not None:
+        _req_cache_set(request, cache_key, copy.deepcopy(options))
     return options
+
+
+def _ai_match_workspace_member_option_from_message(
+    message: str,
+    workspace_id: str | None,
+    request: Request | None = None,
+) -> dict | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    resolved_workspace_id = (
+        workspace_id.strip()
+        if isinstance(workspace_id, str) and workspace_id.strip()
+        else get_org_id() or "default"
+    )
+    members = _ai_workspace_members_for_request(request, resolved_workspace_id)
+    lowered_message = re.sub(r"\s+", " ", message.lower()).strip()
+    ranked: list[tuple[int, int, dict]] = []
+    alias_candidates: dict[str, dict[str, Any]] = {}
+    generic_aliases = {
+        "admin",
+        "admins",
+        "member",
+        "members",
+        "team",
+        "teams",
+        "user",
+        "users",
+        "workspace",
+    }
+
+    def _candidate_patterns(candidate: str) -> tuple[str, ...]:
+        escaped = re.escape(candidate)
+        return (
+            rf"\b(?:notify|alert|message|ping)\s+(?:the\s+)?{escaped}(?:\s+team)?\b",
+            rf"\b(?:send|sending)\b[^.{{\n}}]*\bto\s+(?:the\s+)?{escaped}(?:\s+team)?\b",
+            rf"\bemail\s+(?:the\s+)?{escaped}(?:\s+team)?\b",
+        )
+
+    def _normalized_alias_variants(value: Any) -> list[str]:
+        if not isinstance(value, str) or not value.strip():
+            return []
+        candidate = value.strip().lower()
+        if "@" in candidate:
+            candidate = candidate.split("@", 1)[0].strip()
+        candidate = re.sub(r"[_./-]+", " ", candidate)
+        candidate = re.sub(r"\b(the|team|dept|department)\b", " ", candidate)
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        if not candidate or candidate in generic_aliases:
+            return []
+        variants = {candidate}
+        if re.search(r"\b(?:operations?|ops)\b", candidate):
+            variants.update({"ops", "operations", "operation"})
+        if re.search(r"\b(?:finance|financial|accounting|accounts)\b", candidate):
+            variants.update({"finance", "accounting", "accounts"})
+        if re.search(r"\bdispatch(?:er|ers)?\b", candidate):
+            variants.update({"dispatch", "dispatcher", "dispatchers"})
+        if re.search(r"\baccount\s+manag(?:er|ers|ement)\b", candidate):
+            variants.update({"account manager", "account managers", "account management"})
+        if re.search(r"\b(?:customer|client)\s+success\b", candidate) or re.search(r"\baccount\s+executive\b", candidate):
+            variants.update({"account manager", "account managers", "account management"})
+        if len(candidate) > 4 and candidate.endswith("s"):
+            variants.add(candidate[:-1].strip())
+        elif " " in candidate and not candidate.endswith("s"):
+            variants.add(f"{candidate}s")
+        return [item for item in variants if item and item not in generic_aliases]
+
+    def _register_alias(alias: str, user_id: str, email: str | None, label: str | None) -> None:
+        normalized = re.sub(r"\s+", " ", alias).strip()
+        if not normalized or normalized in generic_aliases:
+            return
+        bucket = alias_candidates.setdefault(
+            normalized,
+            {
+                "user_ids": [],
+                "emails": [],
+                "labels": [],
+            },
+        )
+        if user_id not in bucket["user_ids"]:
+            bucket["user_ids"].append(user_id)
+        if isinstance(email, str) and email.strip() and email.strip() not in bucket["emails"]:
+            bucket["emails"].append(email.strip())
+        if isinstance(label, str) and label.strip() and label.strip() not in bucket["labels"]:
+            bucket["labels"].append(label.strip())
+
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        user_id = member.get("user_id") if isinstance(member.get("user_id"), str) and member.get("user_id").strip() else None
+        if not isinstance(user_id, str) or not user_id:
+            continue
+        display_name = next(
+            (
+                value.strip()
+                for value in (
+                    member.get("full_name"),
+                    member.get("display_name"),
+                    member.get("name"),
+                )
+                if isinstance(value, str) and value.strip()
+            ),
+            None,
+        )
+        email = member.get("email") if isinstance(member.get("email"), str) and member.get("email").strip() else None
+        label = display_name or email or user_id
+        for source_value in (
+            display_name,
+            email,
+            member.get("role"),
+            member.get("title"),
+            member.get("job_title"),
+            member.get("department"),
+            member.get("team"),
+            member.get("function"),
+        ):
+            for alias in _normalized_alias_variants(source_value):
+                _register_alias(alias, user_id, email, label)
+
+    for alias, bucket in alias_candidates.items():
+        token_count = len([token for token in re.split(r"[\s._-]+", alias) if token])
+        if token_count <= 0:
+            continue
+        if not any(re.search(pattern, lowered_message) for pattern in _candidate_patterns(alias)):
+            continue
+        user_ids = [
+            item.strip()
+            for item in (bucket.get("user_ids") or [])
+            if isinstance(item, str) and item.strip()
+        ]
+        if not user_ids:
+            continue
+        emails = [
+            item.strip()
+            for item in (bucket.get("emails") or [])
+            if isinstance(item, str) and item.strip()
+        ]
+        labels = [
+            item.strip()
+            for item in (bucket.get("labels") or [])
+            if isinstance(item, str) and item.strip()
+        ]
+        hints: dict[str, Any] = {}
+        if len(user_ids) == 1:
+            hints["recipient_user_id"] = user_ids[0]
+            if emails:
+                hints["recipient_email"] = emails[0]
+        else:
+            hints["recipient_user_ids"] = copy.deepcopy(user_ids)
+        ranked.append(
+            (
+                token_count,
+                len(alias),
+                {
+                    "id": f"member:{alias}",
+                    "label": labels[0] if len(user_ids) == 1 and labels else _ai_titleize_slug(alias),
+                    "value": emails[0] if len(user_ids) == 1 and emails else alias,
+                    "hints": hints,
+                },
+            )
+        )
+
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    top_token_count, top_length, top_option = ranked[0]
+    tied_top = [
+        option
+        for token_count, candidate_length, option in ranked
+        if token_count == top_token_count and candidate_length == top_length
+    ]
+    if len(tied_top) != 1:
+        return None
+    return top_option if isinstance(top_option, dict) else None
 
 
 def _ai_workspace_template_decision_options(template_kind: str, workspace_id: str | None, limit: int = 8) -> list[dict]:
@@ -34602,6 +35852,14 @@ def _ai_workspace_template_decision_options(template_kind: str, workspace_id: st
             continue
         seen_ids.add(normalized_id)
         label = item.get("name") if isinstance(item.get("name"), str) and item.get("name").strip() else normalized_id
+        variables_schema = item.get("variables_schema") if isinstance(item.get("variables_schema"), dict) else {}
+        entity_id = (
+            variables_schema.get("entity_id")
+            if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip()
+            else item.get("entity_id")
+            if isinstance(item.get("entity_id"), str) and item.get("entity_id").strip()
+            else None
+        )
         description = next(
             (
                 item.get(key).strip()
@@ -34616,7 +35874,10 @@ def _ai_workspace_template_decision_options(template_kind: str, workspace_id: st
                 "label": label.strip() if isinstance(label, str) else normalized_id,
                 "value": normalized_id,
                 "description": description,
-                "hints": {hint_field: normalized_id},
+                "hints": {
+                    hint_field: normalized_id,
+                    **({"entity_id": entity_id.strip()} if isinstance(entity_id, str) and entity_id.strip() else {}),
+                },
             }
         )
         if len(options) >= max(limit, 1):
@@ -34624,10 +35885,1205 @@ def _ai_workspace_template_decision_options(template_kind: str, workspace_id: st
     return options
 
 
+def _ai_template_match_stem(token: str | None) -> str:
+    if not isinstance(token, str):
+        return ""
+    normalized = re.sub(r"[^a-z0-9]+", "", token.lower())
+    if not normalized:
+        return ""
+    for suffix in ("ations", "ation", "ments", "ment", "ingly", "edly", "ing", "ers", "er", "ied", "ies", "ed", "als", "al", "ions", "ion", "es", "s"):
+        if len(normalized) > len(suffix) + 2 and normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    if normalized.endswith("i") and len(normalized) > 3:
+        normalized = f"{normalized[:-1]}y"
+    return normalized
+
+
+def _ai_template_match_tokens(text: str | None, template_kind: str) -> list[str]:
+    normalized = _ai_norm_token(text)
+    if not normalized:
+        return []
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "document" if template_kind == "document_template" else "email",
+        "existing",
+        "for",
+        "my",
+        "our",
+        "pdf" if template_kind == "document_template" else "",
+        "same",
+        "template",
+        "the",
+        "this",
+        "use",
+    }
+    tokens: list[str] = []
+    for part in normalized.split():
+        if not part or part in stopwords:
+            continue
+        stem = _ai_template_match_stem(part)
+        if stem:
+            tokens.append(stem)
+    return tokens
+
+
+def _ai_message_requests_existing_template(message: str, template_kind: str) -> bool:
+    if not isinstance(message, str) or not message.strip():
+        return False
+    lowered = re.sub(r"\s+", " ", message.lower()).strip()
+    if _ai_message_prefers_template_selection(lowered, template_kind):
+        return True
+    if template_kind == "email_template":
+        return bool(
+            re.search(r"\b(?:use|send)\b.*\b(?:our|existing|current|same)\b.*\b(?:email|template)\b", lowered)
+            or re.search(r"\b(?:our|existing|current|same)\b.*\b(?:email|template)\b", lowered)
+        )
+    if template_kind == "document_template":
+        return bool(
+            re.search(r"\b(?:use|generate|send)\b.*\b(?:our|existing|current|same)\b.*\b(?:document|pdf|template|pack|report|certificate)\b", lowered)
+            or re.search(r"\b(?:our|existing|current|same)\b.*\b(?:document|pdf|template|pack|report|certificate)\b", lowered)
+        )
+    return False
+
+
+def _ai_single_unresolved_template_step_entity_id(steps: list[dict], action_id: str) -> str | None:
+    matching_steps: list[dict] = []
+    for step in steps:
+        if not isinstance(step, dict) or step.get("action_id") != action_id:
+            continue
+        inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+        template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else None
+        if template_id:
+            continue
+        matching_steps.append(step)
+    if len(matching_steps) != 1:
+        return None
+    inputs = matching_steps[0].get("inputs") if isinstance(matching_steps[0].get("inputs"), dict) else {}
+    entity_id = inputs.get("entity_id") if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    return entity_id.strip() if isinstance(entity_id, str) and entity_id.strip() else None
+
+
+def _ai_step_template_context_message(
+    base_message: str,
+    automation: dict | None,
+    step: dict | None,
+    template_kind: str,
+    *,
+    include_base_message: bool = False,
+) -> str:
+    parts: list[str] = []
+    if template_kind == "email_template":
+        parts.append("Use our existing email template for this automation step.")
+    else:
+        parts.append("Use our existing document template for this automation step.")
+    automation_name = automation.get("name") if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip() else None
+    if isinstance(automation_name, str):
+        parts.append(f"Automation: {automation_name.strip()}")
+    step_id = step.get("id") if isinstance(step, dict) and isinstance(step.get("id"), str) and step.get("id").strip() else None
+    if isinstance(step_id, str):
+        parts.append(f"Step: {step_id.strip()}")
+    inputs = step.get("inputs") if isinstance(step, dict) and isinstance(step.get("inputs"), dict) else {}
+    entity_id = inputs.get("entity_id") if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    if isinstance(entity_id, str):
+        parts.append(f"Entity: {entity_id.strip()}")
+    if template_kind == "email_template":
+        for key, label in (("subject", "Subject"), ("body_text", "Body"), ("body_html", "HTML")):
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(f"{label}: {value.strip()}")
+    else:
+        for key, label in (("filename_pattern", "Filename"), ("title", "Title"), ("html", "HTML")):
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(f"{label}: {value.strip()}")
+    if include_base_message and isinstance(base_message, str) and base_message.strip():
+        parts.append(base_message.strip())
+    return "\n".join(parts)
+
+
+def _ai_match_workspace_template_option_for_step(
+    template_kind: str,
+    base_message: str,
+    workspace_id: str | None,
+    automation: dict | None,
+    step: dict | None,
+    *,
+    include_base_message: bool = False,
+) -> dict | None:
+    inputs = step.get("inputs") if isinstance(step, dict) and isinstance(step.get("inputs"), dict) else {}
+    preferred_entity_id = inputs.get("entity_id") if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    local_context_message = _ai_step_template_context_message(
+        base_message,
+        automation,
+        step,
+        template_kind,
+        include_base_message=False,
+    )
+    local_match = _ai_match_workspace_template_option_from_message(
+        template_kind,
+        local_context_message,
+        workspace_id,
+        preferred_entity_id=preferred_entity_id,
+    )
+    if isinstance(local_match, dict) or not include_base_message:
+        return local_match if isinstance(local_match, dict) else None
+    context_message = _ai_step_template_context_message(
+        base_message,
+        automation,
+        step,
+        template_kind,
+        include_base_message=True,
+    )
+    return _ai_match_workspace_template_option_from_message(
+        template_kind,
+        context_message,
+        workspace_id,
+        preferred_entity_id=preferred_entity_id,
+    )
+
+
+def _ai_template_step_hint_field(template_kind: str) -> str | None:
+    normalized_kind = template_kind.strip() if isinstance(template_kind, str) and template_kind.strip() else ""
+    if normalized_kind == "email_template":
+        return "email_template_step_hints"
+    if normalized_kind == "document_template":
+        return "document_template_step_hints"
+    return None
+
+
+def _ai_normalize_template_step_hint_entry(entry: dict | None, template_kind: str | None = None) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    normalized_kind = (
+        template_kind.strip()
+        if isinstance(template_kind, str) and template_kind.strip()
+        else entry.get("template_kind").strip()
+        if isinstance(entry.get("template_kind"), str) and entry.get("template_kind").strip()
+        else None
+    )
+    if normalized_kind not in {"email_template", "document_template"}:
+        return None
+    normalized: dict[str, Any] = {"template_kind": normalized_kind}
+    for key in ("step_id", "automation_name", "artifact_id", "action_id", "entity_id", "subject", "title"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            normalized[key] = value.strip()
+    template_id = entry.get("template_id")
+    if isinstance(template_id, str) and template_id.strip():
+        normalized["template_id"] = template_id.strip()
+    create_new = entry.get("create_new")
+    if isinstance(create_new, bool):
+        normalized["create_new"] = create_new
+    if not normalized.get("template_id") and normalized.get("create_new") is not True:
+        return None
+    return normalized
+
+
+def _ai_merge_template_step_hints(
+    existing: list[dict] | None,
+    incoming: list[dict] | None,
+    template_kind: str | None = None,
+) -> list[dict]:
+    merged: list[dict] = []
+    index_by_identity: dict[tuple[str, ...], int] = {}
+
+    def _identity(item: dict) -> tuple[str, ...]:
+        return (
+            item.get("template_kind") or "",
+            item.get("step_id") or "",
+            item.get("automation_name") or "",
+            item.get("artifact_id") or "",
+            item.get("action_id") or "",
+            item.get("entity_id") or "",
+            item.get("subject") or "",
+            item.get("title") or "",
+        )
+
+    for source in (existing or []), (incoming or []):
+        for raw_item in source:
+            item = _ai_normalize_template_step_hint_entry(raw_item, template_kind=template_kind)
+            if not isinstance(item, dict):
+                continue
+            identity = _identity(item)
+            if identity in index_by_identity:
+                merged[index_by_identity[identity]] = item
+            else:
+                index_by_identity[identity] = len(merged)
+                merged.append(item)
+    return merged
+
+
+def _ai_normalize_notify_recipient_step_hint_entry(entry: dict | None) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    for key in ("step_id", "automation_name", "artifact_id", "action_id", "entity_id", "title", "body"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            normalized[key] = value.strip()
+    if normalized.get("action_id") not in {None, "system.notify"}:
+        return None
+    if "action_id" not in normalized:
+        normalized["action_id"] = "system.notify"
+    recipient_user_id = entry.get("recipient_user_id")
+    if isinstance(recipient_user_id, str) and recipient_user_id.strip():
+        normalized["recipient_user_id"] = recipient_user_id.strip()
+    recipient_email = entry.get("recipient_email")
+    if isinstance(recipient_email, str) and recipient_email.strip():
+        normalized["recipient_email"] = recipient_email.strip()
+    recipient_user_ids = [
+        item.strip()
+        for item in (entry.get("recipient_user_ids") or [])
+        if isinstance(item, str) and item.strip()
+    ] if isinstance(entry.get("recipient_user_ids"), list) else []
+    if recipient_user_ids:
+        normalized["recipient_user_ids"] = recipient_user_ids
+    if not any(key in normalized for key in ("recipient_user_id", "recipient_email", "recipient_user_ids")):
+        return None
+    return normalized
+
+
+def _ai_merge_notify_recipient_step_hints(existing: list[dict] | None, incoming: list[dict] | None) -> list[dict]:
+    merged: list[dict] = []
+    index_by_identity: dict[tuple[str, ...], int] = {}
+
+    def _identity(item: dict) -> tuple[str, ...]:
+        return (
+            item.get("step_id") or "",
+            item.get("automation_name") or "",
+            item.get("artifact_id") or "",
+            item.get("action_id") or "",
+            item.get("entity_id") or "",
+            item.get("title") or "",
+            item.get("body") or "",
+        )
+
+    for source in (existing or []), (incoming or []):
+        for raw_item in source:
+            item = _ai_normalize_notify_recipient_step_hint_entry(raw_item)
+            if not isinstance(item, dict):
+                continue
+            identity = _identity(item)
+            if identity in index_by_identity:
+                merged[index_by_identity[identity]] = item
+            else:
+                index_by_identity[identity] = len(merged)
+                merged.append(item)
+    return merged
+
+
+def _ai_apply_structured_answer_hints(target: dict[str, Any], parsed: dict | None) -> dict[str, Any]:
+    if not isinstance(target, dict) or not isinstance(parsed, dict):
+        return target
+    if isinstance(parsed.get("include_form"), bool):
+        target["include_form"] = parsed.get("include_form")
+    if isinstance(parsed.get("include_list"), bool):
+        target["include_list"] = parsed.get("include_list")
+    if isinstance(parsed.get("deduplicate_existing"), bool):
+        target["deduplicate_existing"] = parsed.get("deduplicate_existing")
+    if isinstance(parsed.get("confirm_plan"), bool):
+        target["confirm_plan"] = parsed.get("confirm_plan")
+    if isinstance(parsed.get("field_label"), str) and parsed.get("field_label").strip():
+        target["field_label"] = parsed.get("field_label").strip()
+    if isinstance(parsed.get("field_type"), str) and parsed.get("field_type") in _AI_FIELD_TYPES:
+        target["field_type"] = parsed.get("field_type")
+    if isinstance(parsed.get("field_id"), str) and parsed.get("field_id").strip():
+        target["field_id"] = parsed.get("field_id").strip()
+    if isinstance(parsed.get("field_target"), str) and parsed.get("field_target").strip():
+        target["field_target"] = parsed.get("field_target").strip()
+        if not isinstance(target.get("field_label"), str) or not target.get("field_label"):
+            target["field_label"] = parsed.get("field_target").strip()
+    if isinstance(parsed.get("module_target"), str) and parsed.get("module_target").strip():
+        target["module_target"] = parsed.get("module_target").strip()
+    if isinstance(parsed.get("entity_target"), str) and parsed.get("entity_target").strip():
+        target["entity_target"] = parsed.get("entity_target").strip()
+    if isinstance(parsed.get("selected_entity_id"), str) and parsed.get("selected_entity_id").strip():
+        target["selected_entity_id"] = parsed.get("selected_entity_id").strip()
+    if isinstance(parsed.get("tab_target"), str) and parsed.get("tab_target").strip():
+        target["tab_target"] = parsed.get("tab_target").strip()
+    if isinstance(parsed.get("planned_section_id"), str) and parsed.get("planned_section_id").strip():
+        target["planned_section_id"] = parsed.get("planned_section_id").strip()
+    if isinstance(parsed.get("page_target"), str) and parsed.get("page_target").strip():
+        target["page_target"] = parsed.get("page_target").strip()
+    if isinstance(parsed.get("planned_page_id"), str) and parsed.get("planned_page_id").strip():
+        target["planned_page_id"] = parsed.get("planned_page_id").strip()
+    if isinstance(parsed.get("planned_view_id"), str) and parsed.get("planned_view_id").strip():
+        target["planned_view_id"] = parsed.get("planned_view_id").strip()
+    if isinstance(parsed.get("recipient_user_id"), str) and parsed.get("recipient_user_id").strip():
+        target["recipient_user_id"] = parsed.get("recipient_user_id").strip()
+    if isinstance(parsed.get("recipient_user_ids"), list):
+        target["recipient_user_ids"] = [
+            item.strip()
+            for item in parsed.get("recipient_user_ids")
+            if isinstance(item, str) and item.strip()
+        ]
+    if isinstance(parsed.get("recipient_email"), str) and parsed.get("recipient_email").strip():
+        target["recipient_email"] = parsed.get("recipient_email").strip()
+    if isinstance(parsed.get("email_template_id"), str) and parsed.get("email_template_id").strip():
+        target["email_template_id"] = parsed.get("email_template_id").strip()
+    if isinstance(parsed.get("document_template_id"), str) and parsed.get("document_template_id").strip():
+        target["document_template_id"] = parsed.get("document_template_id").strip()
+    if isinstance(parsed.get("create_new_email_template"), bool):
+        target["create_new_email_template"] = parsed.get("create_new_email_template")
+    if isinstance(parsed.get("create_new_document_template"), bool):
+        target["create_new_document_template"] = parsed.get("create_new_document_template")
+    if isinstance(parsed.get("selected_option_id"), str) and parsed.get("selected_option_id").strip():
+        target["selected_option_id"] = parsed.get("selected_option_id").strip()
+    if isinstance(parsed.get("selected_option_value"), str) and parsed.get("selected_option_value").strip():
+        target["selected_option_value"] = parsed.get("selected_option_value").strip()
+    if isinstance(parsed.get("selected_option_label"), str) and parsed.get("selected_option_label").strip():
+        target["selected_option_label"] = parsed.get("selected_option_label").strip()
+    if isinstance(parsed.get("answer_text"), str) and parsed.get("answer_text").strip():
+        target["answer_text"] = parsed.get("answer_text").strip()
+    target["notify_recipient_step_hints"] = _ai_merge_notify_recipient_step_hints(
+        target.get("notify_recipient_step_hints") if isinstance(target.get("notify_recipient_step_hints"), list) else [],
+        parsed.get("notify_recipient_step_hints") if isinstance(parsed.get("notify_recipient_step_hints"), list) else [],
+    )
+    for template_kind in ("email_template", "document_template"):
+        field_name = _ai_template_step_hint_field(template_kind)
+        if not isinstance(field_name, str):
+            continue
+        target[field_name] = _ai_merge_template_step_hints(
+            target.get(field_name) if isinstance(target.get(field_name), list) else [],
+            parsed.get(field_name) if isinstance(parsed.get(field_name), list) else [],
+            template_kind=template_kind,
+        )
+    return target
+
+
+def _ai_build_template_step_hint(
+    template_kind: str,
+    automation: dict | None,
+    step: dict | None,
+    *,
+    template_id: str | None = None,
+    create_new: bool | None = None,
+    artifact_id: str | None = None,
+) -> dict | None:
+    if not isinstance(step, dict):
+        return None
+    action_id = step.get("action_id") if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    if template_kind == "email_template" and action_id != "system.send_email":
+        return None
+    if template_kind == "document_template" and action_id != "system.generate_document":
+        return None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    hint: dict[str, Any] = {
+        "template_kind": template_kind,
+        "action_id": action_id,
+    }
+    if isinstance(step.get("id"), str) and step.get("id").strip():
+        hint["step_id"] = step.get("id").strip()
+    if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip():
+        hint["automation_name"] = automation.get("name").strip()
+    if isinstance(artifact_id, str) and artifact_id.strip():
+        hint["artifact_id"] = artifact_id.strip()
+    if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip():
+        hint["entity_id"] = inputs.get("entity_id").strip()
+    if template_kind == "email_template":
+        if isinstance(inputs.get("subject"), str) and inputs.get("subject").strip():
+            hint["subject"] = inputs.get("subject").strip()
+    else:
+        title_value = None
+        for key in ("title", "filename_pattern"):
+            if isinstance(inputs.get(key), str) and inputs.get(key).strip():
+                title_value = inputs.get(key).strip()
+                break
+        if isinstance(title_value, str):
+            hint["title"] = title_value
+    if isinstance(template_id, str) and template_id.strip():
+        hint["template_id"] = template_id.strip()
+    if isinstance(create_new, bool):
+        hint["create_new"] = create_new
+    return _ai_normalize_template_step_hint_entry(hint, template_kind=template_kind)
+
+
+def _ai_build_notify_recipient_step_hint(
+    automation: dict | None,
+    step: dict | None,
+    *,
+    recipient_user_id: str | None = None,
+    recipient_user_ids: list[str] | None = None,
+    recipient_email: str | None = None,
+    artifact_id: str | None = None,
+) -> dict | None:
+    if not isinstance(step, dict):
+        return None
+    action_id = step.get("action_id") if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    if action_id != "system.notify":
+        return None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    hint: dict[str, Any] = {"action_id": action_id}
+    if isinstance(step.get("id"), str) and step.get("id").strip():
+        hint["step_id"] = step.get("id").strip()
+    if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip():
+        hint["automation_name"] = automation.get("name").strip()
+    if isinstance(artifact_id, str) and artifact_id.strip():
+        hint["artifact_id"] = artifact_id.strip()
+    if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip():
+        hint["entity_id"] = inputs.get("entity_id").strip()
+    if isinstance(inputs.get("title"), str) and inputs.get("title").strip():
+        hint["title"] = inputs.get("title").strip()
+    if isinstance(inputs.get("body"), str) and inputs.get("body").strip():
+        hint["body"] = inputs.get("body").strip()
+    if isinstance(recipient_user_id, str) and recipient_user_id.strip():
+        hint["recipient_user_id"] = recipient_user_id.strip()
+    if isinstance(recipient_email, str) and recipient_email.strip():
+        hint["recipient_email"] = recipient_email.strip()
+    normalized_recipient_user_ids = [
+        item.strip()
+        for item in (recipient_user_ids or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if normalized_recipient_user_ids:
+        hint["recipient_user_ids"] = normalized_recipient_user_ids
+    return _ai_normalize_notify_recipient_step_hint_entry(hint)
+
+
+def _ai_find_template_step_hint(
+    answer_hints: dict | None,
+    template_kind: str,
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> dict | None:
+    field_name = _ai_template_step_hint_field(template_kind)
+    if not isinstance(field_name, str) or not isinstance(answer_hints, dict) or not isinstance(step, dict):
+        return None
+    entries = answer_hints.get(field_name) if isinstance(answer_hints.get(field_name), list) else []
+    if not entries:
+        return None
+    step_id = step.get("id").strip() if isinstance(step.get("id"), str) and step.get("id").strip() else None
+    action_id = step.get("action_id").strip() if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    entity_id = inputs.get("entity_id").strip() if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    automation_name = (
+        automation.get("name").strip()
+        if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip()
+        else None
+    )
+    summary_value = (
+        inputs.get("subject").strip()
+        if template_kind == "email_template" and isinstance(inputs.get("subject"), str) and inputs.get("subject").strip()
+        else inputs.get("title").strip()
+        if template_kind == "document_template" and isinstance(inputs.get("title"), str) and inputs.get("title").strip()
+        else inputs.get("filename_pattern").strip()
+        if template_kind == "document_template" and isinstance(inputs.get("filename_pattern"), str) and inputs.get("filename_pattern").strip()
+        else None
+    )
+    normalized_artifact_id = artifact_id.strip() if isinstance(artifact_id, str) and artifact_id.strip() else None
+    ranked: list[tuple[int, int, dict]] = []
+    for raw_entry in entries:
+        entry = _ai_normalize_template_step_hint_entry(raw_entry, template_kind=template_kind)
+        if not isinstance(entry, dict):
+            continue
+        score = 0
+        if isinstance(step_id, str) and isinstance(entry.get("step_id"), str):
+            if entry.get("step_id") != step_id:
+                continue
+            score += 100
+        if isinstance(action_id, str) and isinstance(entry.get("action_id"), str):
+            if entry.get("action_id") != action_id:
+                continue
+            score += 10
+        if isinstance(automation_name, str) and isinstance(entry.get("automation_name"), str):
+            if _ai_norm_token(entry.get("automation_name")) != _ai_norm_token(automation_name):
+                continue
+            score += 20
+        if isinstance(normalized_artifact_id, str) and isinstance(entry.get("artifact_id"), str):
+            if entry.get("artifact_id") != normalized_artifact_id:
+                continue
+            score += 20
+        if isinstance(entity_id, str) and isinstance(entry.get("entity_id"), str):
+            if not _match_entity_id(entity_id, entry.get("entity_id")):
+                continue
+            score += 10
+        entry_summary = entry.get("subject") if template_kind == "email_template" else entry.get("title")
+        if isinstance(summary_value, str) and isinstance(entry_summary, str):
+            if _ai_norm_token(entry_summary) != _ai_norm_token(summary_value):
+                continue
+            score += 25
+        if score <= 0:
+            continue
+        ranked.append((score, len(json.dumps(entry, sort_keys=True)), entry))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0] and ranked[0][1] == ranked[1][1]:
+        return None
+    return copy.deepcopy(ranked[0][2]) if isinstance(ranked[0][2], dict) else None
+
+
+def _ai_find_notify_recipient_step_hint(
+    answer_hints: dict | None,
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> dict | None:
+    if not isinstance(answer_hints, dict) or not isinstance(step, dict):
+        return None
+    entries = answer_hints.get("notify_recipient_step_hints") if isinstance(answer_hints.get("notify_recipient_step_hints"), list) else []
+    if not entries:
+        return None
+    step_id = step.get("id").strip() if isinstance(step.get("id"), str) and step.get("id").strip() else None
+    action_id = step.get("action_id").strip() if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    entity_id = inputs.get("entity_id").strip() if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    automation_name = (
+        automation.get("name").strip()
+        if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip()
+        else None
+    )
+    summary_value = (
+        inputs.get("title").strip()
+        if isinstance(inputs.get("title"), str) and inputs.get("title").strip()
+        else inputs.get("body").strip()
+        if isinstance(inputs.get("body"), str) and inputs.get("body").strip()
+        else None
+    )
+    normalized_artifact_id = artifact_id.strip() if isinstance(artifact_id, str) and artifact_id.strip() else None
+    ranked: list[tuple[int, int, dict]] = []
+    for raw_entry in entries:
+        entry = _ai_normalize_notify_recipient_step_hint_entry(raw_entry)
+        if not isinstance(entry, dict):
+            continue
+        score = 0
+        if isinstance(step_id, str) and isinstance(entry.get("step_id"), str):
+            if entry.get("step_id") != step_id:
+                continue
+            score += 100
+        if isinstance(action_id, str) and isinstance(entry.get("action_id"), str):
+            if entry.get("action_id") != action_id:
+                continue
+            score += 10
+        if isinstance(automation_name, str) and isinstance(entry.get("automation_name"), str):
+            if _ai_norm_token(entry.get("automation_name")) != _ai_norm_token(automation_name):
+                continue
+            score += 20
+        if isinstance(normalized_artifact_id, str) and isinstance(entry.get("artifact_id"), str):
+            if entry.get("artifact_id") != normalized_artifact_id:
+                continue
+            score += 20
+        if isinstance(entity_id, str) and isinstance(entry.get("entity_id"), str):
+            if not _match_entity_id(entity_id, entry.get("entity_id")):
+                continue
+            score += 10
+        entry_summary = entry.get("title") if isinstance(entry.get("title"), str) else entry.get("body")
+        if isinstance(summary_value, str) and isinstance(entry_summary, str):
+            if _ai_norm_token(entry_summary) != _ai_norm_token(summary_value):
+                continue
+            score += 25
+        if score <= 0:
+            continue
+        ranked.append((score, len(json.dumps(entry, sort_keys=True)), entry))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0] and ranked[0][1] == ranked[1][1]:
+        return None
+    return copy.deepcopy(ranked[0][2]) if isinstance(ranked[0][2], dict) else None
+
+
+def _ai_template_selection_options_for_step(
+    template_kind: str,
+    options: list[dict],
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> list[dict]:
+    field_name = _ai_template_step_hint_field(template_kind)
+    if not isinstance(field_name, str):
+        return [copy.deepcopy(option) for option in options if isinstance(option, dict)]
+    scoped_options: list[dict] = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        entry = copy.deepcopy(option)
+        hints = entry.get("hints") if isinstance(entry.get("hints"), dict) else {}
+        create_new_requested = bool(
+            (template_kind == "email_template" and hints.get("create_new_email_template") is True)
+            or (template_kind == "document_template" and hints.get("create_new_document_template") is True)
+        )
+        template_id = (
+            hints.get("email_template_id")
+            if template_kind == "email_template"
+            else hints.get("document_template_id")
+        )
+        normalized_template_id = template_id.strip() if isinstance(template_id, str) and template_id.strip() else None
+        if normalized_template_id == "__create_new__":
+            create_new_requested = True
+            normalized_template_id = None
+        step_hint = _ai_build_template_step_hint(
+            template_kind,
+            automation,
+            step,
+            template_id=normalized_template_id,
+            create_new=create_new_requested if create_new_requested else None,
+            artifact_id=artifact_id,
+        )
+        if isinstance(step_hint, dict):
+            hints[field_name] = _ai_merge_template_step_hints(
+                hints.get(field_name) if isinstance(hints.get(field_name), list) else [],
+                [step_hint],
+                template_kind=template_kind,
+            )
+        entry["hints"] = hints
+        scoped_options.append(entry)
+    return scoped_options
+
+
+def _ai_notify_recipient_selection_options_for_step(
+    options: list[dict],
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> list[dict]:
+    scoped_options: list[dict] = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        entry = copy.deepcopy(option)
+        hints = entry.get("hints") if isinstance(entry.get("hints"), dict) else {}
+        step_hint = _ai_build_notify_recipient_step_hint(
+            automation,
+            step,
+            recipient_user_id=hints.get("recipient_user_id") if isinstance(hints.get("recipient_user_id"), str) else None,
+            recipient_user_ids=hints.get("recipient_user_ids") if isinstance(hints.get("recipient_user_ids"), list) else None,
+            recipient_email=hints.get("recipient_email") if isinstance(hints.get("recipient_email"), str) else None,
+            artifact_id=artifact_id,
+        )
+        if isinstance(step_hint, dict):
+            hints["notify_recipient_step_hints"] = _ai_merge_notify_recipient_step_hints(
+                hints.get("notify_recipient_step_hints") if isinstance(hints.get("notify_recipient_step_hints"), list) else [],
+                [step_hint],
+            )
+        entry["hints"] = hints
+        scoped_options.append(entry)
+    return scoped_options
+
+
+def _ai_decision_slot_template_kind(slot_kind: str | None) -> str | None:
+    normalized_kind = slot_kind.strip() if isinstance(slot_kind, str) and slot_kind.strip() else ""
+    if normalized_kind == "email_template_choice":
+        return "email_template"
+    if normalized_kind == "document_template_choice":
+        return "document_template"
+    return None
+
+
+def _ai_step_context_match_tokens(text: str | None) -> list[str]:
+    normalized = _ai_norm_token(text)
+    if not normalized:
+        return []
+    stopwords = {"a", "an", "and", "for", "the", "this", "that", "to", "our", "your", "step", "notification", "notify", "send", "alert"}
+    tokens: list[str] = []
+    for part in normalized.split():
+        if not part or part in stopwords:
+            continue
+        stem = _ai_template_match_stem(part)
+        if stem:
+            tokens.append(stem)
+    return tokens
+
+
+def _ai_decision_slot_option_step_context_score(option_hints: dict | None, slot_kind: str | None, text: str | None) -> int:
+    template_kind = _ai_decision_slot_template_kind(slot_kind)
+    if not isinstance(template_kind, str):
+        return 0
+    field_name = _ai_template_step_hint_field(template_kind)
+    if not isinstance(field_name, str) or not isinstance(option_hints, dict):
+        return 0
+    entries = option_hints.get(field_name) if isinstance(option_hints.get(field_name), list) else []
+    if not entries:
+        return 0
+    text_tokens = set(_ai_template_match_tokens(text, template_kind))
+    normalized_text = _ai_norm_token(text)
+    if not text_tokens or not normalized_text:
+        return 0
+    best_score = 0
+    for raw_entry in entries:
+        entry = _ai_normalize_template_step_hint_entry(raw_entry, template_kind=template_kind)
+        if not isinstance(entry, dict):
+            continue
+        candidate_values: list[str] = []
+        step_id = entry.get("step_id") if isinstance(entry.get("step_id"), str) and entry.get("step_id").strip() else None
+        if isinstance(step_id, str):
+            candidate_values.extend(
+                [
+                    step_id.strip(),
+                    step_id.replace("_", " ").replace("-", " ").strip(),
+                    _ai_humanize_identifier(step_id) or "",
+                ]
+            )
+        for key in ("subject", "title", "automation_name"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                candidate_values.append(value.strip())
+        for candidate_value in candidate_values:
+            candidate_norm = _ai_norm_token(candidate_value)
+            candidate_tokens = set(_ai_template_match_tokens(candidate_value, template_kind))
+            if not candidate_norm or not candidate_tokens:
+                continue
+            shared_count = len(candidate_tokens & text_tokens)
+            score = shared_count
+            if re.search(rf"\b{re.escape(candidate_norm)}\b", normalized_text):
+                score += 2
+            if score > best_score:
+                best_score = score
+    return best_score
+
+
+def _ai_decision_slot_option_notify_context_score(option_hints: dict | None, text: str | None) -> int:
+    if not isinstance(option_hints, dict):
+        return 0
+    entries = option_hints.get("notify_recipient_step_hints") if isinstance(option_hints.get("notify_recipient_step_hints"), list) else []
+    if not entries:
+        return 0
+    text_tokens = set(_ai_step_context_match_tokens(text))
+    normalized_text = _ai_norm_token(text)
+    if not text_tokens or not normalized_text:
+        return 0
+    best_score = 0
+    for raw_entry in entries:
+        entry = _ai_normalize_notify_recipient_step_hint_entry(raw_entry)
+        if not isinstance(entry, dict):
+            continue
+        candidate_values: list[str] = []
+        step_id = entry.get("step_id") if isinstance(entry.get("step_id"), str) and entry.get("step_id").strip() else None
+        if isinstance(step_id, str):
+            candidate_values.extend([step_id.strip(), step_id.replace("_", " ").replace("-", " ").strip(), _ai_humanize_identifier(step_id) or ""])
+        for key in ("title", "body", "automation_name"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                candidate_values.append(value.strip())
+        for candidate_value in candidate_values:
+            candidate_norm = _ai_norm_token(candidate_value)
+            candidate_tokens = set(_ai_step_context_match_tokens(candidate_value))
+            if not candidate_norm or not candidate_tokens:
+                continue
+            shared_count = len(candidate_tokens & text_tokens)
+            score = shared_count
+            if re.search(rf"\b{re.escape(candidate_norm)}\b", normalized_text):
+                score += 2
+            if score > best_score:
+                best_score = score
+    return best_score
+
+
+def _ai_decision_slot_kind_cue_score(slot_kind: str | None, text: str | None) -> int:
+    normalized_kind = slot_kind.strip() if isinstance(slot_kind, str) and slot_kind.strip() else ""
+    normalized_text = _ai_norm_token(text)
+    if not normalized_kind or not normalized_text:
+        return 0
+    patterns = {
+        "tab_target_choice": r"\btab\b",
+        "section_target_choice": r"\bsection\b",
+        "page_target_choice": r"\bpage\b",
+        "view_target_choice": r"\bview\b",
+    }
+    pattern = patterns.get(normalized_kind)
+    if not isinstance(pattern, str):
+        return 0
+    return 1 if re.search(pattern, normalized_text) else 0
+
+
+def _ai_multi_slot_shared_label_requires_kind_cue(slot_kind: str | None) -> bool:
+    normalized_kind = slot_kind.strip() if isinstance(slot_kind, str) and slot_kind.strip() else ""
+    return normalized_kind in {"tab_target_choice", "section_target_choice", "page_target_choice", "view_target_choice"}
+
+
+def _ai_decision_slot_match_label_key(option: dict | None) -> str:
+    if not isinstance(option, dict):
+        return ""
+    for raw_value in (
+        option.get("label"),
+        option.get("value"),
+        option.get("id"),
+    ):
+        if isinstance(raw_value, str) and raw_value.strip():
+            normalized = _ai_norm_token(raw_value)
+            if normalized:
+                return normalized
+    return ""
+
+
+def _ai_match_decision_slot_option_from_text(decision_slot: dict | None, text: str | None) -> dict | None:
+    if not isinstance(decision_slot, dict) or not isinstance(text, str) or not text.strip():
+        return None
+    options = [option for option in (decision_slot.get("options") or []) if isinstance(option, dict)]
+    if not options:
+        return None
+    normalized_text = _ai_norm_token(text)
+    if not normalized_text:
+        return None
+    slot_kind = (
+        decision_slot.get("slot_kind")
+        if isinstance(decision_slot.get("slot_kind"), str) and decision_slot.get("slot_kind").strip()
+        else decision_slot.get("kind")
+        if isinstance(decision_slot.get("kind"), str) and decision_slot.get("kind").strip()
+        else None
+    )
+    generic_create_new_requested = bool(
+        re.search(r"\b(?:create|make|build|start)\b.*\bnew\b", normalized_text)
+        or re.search(r"\bnew\b.*\b(?:template|email|document|doc|pdf)\b", normalized_text)
+        or re.search(r"\bfrom scratch\b", normalized_text)
+    )
+    email_create_new_requested = bool(
+        re.search(r"\b(?:create|make|build|start)\b.*\bnew\b.*\bemail\b", normalized_text)
+        or re.search(r"\bnew\b.*\bemail\b", normalized_text)
+        or re.search(r"\bfrom scratch\b.*\bemail\b", normalized_text)
+    )
+    document_create_new_requested = bool(
+        re.search(r"\b(?:create|make|build|start)\b.*\bnew\b.*\b(?:document|doc|pdf|pack|report|certificate)\b", normalized_text)
+        or re.search(r"\bnew\b.*\b(?:document|doc|pdf|pack|report|certificate)\b", normalized_text)
+        or re.search(r"\bfrom scratch\b.*\b(?:document|doc|pdf|pack|report|certificate)\b", normalized_text)
+    )
+    mentions_email = bool(re.search(r"\bemail\b", normalized_text))
+    mentions_document = bool(re.search(r"\b(?:document|doc|pdf|pack|report|certificate)\b", normalized_text))
+    mentions_step_reference = bool(re.search(r"\bstep\b", normalized_text))
+    if slot_kind == "email_template_choice":
+        create_new_requested = bool(email_create_new_requested or (generic_create_new_requested and not mentions_document))
+    elif slot_kind == "document_template_choice":
+        create_new_requested = bool(document_create_new_requested or (generic_create_new_requested and not mentions_email))
+    else:
+        create_new_requested = generic_create_new_requested
+    match_text = normalized_text
+    clause_candidates = [
+        clause.strip()
+        for clause in re.split(r"\b(?:and|then)\b|,", normalized_text)
+        if isinstance(clause, str) and clause.strip()
+    ]
+    if len(clause_candidates) > 1:
+        best_clause = None
+        best_clause_score = 0
+        for clause in clause_candidates:
+            clause_score = 0
+            for option in options:
+                option_hints = option.get("hints") if isinstance(option.get("hints"), dict) else {}
+                option_score = (
+                    _ai_decision_slot_option_notify_context_score(option_hints, clause)
+                    if slot_kind in {"notify_recipient", "recipient_email"}
+                    else _ai_decision_slot_option_step_context_score(option_hints, slot_kind, clause)
+                )
+                if option_score > clause_score:
+                    clause_score = option_score
+            if clause_score > best_clause_score:
+                best_clause_score = clause_score
+                best_clause = clause
+        if isinstance(best_clause, str) and best_clause and best_clause_score > 0:
+            match_text = best_clause
+    ranked: list[tuple[int, int, int, int, int, dict]] = []
+    for option in options:
+        label = option.get("label") if isinstance(option.get("label"), str) and option.get("label").strip() else None
+        value = option.get("value") if isinstance(option.get("value"), str) and option.get("value").strip() else None
+        option_id = option.get("id") if isinstance(option.get("id"), str) and option.get("id").strip() else None
+        description = option.get("description") if isinstance(option.get("description"), str) and option.get("description").strip() else None
+        option_hints = option.get("hints") if isinstance(option.get("hints"), dict) else {}
+        has_step_scoped_hints = any(
+            isinstance(option_hints.get(key), list) and option_hints.get(key)
+            for key in ("email_template_step_hints", "document_template_step_hints")
+        )
+        step_context_score = (
+            _ai_decision_slot_option_notify_context_score(option_hints, text)
+            if slot_kind in {"notify_recipient", "recipient_email"}
+            else _ai_decision_slot_option_step_context_score(option_hints, slot_kind, text)
+        )
+        is_create_new = bool(
+            (isinstance(option_id, str) and option_id.startswith("create_new_"))
+            or value == "__create_new__"
+            or (isinstance(label, str) and "create new" in _ai_norm_token(label))
+        )
+        if slot_kind in {"notify_recipient", "recipient_email"} and has_step_scoped_hints and mentions_step_reference and step_context_score <= 0:
+            continue
+        if is_create_new and create_new_requested:
+            if has_step_scoped_hints and mentions_step_reference and step_context_score <= 0:
+                continue
+            ranked.append(
+                (
+                    5,
+                    step_context_score,
+                    1 if has_step_scoped_hints else 0,
+                    3,
+                    len(_ai_norm_token(label or option_id or value or "")),
+                    option,
+                )
+            )
+            continue
+        if is_create_new:
+            continue
+        best_score: tuple[int, int, int] | None = None
+        for raw_value in (label, value, option_id, description):
+            if not isinstance(raw_value, str) or not raw_value.strip():
+                continue
+            candidate = _ai_norm_token(raw_value)
+            if not candidate:
+                continue
+            token_count = len([part for part in candidate.split() if part])
+            if match_text == candidate:
+                score = (4, token_count, len(candidate))
+            elif re.search(rf"\b{re.escape(candidate)}\b", match_text):
+                score = (3, token_count, len(candidate))
+            else:
+                candidate_tokens = [part for part in candidate.split() if part and part not in {"template", "email", "document", "doc", "pdf"}]
+                if not candidate_tokens:
+                    continue
+                shared_count = len(set(candidate_tokens) & set(match_text.split()))
+                min_required = len(candidate_tokens) if len(candidate_tokens) <= 2 else len(candidate_tokens) - 1
+                if shared_count < min_required:
+                    continue
+                score = (2, shared_count, len(candidate))
+            if best_score is None or score > best_score:
+                best_score = score
+        if best_score is not None:
+            ranked.append(
+                (
+                    best_score[0],
+                    step_context_score,
+                    1 if has_step_scoped_hints else 0,
+                    best_score[1],
+                    best_score[2],
+                    option,
+                )
+            )
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], -item[1], -item[2], -item[3], -item[4]))
+    top = ranked[0]
+    tied = [item for item in ranked if item[:5] == top[:5]]
+    if len(tied) != 1:
+        return None
+    return copy.deepcopy(top[5]) if isinstance(top[5], dict) else None
+
+
+def _ai_apply_decision_slot_option_to_hints(
+    hint_payload: dict[str, Any],
+    decision_slot: dict | None,
+    matched_option: dict | None,
+    *,
+    preserve_existing_choice: bool = True,
+) -> None:
+    if not isinstance(hint_payload, dict) or not isinstance(decision_slot, dict) or not isinstance(matched_option, dict):
+        return
+    option_payload: dict[str, Any] = {}
+    if not preserve_existing_choice or not (
+        isinstance(hint_payload.get("selected_option_id"), str) and hint_payload.get("selected_option_id").strip()
+    ):
+        option_payload["selected_option_id"] = matched_option.get("id")
+    if not preserve_existing_choice or not (
+        isinstance(hint_payload.get("selected_option_value"), str) and hint_payload.get("selected_option_value").strip()
+    ):
+        option_payload["selected_option_value"] = matched_option.get("value")
+    if not preserve_existing_choice or not (
+        isinstance(hint_payload.get("selected_option_label"), str) and hint_payload.get("selected_option_label").strip()
+    ):
+        option_payload["selected_option_label"] = matched_option.get("label")
+    if isinstance(matched_option.get("hints"), dict):
+        option_payload.update(matched_option.get("hints"))
+    _ai_apply_structured_answer_hints(hint_payload, option_payload)
+    matched_value = matched_option.get("value") if isinstance(matched_option.get("value"), str) and matched_option.get("value").strip() else None
+    hint_field = decision_slot.get("hint_field") if isinstance(decision_slot.get("hint_field"), str) and decision_slot.get("hint_field").strip() else None
+    if isinstance(hint_field, str) and hint_field and isinstance(matched_value, str) and matched_value and not hint_payload.get(hint_field):
+        hint_payload[hint_field] = matched_value
+
+
+def _ai_infer_template_step_hints_from_latest_plan(
+    message: str | None,
+    latest_plan_record: dict | None,
+    workspace_id: str | None,
+    existing_hints: dict | None = None,
+) -> dict[str, Any]:
+    if not isinstance(message, str) or not message.strip() or not isinstance(latest_plan_record, dict):
+        return {}
+    plan_json = latest_plan_record.get("plan_json") if isinstance(latest_plan_record.get("plan_json"), dict) else {}
+    plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+    candidate_ops = [op for op in (plan_body.get("candidate_operations") or []) if isinstance(op, dict)]
+    if not candidate_ops:
+        return {}
+
+    inferred: dict[str, Any] = {}
+    for template_kind in ("email_template", "document_template"):
+        field_name = _ai_template_step_hint_field(template_kind)
+        if not isinstance(field_name, str):
+            continue
+        unresolved_steps: list[tuple[dict, dict, dict | None]] = []
+        for op in candidate_ops:
+            if op.get("op") != "create_automation_record":
+                continue
+            automation = op.get("automation") if isinstance(op.get("automation"), dict) else None
+            if not isinstance(automation, dict):
+                continue
+            for step in _artifact_ai_iter_automation_steps(automation.get("steps")):
+                if not isinstance(step, dict):
+                    continue
+                action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
+                expected_action = "system.send_email" if template_kind == "email_template" else "system.generate_document"
+                if action_id != expected_action:
+                    continue
+                inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+                template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else None
+                if template_id:
+                    continue
+                unresolved_steps.append((automation, step, op))
+        if not unresolved_steps:
+            continue
+        used_template_ids: set[str] = set()
+        for raw_entry in (
+            (existing_hints.get(field_name) if isinstance(existing_hints, dict) and isinstance(existing_hints.get(field_name), list) else [])
+        ):
+            entry = _ai_normalize_template_step_hint_entry(raw_entry, template_kind=template_kind)
+            if not isinstance(entry, dict):
+                continue
+            template_id = entry.get("template_id") if isinstance(entry.get("template_id"), str) and entry.get("template_id").strip() else None
+            if isinstance(template_id, str):
+                used_template_ids.add(template_id)
+        for automation, step, owner_op in unresolved_steps:
+            if isinstance(_ai_find_template_step_hint(existing_hints, template_kind, automation, step, artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None), dict):
+                continue
+            matched_option = _ai_match_workspace_template_option_for_step(
+                template_kind,
+                message,
+                workspace_id,
+                automation,
+                step,
+                include_base_message=True,
+            )
+            if isinstance(matched_option, dict):
+                matched_hints = matched_option.get("hints") if isinstance(matched_option.get("hints"), dict) else {}
+                template_id = (
+                    matched_hints.get("email_template_id")
+                    if template_kind == "email_template"
+                    else matched_hints.get("document_template_id")
+                )
+                if isinstance(template_id, str) and template_id.strip() and template_id.strip() not in used_template_ids:
+                    step_hint = _ai_build_template_step_hint(
+                        template_kind,
+                        automation,
+                        step,
+                        template_id=template_id.strip(),
+                        artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+                    )
+                    if isinstance(step_hint, dict):
+                        inferred[field_name] = _ai_merge_template_step_hints(
+                            inferred.get(field_name) if isinstance(inferred.get(field_name), list) else [],
+                            [step_hint],
+                            template_kind=template_kind,
+                        )
+                        used_template_ids.add(template_id.strip())
+                        continue
+            if not _ai_step_requests_new_template(message, automation, step, template_kind, unresolved_step_count=len(unresolved_steps)):
+                continue
+            step_hint = _ai_build_template_step_hint(
+                template_kind,
+                automation,
+                step,
+                create_new=True,
+                artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+            )
+            if isinstance(step_hint, dict):
+                inferred[field_name] = _ai_merge_template_step_hints(
+                    inferred.get(field_name) if isinstance(inferred.get(field_name), list) else [],
+                    [step_hint],
+                    template_kind=template_kind,
+                )
+    return inferred
+
+
+def _ai_infer_notify_recipient_step_hints_from_latest_plan(
+    message: str | None,
+    latest_plan_record: dict | None,
+    workspace_id: str | None,
+    existing_hints: dict | None = None,
+    request: Request | None = None,
+) -> dict[str, Any]:
+    if not isinstance(message, str) or not message.strip() or not isinstance(latest_plan_record, dict):
+        return {}
+    plan_json = latest_plan_record.get("plan_json") if isinstance(latest_plan_record.get("plan_json"), dict) else {}
+    plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+    candidate_ops = [op for op in (plan_body.get("candidate_operations") or []) if isinstance(op, dict)]
+    if not candidate_ops:
+        return {}
+
+    inferred: dict[str, Any] = {}
+    member_options = _ai_workspace_member_decision_options_for_request(request, workspace_id)
+    if not member_options:
+        return inferred
+
+    unresolved_steps: list[tuple[dict, dict, dict | None]] = []
+    for op in candidate_ops:
+        if op.get("op") != "create_automation_record":
+            continue
+        automation = op.get("automation") if isinstance(op.get("automation"), dict) else None
+        if not isinstance(automation, dict):
+            continue
+        for step in _artifact_ai_iter_automation_steps(automation.get("steps")):
+            if not isinstance(step, dict) or step.get("action_id") != "system.notify":
+                continue
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if _artifact_ai_notify_step_has_recipient(inputs):
+                continue
+            unresolved_steps.append((automation, step, op))
+
+    if not unresolved_steps:
+        return inferred
+
+    for automation, step, owner_op in unresolved_steps:
+        if isinstance(
+            _ai_find_notify_recipient_step_hint(
+                existing_hints,
+                automation,
+                step,
+                artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+            ),
+            dict,
+        ):
+            continue
+        scoped_options = _ai_notify_recipient_selection_options_for_step(
+            member_options,
+            automation,
+            step,
+            artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+        )
+        matched_option = _ai_match_decision_slot_option_from_text(
+            {
+                "id": "automation_notify_recipient",
+                "kind": "decision_slot",
+                "slot_kind": "notify_recipient",
+                "hint_field": "recipient_email",
+                "options": scoped_options,
+            },
+            message,
+        )
+        if not isinstance(matched_option, dict):
+            continue
+        matched_hints = matched_option.get("hints") if isinstance(matched_option.get("hints"), dict) else {}
+        inferred["notify_recipient_step_hints"] = _ai_merge_notify_recipient_step_hints(
+            inferred.get("notify_recipient_step_hints") if isinstance(inferred.get("notify_recipient_step_hints"), list) else [],
+            matched_hints.get("notify_recipient_step_hints") if isinstance(matched_hints.get("notify_recipient_step_hints"), list) else [],
+        )
+    return inferred
+
+
+def _ai_template_option_purpose_score(option: dict, message_token_set: set[str], template_kind: str) -> int:
+    if not isinstance(option, dict) or not message_token_set:
+        return 0
+    description = option.get("description") if isinstance(option.get("description"), str) and option.get("description").strip() else None
+    if not isinstance(description, str):
+        return 0
+    return len(set(_ai_template_match_tokens(description, template_kind)) & message_token_set)
+
+
 def _ai_match_workspace_template_option_from_message(
     template_kind: str,
     message: str,
     workspace_id: str | None,
+    preferred_entity_id: str | None = None,
 ) -> dict | None:
     if not isinstance(message, str) or not message.strip():
         return None
@@ -34635,12 +37091,28 @@ def _ai_match_workspace_template_option_from_message(
     if not lowered_message:
         return None
 
-    ranked: list[tuple[int, int, dict]] = []
+    message_requests_existing_template = _ai_message_requests_existing_template(message, template_kind)
+    message_tokens = _ai_template_match_tokens(message, template_kind)
+    message_token_set = set(message_tokens)
+    normalized_preferred_entity_id = preferred_entity_id.strip() if isinstance(preferred_entity_id, str) and preferred_entity_id.strip() else None
+    ranked: list[tuple[int, int, int, int, int, dict]] = []
     for option in _ai_workspace_template_decision_options(template_kind, workspace_id):
         if not isinstance(option, dict):
             continue
+        option_hints = option.get("hints") if isinstance(option.get("hints"), dict) else {}
+        option_entity_id = (
+            option_hints.get("entity_id")
+            if isinstance(option_hints.get("entity_id"), str) and option_hints.get("entity_id").strip()
+            else None
+        )
+        entity_match_score = int(
+            isinstance(normalized_preferred_entity_id, str)
+            and isinstance(option_entity_id, str)
+            and _match_entity_id(normalized_preferred_entity_id, option_entity_id)
+        )
+        purpose_score = _ai_template_option_purpose_score(option, message_token_set, template_kind)
         best_candidate = ""
-        best_token_count = 0
+        best_score: tuple[int, int, int] | None = None
         for raw_value in (
             option.get("label"),
             option.get("value"),
@@ -34665,22 +37137,59 @@ def _ai_match_workspace_template_option_from_message(
                     rf"\b{re.escape(candidate)}\s+template\b",
                     rf"\btemplate\s+(?:called|named)\s+{re.escape(candidate)}\b",
                 )
-            if not any(re.search(pattern, lowered_message) for pattern in candidate_patterns):
-                continue
-            if token_count > best_token_count or (token_count == best_token_count and len(candidate) > len(best_candidate)):
+            if any(re.search(pattern, lowered_message) for pattern in candidate_patterns):
                 best_candidate = candidate
-                best_token_count = token_count
+                best_score = (3, token_count, len(candidate))
+                continue
+
+            if not message_requests_existing_template:
+                continue
+
+            candidate_tokens = _ai_template_match_tokens(raw_value, template_kind)
+            if not candidate_tokens:
+                continue
+            candidate_token_set = set(candidate_tokens)
+            shared_count = len(candidate_token_set & message_token_set)
+            min_required = max(2, len(candidate_token_set) - 1)
+            if len(candidate_token_set) <= 2:
+                min_required = len(candidate_token_set)
+            if shared_count < min_required:
+                continue
+            score = (2, shared_count, len(candidate))
+            if best_score is None or score > best_score:
+                best_candidate = candidate
+                best_score = score
+        if best_score is None and message_requests_existing_template:
+            description = option.get("description") if isinstance(option.get("description"), str) and option.get("description").strip() else None
+            description_tokens = _ai_template_match_tokens(description, template_kind)
+            if description_tokens:
+                description_token_set = set(description_tokens)
+                shared_count = len(description_token_set & message_token_set)
+                min_required = max(2, len(description_token_set) - 1)
+                if len(description_token_set) <= 2:
+                    min_required = len(description_token_set)
+                if shared_count >= min_required:
+                    description_norm = _ai_norm_token(description)
+                    best_candidate = description_norm or "description_match"
+                    best_score = (1, shared_count, len(best_candidate))
         if best_candidate:
-            ranked.append((best_token_count, len(best_candidate), option))
+            assert best_score is not None
+            ranked.append((best_score[0], entity_match_score, purpose_score, best_score[1], best_score[2], option))
 
     if not ranked:
         return None
-    ranked.sort(key=lambda item: (-item[0], -item[1]))
-    top_token_count, top_length, top_option = ranked[0]
+    ranked.sort(key=lambda item: (-item[0], -item[1], -item[2], -item[3], -item[4]))
+    top_match_tier, top_entity_match, top_purpose_score, top_token_count, top_length, top_option = ranked[0]
     tied_top = [
         option
-        for token_count, candidate_length, option in ranked
-        if token_count == top_token_count and candidate_length == top_length
+        for match_tier, entity_match, purpose, token_count, candidate_length, option in ranked
+        if (
+            match_tier == top_match_tier
+            and entity_match == top_entity_match
+            and purpose == top_purpose_score
+            and token_count == top_token_count
+            and candidate_length == top_length
+        )
     ]
     if len(tied_top) != 1:
         return None
@@ -34898,6 +37407,61 @@ def _ai_message_prefers_template_selection(message: str, template_kind: str) -> 
     return False
 
 
+def _ai_message_prefers_new_template(message: str, template_kind: str) -> bool:
+    if not isinstance(message, str) or not message.strip():
+        return False
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if template_kind == "email_template":
+        return bool(
+            re.search(r"\b(?:create|draft|make|build)\b.*\b(?:new\s+)?email template\b", lower)
+            or re.search(r"\bnew\b.*\bemail\b.*\btemplate\b", lower)
+            or re.search(r"\bnew\b.*\btemplate\b.*\bemail\b", lower)
+        )
+    if template_kind == "document_template":
+        return bool(
+            re.search(r"\b(?:create|draft|make|build)\b.*\b(?:new\s+)?(?:document|pdf|report|certificate|pack|itinerary)\s+template\b", lower)
+            or re.search(r"\bnew\b.*\b(?:document|pdf|report|certificate|pack|itinerary)\b.*\btemplate\b", lower)
+            or re.search(r"\bnew\b.*\btemplate\b.*\b(?:document|pdf|report|certificate|pack|itinerary)\b", lower)
+        )
+    return False
+
+
+def _ai_step_requests_new_template(
+    base_message: str,
+    automation: dict | None,
+    step: dict | None,
+    template_kind: str,
+    unresolved_step_count: int = 1,
+) -> bool:
+    if not _ai_message_prefers_new_template(base_message, template_kind):
+        return False
+    if int(unresolved_step_count or 0) <= 1:
+        return True
+    inputs = step.get("inputs") if isinstance(step, dict) and isinstance(step.get("inputs"), dict) else {}
+    step_parts: list[str] = []
+    automation_name = automation.get("name") if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip() else None
+    if isinstance(automation_name, str):
+        step_parts.append(automation_name.strip())
+    step_id = step.get("id") if isinstance(step, dict) and isinstance(step.get("id"), str) and step.get("id").strip() else None
+    if isinstance(step_id, str):
+        step_parts.append(step_id.strip())
+    if template_kind == "email_template":
+        for key in ("subject", "body_text", "body_html"):
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                step_parts.append(value.strip())
+    else:
+        for key in ("filename_pattern", "title", "html"):
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                step_parts.append(value.strip())
+    step_token_set = set(_ai_template_match_tokens(" ".join(step_parts), template_kind))
+    if not step_token_set:
+        return False
+    message_token_set = set(_ai_template_match_tokens(base_message, template_kind))
+    return bool(step_token_set & message_token_set)
+
+
 def _ai_send_email_step_has_inline_content(inputs: dict | None) -> bool:
     if not isinstance(inputs, dict):
         return False
@@ -35036,39 +37600,257 @@ def _ai_apply_template_hints_to_candidate_ops(
             or document_template_hint == "__create_new__"
         )
     )
+    unresolved_email_steps: list[tuple[dict, dict]] = []
+    unresolved_document_steps: list[tuple[dict, dict]] = []
+    for op in normalized_ops:
+        automation = op.get("automation") if isinstance(op.get("automation"), dict) else None
+        if not isinstance(automation, dict):
+            continue
+        for step in _artifact_ai_iter_automation_steps(automation.get("steps")):
+            action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else ""
+            if template_id:
+                continue
+            if action_id == "system.send_email":
+                unresolved_email_steps.append((automation, step))
+            elif action_id == "system.generate_document":
+                unresolved_document_steps.append((automation, step))
+    prepended_ops: list[dict] = []
+    existing_artifact_keys = _ai_candidate_artifact_keys(normalized_ops)
+    wants_email_template = _ai_message_prefers_template_selection(message, "email_template")
+    email_slot: dict | None = None
+    document_slot: dict | None = None
+    for template_kind, unresolved_steps in (
+        ("email_template", unresolved_email_steps),
+        ("document_template", unresolved_document_steps),
+    ):
+        for automation, step in unresolved_steps:
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and isinstance(op.get("automation"), dict)
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            step_hint = _ai_find_template_step_hint(
+                answer_hints,
+                template_kind,
+                automation,
+                step,
+                artifact_id=owner_op.get("artifact_id") if isinstance(owner_op, dict) and isinstance(owner_op.get("artifact_id"), str) else None,
+            )
+            if not isinstance(step_hint, dict):
+                continue
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            step["inputs"] = inputs
+            template_id = step_hint.get("template_id") if isinstance(step_hint.get("template_id"), str) and step_hint.get("template_id").strip() else None
+            if isinstance(template_id, str):
+                inputs["template_id"] = template_id.strip()
+                if template_kind == "email_template":
+                    for key in ("subject", "body_html", "body_text"):
+                        inputs.pop(key, None)
+                assumptions.append(f"Used the step-specific selected {template_kind.replace('_', ' ')} for the matching automation step.")
+                continue
+            if step_hint.get("create_new") is not True:
+                continue
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is step
+                ),
+                0,
+            )
+            if template_kind == "email_template":
+                template_op, created_template_id = _ai_build_new_email_template_op(owner_op or {}, inputs, owner_step_index)
+                artifact_kind = "email_template"
+            else:
+                template_op, created_template_id = _ai_build_new_document_template_op(owner_op or {}, inputs, owner_step_index)
+                artifact_kind = "document_template"
+            if not (isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id):
+                continue
+            if (artifact_kind, created_template_id) not in existing_artifact_keys:
+                prepended_ops.append(template_op)
+                existing_artifact_keys.add((artifact_kind, created_template_id))
+            inputs["template_id"] = created_template_id
+            if template_kind == "email_template":
+                for key in ("subject", "body_html", "body_text"):
+                    inputs.pop(key, None)
+            assumptions.append(f"Created a step-specific companion {template_kind.replace('_', ' ')} draft '{created_template_id}'.")
+    preferred_email_entity_id = _ai_single_unresolved_template_step_entity_id([step for _, step in unresolved_email_steps], "system.send_email")
+    preferred_document_entity_id = _ai_single_unresolved_template_step_entity_id([step for _, step in unresolved_document_steps], "system.generate_document")
+    global_email_template_hint = email_template_hint if len(unresolved_email_steps) == 1 else None
+    global_document_template_hint = document_template_hint if len(unresolved_document_steps) == 1 else None
+    global_create_new_email_template = bool(create_new_email_template) if len(unresolved_email_steps) == 1 else False
+    global_create_new_document_template = bool(create_new_document_template) if len(unresolved_document_steps) == 1 else False
     matched_email_template = (
-        _ai_match_workspace_template_option_from_message("email_template", message, workspace_id)
-        if not email_template_hint and not create_new_email_template
+        _ai_match_workspace_template_option_from_message(
+            "email_template",
+            message,
+            workspace_id,
+            preferred_entity_id=preferred_email_entity_id,
+        )
+        if not global_email_template_hint and not global_create_new_email_template and len(unresolved_email_steps) == 1
         else None
     )
     if isinstance(matched_email_template, dict):
         matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
         matched_email_template_id = matched_email_hint.get("email_template_id")
         if isinstance(matched_email_template_id, str) and matched_email_template_id.strip():
-            email_template_hint = matched_email_template_id.strip()
+            global_email_template_hint = matched_email_template_id.strip()
             matched_email_label = matched_email_template.get("label")
-            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else email_template_hint
+            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else global_email_template_hint
             assumptions.append(f"Matched the requested email template '{label_text}' from the workspace.")
     matched_document_template = (
-        _ai_match_workspace_template_option_from_message("document_template", message, workspace_id)
-        if not document_template_hint and not create_new_document_template
+        _ai_match_workspace_template_option_from_message(
+            "document_template",
+            message,
+            workspace_id,
+            preferred_entity_id=preferred_document_entity_id,
+        )
+        if not global_document_template_hint and not global_create_new_document_template and len(unresolved_document_steps) == 1
         else None
     )
     if isinstance(matched_document_template, dict):
         matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
         matched_document_template_id = matched_document_hint.get("document_template_id")
         if isinstance(matched_document_template_id, str) and matched_document_template_id.strip():
-            document_template_hint = matched_document_template_id.strip()
+            global_document_template_hint = matched_document_template_id.strip()
             matched_document_label = matched_document_template.get("label")
-            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else document_template_hint
+            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else global_document_template_hint
             assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
-    wants_email_template = _ai_message_prefers_template_selection(message, "email_template")
-
-    email_slot: dict | None = None
-    document_slot: dict | None = None
-    prepended_ops: list[dict] = []
-    existing_artifact_keys = _ai_candidate_artifact_keys(normalized_ops)
-
+    if not isinstance(global_email_template_hint, str) and not global_create_new_email_template and len(unresolved_email_steps) > 1:
+        used_email_template_ids: set[str] = set()
+        unresolved_email_count = len(unresolved_email_steps)
+        for automation, step in unresolved_email_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            matched_email_template = _ai_match_workspace_template_option_for_step(
+                "email_template",
+                message,
+                workspace_id,
+                automation,
+                step,
+            )
+            if not isinstance(matched_email_template, dict):
+                continue
+            matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
+            matched_email_template_id = matched_email_hint.get("email_template_id")
+            if not isinstance(matched_email_template_id, str) or not matched_email_template_id.strip():
+                continue
+            template_id = matched_email_template_id.strip()
+            if template_id in used_email_template_ids:
+                continue
+            step["inputs"] = inputs
+            inputs["template_id"] = template_id
+            for key in ("subject", "body_html", "body_text"):
+                inputs.pop(key, None)
+            used_email_template_ids.add(template_id)
+            matched_email_label = matched_email_template.get("label")
+            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else template_id
+            assumptions.append(f"Matched the requested email template '{label_text}' from the workspace.")
+            continue
+        for automation, step in unresolved_email_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            if not _ai_step_requests_new_template(message, automation, step, "email_template", unresolved_step_count=unresolved_email_count):
+                continue
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and isinstance(op.get("automation"), dict)
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is step
+                ),
+                0,
+            )
+            template_op, created_template_id = _ai_build_new_email_template_op(owner_op or {}, inputs, owner_step_index)
+            if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                if ("email_template", created_template_id) not in existing_artifact_keys:
+                    prepended_ops.append(template_op)
+                    existing_artifact_keys.add(("email_template", created_template_id))
+                step["inputs"] = inputs
+                inputs["template_id"] = created_template_id
+                for key in ("subject", "body_html", "body_text"):
+                    inputs.pop(key, None)
+                assumptions.append(f"Created a companion email template draft '{created_template_id}' for the automation email step.")
+    if not isinstance(global_document_template_hint, str) and not global_create_new_document_template and len(unresolved_document_steps) > 1:
+        used_document_template_ids: set[str] = set()
+        unresolved_document_count = len(unresolved_document_steps)
+        for automation, step in unresolved_document_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            matched_document_template = _ai_match_workspace_template_option_for_step(
+                "document_template",
+                message,
+                workspace_id,
+                automation,
+                step,
+            )
+            if not isinstance(matched_document_template, dict):
+                continue
+            matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
+            matched_document_template_id = matched_document_hint.get("document_template_id")
+            if not isinstance(matched_document_template_id, str) or not matched_document_template_id.strip():
+                continue
+            template_id = matched_document_template_id.strip()
+            if template_id in used_document_template_ids:
+                continue
+            step["inputs"] = inputs
+            inputs["template_id"] = template_id
+            used_document_template_ids.add(template_id)
+            matched_document_label = matched_document_template.get("label")
+            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else template_id
+            assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
+            continue
+        for automation, step in unresolved_document_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            if not _ai_step_requests_new_template(message, automation, step, "document_template", unresolved_step_count=unresolved_document_count):
+                continue
+            owner_op = next(
+                (
+                    op
+                    for op in normalized_ops
+                    if isinstance(op, dict)
+                    and isinstance(op.get("automation"), dict)
+                    and op.get("automation") is automation
+                ),
+                None,
+            )
+            owner_step_index = next(
+                (
+                    idx
+                    for idx, candidate in enumerate((automation.get("steps") or []))
+                    if candidate is step
+                ),
+                0,
+            )
+            template_op, created_template_id = _ai_build_new_document_template_op(owner_op or {}, inputs, owner_step_index)
+            if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                if ("document_template", created_template_id) not in existing_artifact_keys:
+                    prepended_ops.append(template_op)
+                    existing_artifact_keys.add(("document_template", created_template_id))
+                step["inputs"] = inputs
+                inputs["template_id"] = created_template_id
+                assumptions.append(f"Created a companion document template draft '{created_template_id}' for the automation document step.")
     for op in normalized_ops:
         automation = op.get("automation") if isinstance(op.get("automation"), dict) else None
         if not isinstance(automation, dict):
@@ -35088,7 +37870,33 @@ def _ai_apply_template_hints_to_candidate_ops(
             if template_id:
                 continue
             if action_id == "system.send_email":
-                if create_new_email_template:
+                step_hint = _ai_find_template_step_hint(
+                    answer_hints,
+                    "email_template",
+                    automation,
+                    step,
+                    artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                )
+                if isinstance(step_hint, dict):
+                    scoped_template_id = step_hint.get("template_id") if isinstance(step_hint.get("template_id"), str) and step_hint.get("template_id").strip() else None
+                    if isinstance(scoped_template_id, str):
+                        inputs["template_id"] = scoped_template_id.strip()
+                        for key in ("subject", "body_html", "body_text"):
+                            inputs.pop(key, None)
+                        assumptions.append("Used the step-specific selected email template for the draft automation email step.")
+                        continue
+                    if step_hint.get("create_new") is True:
+                        template_op, created_template_id = _ai_build_new_email_template_op(op, inputs, idx)
+                        if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                            if ("email_template", created_template_id) not in existing_artifact_keys:
+                                prepended_ops.append(template_op)
+                                existing_artifact_keys.add(("email_template", created_template_id))
+                            inputs["template_id"] = created_template_id
+                            for key in ("subject", "body_html", "body_text"):
+                                inputs.pop(key, None)
+                            assumptions.append(f"Created a step-specific companion email template draft '{created_template_id}' for the automation email step.")
+                            continue
+                if global_create_new_email_template:
                     template_op, created_template_id = _ai_build_new_email_template_op(op, inputs, idx)
                     if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
                         if ("email_template", created_template_id) not in existing_artifact_keys:
@@ -35099,24 +37907,49 @@ def _ai_apply_template_hints_to_candidate_ops(
                             inputs.pop(key, None)
                         assumptions.append(f"Created a companion email template draft '{created_template_id}' for the automation email step.")
                         continue
-                if isinstance(email_template_hint, str) and email_template_hint:
-                    inputs["template_id"] = email_template_hint.strip()
+                if isinstance(global_email_template_hint, str) and global_email_template_hint:
+                    inputs["template_id"] = global_email_template_hint.strip()
                     for key in ("subject", "body_html", "body_text"):
                         inputs.pop(key, None)
                     assumptions.append("Used the selected email template for the draft automation email step.")
                     continue
+                if _ai_step_requests_new_template(message, automation, step, "email_template", unresolved_step_count=len(unresolved_email_steps)):
+                    template_op, created_template_id = _ai_build_new_email_template_op(op, inputs, idx)
+                    if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                        if ("email_template", created_template_id) not in existing_artifact_keys:
+                            prepended_ops.append(template_op)
+                            existing_artifact_keys.add(("email_template", created_template_id))
+                        inputs["template_id"] = created_template_id
+                        for key in ("subject", "body_html", "body_text"):
+                            inputs.pop(key, None)
+                        assumptions.append(f"Created a companion email template draft '{created_template_id}' for the automation email step.")
+                        continue
                 if wants_email_template or not _ai_send_email_step_has_inline_content(inputs):
-                    options = _ai_workspace_template_decision_options("email_template", workspace_id)
-                    create_new_option = {
-                        "id": "create_new_email_template",
-                        "label": "Create new email template",
-                        "value": "__create_new__",
-                        "description": "Create a new draft email template and wire this automation to it.",
-                        "hints": {"create_new_email_template": True, "email_template_id": "__create_new__"},
-                    }
+                    options = _ai_template_selection_options_for_step(
+                        "email_template",
+                        _ai_workspace_template_decision_options("email_template", workspace_id),
+                        automation,
+                        step,
+                        artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                    )
+                    create_new_option = _ai_template_selection_options_for_step(
+                        "email_template",
+                        [
+                            {
+                                "id": "create_new_email_template",
+                                "label": "Create new email template",
+                                "value": "__create_new__",
+                                "description": "Create a new draft email template and wire this automation to it.",
+                                "hints": {"create_new_email_template": True, "email_template_id": "__create_new__"},
+                            }
+                        ],
+                        automation,
+                        step,
+                        artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                    )[0]
                     selection_options = [*options, create_new_option]
                     if len(selection_options) == 1:
-                        create_new_email_template = True
+                        global_create_new_email_template = True
                         template_op, created_template_id = _ai_build_new_email_template_op(op, inputs, idx)
                         if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
                             if ("email_template", created_template_id) not in existing_artifact_keys:
@@ -35141,7 +37974,29 @@ def _ai_apply_template_hints_to_candidate_ops(
                             "options": selection_options,
                         }
             elif action_id == "system.generate_document":
-                if create_new_document_template:
+                step_hint = _ai_find_template_step_hint(
+                    answer_hints,
+                    "document_template",
+                    automation,
+                    step,
+                    artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                )
+                if isinstance(step_hint, dict):
+                    scoped_template_id = step_hint.get("template_id") if isinstance(step_hint.get("template_id"), str) and step_hint.get("template_id").strip() else None
+                    if isinstance(scoped_template_id, str):
+                        inputs["template_id"] = scoped_template_id.strip()
+                        assumptions.append("Used the step-specific selected document template for the draft document generation step.")
+                        continue
+                    if step_hint.get("create_new") is True:
+                        template_op, created_template_id = _ai_build_new_document_template_op(op, inputs, idx)
+                        if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                            if ("document_template", created_template_id) not in existing_artifact_keys:
+                                prepended_ops.append(template_op)
+                                existing_artifact_keys.add(("document_template", created_template_id))
+                            inputs["template_id"] = created_template_id
+                            assumptions.append(f"Created a step-specific companion document template draft '{created_template_id}' for the automation document step.")
+                            continue
+                if global_create_new_document_template:
                     template_op, created_template_id = _ai_build_new_document_template_op(op, inputs, idx)
                     if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
                         if ("document_template", created_template_id) not in existing_artifact_keys:
@@ -35150,21 +38005,44 @@ def _ai_apply_template_hints_to_candidate_ops(
                         inputs["template_id"] = created_template_id
                         assumptions.append(f"Created a companion document template draft '{created_template_id}' for the automation document step.")
                         continue
-                if isinstance(document_template_hint, str) and document_template_hint:
-                    inputs["template_id"] = document_template_hint.strip()
+                if isinstance(global_document_template_hint, str) and global_document_template_hint:
+                    inputs["template_id"] = global_document_template_hint.strip()
                     assumptions.append("Used the selected document template for the draft document generation step.")
                     continue
-                options = _ai_workspace_template_decision_options("document_template", workspace_id)
-                create_new_option = {
-                    "id": "create_new_document_template",
-                    "label": "Create new document template",
-                    "value": "__create_new__",
-                    "description": "Create a new draft document template and wire this automation to it.",
-                    "hints": {"create_new_document_template": True, "document_template_id": "__create_new__"},
-                }
+                if _ai_step_requests_new_template(message, automation, step, "document_template", unresolved_step_count=len(unresolved_document_steps)):
+                    template_op, created_template_id = _ai_build_new_document_template_op(op, inputs, idx)
+                    if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
+                        if ("document_template", created_template_id) not in existing_artifact_keys:
+                            prepended_ops.append(template_op)
+                            existing_artifact_keys.add(("document_template", created_template_id))
+                        inputs["template_id"] = created_template_id
+                        assumptions.append(f"Created a companion document template draft '{created_template_id}' for the automation document step.")
+                        continue
+                options = _ai_template_selection_options_for_step(
+                    "document_template",
+                    _ai_workspace_template_decision_options("document_template", workspace_id),
+                    automation,
+                    step,
+                    artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                )
+                create_new_option = _ai_template_selection_options_for_step(
+                    "document_template",
+                    [
+                        {
+                            "id": "create_new_document_template",
+                            "label": "Create new document template",
+                            "value": "__create_new__",
+                            "description": "Create a new draft document template and wire this automation to it.",
+                            "hints": {"create_new_document_template": True, "document_template_id": "__create_new__"},
+                        }
+                    ],
+                    automation,
+                    step,
+                    artifact_id=op.get("artifact_id") if isinstance(op.get("artifact_id"), str) else None,
+                )[0]
                 selection_options = [*options, create_new_option]
                 if len(selection_options) == 1:
-                    create_new_document_template = True
+                    global_create_new_document_template = True
                     template_op, created_template_id = _ai_build_new_document_template_op(op, inputs, idx)
                     if isinstance(template_op, dict) and isinstance(created_template_id, str) and created_template_id:
                         if ("document_template", created_template_id) not in existing_artifact_keys:
@@ -35219,33 +38097,145 @@ def _artifact_ai_apply_scoped_automation_hints(
         if isinstance(answer_hints, dict) and isinstance(answer_hints.get("document_template_id"), str) and answer_hints.get("document_template_id").strip()
         else None
     )
+    all_steps = [step for step in _artifact_ai_iter_automation_steps(normalized_draft.get("steps"))]
+    unresolved_email_steps = [
+        step
+        for step in all_steps
+        if isinstance(step, dict)
+        and step.get("action_id") == "system.send_email"
+        and not (
+            isinstance(((step.get("inputs") if isinstance(step.get("inputs"), dict) else {}).get("template_id")), str)
+            and ((step.get("inputs") if isinstance(step.get("inputs"), dict) else {}).get("template_id")).strip()
+        )
+    ]
+    unresolved_document_steps = [
+        step
+        for step in all_steps
+        if isinstance(step, dict)
+        and step.get("action_id") == "system.generate_document"
+        and not (
+            isinstance(((step.get("inputs") if isinstance(step.get("inputs"), dict) else {}).get("template_id")), str)
+            and ((step.get("inputs") if isinstance(step.get("inputs"), dict) else {}).get("template_id")).strip()
+        )
+    ]
+    for template_kind, unresolved_steps in (
+        ("email_template", unresolved_email_steps),
+        ("document_template", unresolved_document_steps),
+    ):
+        for step in unresolved_steps:
+            step_hint = _ai_find_template_step_hint(answer_hints, template_kind, normalized_draft, step)
+            if not isinstance(step_hint, dict):
+                continue
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            step["inputs"] = inputs
+            template_id = step_hint.get("template_id") if isinstance(step_hint.get("template_id"), str) and step_hint.get("template_id").strip() else None
+            if not isinstance(template_id, str):
+                continue
+            inputs["template_id"] = template_id.strip()
+            if template_kind == "email_template":
+                for key in ("subject", "body_html", "body_text"):
+                    inputs.pop(key, None)
+            assumptions.append(f"Used the step-specific selected {template_kind.replace('_', ' ')} for the matching automation step.")
+    preferred_email_entity_id = _ai_single_unresolved_template_step_entity_id(unresolved_email_steps, "system.send_email")
+    preferred_document_entity_id = _ai_single_unresolved_template_step_entity_id(unresolved_document_steps, "system.generate_document")
+    global_email_template_hint = email_template_hint if len(unresolved_email_steps) == 1 else None
+    global_document_template_hint = document_template_hint if len(unresolved_document_steps) == 1 else None
     matched_email_template = (
-        _ai_match_workspace_template_option_from_message("email_template", prompt, workspace_id)
-        if not email_template_hint
+        _ai_match_workspace_template_option_from_message(
+            "email_template",
+            prompt,
+            workspace_id,
+            preferred_entity_id=preferred_email_entity_id,
+        )
+        if not global_email_template_hint and len(unresolved_email_steps) == 1
         else None
     )
     if isinstance(matched_email_template, dict):
         matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
         matched_email_template_id = matched_email_hint.get("email_template_id")
         if isinstance(matched_email_template_id, str) and matched_email_template_id.strip():
-            email_template_hint = matched_email_template_id.strip()
+            global_email_template_hint = matched_email_template_id.strip()
             matched_email_label = matched_email_template.get("label")
-            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else email_template_hint
+            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else global_email_template_hint
             assumptions.append(f"Matched the requested email template '{label_text}' from the workspace.")
     matched_document_template = (
-        _ai_match_workspace_template_option_from_message("document_template", prompt, workspace_id)
-        if not document_template_hint
+        _ai_match_workspace_template_option_from_message(
+            "document_template",
+            prompt,
+            workspace_id,
+            preferred_entity_id=preferred_document_entity_id,
+        )
+        if not global_document_template_hint and len(unresolved_document_steps) == 1
         else None
     )
     if isinstance(matched_document_template, dict):
         matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
         matched_document_template_id = matched_document_hint.get("document_template_id")
         if isinstance(matched_document_template_id, str) and matched_document_template_id.strip():
-            document_template_hint = matched_document_template_id.strip()
+            global_document_template_hint = matched_document_template_id.strip()
             matched_document_label = matched_document_template.get("label")
-            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else document_template_hint
+            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else global_document_template_hint
+            assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
+    if not isinstance(global_email_template_hint, str) and len(unresolved_email_steps) > 1:
+        used_email_template_ids: set[str] = set()
+        for step in unresolved_email_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            matched_email_template = _ai_match_workspace_template_option_for_step(
+                "email_template",
+                prompt,
+                workspace_id,
+                normalized_draft,
+                step,
+            )
+            if not isinstance(matched_email_template, dict):
+                continue
+            matched_email_hint = matched_email_template.get("hints") if isinstance(matched_email_template.get("hints"), dict) else {}
+            matched_email_template_id = matched_email_hint.get("email_template_id")
+            if not isinstance(matched_email_template_id, str) or not matched_email_template_id.strip():
+                continue
+            template_id = matched_email_template_id.strip()
+            if template_id in used_email_template_ids:
+                continue
+            step["inputs"] = inputs
+            inputs["template_id"] = template_id
+            for key in ("subject", "body_html", "body_text"):
+                inputs.pop(key, None)
+            used_email_template_ids.add(template_id)
+            matched_email_label = matched_email_template.get("label")
+            label_text = matched_email_label.strip() if isinstance(matched_email_label, str) and matched_email_label.strip() else template_id
+            assumptions.append(f"Matched the requested email template '{label_text}' from the workspace.")
+    if not isinstance(global_document_template_hint, str) and len(unresolved_document_steps) > 1:
+        used_document_template_ids: set[str] = set()
+        for step in unresolved_document_steps:
+            inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+            if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip():
+                continue
+            matched_document_template = _ai_match_workspace_template_option_for_step(
+                "document_template",
+                prompt,
+                workspace_id,
+                normalized_draft,
+                step,
+            )
+            if not isinstance(matched_document_template, dict):
+                continue
+            matched_document_hint = matched_document_template.get("hints") if isinstance(matched_document_template.get("hints"), dict) else {}
+            matched_document_template_id = matched_document_hint.get("document_template_id")
+            if not isinstance(matched_document_template_id, str) or not matched_document_template_id.strip():
+                continue
+            template_id = matched_document_template_id.strip()
+            if template_id in used_document_template_ids:
+                continue
+            step["inputs"] = inputs
+            inputs["template_id"] = template_id
+            used_document_template_ids.add(template_id)
+            matched_document_label = matched_document_template.get("label")
+            label_text = matched_document_label.strip() if isinstance(matched_document_label, str) and matched_document_label.strip() else template_id
             assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
     recipient_hint = None
+    recipient_step_hints = answer_hints.get("notify_recipient_step_hints") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("notify_recipient_step_hints"), list) else []
     if isinstance(answer_hints, dict):
         for key in ("recipient_user_id", "recipient_email", "selected_option_value"):
             value = answer_hints.get(key)
@@ -35266,7 +38256,19 @@ def _artifact_ai_apply_scoped_automation_hints(
             current_user_values = set()
             if isinstance(current_user_id, str) and current_user_id.strip():
                 current_user_values.add(current_user_id.strip())
-            if isinstance(recipient_hint, str) and recipient_hint:
+            matched_notify_hint = _ai_find_notify_recipient_step_hint(answer_hints, normalized_draft, step) if recipient_step_hints else None
+            if isinstance(matched_notify_hint, dict):
+                inputs.pop("recipient_user_id", None)
+                inputs.pop("recipient_user_ids", None)
+                if isinstance(matched_notify_hint.get("recipient_user_ids"), list) and matched_notify_hint.get("recipient_user_ids"):
+                    inputs["recipient_user_ids"] = copy.deepcopy(matched_notify_hint.get("recipient_user_ids"))
+                elif isinstance(matched_notify_hint.get("recipient_user_id"), str) and matched_notify_hint.get("recipient_user_id").strip():
+                    inputs["recipient_user_ids"] = [matched_notify_hint.get("recipient_user_id").strip()]
+                elif isinstance(matched_notify_hint.get("recipient_email"), str) and matched_notify_hint.get("recipient_email").strip():
+                    inputs["recipient_user_ids"] = [matched_notify_hint.get("recipient_email").strip()]
+                _artifact_ai_resolve_notify_recipients(inputs, meta, fallback_current_user=False)
+                assumptions.append("Used the step-specific selected workspace recipient for the matching notification step.")
+            elif isinstance(recipient_hint, str) and recipient_hint:
                 inputs.pop("recipient_user_id", None)
                 inputs["recipient_user_ids"] = [recipient_hint]
                 _artifact_ai_resolve_notify_recipients(inputs, meta, fallback_current_user=False)
@@ -35295,6 +38297,11 @@ def _artifact_ai_apply_scoped_automation_hints(
                         _artifact_ai_resolve_notify_recipients(inputs, meta, fallback_current_user=False)
                         assumptions.append("Defaulted the notification recipient to the current user because the request explicitly asked for it.")
                 if not _artifact_ai_notify_step_has_recipient(inputs) and question_meta is None:
+                    options = _ai_notify_recipient_selection_options_for_step(
+                        _ai_workspace_member_decision_options(workspace_id),
+                        normalized_draft,
+                        step,
+                    )
                     question_meta = {
                         "id": "automation_notify_recipient",
                         "kind": "decision_slot",
@@ -35306,7 +38313,7 @@ def _artifact_ai_apply_scoped_automation_hints(
                         "allow_create_new": False,
                         "allow_free_text": True,
                         "hint_field": "recipient_email",
-                        "options": _ai_workspace_member_decision_options(workspace_id),
+                        "options": options,
                     }
                     questions = [question_meta["prompt"]]
         elif action_id == "system.send_email":
@@ -35319,7 +38326,12 @@ def _artifact_ai_apply_scoped_automation_hints(
                         inputs.pop(key, None)
                     assumptions.append("Used the selected email template for the automation email step.")
                 elif not has_inline_content and question_meta is None:
-                    options = _ai_workspace_template_decision_options("email_template", workspace_id)
+                    options = _ai_template_selection_options_for_step(
+                        "email_template",
+                        _ai_workspace_template_decision_options("email_template", workspace_id),
+                        normalized_draft,
+                        step,
+                    )
                     if options:
                         question_meta = {
                             "id": "automation_email_template",
@@ -35344,7 +38356,12 @@ def _artifact_ai_apply_scoped_automation_hints(
                     inputs["template_id"] = document_template_hint.strip()
                     assumptions.append("Used the selected document template for the document generation step.")
                 elif question_meta is None:
-                    options = _ai_workspace_template_decision_options("document_template", workspace_id)
+                    options = _ai_template_selection_options_for_step(
+                        "document_template",
+                        _ai_workspace_template_decision_options("document_template", workspace_id),
+                        normalized_draft,
+                        step,
+                    )
                     if options:
                         question_meta = {
                             "id": "automation_document_template",
@@ -35586,6 +38603,7 @@ def _ai_normalize_required_decision_slots(question_meta: dict | None, questions:
         slot = {
             "slot_id": slot_id,
             "kind": slot_kind,
+            "slot_kind": slot_kind,
             "label": label or slot_id,
             "prompt": prompt or label or slot_id,
             "required_before": raw_slot.get("required_before") if isinstance(raw_slot.get("required_before"), str) and raw_slot.get("required_before").strip() else "apply",
@@ -36583,12 +39601,24 @@ def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
             "requested_artifacts": requested_artifacts or merged.get("requested_scope", {}).get("requested_artifacts", []),
         }
 
-    for key in ("modules", "changes", "artifacts"):
+    for key in ("modules", "artifacts"):
         value = raw_plan_v1.get(key)
         if isinstance(value, list):
             cleaned = [item for item in value if isinstance(item, dict)]
             if cleaned:
                 merged[key] = cleaned
+    raw_changes = raw_plan_v1.get("changes")
+    if isinstance(raw_changes, list):
+        cleaned_changes = []
+        for item in raw_changes:
+            if not isinstance(item, dict):
+                continue
+            summary = item.get("summary") if isinstance(item.get("summary"), str) else None
+            if _ai_is_low_signal_change_summary(summary):
+                continue
+            cleaned_changes.append(item)
+        if cleaned_changes:
+            merged["changes"] = cleaned_changes
     if isinstance(raw_plan_v1.get("design_spec"), dict):
         merged["design_spec"] = copy.deepcopy(raw_plan_v1.get("design_spec"))
 
@@ -36657,7 +39687,12 @@ def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
             clarifications["slots"] = normalized_slots
             merged["clarifications"] = clarifications
     summary = raw_plan_v1.get("summary")
-    if isinstance(summary, str) and summary.strip() and _ai_summary_matches_plan_scope(summary, merged):
+    if (
+        isinstance(summary, str)
+        and summary.strip()
+        and not _ai_is_low_signal_plan_summary(summary)
+        and _ai_summary_matches_plan_scope(summary, merged)
+    ):
         merged["summary"] = summary.strip()
     return merged
 
@@ -36675,6 +39710,18 @@ def _ai_is_low_signal_plan_summary(summary: str | None) -> bool:
     }:
         return True
     return normalized.startswith("update the workspace based on this request")
+
+
+def _ai_is_low_signal_change_summary(summary: str | None) -> bool:
+    text = summary.strip() if isinstance(summary, str) else ""
+    if not text:
+        return True
+    normalized = _ai_norm_token(text)
+    if not normalized:
+        return True
+    if _ai_is_low_signal_plan_summary(text):
+        return True
+    return normalized.startswith("draft the requested updates") or normalized.startswith("map the first draft plan")
 
 
 def _ai_sanitize_plan_text_line(text: str) -> str:
@@ -37205,6 +40252,7 @@ def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived:
             "status": derived.get("status") or "planning",
             "summary": assistant_text,
             "latest_plan_id": plan_data.get("id"),
+            "latest_patchset_id": "",
             "last_activity_at": _ai_now(),
             "last_error": None,
         },
@@ -39642,92 +42690,14 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
         custom_text = body.get("text")
         submitted_hints = body.get("hints") if isinstance(body.get("hints"), dict) else {}
         hint_payload: dict[str, Any] = {}
-        if isinstance(submitted_hints.get("include_form"), bool):
-            hint_payload["include_form"] = submitted_hints.get("include_form")
-        if isinstance(submitted_hints.get("include_list"), bool):
-            hint_payload["include_list"] = submitted_hints.get("include_list")
-        if isinstance(submitted_hints.get("deduplicate_existing"), bool):
-            hint_payload["deduplicate_existing"] = submitted_hints.get("deduplicate_existing")
-        if isinstance(submitted_hints.get("confirm_plan"), bool):
-            hint_payload["confirm_plan"] = submitted_hints.get("confirm_plan")
-        if isinstance(submitted_hints.get("field_label"), str) and submitted_hints.get("field_label").strip():
-            hint_payload["field_label"] = submitted_hints.get("field_label").strip()
-        if isinstance(submitted_hints.get("field_type"), str) and submitted_hints.get("field_type") in _AI_FIELD_TYPES:
-            hint_payload["field_type"] = submitted_hints.get("field_type")
-        if isinstance(submitted_hints.get("field_id"), str) and submitted_hints.get("field_id").strip():
-            hint_payload["field_id"] = submitted_hints.get("field_id").strip()
-        if isinstance(submitted_hints.get("field_target"), str) and submitted_hints.get("field_target").strip():
-            hint_payload["field_target"] = submitted_hints.get("field_target").strip()
-            if not isinstance(hint_payload.get("field_label"), str) or not hint_payload.get("field_label"):
-                hint_payload["field_label"] = submitted_hints.get("field_target").strip()
-        if isinstance(submitted_hints.get("module_target"), str) and submitted_hints.get("module_target").strip():
-            hint_payload["module_target"] = submitted_hints.get("module_target").strip()
-        if isinstance(submitted_hints.get("entity_target"), str) and submitted_hints.get("entity_target").strip():
-            hint_payload["entity_target"] = submitted_hints.get("entity_target").strip()
-        if isinstance(submitted_hints.get("tab_target"), str) and submitted_hints.get("tab_target").strip():
-            hint_payload["tab_target"] = submitted_hints.get("tab_target").strip()
-        if isinstance(submitted_hints.get("recipient_email"), str) and submitted_hints.get("recipient_email").strip():
-            hint_payload["recipient_email"] = submitted_hints.get("recipient_email").strip()
-        if isinstance(submitted_hints.get("email_template_id"), str) and submitted_hints.get("email_template_id").strip():
-            hint_payload["email_template_id"] = submitted_hints.get("email_template_id").strip()
-        if isinstance(submitted_hints.get("document_template_id"), str) and submitted_hints.get("document_template_id").strip():
-            hint_payload["document_template_id"] = submitted_hints.get("document_template_id").strip()
-        if isinstance(submitted_hints.get("create_new_email_template"), bool):
-            hint_payload["create_new_email_template"] = submitted_hints.get("create_new_email_template")
-        if isinstance(submitted_hints.get("create_new_document_template"), bool):
-            hint_payload["create_new_document_template"] = submitted_hints.get("create_new_document_template")
-        if isinstance(submitted_hints.get("selected_option_id"), str) and submitted_hints.get("selected_option_id").strip():
-            hint_payload["selected_option_id"] = submitted_hints.get("selected_option_id").strip()
-        if isinstance(submitted_hints.get("selected_option_value"), str) and submitted_hints.get("selected_option_value").strip():
-            hint_payload["selected_option_value"] = submitted_hints.get("selected_option_value").strip()
-        if isinstance(submitted_hints.get("selected_option_label"), str) and submitted_hints.get("selected_option_label").strip():
-            hint_payload["selected_option_label"] = submitted_hints.get("selected_option_label").strip()
+        _ai_apply_structured_answer_hints(hint_payload, submitted_hints)
         if not hint_payload and isinstance(custom_text, str) and custom_text.strip().startswith("{"):
             try:
                 parsed_custom = json.loads(custom_text.strip())
             except Exception:
                 parsed_custom = None
             if isinstance(parsed_custom, dict):
-                if isinstance(parsed_custom.get("include_form"), bool):
-                    hint_payload["include_form"] = parsed_custom.get("include_form")
-                if isinstance(parsed_custom.get("include_list"), bool):
-                    hint_payload["include_list"] = parsed_custom.get("include_list")
-                if isinstance(parsed_custom.get("deduplicate_existing"), bool):
-                    hint_payload["deduplicate_existing"] = parsed_custom.get("deduplicate_existing")
-                if isinstance(parsed_custom.get("confirm_plan"), bool):
-                    hint_payload["confirm_plan"] = parsed_custom.get("confirm_plan")
-                if isinstance(parsed_custom.get("field_label"), str) and parsed_custom.get("field_label").strip():
-                    hint_payload["field_label"] = parsed_custom.get("field_label").strip()
-                if isinstance(parsed_custom.get("field_type"), str) and parsed_custom.get("field_type") in _AI_FIELD_TYPES:
-                    hint_payload["field_type"] = parsed_custom.get("field_type")
-                if isinstance(parsed_custom.get("field_id"), str) and parsed_custom.get("field_id").strip():
-                    hint_payload["field_id"] = parsed_custom.get("field_id").strip()
-                if isinstance(parsed_custom.get("field_target"), str) and parsed_custom.get("field_target").strip():
-                    hint_payload["field_target"] = parsed_custom.get("field_target").strip()
-                    if not isinstance(hint_payload.get("field_label"), str) or not hint_payload.get("field_label"):
-                        hint_payload["field_label"] = parsed_custom.get("field_target").strip()
-                if isinstance(parsed_custom.get("module_target"), str) and parsed_custom.get("module_target").strip():
-                    hint_payload["module_target"] = parsed_custom.get("module_target").strip()
-                if isinstance(parsed_custom.get("entity_target"), str) and parsed_custom.get("entity_target").strip():
-                    hint_payload["entity_target"] = parsed_custom.get("entity_target").strip()
-                if isinstance(parsed_custom.get("tab_target"), str) and parsed_custom.get("tab_target").strip():
-                    hint_payload["tab_target"] = parsed_custom.get("tab_target").strip()
-                if isinstance(parsed_custom.get("recipient_email"), str) and parsed_custom.get("recipient_email").strip():
-                    hint_payload["recipient_email"] = parsed_custom.get("recipient_email").strip()
-                if isinstance(parsed_custom.get("email_template_id"), str) and parsed_custom.get("email_template_id").strip():
-                    hint_payload["email_template_id"] = parsed_custom.get("email_template_id").strip()
-                if isinstance(parsed_custom.get("document_template_id"), str) and parsed_custom.get("document_template_id").strip():
-                    hint_payload["document_template_id"] = parsed_custom.get("document_template_id").strip()
-                if isinstance(parsed_custom.get("create_new_email_template"), bool):
-                    hint_payload["create_new_email_template"] = parsed_custom.get("create_new_email_template")
-                if isinstance(parsed_custom.get("create_new_document_template"), bool):
-                    hint_payload["create_new_document_template"] = parsed_custom.get("create_new_document_template")
-                if isinstance(parsed_custom.get("selected_option_id"), str) and parsed_custom.get("selected_option_id").strip():
-                    hint_payload["selected_option_id"] = parsed_custom.get("selected_option_id").strip()
-                if isinstance(parsed_custom.get("selected_option_value"), str) and parsed_custom.get("selected_option_value").strip():
-                    hint_payload["selected_option_value"] = parsed_custom.get("selected_option_value").strip()
-                if isinstance(parsed_custom.get("selected_option_label"), str) and parsed_custom.get("selected_option_label").strip():
-                    hint_payload["selected_option_label"] = parsed_custom.get("selected_option_label").strip()
+                _ai_apply_structured_answer_hints(hint_payload, parsed_custom)
         question_kind = active_question_meta.get("kind") if isinstance(active_question_meta, dict) else None
         question_id = active_question_meta.get("id") if isinstance(active_question_meta, dict) and isinstance(active_question_meta.get("id"), str) else None
         if (not isinstance(question_kind, str) or not question_kind.strip()) and isinstance(active_question, str):
@@ -39738,7 +42708,32 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
         active_decision_slots = _ai_normalize_required_decision_slots(active_question_meta if isinstance(active_question_meta, dict) else None, [active_question])
         active_decision_slot = active_decision_slots[0] if len(active_decision_slots) == 1 else None
         if isinstance(active_decision_slot, dict):
+            selected_option_id = hint_payload.get("selected_option_id") if isinstance(hint_payload.get("selected_option_id"), str) and hint_payload.get("selected_option_id").strip() else None
             selected_value = hint_payload.get("selected_option_value")
+            selected_option = next(
+                (
+                    option
+                    for option in (active_decision_slot.get("options") or [])
+                    if isinstance(option, dict)
+                    and (
+                        (isinstance(selected_option_id, str) and option.get("id") == selected_option_id)
+                        or (
+                            isinstance(selected_value, str)
+                            and selected_value.strip()
+                            and isinstance(option.get("value"), str)
+                            and option.get("value") == selected_value.strip()
+                        )
+                    )
+                ),
+                None,
+            )
+            if isinstance(selected_option, dict):
+                _ai_apply_decision_slot_option_to_hints(
+                    hint_payload,
+                    active_decision_slot,
+                    selected_option,
+                    preserve_existing_choice=False,
+                )
             if isinstance(selected_value, str) and selected_value.strip():
                 hint_field = active_decision_slot.get("hint_field") if isinstance(active_decision_slot.get("hint_field"), str) and active_decision_slot.get("hint_field").strip() else None
                 if isinstance(hint_field, str) and hint_field and not hint_payload.get(hint_field):
@@ -39772,7 +42767,7 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
                 hint_payload["deduplicate_existing"] = True
             elif action_norm in {"disapprove", "decline", "no"} or custom_is_decline:
                 hint_payload["deduplicate_existing"] = False
-        if question_kind == "confirm_plan" and not hint_payload:
+        if (question_kind == "confirm_plan" or question_id == "confirm_plan") and not isinstance(hint_payload.get("confirm_plan"), bool):
             if (action_norm in {"approve", "yes"} or custom_is_approve) and not custom_requests_revision:
                 hint_payload["confirm_plan"] = True
             elif action_norm in {"disapprove", "decline", "no"} or custom_is_decline:
@@ -39803,14 +42798,114 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
                 hint_payload["module_target"] = custom_text.strip()
             if question_id == "entity_target" and not hint_payload.get("entity_target"):
                 hint_payload["entity_target"] = custom_text.strip()
+                if not hint_payload.get("selected_entity_id"):
+                    hint_payload["selected_entity_id"] = custom_text.strip()
             if question_id == "tab_target" and not hint_payload.get("tab_target"):
                 hint_payload["tab_target"] = custom_text.strip()
+            if question_id == "section_target" and not hint_payload.get("planned_section_id"):
+                hint_payload["planned_section_id"] = custom_text.strip()
+            if question_id == "page_target" and not hint_payload.get("page_target"):
+                hint_payload["page_target"] = custom_text.strip()
+                if not hint_payload.get("planned_page_id"):
+                    hint_payload["planned_page_id"] = custom_text.strip()
+            if question_id == "view_target" and not hint_payload.get("planned_view_id"):
+                hint_payload["planned_view_id"] = custom_text.strip()
             if question_id == "field_target" and not hint_payload.get("field_target") and not hint_payload.get("module_target"):
                 hint_payload["field_target"] = custom_text.strip()
                 if not hint_payload.get("field_label"):
                     hint_payload["field_label"] = custom_text.strip()
             if not hint_payload.get("answer_text"):
                 hint_payload["answer_text"] = custom_text.strip()
+        if (
+            isinstance(active_decision_slot, dict)
+            and isinstance(custom_text, str)
+            and custom_text.strip()
+            and not (
+                isinstance(hint_payload.get("selected_option_id"), str) and hint_payload.get("selected_option_id").strip()
+            )
+            and not (
+                isinstance(hint_payload.get("selected_option_value"), str) and hint_payload.get("selected_option_value").strip()
+            )
+        ):
+            matched_option = _ai_match_decision_slot_option_from_text(active_decision_slot, custom_text)
+            if isinstance(matched_option, dict):
+                _ai_apply_decision_slot_option_to_hints(
+                    hint_payload,
+                    active_decision_slot,
+                    matched_option,
+                    preserve_existing_choice=False,
+                )
+        elif isinstance(custom_text, str) and custom_text.strip() and active_decision_slots:
+            slot_matches: list[tuple[dict, dict]] = []
+            for decision_slot in active_decision_slots:
+                matched_option = _ai_match_decision_slot_option_from_text(decision_slot, custom_text)
+                if isinstance(matched_option, dict):
+                    slot_matches.append((decision_slot, matched_option))
+            if len(slot_matches) > 1:
+                shared_ui_label_slots: set[str] = set()
+                label_counts: dict[str, list[tuple[dict, dict]]] = {}
+                for decision_slot, matched_option in slot_matches:
+                    slot_kind = decision_slot.get("slot_kind") if isinstance(decision_slot.get("slot_kind"), str) else decision_slot.get("kind")
+                    if not _ai_multi_slot_shared_label_requires_kind_cue(slot_kind):
+                        continue
+                    label_key = _ai_decision_slot_match_label_key(matched_option)
+                    if not label_key:
+                        continue
+                    label_counts.setdefault(label_key, []).append((decision_slot, matched_option))
+                for items in label_counts.values():
+                    if len(items) <= 1:
+                        continue
+                    for decision_slot, _matched_option in items:
+                        slot_kind = decision_slot.get("slot_kind") if isinstance(decision_slot.get("slot_kind"), str) else decision_slot.get("kind")
+                        if _ai_decision_slot_kind_cue_score(slot_kind, custom_text) <= 0:
+                            slot_id = decision_slot.get("slot_id") if isinstance(decision_slot.get("slot_id"), str) and decision_slot.get("slot_id").strip() else decision_slot.get("id")
+                            if isinstance(slot_id, str) and slot_id.strip():
+                                shared_ui_label_slots.add(slot_id.strip())
+                if shared_ui_label_slots:
+                    slot_matches = [
+                        (decision_slot, matched_option)
+                        for decision_slot, matched_option in slot_matches
+                        if (
+                            (
+                                decision_slot.get("slot_id")
+                                if isinstance(decision_slot.get("slot_id"), str) and decision_slot.get("slot_id").strip()
+                                else decision_slot.get("id")
+                            )
+                            not in shared_ui_label_slots
+                        )
+                    ]
+            matched_any_slot = False
+            for decision_slot, matched_option in slot_matches:
+                _ai_apply_decision_slot_option_to_hints(
+                    hint_payload,
+                    decision_slot,
+                    matched_option,
+                    preserve_existing_choice=matched_any_slot,
+                )
+                matched_any_slot = True
+        if isinstance(custom_text, str) and custom_text.strip():
+            session_data = _ai_record_data(session)
+            latest_plan_record = _ai_latest_plan_for_session(session_id)
+            ops_workspace_id = _ai_ops_workspace_id_for_session(session_data, actor.get("workspace_id") if isinstance(actor, dict) else None)
+            _ai_apply_structured_answer_hints(
+                hint_payload,
+                _ai_infer_template_step_hints_from_latest_plan(
+                    custom_text.strip(),
+                    latest_plan_record,
+                    ops_workspace_id,
+                    existing_hints=hint_payload,
+                ),
+            )
+            _ai_apply_structured_answer_hints(
+                hint_payload,
+                _ai_infer_notify_recipient_step_hints_from_latest_plan(
+                    custom_text.strip(),
+                    latest_plan_record,
+                    ops_workspace_id,
+                    existing_hints=hint_payload,
+                    request=request,
+                ),
+            )
         if action_norm == "custom" and (not isinstance(custom_text, str) or not custom_text.strip()) and not hint_payload:
             return _error_response("AI_ANSWER_REQUIRED", "Custom answer text is required", "text", status=400)
         response_text, _ = _ai_answer_payload(active_question, action, custom_text if isinstance(custom_text, str) else None)
@@ -39869,8 +42964,11 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
                     "field_type",
                     "tab_target",
                     "recipient_email",
+                    "recipient_user_id",
                     "email_template_id",
                     "document_template_id",
+                    "email_template_step_hints",
+                    "document_template_step_hints",
                     "create_new_email_template",
                     "create_new_document_template",
                     "selected_option_id",
@@ -39918,7 +43016,8 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
                 if isinstance(op, dict)
             ] if isinstance(latest_plan_body, dict) else []
             if latest_ops or bool(latest_plan_body.get("resolved_without_changes")):
-                plan = copy.deepcopy(latest_plan_body) if isinstance(latest_plan_body, dict) else {}
+                if not confirm_only_shortcut:
+                    plan = copy.deepcopy(latest_plan_body) if isinstance(latest_plan_body, dict) else {}
                 if isinstance(plan, dict):
                     plan["required_questions"] = []
                     plan["required_question_meta"] = None
@@ -46730,6 +49829,21 @@ def _template_sample_record(sample: Any) -> tuple[str | None, str | None, dict |
     return entity_id, record_id, record_data, placeholder
 
 
+def _template_sample_with_fallback_entity(sample: Any, source_template: dict | None) -> dict:
+    next_sample = dict(sample) if isinstance(sample, dict) else {}
+    entity_id = next_sample.get("entity_id")
+    if isinstance(entity_id, str) and entity_id.strip():
+        next_sample["entity_id"] = entity_id.strip()
+        return next_sample
+    if isinstance(source_template, dict):
+        variables_schema = source_template.get("variables_schema")
+        if isinstance(variables_schema, dict):
+            draft_entity_id = variables_schema.get("entity_id")
+            if isinstance(draft_entity_id, str) and draft_entity_id.strip():
+                next_sample["entity_id"] = draft_entity_id.strip()
+    return next_sample
+
+
 def _artifact_ai_superadmin_denied(actor: Any, message: str = "AI is currently limited to superadmins") -> JSONResponse | None:
     denied = _require_superadmin(actor, message)
     if denied:
@@ -48758,7 +51872,7 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
                 }
             )
     try:
-        members = list_workspace_members(workspace_id) if isinstance(workspace_id, str) and workspace_id else []
+        members = _ai_workspace_members_for_request(request, workspace_id)
     except Exception:
         members = []
     try:
@@ -50676,8 +53790,13 @@ def _artifact_ai_prompt_context(
     current: dict,
     selected_entity_id: str | None = None,
     requested_focus: str | None = None,
+    shared_context: dict | None = None,
 ) -> dict:
-    workspace_id = actor.get("workspace_id") if isinstance(actor, dict) and isinstance(actor.get("workspace_id"), str) and actor.get("workspace_id") else "default"
+    workspace_id = (
+        shared_context.get("workspace_id")
+        if isinstance(shared_context, dict) and isinstance(shared_context.get("workspace_id"), str) and shared_context.get("workspace_id").strip()
+        else _ai_resolve_workspace_id(actor)
+    )
     if kind == "automation":
         meta = _artifact_ai_automation_meta(request, actor)
         current_validation = _artifact_ai_validate_automation_draft(current, meta)
@@ -50810,6 +53929,14 @@ def _artifact_ai_resolve_scoped_template_entity_id(
     )
     if isinstance(hinted_entity_id, str) and hinted_entity_id.strip():
         return hinted_entity_id.strip()
+    variables_schema = current.get("variables_schema") if isinstance(current, dict) and isinstance(current.get("variables_schema"), dict) else {}
+    current_entity_id = (
+        variables_schema.get("entity_id")
+        if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip()
+        else None
+    )
+    if isinstance(current_entity_id, str) and current_entity_id.strip():
+        return current_entity_id.strip()
     sample_entity_id = (
         sample.get("entity_id")
         if isinstance(sample, dict) and isinstance(sample.get("entity_id"), str) and sample.get("entity_id").strip()
@@ -50817,24 +53944,12 @@ def _artifact_ai_resolve_scoped_template_entity_id(
     )
     if isinstance(sample_entity_id, str) and sample_entity_id.strip():
         return sample_entity_id.strip()
-    variables_schema = current.get("variables_schema") if isinstance(current, dict) and isinstance(current.get("variables_schema"), dict) else {}
-    current_entity_id = (
-        variables_schema.get("entity_id")
-        if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip()
-        else None
-    )
     inferred_entity_id = _artifact_ai_infer_template_prompt_entity(
         prompt,
         _artifact_ai_entities(request),
-        current_entity_id=current_entity_id,
+        current_entity_id=None,
     )
-    if (
-        isinstance(current_entity_id, str)
-        and current_entity_id.strip()
-        and isinstance(inferred_entity_id, str)
-        and inferred_entity_id.strip()
-        and inferred_entity_id.strip() != current_entity_id.strip()
-    ):
+    if isinstance(inferred_entity_id, str) and inferred_entity_id.strip():
         return inferred_entity_id.strip()
     return None
 
@@ -50991,6 +54106,12 @@ def _artifact_ai_generate_plan(
     selected_entity_id: str | None = None,
     requested_focus: str | None = None,
 ) -> dict:
+    shared_context = _ai_build_shared_context(
+        request,
+        actor if isinstance(actor, dict) else None,
+        message=prompt,
+        answer_hints={"selected_entity_id": selected_entity_id} if isinstance(selected_entity_id, str) and selected_entity_id.strip() else None,
+    )
     context_payload = _artifact_ai_prompt_context(
         kind,
         request,
@@ -50998,6 +54119,7 @@ def _artifact_ai_generate_plan(
         current,
         selected_entity_id=selected_entity_id,
         requested_focus=requested_focus,
+        shared_context=shared_context,
     )
     messages = [
         {"role": "system", "content": _artifact_ai_system_prompt(kind)},
@@ -51468,7 +54590,7 @@ async def preview_email_template(request: Request, template_id: str) -> dict:
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     draft_override = body.get("draft")
     source_template = _artifact_ai_normalize_email_template_draft(template, draft_override)
-    sample = body.get("sample") or {}
+    sample = _template_sample_with_fallback_entity(body.get("sample"), source_template)
     entity_id, record_id, inline_record, placeholder = _template_sample_record(sample)
     if not entity_id:
         return _error_response("SAMPLE_REQUIRED", "sample.entity_id required", "sample", status=400)
@@ -51790,12 +54912,14 @@ async def send_test_email_template(request: Request, template_id: str) -> dict:
     body = await _safe_json(request)
     if not isinstance(body, dict):
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    draft_override = body.get("draft")
+    source_template = _artifact_ai_normalize_email_template_draft(template, draft_override)
     to_email = body.get("to_email")
     if not isinstance(to_email, str) or not to_email:
         return _error_response("TO_EMAIL_REQUIRED", "to_email is required", "to_email", status=400)
-    sample = body.get("sample") or {}
+    sample = _template_sample_with_fallback_entity(body.get("sample"), source_template)
     entity_id, record_id, inline_record, _ = _template_sample_record(sample)
-    if not (entity_id and record_id):
+    if not entity_id or (not record_id and inline_record is None):
         return _error_response("SAMPLE_REQUIRED", "sample.entity_id and sample.record_id required", "sample", status=400)
     record_data = inline_record
     if record_data is None:
@@ -51823,9 +54947,9 @@ async def send_test_email_template(request: Request, template_id: str) -> dict:
     try:
         # Test sends should not fail outright because a stored template still references
         # an older field path; render missing values as empty strings instead.
-        subject = render_template(template.get("subject") or "", context, strict=False)
-        body_html = render_template(template.get("body_html") or "", context, strict=False)
-        body_text = render_template(template.get("body_text") or "", context, strict=False)
+        subject = render_template(source_template.get("subject") or "", context, strict=False)
+        body_html = render_template(source_template.get("body_html") or "", context, strict=False)
+        body_text = render_template(source_template.get("body_text") or "", context, strict=False)
     except Exception as exc:
         return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
     if not str(subject or "").strip():
@@ -52176,7 +55300,7 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
         return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
     draft_override = body.get("draft")
     source_template = _artifact_ai_normalize_doc_template_draft(template, draft_override)
-    sample = body.get("sample") or {}
+    sample = _template_sample_with_fallback_entity(body.get("sample"), source_template)
     entity_id, record_id, inline_record, placeholder = _template_sample_record(sample)
     if not entity_id:
         return _error_response("SAMPLE_REQUIRED", "sample.entity_id required", "sample", status=400)

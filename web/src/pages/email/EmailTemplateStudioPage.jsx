@@ -40,10 +40,10 @@ export default function EmailTemplateStudioPage({ user }) {
     return apiFetch(`/email/templates/${recordId}/preview`, { method: "POST", body: payload });
   }, []);
 
-  const sendTest = useCallback(async (toEmail, sample) => {
+  const sendTest = useCallback(async (toEmail, sample, draft) => {
     return apiFetch(`/email/templates/${id}/send_test`, {
       method: "POST",
-      body: { to_email: toEmail, sample },
+      body: { to_email: toEmail, sample, draft },
     });
   }, [id]);
 

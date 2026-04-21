@@ -1152,6 +1152,7 @@
       },
       "actions": {
         "apply_to_sandbox": "Toepassen op sandbox",
+        "save_detail": "Detail opslaan",
         "view_scope": "Scope bekijken",
         "answer_in_chat": "Beantwoorden in chat",
         "publish_selected_revision": "Geselecteerde revisie publiceren",
@@ -1221,6 +1222,7 @@
       },
       "hints": {
         "confirm_plan": "Keur het plan goed, valideer de revisie en pas die toe op de sandbox.",
+        "save_detail": "Sla het ontbrekende detail direct op vanuit de inline velden.",
         "answer_in_chat": "Dit verzoek heeft nog één detail nodig voordat het kan worden toegepast.",
         "view_scope": "Bekijk de huidige scope terwijl je het verzoek verder verfijnt in de chat.",
         "apply_revision": "Pas de gevalideerde revisie toe en vernieuw de preview automatisch.",

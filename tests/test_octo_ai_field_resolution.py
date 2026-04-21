@@ -80,6 +80,260 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             )
         )
 
+    def test_ai_build_shared_context_caches_workspace_member_options_per_request(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={"workspace_id": "default"}))
+        session = {
+            "id": "session-1",
+            "workspace_id": "default",
+            "selected_artifact_type": "module",
+            "selected_artifact_key": "jobs",
+        }
+        call_count = 0
+
+        def fake_members(_workspace_id: str) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops User",
+                    "role": "admin",
+                }
+            ]
+
+        with patch.object(
+            main,
+            "_ai_module_manifest_index",
+            return_value={"jobs": {"manifest": {"module": {"name": "Jobs"}}}},
+        ), patch.object(
+            main,
+            "_ai_build_workspace_graph",
+            return_value={"nodes": [], "edges": []},
+        ), patch.object(main, "list_workspace_members", side_effect=fake_members):
+            context_a = main._ai_build_shared_context(
+                request,
+                request.state.actor,
+                session=session,
+                message="Update the Jobs module.",
+                answer_hints={
+                    "selected_entity_id": "entity.job",
+                    "planned_page_id": "job.dashboard_page",
+                    "planned_view_id": "job.kanban",
+                },
+            )
+            context_b = main._ai_build_shared_context(
+                request,
+                request.state.actor,
+                session=session,
+                message="Update the Jobs module.",
+                answer_hints={
+                    "selected_entity_id": "entity.job",
+                    "planned_page_id": "job.dashboard_page",
+                    "planned_view_id": "job.kanban",
+                },
+            )
+
+        self.assertEqual(call_count, 1)
+        self.assertEqual(context_a.get("workspace_id"), "default")
+        self.assertEqual(context_a.get("selected_module_id"), "jobs")
+        self.assertEqual(context_a.get("selected_entity_id"), "entity.job")
+        self.assertEqual(context_a.get("planned_page_id"), "job.dashboard_page")
+        self.assertEqual(context_a.get("planned_view_id"), "job.kanban")
+        self.assertEqual(len(context_a.get("member_options") or []), 1)
+        self.assertEqual(context_a.get("member_options"), context_b.get("member_options"))
+
+    def test_workspace_member_request_cache_reused_for_options_and_message_match(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}))
+        call_count = 0
+
+        def fake_members(_workspace_id: str) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops User",
+                    "role": "admin",
+                    "department": "Operations",
+                }
+            ]
+
+        with patch.object(main, "list_workspace_members", side_effect=fake_members):
+            options = main._ai_workspace_member_decision_options_for_request(request, "default")
+            matched = main._ai_match_workspace_member_option_from_message(
+                "Notify ops when this is resolved.",
+                "default",
+                request=request,
+            )
+
+        self.assertEqual(call_count, 1)
+        self.assertEqual(len(options), 1)
+        self.assertIsInstance(matched, dict)
+        self.assertEqual(((matched or {}).get("hints") or {}).get("recipient_user_id"), "user-1")
+
+    def test_artifact_ai_automation_meta_reuses_request_scoped_member_cache(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={"workspace_id": "default"}))
+        actor = {"workspace_id": "default", "user_id": "user-1"}
+        call_count = 0
+
+        def fake_members(_workspace_id: str) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops User",
+                    "role": "admin",
+                    "department": "Operations",
+                }
+            ]
+
+        with patch.object(
+            main,
+            "_ai_module_manifest_index",
+            return_value={},
+        ), patch.object(
+            main,
+            "_ai_build_workspace_graph",
+            return_value={"nodes": [], "edges": []},
+        ), patch.object(
+            main,
+            "_artifact_ai_entities",
+            return_value=[],
+        ), patch.object(
+            main,
+            "_get_registry_list",
+            return_value=[],
+        ), patch.object(main, "list_workspace_members", side_effect=fake_members):
+            shared_context = main._ai_build_shared_context(
+                request,
+                actor,
+                message="Improve this automation.",
+            )
+            meta = main._artifact_ai_automation_meta(request, actor)
+
+        self.assertEqual(call_count, 1)
+        self.assertEqual(shared_context.get("workspace_id"), "default")
+        self.assertEqual(len(meta.get("members") or []), 1)
+        self.assertEqual((meta.get("members") or [])[0].get("user_id"), "user-1")
+
+    def test_ai_context_package_includes_shared_workspace_context(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(cache={}, actor={"workspace_id": "default"}))
+        session = {
+            "id": "session-1",
+            "workspace_id": "default",
+            "selected_artifact_type": "module",
+            "selected_artifact_key": "service_desk",
+        }
+
+        with patch.object(
+            main,
+            "_ai_module_manifest_index",
+            return_value={"service_desk": {"manifest": {"module": {"name": "Service Desk"}, "entities": [], "views": [], "pages": [], "actions": []}}},
+        ), patch.object(
+            main,
+            "_ai_build_workspace_graph",
+            return_value={"nodes": [], "edges": []},
+        ), patch.object(
+            main,
+            "_ai_workspace_artifact_catalog",
+            return_value=[],
+        ), patch.object(
+            main,
+            "_ai_reference_snippets",
+            return_value={"manifest_contract": "", "layout_rules": ""},
+        ), patch.object(
+            main,
+            "_ai_list_records",
+            return_value=[],
+        ), patch.object(
+            main,
+            "_ai_relevant_references",
+            return_value=[],
+        ), patch.object(
+            main,
+            "_load_pattern_memory",
+            return_value={"patterns": {}},
+        ), patch.object(
+            main,
+            "_infer_pattern_key",
+            return_value=None,
+        ), patch.object(
+            main,
+            "_ai_kernel_module_digest",
+            return_value={"module_id": "service_desk"},
+        ), patch.object(
+            main,
+            "list_workspace_members",
+            return_value=[
+                {"user_id": "user-1", "email": "ops@example.com", "full_name": "Ops User", "role": "admin"},
+                {"user_id": "user-2", "email": "support@example.com", "full_name": "Support User", "role": "member"},
+            ],
+        ):
+            context = main._ai_context_package(
+                request,
+                session,
+                "Update the Service Desk module.",
+                answer_hints={
+                    "selected_entity_id": "entity.ticket",
+                    "planned_page_id": "ticket.list_page",
+                    "planned_view_id": "ticket.kanban",
+                    "planned_section_id": "planning",
+                    "tab_target": "Operations",
+                },
+            )
+
+        self.assertEqual(
+            context.get("workspace_context"),
+            {
+                "workspace_id": "default",
+                "selected_module_id": "service_desk",
+                "selected_entity_id": "entity.ticket",
+                "planned_page_id": "ticket.list_page",
+                "planned_view_id": "ticket.kanban",
+                "planned_section_id": "planning",
+                "tab_target": "Operations",
+                "workspace_member_count": 2,
+            },
+        )
+
+    def test_resolve_scoped_template_entity_id_preserves_current_entity_over_generic_prompt_match(self) -> None:
+        request = SimpleNamespace()
+        current = {"variables_schema": {"entity_id": "entity.biz_quote"}}
+        entities = [
+            {"id": "entity.biz_quote", "label": "Business Quote", "fields": []},
+            {"id": "entity.quote", "label": "Quote", "fields": []},
+        ]
+
+        with patch.object(main, "_artifact_ai_entities", return_value=entities):
+            resolved = main._artifact_ai_resolve_scoped_template_entity_id(
+                request,
+                "Create a customer-ready quote email.",
+                current,
+                None,
+                None,
+            )
+
+        self.assertEqual(resolved, "entity.biz_quote")
+
+    def test_resolve_scoped_template_entity_id_prefers_current_entity_over_stale_sample(self) -> None:
+        request = SimpleNamespace()
+        current = {"variables_schema": {"entity_id": "entity.sales_order"}}
+        sample = {"entity_id": "entity.purchase_order", "record_id": "po-1"}
+
+        resolved = main._artifact_ai_resolve_scoped_template_entity_id(
+            request,
+            "Create a simple new order email.",
+            current,
+            None,
+            sample,
+        )
+
+        self.assertEqual(resolved, "entity.sales_order")
+
     def test_named_artifact_plan_expected_failure_keeps_real_errors_warning_worthy(self) -> None:
         self.assertFalse(_ai_named_artifact_plan_expected_failure(RuntimeError("planner crashed")))
 
@@ -263,7 +517,12 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
 
         self.assertTrue(
-            any(item.get("kind") == "module_doc" and "construction_ops_v3/README.md" in str(item.get("path")) for item in references),
+            any(
+                item.get("kind") == "module_doc"
+                and "construction_ops_v3" in str(item.get("path"))
+                and "README.md" in str(item.get("path"))
+                for item in references
+            ),
             references,
         )
 
@@ -1009,6 +1268,40 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
 
         self.assertEqual(structured["summary"], "Add a new field 'Render' to Contacts.")
+
+    def test_structured_plan_ignores_low_signal_semantic_changes_and_keeps_fallback(self) -> None:
+        structured = _ai_build_structured_plan(
+            {
+                "required_questions": ["Which catalog relationship should I use?"],
+                "required_question_meta": {"id": "target_resolution", "kind": "text"},
+                "affected_artifacts": [{"artifact_type": "module", "artifact_id": "influencers"}],
+                "proposed_changes": [],
+                "requested_change_lines": [
+                    "Add line items so each product sent can be tracked separately.",
+                    "Link each sent-product line item back to the Catalog module.",
+                    "Track Instagram handle, Coupon code, Follower count, Purchase count, Performance rating on the influencer record.",
+                ],
+                "planner_state": {"intent": "preview_only_plan"},
+                "plan_v1": {
+                    "version": "1",
+                    "summary": "Update the workspace based on this request: improve influencers",
+                    "changes": [
+                        {
+                            "op": "preview_detail",
+                            "summary": "Draft the requested updates in Influencers once the remaining detail is confirmed.",
+                        }
+                    ],
+                    "clarifications": {"items": ["Which catalog relationship should I use?"], "meta": {"id": "target_resolution", "kind": "text"}},
+                },
+            },
+            {"request_summary": "Improve Influencers by linking catalog line items to products sent to instagram influencers.", "full_selected_artifacts": []},
+        )
+
+        self.assertNotEqual(structured["summary"], "Update the workspace based on this request: improve influencers")
+        change_summaries = [item.get("summary") for item in (structured.get("changes") or []) if isinstance(item, dict)]
+        self.assertIn("Add line items so each product sent can be tracked separately.", change_summaries)
+        self.assertIn("Link each sent-product line item back to the Catalog module.", change_summaries)
+        self.assertNotIn("Draft the requested updates in Influencers once the remaining detail is confirmed.", change_summaries)
 
     def test_structured_plan_persists_design_spec_and_planning_mode_for_create_module(self) -> None:
         structured = _ai_build_structured_plan(
@@ -5466,6 +5759,93 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Approved Categories", field_labels)
         self.assertIn("Review Notes", field_labels)
 
+    def test_generate_module_design_spec_skips_model_for_supplier_onboarding_compliance_brief(self) -> None:
+        prompt = (
+            "Create a Supplier Onboarding module for insurance expiry, certificates, safety documents, "
+            "approved categories, onboarding status, and next review date."
+        )
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should be skipped for this deterministic brief"),
+            ),
+        ):
+            design_spec = main._ai_generate_module_design_spec("supplier_onboarding", "Supplier Onboarding", prompt)
+
+        self.assertEqual(design_spec.get("family"), "compliance")
+        self.assertEqual(design_spec.get("design_source"), "deterministic_fallback")
+        field_labels = [field.get("label") for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Insurance Expiry", field_labels)
+        self.assertIn("Safety Docs", field_labels)
+        self.assertIn("Onboarding Status", field_labels)
+        self.assertIn("Approved Categories", field_labels)
+        self.assertIn("Next Review Date", field_labels)
+        self.assertNotIn("Request Type", field_labels)
+        self.assertNotIn("Approver", field_labels)
+        self.assertNotIn("Amount", field_labels)
+
+    def test_generate_module_design_spec_skips_model_for_recruiting_brief(self) -> None:
+        prompt = (
+            "Create a Hiring Pipeline module to track applicants, resumes, interviews, offer status, "
+            "recruiter owner, and expected start date."
+        )
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should be skipped for this deterministic brief"),
+            ),
+        ):
+            design_spec = main._ai_generate_module_design_spec("hiring_pipeline", "Hiring Pipeline", prompt)
+
+        self.assertEqual(design_spec.get("family"), "recruiting")
+        self.assertEqual(design_spec.get("design_source"), "deterministic_fallback")
+        field_labels = [field.get("label") for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Candidate Email", field_labels)
+        self.assertIn("Resume / CV", field_labels)
+        self.assertIn("Interview Date", field_labels)
+        self.assertIn("Offer Status", field_labels)
+        self.assertIn("Expected Start Date", field_labels)
+        self.assertNotIn("Company", field_labels)
+        self.assertNotIn("Contact", field_labels)
+        self.assertNotIn("Value", field_labels)
+
+    def test_generate_module_design_spec_skips_model_for_field_service_work_order_brief(self) -> None:
+        prompt = (
+            "Create a Service Operations module for work orders, technician scheduling, customer visits, "
+            "job notes, service reports, and completion status."
+        )
+
+        with (
+            patch.object(main, "USE_AI", True),
+            patch.object(main, "_openai_configured", lambda: True),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                side_effect=AssertionError("model-backed design should be skipped for this deterministic brief"),
+            ),
+        ):
+            design_spec = main._ai_generate_module_design_spec("service_operations", "Service Operations", prompt)
+
+        self.assertEqual(design_spec.get("family"), "field_service")
+        self.assertEqual(design_spec.get("design_source"), "deterministic_fallback")
+        field_labels = [field.get("label") for field in (design_spec.get("fields") or []) if isinstance(field, dict)]
+        self.assertIn("Customer", field_labels)
+        self.assertIn("Site Address", field_labels)
+        self.assertIn("Technician", field_labels)
+        self.assertIn("Scheduled Start", field_labels)
+        self.assertIn("Completion Notes", field_labels)
+        self.assertNotIn("Request Type", field_labels)
+        self.assertNotIn("Approver", field_labels)
+        self.assertNotIn("Amount", field_labels)
+
     def test_generate_module_design_spec_skips_model_for_low_complexity_starter_brief(self) -> None:
         prompt = "Create a Holiday Planner module to manage upcoming trips, travellers, booking dates, budgets, suppliers, and notes. Call it Holiday Planner."
 
@@ -5654,11 +6034,1279 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         ]
         self.assertIn("entity.influencer", entity_ids)
         self.assertIn("entity.sent_product", entity_ids)
+        self.assertNotIn("entity.line_item", entity_ids)
 
         text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
         self.assertIn("Create a new module 'Influencers'.", text)
         self.assertNotIn("Spend & Sales Tracker", text)
         self.assertNotIn("What should the new module be called?", text)
+
+    def test_plan_from_message_existing_influencers_catalog_line_items_stays_out_of_field_spec(self) -> None:
+        influencers_manifest = {
+            "module": {"id": "influencers", "key": "influencers", "name": "Influencers"},
+            "entities": [
+                {
+                    "id": "entity.influencer",
+                    "label": "Influencer",
+                    "fields": [
+                        {"id": "influencer.name", "label": "Influencer Name", "type": "string"},
+                        {"id": "influencer.instagram_handle", "label": "Instagram Handle", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "label": "Name", "type": "string"},
+                        {"id": "catalog_item.sku", "label": "SKU", "type": "string"},
+                    ],
+                }
+            ],
+            "views": [],
+        }
+        prompt = (
+            "can you improve the influencers module make it better more what im after, "
+            "theres alot of garbage in there, i need to track line items from our catalog module "
+            "to what we give instagram influencers"
+        )
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"influencers": {"manifest": influencers_manifest}, "catalog": {"manifest": catalog_manifest}}),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertNotEqual((plan.get("required_question_meta") or {}).get("id"), "field_spec")
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": prompt,
+                "full_selected_artifacts": [
+                    {"artifact_type": "module", "artifact_id": "influencers", "manifest": influencers_manifest},
+                    {"artifact_type": "module", "artifact_id": "catalog", "manifest": catalog_manifest},
+                ],
+            },
+        )
+        self.assertIn("line items", text.lower())
+        self.assertIn("catalog", text.lower())
+        self.assertNotIn("What should the new field be called?", text)
+
+    def test_detect_new_module_family_prefers_influencer_for_creator_seeding_brief_with_catalog_context(self) -> None:
+        prompt = (
+            "Create a Creator Partners module to track brand ambassadors we seed products to from our catalog. "
+            "Keep their instagram handle, promo code, followers, purchases, whether they were a good fit, "
+            "and line items for the products sent."
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        family = main._ai_detect_new_module_family(
+            "Creator Partners",
+            prompt,
+            module_index={"catalog": {"manifest": catalog_manifest}},
+        )
+
+        self.assertEqual(family, "influencer")
+
+        design_spec = main._ai_generate_module_design_spec(
+            "creator_partners",
+            "Creator Partners",
+            prompt,
+            module_index={"catalog": {"manifest": catalog_manifest}},
+        )
+        self.assertEqual(design_spec.get("family"), "influencer")
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        self.assertTrue(any(item.get("entity_slug") == "sent_product" for item in related_entities))
+
+    def test_detect_new_module_family_prefers_influencer_for_brand_ambassador_gifting_brief(self) -> None:
+        prompt = (
+            "Create a Brand Ambassadors module for our ecommerce team. "
+            "We gift products to creators and need to track their instagram handle, promo code, followers, "
+            "purchases, whether they were a good fit, and the products sent from our catalog."
+        )
+        catalog_manifest = {
+            "module": {"id": "catalog", "key": "catalog", "name": "Catalog", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.catalog_item",
+                    "label": "Catalog Item",
+                    "fields": [
+                        {"id": "catalog_item.name", "type": "string", "label": "Name"},
+                        {"id": "catalog_item.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        family = main._ai_detect_new_module_family(
+            "Brand Ambassadors",
+            prompt,
+            module_index={"catalog": {"manifest": catalog_manifest}},
+        )
+
+        self.assertEqual(family, "influencer")
+
+        design_spec = main._ai_generate_module_design_spec(
+            "brand_ambassadors",
+            "Brand Ambassadors",
+            prompt,
+            module_index={"catalog": {"manifest": catalog_manifest}},
+        )
+        self.assertEqual(design_spec.get("family"), "influencer")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("brand_ambassador.instagram_handle", fields)
+        self.assertIn("brand_ambassador.coupon_code", fields)
+        self.assertIn("brand_ambassador.follower_count", fields)
+        self.assertIn("brand_ambassador.purchase_count", fields)
+        self.assertNotIn("brand_ambassador.purchase_amount", fields)
+        self.assertNotIn("brand_ambassador.sales_amount", fields)
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        self.assertTrue(any(item.get("entity_slug") == "sent_product" for item in related_entities))
+
+    def test_detect_new_module_family_prefers_recruiting_for_applicant_interview_offer_brief(self) -> None:
+        prompt = (
+            "Create a Hiring Pipeline module to manage applicants, resumes, interview stages, offer status, "
+            "recruiter ownership, and expected start dates."
+        )
+
+        family = main._ai_detect_new_module_family("Hiring Pipeline", prompt)
+        self.assertEqual(family, "recruiting")
+
+        design_spec = main._ai_generate_module_design_spec("hiring_pipeline", "Hiring Pipeline", prompt)
+        self.assertEqual(design_spec.get("family"), "recruiting")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("hiring_pipeline.candidate_email", fields)
+        self.assertIn("hiring_pipeline.resume_url", fields)
+        self.assertIn("hiring_pipeline.interview_date", fields)
+        self.assertIn("hiring_pipeline.expected_start_date", fields)
+        self.assertNotIn("hiring_pipeline.company_name", fields)
+        self.assertNotIn("hiring_pipeline.contact_name", fields)
+        self.assertNotIn("hiring_pipeline.value", fields)
+
+    def test_detect_new_module_family_prefers_compliance_for_supplier_onboarding_expiry_brief(self) -> None:
+        prompt = (
+            "Create a Supplier Onboarding module for insurance expiry, certificate renewals, safety documents, "
+            "approved categories, onboarding status, and review notes before vendors are approved."
+        )
+
+        family = main._ai_detect_new_module_family("Supplier Onboarding", prompt)
+        self.assertEqual(family, "compliance")
+
+        design_spec = main._ai_generate_module_design_spec("supplier_onboarding", "Supplier Onboarding", prompt)
+        self.assertEqual(design_spec.get("family"), "compliance")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("supplier_onboarding.insurance_expiry", fields)
+        self.assertIn("supplier_onboarding.safety_docs", fields)
+        self.assertIn("supplier_onboarding.onboarding_status", fields)
+        self.assertIn("supplier_onboarding.approved_categories", fields)
+        self.assertNotIn("supplier_onboarding.request_type", fields)
+        self.assertNotIn("supplier_onboarding.approver_name", fields)
+        self.assertNotIn("supplier_onboarding.amount", fields)
+
+    def test_detect_new_module_family_prefers_field_service_for_work_order_visit_brief(self) -> None:
+        prompt = (
+            "Create a Service Operations module to manage work orders, technician scheduling, customer visits, "
+            "job notes, service reports, and completion status."
+        )
+
+        family = main._ai_detect_new_module_family("Service Operations", prompt)
+        self.assertEqual(family, "field_service")
+
+        design_spec = main._ai_generate_module_design_spec("service_operations", "Service Operations", prompt)
+        self.assertEqual(design_spec.get("family"), "field_service")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertEqual(design_spec.get("entity_slug"), "work_order")
+        self.assertIn("work_order.customer_name", fields)
+        self.assertIn("work_order.site_address", fields)
+        self.assertIn("work_order.technician_name", fields)
+        self.assertIn("work_order.scheduled_start", fields)
+        self.assertIn("work_order.completion_notes", fields)
+        self.assertNotIn("work_order.request_type", fields)
+        self.assertNotIn("work_order.approver_name", fields)
+        self.assertNotIn("work_order.amount", fields)
+        self.assertNotIn("work_order.client_name", fields)
+
+    def test_detect_new_module_family_prefers_dispatch_shape_for_route_board_brief(self) -> None:
+        prompt = (
+            "Create a Dispatch Board module for technician assignments, route planning, daily routes, "
+            "service windows, crew assignment, and dispatch notes."
+        )
+
+        family = main._ai_detect_new_module_family("Dispatch Board", prompt)
+        self.assertEqual(family, "field_service")
+
+        design_spec = main._ai_generate_module_design_spec("dispatch_board", "Dispatch Board", prompt)
+        self.assertEqual(design_spec.get("family"), "field_service")
+        self.assertEqual(design_spec.get("entity_slug"), "dispatch")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("dispatch.assigned_technician", fields)
+        self.assertIn("dispatch.route_name", fields)
+        self.assertIn("dispatch.service_window_start", fields)
+        self.assertIn("dispatch.service_window_end", fields)
+        self.assertIn("dispatch.dispatch_notes", fields)
+        self.assertNotIn("dispatch.technician_name", fields)
+        self.assertNotIn("dispatch.scheduled_start", fields)
+        self.assertNotIn("dispatch.scheduled_end", fields)
+        self.assertNotIn("dispatch.completion_notes", fields)
+        self.assertNotIn("dispatch.request_type", fields)
+        self.assertNotIn("dispatch.approver_name", fields)
+        self.assertNotIn("dispatch.amount", fields)
+        related_entity_slugs = [
+            item.get("entity_slug")
+            for item in (design_spec.get("related_entities") or [])
+            if isinstance(item, dict)
+        ]
+        self.assertIn("route_stop", related_entity_slugs)
+
+    def test_detect_new_module_family_prefers_service_desk_for_ticket_brief(self) -> None:
+        prompt = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "SLA response times, assigned agents, and resolution notes."
+        )
+
+        family = main._ai_detect_new_module_family("Service Desk", prompt)
+        self.assertEqual(family, "service_desk")
+
+        design_spec = main._ai_generate_module_design_spec("service_desk", "Service Desk", prompt)
+        self.assertEqual(design_spec.get("family"), "service_desk")
+        self.assertEqual(design_spec.get("entity_slug"), "ticket")
+        field_defs = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        fields = list(field_defs.keys())
+        self.assertIn("ticket.customer_name", fields)
+        self.assertIn("ticket.customer_email", fields)
+        self.assertIn("ticket.issue_type", fields)
+        self.assertIn("ticket.assigned_agent", fields)
+        self.assertIn("ticket.response_due_at", fields)
+        self.assertIn("ticket.resolution_summary", fields)
+        self.assertEqual((field_defs.get("ticket.assigned_agent") or {}).get("type"), "user")
+        self.assertNotIn("ticket.request_type", fields)
+        self.assertNotIn("ticket.requested_date", fields)
+        self.assertNotIn("ticket.approver_name", fields)
+        self.assertNotIn("ticket.amount", fields)
+        self.assertNotIn("ticket.service_window_start", fields)
+        self.assertNotIn("ticket.route_name", fields)
+        related_entity_slugs = [
+            item.get("entity_slug")
+            for item in (design_spec.get("related_entities") or [])
+            if isinstance(item, dict)
+        ]
+        self.assertIn("internal_note", related_entity_slugs)
+
+    def test_service_desk_brief_infers_assigned_agent_notify_intent(self) -> None:
+        prompt = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "assigned agents, and resolution notes. Notify the assigned agent when a ticket is resolved."
+        )
+
+        design_spec = main._ai_generate_module_design_spec("service_desk", "Service Desk", prompt)
+        field_defs = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((field_defs.get("ticket.assigned_agent") or {}).get("type"), "user")
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        notify_intent = by_id.get("service_desk_resolved_notification") or {}
+        self.assertEqual(notify_intent.get("channel"), "notify")
+        self.assertEqual(notify_intent.get("status_values"), ["resolved"])
+        self.assertEqual(notify_intent.get("recipient"), {"var": "trigger.record.fields.assigned_agent"})
+
+    def test_service_desk_brief_infers_named_workspace_member_notify_intent(self) -> None:
+        prompt = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "assigned agents, and resolution notes. Notify Ops when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {"user_id": "user-ops", "email": "ops@example.com", "full_name": "Ops", "role": "member"},
+                {"user_id": "user-admin", "email": "admin@example.com", "full_name": "Admin", "role": "admin"},
+            ],
+        ):
+            design_spec = main._ai_generate_module_design_spec("service_desk", "Service Desk", prompt)
+
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        notify_intent = by_id.get("service_desk_resolved_notification") or {}
+        self.assertEqual(notify_intent.get("channel"), "notify")
+        self.assertEqual(notify_intent.get("status_values"), ["resolved"])
+        self.assertEqual(notify_intent.get("recipient"), "user-ops")
+
+    def test_service_desk_brief_infers_named_workspace_team_notify_intent(self) -> None:
+        prompt = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "assigned agents, and resolution notes. Notify Finance when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {
+                    "user_id": "user-finance-lead",
+                    "email": "finance.lead@example.com",
+                    "full_name": "Finance Lead",
+                    "title": "Finance",
+                    "role": "member",
+                },
+                {
+                    "user_id": "user-finance-analyst",
+                    "email": "finance.analyst@example.com",
+                    "full_name": "Finance Analyst",
+                    "department": "Finance",
+                    "role": "member",
+                },
+                {"user_id": "user-ops", "email": "ops@example.com", "full_name": "Ops", "role": "member"},
+            ],
+        ):
+            design_spec = main._ai_generate_module_design_spec("service_desk", "Service Desk", prompt)
+
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        notify_intent = by_id.get("service_desk_resolved_notification") or {}
+        self.assertEqual(notify_intent.get("channel"), "notify")
+        self.assertEqual(notify_intent.get("status_values"), ["resolved"])
+        self.assertEqual(notify_intent.get("recipient"), ["user-finance-lead", "user-finance-analyst"])
+
+    def test_service_desk_brief_infers_indirect_role_based_workspace_member_notify_intent(self) -> None:
+        prompt = (
+            "Create a Service Desk module for customer tickets, help desk inbox, issue type, priority, "
+            "assigned agents, and resolution notes. Notify the account manager when a ticket is resolved."
+        )
+
+        with patch.object(
+            main,
+            "list_workspace_members",
+            lambda workspace_id: [
+                {
+                    "user_id": "user-csm",
+                    "email": "ava@example.com",
+                    "full_name": "Ava Cole",
+                    "title": "Customer Success Manager",
+                    "role": "member",
+                },
+                {
+                    "user_id": "user-finance",
+                    "email": "finance@example.com",
+                    "full_name": "Finance Lead",
+                    "department": "Finance",
+                    "role": "member",
+                },
+            ],
+        ):
+            design_spec = main._ai_generate_module_design_spec("service_desk", "Service Desk", prompt)
+
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        notify_intent = by_id.get("service_desk_resolved_notification") or {}
+        self.assertEqual(notify_intent.get("channel"), "notify")
+        self.assertEqual(notify_intent.get("status_values"), ["resolved"])
+        self.assertEqual(notify_intent.get("recipient"), "user-csm")
+
+    def test_create_module_bundle_reuses_named_workspace_templates_for_draft_automation_steps(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the completion pack.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_follow_up",
+                            "label": "Completion Follow-up",
+                            "value": "email_tpl_completion_follow_up",
+                            "hints": {"email_template_id": "email_tpl_completion_follow_up"},
+                        }
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_completion_pack",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack",
+                            "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                        }
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed send the Completion Follow-up email template to the customer and generate the Completion Pack document template.",
+                [],
+                {},
+            )
+
+        ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_follow_up")
+        self.assertNotIn("subject", email_inputs)
+        self.assertNotIn("body_text", email_inputs)
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_completion_pack")
+
+    def test_create_module_bundle_matches_existing_workspace_templates_from_partial_aliases(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_approved",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved",
+                            "hints": {"email_template_id": "email_tpl_completion_approved"},
+                        },
+                        {
+                            "id": "email_tpl_customer_notice",
+                            "label": "Customer Notice",
+                            "value": "email_tpl_customer_notice",
+                            "hints": {"email_template_id": "email_tpl_customer_notice"},
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_completion_pack",
+                            "label": "Job Completion Pack",
+                            "value": "doc_tpl_job_completion_pack",
+                            "hints": {"document_template_id": "doc_tpl_job_completion_pack"},
+                        },
+                        {
+                            "id": "doc_tpl_service_report",
+                            "label": "Service Report",
+                            "value": "doc_tpl_service_report",
+                            "hints": {"document_template_id": "doc_tpl_service_report"},
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our completion approval email for the customer and generate the existing completion pack.",
+                [],
+                {},
+            )
+
+        ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_approved")
+        self.assertNotIn("subject", email_inputs)
+        self.assertNotIn("body_text", email_inputs)
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_job_completion_pack")
+
+    def test_create_module_bundle_prefers_workspace_templates_matching_step_entity_when_names_tie(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_approved_quote",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved_quote",
+                            "hints": {
+                                "email_template_id": "email_tpl_completion_approved_quote",
+                                "entity_id": "entity.quote",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_completion_approved_job",
+                            "label": "Completion Approved",
+                            "value": "email_tpl_completion_approved_job",
+                            "hints": {
+                                "email_template_id": "email_tpl_completion_approved_job",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_completion_pack_quote",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack_quote",
+                            "hints": {
+                                "document_template_id": "doc_tpl_completion_pack_quote",
+                                "entity_id": "entity.quote",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_completion_pack_job",
+                            "label": "Completion Pack",
+                            "value": "doc_tpl_completion_pack_job",
+                            "hints": {
+                                "document_template_id": "doc_tpl_completion_pack_job",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our completion approved email for the customer and generate the existing completion pack.",
+                [],
+                {},
+            )
+
+        ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_approved_job")
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_completion_pack_job")
+
+    def test_create_module_bundle_prefers_workspace_templates_matching_message_purpose_when_labels_tie(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completion_customer_follow_up",
+                    "automation": {
+                        "name": "Job Completion Customer Follow-up",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Please review the attached documents.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_job_customer_update",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update",
+                            "description": "Reminder about upcoming work",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_job_customer_update_approved",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_approved",
+                            "description": "Completion approval sent to customer",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_approved",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_document_bundle",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_document_bundle",
+                            "description": "inspection-report",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_document_bundle",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_job_document_bundle_completion",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_document_bundle_completion",
+                            "description": "completion-pack",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_document_bundle_completion",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our approval email for the customer and generate our completion pack.",
+                [],
+                {},
+            )
+
+        ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if steps and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_job_customer_update_approved")
+        self.assertEqual(document_inputs.get("template_id"), "doc_tpl_job_document_bundle_completion")
+
+    def test_create_module_bundle_reuses_multiple_existing_workspace_templates_across_bundle_steps(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_approved_customer_notice",
+                    "automation": {
+                        "name": "Job Approved Customer Notice",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "approved"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_approval_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job has been approved",
+                                    "body_text": "Approval details.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_inspection_report",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Inspection Report",
+                                },
+                            },
+                        ],
+                    },
+                },
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completed_customer_notice",
+                    "automation": {
+                        "name": "Job Completed Customer Notice",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_completion_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Completion details.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_completion_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Completion Pack",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_job_customer_update_approved",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_approved",
+                            "description": "Approval notice for approved jobs",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_approved",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "email_tpl_job_customer_update_completed",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_completed",
+                            "description": "Completion notice for finished jobs",
+                            "hints": {
+                                "email_template_id": "email_tpl_job_customer_update_completed",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_bundle_inspection",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_inspection",
+                            "description": "inspection-report",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_bundle_inspection",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                        {
+                            "id": "doc_tpl_job_bundle_completion",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_completion",
+                            "description": "completion-pack",
+                            "hints": {
+                                "document_template_id": "doc_tpl_job_bundle_completion",
+                                "entity_id": "entity.job",
+                            },
+                        },
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is approved, use our approval email and generate our inspection report. "
+                "When a job is completed, use our completion email and generate our completion pack.",
+                [],
+                {},
+            )
+
+        automation_ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        self.assertEqual(len(automation_ops), 2)
+        by_name = {((op.get("automation") or {}).get("name")): (op.get("automation") or {}) for op in automation_ops}
+        approved_steps = (by_name.get("Job Approved Customer Notice") or {}).get("steps") or []
+        completed_steps = (by_name.get("Job Completed Customer Notice") or {}).get("steps") or []
+        self.assertEqual((((approved_steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_approved")
+        self.assertEqual((((approved_steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_inspection")
+        self.assertEqual((((completed_steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_completed")
+        self.assertEqual((((completed_steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_completion")
+
+    def test_create_module_bundle_reuses_existing_email_and_creates_new_document_template_in_same_bundle(self) -> None:
+        manifest = main._build_scaffold_single_entity(
+            "jobs",
+            "Jobs",
+            "job",
+            "Job",
+            [
+                {"id": "job.name", "type": "string", "label": "Job", "required": True},
+                {"id": "job.customer_email", "type": "string", "label": "Customer Email"},
+            ],
+            nav_label="Jobs",
+        )
+        package = {
+            "manifest": manifest,
+            "design_spec": {"family": "field_service", "entity_slug": "job", "entity_label": "Job"},
+            "quality": {},
+            "automation_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "auto_job_completed_customer_handoff",
+                    "automation": {
+                        "name": "Job Completed Customer Handoff",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["workflow.status_changed"], "filters": [{"path": "to", "op": "eq", "value": "completed"}]},
+                        "steps": [
+                            {
+                                "id": "step_send_completion_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to_field_ids": ["job.customer_email"],
+                                    "subject": "Your job is complete",
+                                    "body_text": "Completion details.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_handover_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Handover Pack",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_extract_requested_new_module_labels", lambda *args, **kwargs: ["Jobs"]),
+            patch.object(main, "_ai_build_new_module_package", lambda *args, **kwargs: copy.deepcopy(package)),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_follow_up",
+                            "label": "Completion Follow-up",
+                            "value": "email_tpl_completion_follow_up",
+                            "hints": {"email_template_id": "email_tpl_completion_follow_up", "entity_id": "entity.job"},
+                        }
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_service_report",
+                            "label": "Service Report",
+                            "value": "doc_tpl_service_report",
+                            "hints": {"document_template_id": "doc_tpl_service_report", "entity_id": "entity.job"},
+                        }
+                    ]
+                ),
+            ),
+        ):
+            bundle = main._ai_build_create_module_bundle(
+                "Create a Jobs module. When a job is completed, use our Completion Follow-up email template and create a new Handover Pack document template.",
+                [],
+                {},
+            )
+
+        candidate_ops = [op for op in (bundle.get("candidate_ops") or []) if isinstance(op, dict)]
+        create_doc_ops = [op for op in candidate_ops if op.get("op") == "create_document_template_record"]
+        automation_ops = [op for op in candidate_ops if op.get("op") == "create_automation_record"]
+        self.assertEqual(len(create_doc_ops), 1)
+        self.assertEqual(len(automation_ops), 1)
+        template_id = create_doc_ops[0].get("artifact_id")
+        self.assertTrue(isinstance(template_id, str) and template_id.startswith("doc_tpl_"))
+        steps = (((automation_ops[0].get("automation") or {}).get("steps")) or [])
+        self.assertEqual((((steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_completion_follow_up")
+        self.assertEqual((((steps[1].get("inputs") or {}).get("template_id"))), template_id)
+
+    def test_detect_new_module_family_prefers_fleet_for_equipment_maintenance_register_brief(self) -> None:
+        prompt = (
+            "Create an Equipment Maintenance Register to track tools and equipment, service history, "
+            "next service dates, condition, location, and maintenance logs."
+        )
+
+        family = main._ai_detect_new_module_family("Equipment Maintenance Register", prompt)
+        self.assertEqual(family, "fleet")
+
+        design_spec = main._ai_generate_module_design_spec("equipment_maintenance_register", "Equipment Maintenance Register", prompt)
+        self.assertEqual(design_spec.get("family"), "fleet")
+        self.assertEqual(design_spec.get("entity_slug"), "asset")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("asset.service_due_date", fields)
+        self.assertIn("asset.last_service_date", fields)
+        self.assertIn("asset.location", fields)
+        self.assertIn("asset.condition", fields)
+        self.assertNotIn("asset.request_type", fields)
+        self.assertNotIn("asset.requested_date", fields)
+        self.assertNotIn("asset.requester_name", fields)
+        self.assertNotIn("asset.approver_name", fields)
+        self.assertNotIn("asset.amount", fields)
+
+    def test_detect_new_module_family_keeps_request_for_explicit_maintenance_request_brief(self) -> None:
+        prompt = (
+            "Create a Maintenance Request module so staff can submit maintenance requests with request type, "
+            "requested date, requester, approver, and approval flow."
+        )
+
+        family = main._ai_detect_new_module_family("Maintenance Requests", prompt)
+        self.assertEqual(family, "request")
+
+        design_spec = main._ai_generate_module_design_spec("maintenance_requests", "Maintenance Requests", prompt)
+        self.assertEqual(design_spec.get("family"), "request")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("maintenance_request.request_type", fields)
+        self.assertIn("maintenance_request.requested_date", fields)
+        self.assertIn("maintenance_request.requester_name", fields)
+        self.assertIn("maintenance_request.approver_name", fields)
+
+    def test_detect_new_module_family_prefers_incident_for_audit_finding_corrective_action_brief(self) -> None:
+        prompt = (
+            "Create an Audit Findings module to track audit findings, severity, root cause analysis, "
+            "corrective actions, corrective due dates, and follow up actions."
+        )
+
+        family = main._ai_detect_new_module_family("Audit Findings", prompt)
+        self.assertEqual(family, "incident")
+
+        design_spec = main._ai_generate_module_design_spec("audit_findings", "Audit Findings", prompt)
+        self.assertEqual(design_spec.get("family"), "incident")
+        field_defs = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        fields = list(field_defs.keys())
+        self.assertIn("audit_finding.severity", fields)
+        self.assertIn("audit_finding.root_cause", fields)
+        self.assertIn("audit_finding.follow_up", fields)
+        self.assertIn("audit_finding.corrective_action_owner", fields)
+        self.assertIn("audit_finding.corrective_due_date", fields)
+        self.assertEqual((field_defs.get("audit_finding.corrective_action_owner") or {}).get("type"), "user")
+        self.assertNotIn("audit_finding.approved_categories", fields)
+        self.assertNotIn("audit_finding.review_notes", fields)
+        self.assertNotIn("audit_finding.request_type", fields)
+        self.assertNotIn("audit_finding.approver_name", fields)
+        states = [
+            item.get("value")
+            for item in (design_spec.get("statuses") or [])
+            if isinstance(item, dict) and isinstance(item.get("value"), str)
+        ]
+        self.assertEqual(states, ["reported", "investigating", "corrective_action_pending", "closed"])
+        workflow = design_spec.get("workflow") if isinstance(design_spec.get("workflow"), dict) else {}
+        self.assertEqual(workflow.get("action_labels"), ["Start Investigation", "Assign Corrective Action", "Close"])
+
+    def test_detect_new_module_family_prefers_incident_workflow_for_near_miss_closeout_brief(self) -> None:
+        prompt = (
+            "Create a Safety Incidents module to track incidents and near misses with incident type, severity, "
+            "reported on date, root cause analysis, corrective action owner, corrective due date, closeout summary, and closure date."
+        )
+
+        family = main._ai_detect_new_module_family("Safety Incidents", prompt)
+        self.assertEqual(family, "incident")
+
+        design_spec = main._ai_generate_module_design_spec("safety_incidents", "Safety Incidents", prompt)
+        self.assertEqual(design_spec.get("family"), "incident")
+        fields = [
+            field.get("id")
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        ]
+        self.assertIn("safety_incident.incident_type", fields)
+        self.assertIn("safety_incident.closeout_summary", fields)
+        self.assertIn("safety_incident.closed_on", fields)
+        states = [
+            item.get("value")
+            for item in (design_spec.get("statuses") or [])
+            if isinstance(item, dict) and isinstance(item.get("value"), str)
+        ]
+        self.assertEqual(states, ["reported", "investigating", "corrective_action_pending", "closed"])
+        workflow = design_spec.get("workflow") if isinstance(design_spec.get("workflow"), dict) else {}
+        self.assertEqual(workflow.get("action_labels"), ["Start Investigation", "Assign Corrective Action", "Close"])
+
+    def test_incident_brief_infers_critical_alert_and_corrective_action_reminder_intents(self) -> None:
+        prompt = (
+            "Create a Safety Incidents module to track incidents and near misses. "
+            "Email safety@octodrop.com when a critical incident is reported, and send a reminder email "
+            "to safety@octodrop.com when corrective action is pending."
+        )
+
+        design_spec = main._ai_generate_module_design_spec("safety_incidents", "Safety Incidents", prompt)
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        self.assertGreaterEqual(len(intents), 2)
+
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        critical = by_id.get("safety_incidents_critical_incident_alert") or {}
+        reminder = by_id.get("safety_incidents_corrective_action_reminder") or {}
+
+        self.assertEqual(critical.get("kind"), "status_notification")
+        self.assertEqual(critical.get("recipient"), "safety@octodrop.com")
+        self.assertEqual(critical.get("status_values"), ["reported"])
+        critical_filters = critical.get("filters") or []
+        self.assertTrue(any(isinstance(item, dict) and item.get("path") == "record.severity" and item.get("value") == "critical" for item in critical_filters))
+
+        self.assertEqual(reminder.get("kind"), "status_notification")
+        self.assertEqual(reminder.get("recipient"), "safety@octodrop.com")
+        self.assertEqual(reminder.get("status_values"), ["corrective_action_pending"])
+        self.assertEqual(reminder.get("delay_seconds"), 86400)
+
+    def test_incident_brief_infers_corrective_action_owner_notify_reminder_intent(self) -> None:
+        prompt = (
+            "Create a Safety Incidents module to track incidents and near misses with corrective action owner, "
+            "corrective due date, and closeout summary. Remind the corrective action owner when corrective action is pending."
+        )
+
+        design_spec = main._ai_generate_module_design_spec("safety_incidents", "Safety Incidents", prompt)
+        field_defs = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((field_defs.get("safety_incident.corrective_action_owner") or {}).get("type"), "user")
+        intents = [item for item in (design_spec.get("automation_intents") or []) if isinstance(item, dict)]
+        by_id = {item.get("id"): item for item in intents if isinstance(item.get("id"), str)}
+        reminder = by_id.get("safety_incidents_corrective_action_reminder") or {}
+        self.assertEqual(reminder.get("channel"), "notify")
+        self.assertEqual(reminder.get("recipient"), {"var": "trigger.record.fields.corrective_action_owner"})
+        self.assertEqual(reminder.get("status_values"), ["corrective_action_pending"])
+        self.assertEqual(reminder.get("delay_seconds"), 86400)
 
     def test_build_create_module_dependency_ops_adds_required_dependency_for_external_lookup(self) -> None:
         contacts_manifest = {
@@ -8741,6 +10389,89 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(hints.get("planned_section_id"), "master")
         self.assertEqual(hints.get("planned_view_id"), "contact.form")
         self.assertEqual(len(hints.get("pending_candidate_ops") or []), 1)
+
+    def test_collect_answer_hints_merges_latest_step_scoped_template_hints(self) -> None:
+        session = _ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "status": "waiting_input",
+                "summary": "",
+                "last_activity_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        session_id = _ai_record_data(session)["id"]
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "message_type": "chat",
+                "body": "Use our inspection template for the inspection step.",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "message_type": "answer",
+                "question_id": "automation_document_template",
+                "body": "Inspection Report",
+                "answer_json": {
+                    "document_template_step_hints": [
+                        {
+                            "template_kind": "document_template",
+                            "step_id": "inspection_doc",
+                            "action_id": "system.generate_document",
+                            "automation_name": "Job Customer Handoff",
+                            "title": "Inspection Report",
+                            "template_id": "doc_tpl_inspection_report_old",
+                        }
+                    ]
+                },
+                "created_at": "2026-04-20T00:01:00Z",
+            },
+        )
+        _ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "message_type": "answer",
+                "question_id": "automation_document_template",
+                "body": "Inspection Report Revised",
+                "answer_json": {
+                    "document_template_step_hints": [
+                        {
+                            "template_kind": "document_template",
+                            "step_id": "inspection_doc",
+                            "action_id": "system.generate_document",
+                            "automation_name": "Job Customer Handoff",
+                            "title": "Inspection Report",
+                            "template_id": "doc_tpl_inspection_report_final",
+                        }
+                    ]
+                },
+                "created_at": "2026-04-20T00:02:00Z",
+            },
+        )
+
+        hints = _ai_collect_answer_hints(session_id)
+
+        self.assertEqual(
+            hints.get("document_template_step_hints"),
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "inspection_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "action_id": "system.generate_document",
+                    "title": "Inspection Report",
+                    "template_id": "doc_tpl_inspection_report_final",
+                }
+            ],
+        )
 
     def test_merge_followup_candidate_ops_keeps_prior_draft_for_additive_chat(self) -> None:
         module_index = {
@@ -12881,6 +14612,92 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertNotIn("I understand this as:", answer_body.get("assistant_text") or "")
         self.assertNotIn("draft patchset for sandbox validation", answer_body.get("assistant_text") or "")
 
+    def test_confirm_plan_answer_accepts_approval_even_when_other_hints_are_present(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            main._octo_ai_seed_in_memory_baseline_modules()
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "confirm_plan_approval_with_extra_hint",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "last_activity_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Add an Escalation Note field to the Contacts module.",
+                    "created_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-03-18T00:01:00Z",
+                    "questions_json": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": ["Confirm this plan?"],
+                            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                            "candidate_operations": [
+                                {
+                                    "op": "add_field",
+                                    "artifact_type": "module",
+                                    "artifact_id": "contacts",
+                                    "entity_id": "entity.contact",
+                                    "field": {"id": "contact.escalation_note", "label": "Escalation Note", "type": "text"},
+                                }
+                            ],
+                            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                            "planner_state": {
+                                "intent": "add_field",
+                                "module_id": "contacts",
+                                "field_label": "Escalation Note",
+                                "field_id": "contact.escalation_note",
+                            },
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            answer_res = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Approved.",
+                    "hints": {"module_target": "contacts"},
+                },
+            )
+            answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        plan = answer_body.get("plan") or {}
+        self.assertEqual(plan.get("required_questions"), [])
+        self.assertIsNone(plan.get("required_question_meta"))
+        self.assertIn("Plan confirmed.", answer_body.get("assistant_text") or "")
+
     def test_decision_slot_answer_maps_selected_option_into_replan_hints(self) -> None:
         actor = {
             "user_id": "test-user",
@@ -12993,9 +14810,2103 @@ class TestOctoAiFieldResolution(unittest.TestCase):
                 answer_body = answer_res.json()
 
         self.assertTrue(answer_body.get("ok"), answer_body)
-        self.assertEqual(captured_hints.get("recipient_email"), "nick@octodrop.com")
+        self.assertEqual(captured_hints.get("recipient_email"), "nick@octodrop.com", captured_hints)
         self.assertEqual(captured_hints.get("selected_option_id"), "member:nick")
         self.assertEqual(captured_hints.get("answer_text"), "Nick")
+
+    def test_free_text_answer_can_resolve_multiple_decision_slots_in_one_reply(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_free_text_selection",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, send the customer a completion email and notify Nick internally.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Who should receive the internal notification?",
+                        "Which email template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_recipient",
+                                "slot_id": "automation_recipient",
+                                "kind": "decision_slot",
+                                "slot_kind": "recipient_email",
+                                "prompt": "Who should receive the internal notification?",
+                                "hint_field": "recipient_email",
+                                "options": [
+                                    {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                                ],
+                            },
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "options": [
+                                    {
+                                        "id": "email_tpl_completion_note",
+                                        "label": "Completion Note",
+                                        "value": "email_tpl_completion_note",
+                                        "hints": {"email_template_id": "email_tpl_completion_note"},
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Who should receive the internal notification?",
+                                "Which email template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_recipient",
+                                        "slot_id": "automation_recipient",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "recipient_email",
+                                        "prompt": "Who should receive the internal notification?",
+                                        "hint_field": "recipient_email",
+                                        "options": [
+                                            {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "options": [
+                                            {
+                                                "id": "email_tpl_completion_note",
+                                                "label": "Completion Note",
+                                                "value": "email_tpl_completion_note",
+                                                "hints": {"email_template_id": "email_tpl_completion_note"},
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Send the internal notification to Nick and use the Completion Note template for the customer email.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("recipient_email"), "nick@octodrop.com")
+        self.assertEqual(captured_hints.get("email_template_id"), "email_tpl_completion_note")
+        self.assertEqual(captured_hints.get("selected_option_id"), "member:nick")
+
+    def test_free_text_answer_can_resolve_recipient_and_create_new_template_slots_together(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_free_text_create_new",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, send the customer a completion email and notify Nick internally.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Who should receive the internal notification?",
+                        "Which email template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_recipient",
+                                "slot_id": "automation_recipient",
+                                "kind": "decision_slot",
+                                "slot_kind": "recipient_email",
+                                "prompt": "Who should receive the internal notification?",
+                                "hint_field": "recipient_email",
+                                "options": [
+                                    {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                                ],
+                            },
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "email_tpl_completion_note",
+                                        "label": "Completion Note",
+                                        "value": "email_tpl_completion_note",
+                                        "hints": {"email_template_id": "email_tpl_completion_note"},
+                                    },
+                                    {
+                                        "id": "create_new_email_template",
+                                        "label": "Create new email template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_email_template": True,
+                                            "email_template_id": "__create_new__",
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Who should receive the internal notification?",
+                                "Which email template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_recipient",
+                                        "slot_id": "automation_recipient",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "recipient_email",
+                                        "prompt": "Who should receive the internal notification?",
+                                        "hint_field": "recipient_email",
+                                        "options": [
+                                            {"id": "member:nick", "label": "Nick", "value": "nick@octodrop.com"},
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "email_tpl_completion_note",
+                                                "label": "Completion Note",
+                                                "value": "email_tpl_completion_note",
+                                                "hints": {"email_template_id": "email_tpl_completion_note"},
+                                            },
+                                            {
+                                                "id": "create_new_email_template",
+                                                "label": "Create new email template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_email_template": True,
+                                                    "email_template_id": "__create_new__",
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Send the internal notification to Nick and create a new email template for the customer completion email.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("recipient_email"), "nick@octodrop.com")
+        self.assertIs(captured_hints.get("create_new_email_template"), True)
+        self.assertEqual(captured_hints.get("email_template_id"), "__create_new__")
+        self.assertEqual(captured_hints.get("selected_option_id"), "member:nick")
+
+    def test_free_text_answer_can_resolve_existing_email_and_new_document_slots_together(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_email_existing_document_new",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, email the customer and generate a handover pack document.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which email template should this automation use?",
+                        "Which document template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "email_tpl_completion_note",
+                                        "label": "Completion Note",
+                                        "value": "email_tpl_completion_note",
+                                        "hints": {"email_template_id": "email_tpl_completion_note"},
+                                    },
+                                    {
+                                        "id": "create_new_email_template",
+                                        "label": "Create new email template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_email_template": True,
+                                            "email_template_id": "__create_new__",
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "automation_document_template",
+                                "slot_id": "automation_document_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "document_template_choice",
+                                "prompt": "Which document template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "doc_tpl_inspection_report",
+                                        "label": "Inspection Report",
+                                        "value": "doc_tpl_inspection_report",
+                                        "hints": {"document_template_id": "doc_tpl_inspection_report"},
+                                    },
+                                    {
+                                        "id": "create_new_document_template",
+                                        "label": "Create new document template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_document_template": True,
+                                            "document_template_id": "__create_new__",
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which email template should this automation use?",
+                                "Which document template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "email_tpl_completion_note",
+                                                "label": "Completion Note",
+                                                "value": "email_tpl_completion_note",
+                                                "hints": {"email_template_id": "email_tpl_completion_note"},
+                                            },
+                                            {
+                                                "id": "create_new_email_template",
+                                                "label": "Create new email template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_email_template": True,
+                                                    "email_template_id": "__create_new__",
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_document_template",
+                                        "slot_id": "automation_document_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "document_template_choice",
+                                        "prompt": "Which document template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "doc_tpl_inspection_report",
+                                                "label": "Inspection Report",
+                                                "value": "doc_tpl_inspection_report",
+                                                "hints": {"document_template_id": "doc_tpl_inspection_report"},
+                                            },
+                                            {
+                                                "id": "create_new_document_template",
+                                                "label": "Create new document template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_document_template": True,
+                                                    "document_template_id": "__create_new__",
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Use the Completion Note template for the customer email and create a new handover pack document template.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("email_template_id"), "email_tpl_completion_note")
+        self.assertEqual(captured_hints.get("document_template_id"), "__create_new__")
+        self.assertIs(captured_hints.get("create_new_document_template"), True)
+        self.assertNotEqual(captured_hints.get("email_template_id"), "__create_new__")
+        self.assertNotEqual(captured_hints.get("selected_option_id"), "create_new_email_template")
+
+    def test_free_text_answer_can_resolve_existing_document_and_new_email_slots_together(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_document_existing_email_new",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, email the customer and generate a site report document.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which document template should this automation use?",
+                        "Which email template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_document_template",
+                                "slot_id": "automation_document_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "document_template_choice",
+                                "prompt": "Which document template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "doc_tpl_inspection_report",
+                                        "label": "Inspection Report",
+                                        "value": "doc_tpl_inspection_report",
+                                        "hints": {"document_template_id": "doc_tpl_inspection_report"},
+                                    },
+                                    {
+                                        "id": "create_new_document_template",
+                                        "label": "Create new document template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_document_template": True,
+                                            "document_template_id": "__create_new__",
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "email_tpl_completion_note",
+                                        "label": "Completion Note",
+                                        "value": "email_tpl_completion_note",
+                                        "hints": {"email_template_id": "email_tpl_completion_note"},
+                                    },
+                                    {
+                                        "id": "create_new_email_template",
+                                        "label": "Create new email template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_email_template": True,
+                                            "email_template_id": "__create_new__",
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which document template should this automation use?",
+                                "Which email template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_document_template",
+                                        "slot_id": "automation_document_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "document_template_choice",
+                                        "prompt": "Which document template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "doc_tpl_inspection_report",
+                                                "label": "Inspection Report",
+                                                "value": "doc_tpl_inspection_report",
+                                                "hints": {"document_template_id": "doc_tpl_inspection_report"},
+                                            },
+                                            {
+                                                "id": "create_new_document_template",
+                                                "label": "Create new document template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_document_template": True,
+                                                    "document_template_id": "__create_new__",
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "email_tpl_completion_note",
+                                                "label": "Completion Note",
+                                                "value": "email_tpl_completion_note",
+                                                "hints": {"email_template_id": "email_tpl_completion_note"},
+                                            },
+                                            {
+                                                "id": "create_new_email_template",
+                                                "label": "Create new email template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_email_template": True,
+                                                    "email_template_id": "__create_new__",
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Use the Inspection Report template for the site report and create a new customer completion email template.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("document_template_id"), "doc_tpl_inspection_report")
+        self.assertEqual(captured_hints.get("email_template_id"), "__create_new__")
+        self.assertIs(captured_hints.get("create_new_email_template"), True)
+        self.assertNotEqual(captured_hints.get("document_template_id"), "__create_new__")
+        self.assertNotEqual(captured_hints.get("selected_option_id"), "create_new_document_template")
+
+    def test_free_text_answer_can_create_new_document_template_from_step_context_only(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "step_context_document_only",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, email the customer and generate a handover pack document.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which email template should this automation use?",
+                        "Which document template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "create_new_email_template",
+                                        "label": "Create new email template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_email_template": True,
+                                            "email_template_id": "__create_new__",
+                                            "email_template_step_hints": [
+                                                {
+                                                    "template_kind": "email_template",
+                                                    "step_id": "customer_email",
+                                                    "action_id": "system.send_email",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "subject": "Completion Note",
+                                                    "create_new": True,
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "automation_document_template",
+                                "slot_id": "automation_document_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "document_template_choice",
+                                "prompt": "Which document template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "create_new_document_template",
+                                        "label": "Create new document template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_document_template": True,
+                                            "document_template_id": "__create_new__",
+                                            "document_template_step_hints": [
+                                                {
+                                                    "template_kind": "document_template",
+                                                    "step_id": "handover_doc",
+                                                    "action_id": "system.generate_document",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Handover Pack",
+                                                    "create_new": True,
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which email template should this automation use?",
+                                "Which document template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "create_new_email_template",
+                                                "label": "Create new email template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_email_template": True,
+                                                    "email_template_id": "__create_new__",
+                                                    "email_template_step_hints": [
+                                                        {
+                                                            "template_kind": "email_template",
+                                                            "step_id": "customer_email",
+                                                            "action_id": "system.send_email",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "subject": "Completion Note",
+                                                            "create_new": True,
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_document_template",
+                                        "slot_id": "automation_document_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "document_template_choice",
+                                        "prompt": "Which document template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "create_new_document_template",
+                                                "label": "Create new document template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_document_template": True,
+                                                    "document_template_id": "__create_new__",
+                                                    "document_template_step_hints": [
+                                                        {
+                                                            "template_kind": "document_template",
+                                                            "step_id": "handover_doc",
+                                                            "action_id": "system.generate_document",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Handover Pack",
+                                                            "create_new": True,
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Create a new template for the handover step.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("document_template_id"), "__create_new__")
+        self.assertIs(captured_hints.get("create_new_document_template"), True)
+        self.assertNotEqual(captured_hints.get("email_template_id"), "__create_new__")
+        self.assertNotEqual(captured_hints.get("selected_option_id"), "create_new_email_template")
+
+    def test_free_text_answer_can_create_new_email_template_from_step_context_only(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "step_context_email_only",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, email the customer and generate a handover pack document.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which email template should this automation use?",
+                        "Which document template should this automation use?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "automation_email_template",
+                                "slot_id": "automation_email_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "email_template_choice",
+                                "prompt": "Which email template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "create_new_email_template",
+                                        "label": "Create new email template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_email_template": True,
+                                            "email_template_id": "__create_new__",
+                                            "email_template_step_hints": [
+                                                {
+                                                    "template_kind": "email_template",
+                                                    "step_id": "customer_email",
+                                                    "action_id": "system.send_email",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "subject": "Completion Note",
+                                                    "create_new": True,
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "automation_document_template",
+                                "slot_id": "automation_document_template",
+                                "kind": "decision_slot",
+                                "slot_kind": "document_template_choice",
+                                "prompt": "Which document template should this automation use?",
+                                "hint_field": "template_choice",
+                                "allow_create_new": True,
+                                "options": [
+                                    {
+                                        "id": "create_new_document_template",
+                                        "label": "Create new document template",
+                                        "value": "__create_new__",
+                                        "hints": {
+                                            "create_new_document_template": True,
+                                            "document_template_id": "__create_new__",
+                                            "document_template_step_hints": [
+                                                {
+                                                    "template_kind": "document_template",
+                                                    "step_id": "handover_doc",
+                                                    "action_id": "system.generate_document",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Handover Pack",
+                                                    "create_new": True,
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which email template should this automation use?",
+                                "Which document template should this automation use?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "automation_email_template",
+                                        "slot_id": "automation_email_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "email_template_choice",
+                                        "prompt": "Which email template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "create_new_email_template",
+                                                "label": "Create new email template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_email_template": True,
+                                                    "email_template_id": "__create_new__",
+                                                    "email_template_step_hints": [
+                                                        {
+                                                            "template_kind": "email_template",
+                                                            "step_id": "customer_email",
+                                                            "action_id": "system.send_email",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "subject": "Completion Note",
+                                                            "create_new": True,
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "id": "automation_document_template",
+                                        "slot_id": "automation_document_template",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "document_template_choice",
+                                        "prompt": "Which document template should this automation use?",
+                                        "hint_field": "template_choice",
+                                        "allow_create_new": True,
+                                        "options": [
+                                            {
+                                                "id": "create_new_document_template",
+                                                "label": "Create new document template",
+                                                "value": "__create_new__",
+                                                "hints": {
+                                                    "create_new_document_template": True,
+                                                    "document_template_id": "__create_new__",
+                                                    "document_template_step_hints": [
+                                                        {
+                                                            "template_kind": "document_template",
+                                                            "step_id": "handover_doc",
+                                                            "action_id": "system.generate_document",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Handover Pack",
+                                                            "create_new": True,
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Create a new template for the customer email step.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("email_template_id"), "__create_new__")
+        self.assertIs(captured_hints.get("create_new_email_template"), True)
+        self.assertNotEqual(captured_hints.get("document_template_id"), "__create_new__")
+        self.assertNotEqual(captured_hints.get("selected_option_id"), "create_new_document_template")
+
+    def test_free_text_answer_can_resolve_multiple_notify_recipient_slots_from_step_context(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_notify_step_context",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "When a job is completed, send a handover alert and notify the assigned agent.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Who should receive this notification?",
+                        "Who should receive this notification?",
+                    ],
+                    "required_question_meta": {
+                        "decision_slots": [
+                            {
+                                "id": "handover_notify_recipient",
+                                "slot_id": "handover_notify_recipient",
+                                "kind": "decision_slot",
+                                "slot_kind": "notify_recipient",
+                                "prompt": "Who should receive this notification?",
+                                "hint_field": "recipient_email",
+                                "options": [
+                                    {
+                                        "id": "member:nick",
+                                        "label": "Nick",
+                                        "value": "nick@octodrop.com",
+                                        "hints": {
+                                            "recipient_user_id": "user-nick",
+                                            "recipient_email": "nick@octodrop.com",
+                                            "notify_recipient_step_hints": [
+                                                {
+                                                    "step_id": "handover_notify",
+                                                    "action_id": "system.notify",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Handover Alert",
+                                                    "body": "Share the handover summary.",
+                                                    "recipient_user_id": "user-nick",
+                                                    "recipient_email": "nick@octodrop.com",
+                                                }
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        "id": "member:kelly",
+                                        "label": "Kelly",
+                                        "value": "kelly@octodrop.com",
+                                        "hints": {
+                                            "recipient_user_id": "user-kelly",
+                                            "recipient_email": "kelly@octodrop.com",
+                                            "notify_recipient_step_hints": [
+                                                {
+                                                    "step_id": "handover_notify",
+                                                    "action_id": "system.notify",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Handover Alert",
+                                                    "body": "Share the handover summary.",
+                                                    "recipient_user_id": "user-kelly",
+                                                    "recipient_email": "kelly@octodrop.com",
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "assigned_agent_notify_recipient",
+                                "slot_id": "assigned_agent_notify_recipient",
+                                "kind": "decision_slot",
+                                "slot_kind": "notify_recipient",
+                                "prompt": "Who should receive this notification?",
+                                "hint_field": "recipient_email",
+                                "options": [
+                                    {
+                                        "id": "member:nick",
+                                        "label": "Nick",
+                                        "value": "nick@octodrop.com",
+                                        "hints": {
+                                            "recipient_user_id": "user-nick",
+                                            "recipient_email": "nick@octodrop.com",
+                                            "notify_recipient_step_hints": [
+                                                {
+                                                    "step_id": "assigned_agent_notify",
+                                                    "action_id": "system.notify",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Assigned Agent Alert",
+                                                    "body": "Assigned agent follow-up needed.",
+                                                    "recipient_user_id": "user-nick",
+                                                    "recipient_email": "nick@octodrop.com",
+                                                }
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        "id": "member:kelly",
+                                        "label": "Kelly",
+                                        "value": "kelly@octodrop.com",
+                                        "hints": {
+                                            "recipient_user_id": "user-kelly",
+                                            "recipient_email": "kelly@octodrop.com",
+                                            "notify_recipient_step_hints": [
+                                                {
+                                                    "step_id": "assigned_agent_notify",
+                                                    "action_id": "system.notify",
+                                                    "automation_name": "Job Customer Handoff",
+                                                    "artifact_id": "job_customer_handoff",
+                                                    "entity_id": "entity.job",
+                                                    "title": "Assigned Agent Alert",
+                                                    "body": "Assigned agent follow-up needed.",
+                                                    "recipient_user_id": "user-kelly",
+                                                    "recipient_email": "kelly@octodrop.com",
+                                                }
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ]
+                    },
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Who should receive this notification?",
+                                "Who should receive this notification?",
+                            ],
+                            "required_question_meta": {
+                                "decision_slots": [
+                                    {
+                                        "id": "handover_notify_recipient",
+                                        "slot_id": "handover_notify_recipient",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "notify_recipient",
+                                        "prompt": "Who should receive this notification?",
+                                        "hint_field": "recipient_email",
+                                        "options": [
+                                            {
+                                                "id": "member:nick",
+                                                "label": "Nick",
+                                                "value": "nick@octodrop.com",
+                                                "hints": {
+                                                    "recipient_user_id": "user-nick",
+                                                    "recipient_email": "nick@octodrop.com",
+                                                    "notify_recipient_step_hints": [
+                                                        {
+                                                            "step_id": "handover_notify",
+                                                            "action_id": "system.notify",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Handover Alert",
+                                                            "body": "Share the handover summary.",
+                                                            "recipient_user_id": "user-nick",
+                                                            "recipient_email": "nick@octodrop.com",
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                            {
+                                                "id": "member:kelly",
+                                                "label": "Kelly",
+                                                "value": "kelly@octodrop.com",
+                                                "hints": {
+                                                    "recipient_user_id": "user-kelly",
+                                                    "recipient_email": "kelly@octodrop.com",
+                                                    "notify_recipient_step_hints": [
+                                                        {
+                                                            "step_id": "handover_notify",
+                                                            "action_id": "system.notify",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Handover Alert",
+                                                            "body": "Share the handover summary.",
+                                                            "recipient_user_id": "user-kelly",
+                                                            "recipient_email": "kelly@octodrop.com",
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        "id": "assigned_agent_notify_recipient",
+                                        "slot_id": "assigned_agent_notify_recipient",
+                                        "kind": "decision_slot",
+                                        "slot_kind": "notify_recipient",
+                                        "prompt": "Who should receive this notification?",
+                                        "hint_field": "recipient_email",
+                                        "options": [
+                                            {
+                                                "id": "member:nick",
+                                                "label": "Nick",
+                                                "value": "nick@octodrop.com",
+                                                "hints": {
+                                                    "recipient_user_id": "user-nick",
+                                                    "recipient_email": "nick@octodrop.com",
+                                                    "notify_recipient_step_hints": [
+                                                        {
+                                                            "step_id": "assigned_agent_notify",
+                                                            "action_id": "system.notify",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Assigned Agent Alert",
+                                                            "body": "Assigned agent follow-up needed.",
+                                                            "recipient_user_id": "user-nick",
+                                                            "recipient_email": "nick@octodrop.com",
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                            {
+                                                "id": "member:kelly",
+                                                "label": "Kelly",
+                                                "value": "kelly@octodrop.com",
+                                                "hints": {
+                                                    "recipient_user_id": "user-kelly",
+                                                    "recipient_email": "kelly@octodrop.com",
+                                                    "notify_recipient_step_hints": [
+                                                        {
+                                                            "step_id": "assigned_agent_notify",
+                                                            "action_id": "system.notify",
+                                                            "automation_name": "Job Customer Handoff",
+                                                            "artifact_id": "job_customer_handoff",
+                                                            "entity_id": "entity.job",
+                                                            "title": "Assigned Agent Alert",
+                                                            "body": "Assigned agent follow-up needed.",
+                                                            "recipient_user_id": "user-kelly",
+                                                            "recipient_email": "kelly@octodrop.com",
+                                                        }
+                                                    ],
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ]
+                            },
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "text": "Send the handover step to Nick and the assigned agent step to Kelly.",
+                    },
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(
+            captured_hints.get("notify_recipient_step_hints"),
+            [
+                {
+                    "step_id": "handover_notify",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.notify",
+                    "entity_id": "entity.job",
+                    "title": "Handover Alert",
+                    "body": "Share the handover summary.",
+                    "recipient_user_id": "user-nick",
+                    "recipient_email": "nick@octodrop.com",
+                },
+                {
+                    "step_id": "assigned_agent_notify",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.notify",
+                    "entity_id": "entity.job",
+                    "title": "Assigned Agent Alert",
+                    "body": "Assigned agent follow-up needed.",
+                    "recipient_user_id": "user-kelly",
+                    "recipient_email": "kelly@octodrop.com",
+                },
+            ],
+        )
+
+    def test_free_text_answer_does_not_resolve_shared_ui_labels_across_multiple_slots_without_kind_cues(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        decision_slots = [
+            {
+                "id": "tab_target",
+                "slot_id": "tab_target",
+                "kind": "decision_slot",
+                "slot_kind": "tab_target_choice",
+                "prompt": "Which tab should contain this field?",
+                "hint_field": "tab_target",
+                "options": [
+                    {"id": "overview_tab", "label": "Overview", "value": "overview_tab", "hints": {"tab_target": "overview_tab"}},
+                    {"id": "details_tab", "label": "Details", "value": "details_tab", "hints": {"tab_target": "details_tab"}},
+                ],
+            },
+            {
+                "id": "page_target",
+                "slot_id": "page_target",
+                "kind": "decision_slot",
+                "slot_kind": "page_target_choice",
+                "prompt": "Which page should show this view?",
+                "hint_field": "page_target",
+                "options": [
+                    {"id": "overview_page", "label": "Overview", "value": "overview_page", "hints": {"page_target": "overview_page"}},
+                    {"id": "home_page", "label": "Home", "value": "home_page", "hints": {"page_target": "home_page"}},
+                ],
+            },
+        ]
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_shared_ui_label_without_cues",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Place the field in the right place.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which tab should contain this field?",
+                        "Which page should show this view?",
+                    ],
+                    "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which tab should contain this field?",
+                                "Which page should show this view?",
+                            ],
+                            "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Use Overview."},
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertIsNone(captured_hints.get("tab_target"), captured_hints)
+        self.assertIsNone(captured_hints.get("page_target"), captured_hints)
+
+    def test_free_text_answer_can_resolve_shared_ui_labels_with_explicit_kind_cues(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        decision_slots = [
+            {
+                "id": "tab_target",
+                "slot_id": "tab_target",
+                "kind": "decision_slot",
+                "slot_kind": "tab_target_choice",
+                "prompt": "Which tab should contain this field?",
+                "hint_field": "tab_target",
+                "options": [
+                    {"id": "overview_tab", "label": "Overview", "value": "overview_tab", "hints": {"tab_target": "overview_tab"}},
+                    {"id": "details_tab", "label": "Details", "value": "details_tab", "hints": {"tab_target": "details_tab"}},
+                ],
+            },
+            {
+                "id": "page_target",
+                "slot_id": "page_target",
+                "kind": "decision_slot",
+                "slot_kind": "page_target_choice",
+                "prompt": "Which page should show this view?",
+                "hint_field": "page_target",
+                "options": [
+                    {"id": "overview_page", "label": "Overview", "value": "overview_page", "hints": {"page_target": "overview_page"}},
+                    {"id": "home_page", "label": "Home", "value": "home_page", "hints": {"page_target": "home_page"}},
+                ],
+            },
+        ]
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_shared_ui_label_with_cues",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Place the field in the right place.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which tab should contain this field?",
+                        "Which page should show this view?",
+                    ],
+                    "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which tab should contain this field?",
+                                "Which page should show this view?",
+                            ],
+                            "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Use the Overview tab and the Overview page."},
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("tab_target"), "overview_tab")
+        self.assertEqual(captured_hints.get("page_target"), "overview_page")
+
+    def test_free_text_answer_can_resolve_section_and_view_slots_together(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        decision_slots = [
+            {
+                "id": "section_target",
+                "slot_id": "section_target",
+                "kind": "decision_slot",
+                "slot_kind": "section_target_choice",
+                "prompt": "Which section should receive this field?",
+                "hint_field": "planned_section_id",
+                "options": [
+                    {"id": "summary", "label": "Summary", "value": "summary", "hints": {"planned_section_id": "summary"}},
+                    {"id": "planning", "label": "Planning", "value": "planning", "hints": {"planned_section_id": "planning"}},
+                ],
+            },
+            {
+                "id": "view_target",
+                "slot_id": "view_target",
+                "kind": "decision_slot",
+                "slot_kind": "view_target_choice",
+                "prompt": "Which view should I update?",
+                "hint_field": "planned_view_id",
+                "options": [
+                    {"id": "dispatch.list", "label": "List", "value": "dispatch.list", "hints": {"planned_view_id": "dispatch.list"}},
+                    {"id": "dispatch.kanban", "label": "Kanban", "value": "dispatch.kanban", "hints": {"planned_view_id": "dispatch.kanban"}},
+                ],
+            },
+        ]
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_section_view",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Put the field in the right section and update the right view.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which section should receive this field?",
+                        "Which view should I update?",
+                    ],
+                    "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which section should receive this field?",
+                                "Which view should I update?",
+                            ],
+                            "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Use the Planning section and the Kanban view."},
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("planned_section_id"), "planning")
+        self.assertEqual(captured_hints.get("planned_view_id"), "dispatch.kanban")
+
+    def test_free_text_answer_preserves_selected_entity_for_section_and_view_slots(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan_from_message(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            captured_hints.clear()
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "required_questions": [],
+                    "required_question_meta": None,
+                    "candidate_operations": [],
+                    "affected_artifacts": [],
+                    "assumptions": [],
+                    "risk_flags": [],
+                    "advisories": [],
+                },
+                {},
+            )
+
+        decision_slots = [
+            {
+                "id": "section_target",
+                "slot_id": "section_target",
+                "kind": "decision_slot",
+                "slot_kind": "section_target_choice",
+                "prompt": "Which section should receive this field?",
+                "hint_field": "planned_section_id",
+                "options": [
+                    {
+                        "id": "summary",
+                        "label": "Summary",
+                        "value": "summary",
+                        "hints": {"planned_section_id": "summary", "selected_entity_id": "entity.dispatch"},
+                    },
+                    {
+                        "id": "planning",
+                        "label": "Planning",
+                        "value": "planning",
+                        "hints": {"planned_section_id": "planning", "selected_entity_id": "entity.dispatch"},
+                    },
+                ],
+            },
+            {
+                "id": "view_target",
+                "slot_id": "view_target",
+                "kind": "decision_slot",
+                "slot_kind": "view_target_choice",
+                "prompt": "Which view should I update?",
+                "hint_field": "planned_view_id",
+                "options": [
+                    {
+                        "id": "dispatch.list",
+                        "label": "List",
+                        "value": "dispatch.list",
+                        "hints": {"planned_view_id": "dispatch.list", "selected_entity_id": "entity.dispatch"},
+                    },
+                    {
+                        "id": "dispatch.kanban",
+                        "label": "Kanban",
+                        "value": "dispatch.kanban",
+                        "hints": {"planned_view_id": "dispatch.kanban", "selected_entity_id": "entity.dispatch"},
+                    },
+                ],
+            },
+        ]
+
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "multi_slot_section_view_entity",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "workspace_id": "default",
+                    "last_activity_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Update the Dispatch entity in the right section and view.",
+                    "created_at": "2026-04-20T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-04-20T00:01:00Z",
+                    "questions_json": [
+                        "Which section should receive this field?",
+                        "Which view should I update?",
+                    ],
+                    "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                    "affected_artifacts_json": [],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [
+                                "Which section should receive this field?",
+                                "Which view should I update?",
+                            ],
+                            "required_question_meta": {"decision_slots": copy.deepcopy(decision_slots)},
+                            "candidate_operations": [],
+                            "affected_artifacts": [],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            with patch.object(main, "_ai_plan_from_message", fake_plan_from_message), patch.object(
+                main,
+                "_ai_persist_plan_result",
+                lambda *_args, **_kwargs: ({"id": "plan-next"}, "Updated plan."),
+            ):
+                answer_res = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Use the Planning section and the Kanban view."},
+                )
+                answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        self.assertEqual(captured_hints.get("selected_entity_id"), "entity.dispatch")
+        self.assertEqual(captured_hints.get("planned_section_id"), "planning")
+        self.assertEqual(captured_hints.get("planned_view_id"), "dispatch.kanban")
 
     def test_confirm_plan_answer_accepts_plain_english_approval_when_meta_is_missing(self) -> None:
         actor = {
@@ -13389,7 +17300,10 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(create_op.get("artifact_id"), "influencers")
         manifest = copy.deepcopy(create_op.get("manifest") or {})
         self.assertEqual(((manifest.get("module") or {}).get("name")), "Influencers")
-        self.assertIn("entity.influencer", [entity.get("id") for entity in (manifest.get("entities") or []) if isinstance(entity, dict)])
+        entity_ids = [entity.get("id") for entity in (manifest.get("entities") or []) if isinstance(entity, dict)]
+        self.assertIn("entity.influencer", entity_ids)
+        self.assertIn("entity.sent_product", entity_ids)
+        self.assertNotIn("entity.line_item", entity_ids)
         assistant_text = answer_body.get("assistant_text") or ""
         self.assertIn("Influencers", assistant_text)
         self.assertNotIn("What should the new module be called?", assistant_text)
@@ -14300,6 +18214,30 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             release = release_response.json()["release"]
 
         self.assertEqual(release.get("patchset_id"), applied_patchset_id)
+
+    def test_persist_plan_result_clears_stale_latest_patchset_pointer(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "New plan clears stale revision"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_patchset_id": "stale_patchset_id"})
+
+        plan = {
+            "scope": {"mode": "auto"},
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "influencers"}],
+            "proposed_changes": [],
+            "required_questions": ["Which catalog relationship should I use?"],
+            "required_question_meta": {"id": "target_resolution", "kind": "text", "prompt": "Which catalog relationship should I use?"},
+            "assumptions": [],
+            "risk_flags": [],
+            "candidate_operations": [],
+        }
+        context = {"request_summary": "Improve Influencers by linking sent products back to Catalog.", "full_selected_artifacts": []}
+        main._ai_persist_plan_result(session_id, plan, context, {"status": "waiting_input", "affected_modules": ["influencers"]})
+
+        session = _ai_get_record(_AI_ENTITY_SESSION, session_id)
+        self.assertEqual(session.get("latest_patchset_id"), "")
+        self.assertEqual(session.get("status"), "waiting_input")
 
     def test_rollback_patchset_updates_latest_patchset_to_remaining_applied_revision(self) -> None:
         with TestClient(main.app) as client:
@@ -16132,6 +20070,355 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             [],
         )
 
+    def test_plan_from_message_reuses_existing_email_and_creates_new_document_template_in_same_automation(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_completion_handoff",
+                    "automation": {
+                        "name": "Job Completion Handoff",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "id": "step_send_completion_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to": "customer@example.com",
+                                    "subject": "Job complete",
+                                    "body_text": "Your job is complete.",
+                                },
+                            },
+                            {
+                                "id": "step_generate_handover_pack",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Handover Pack",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_completion_follow_up",
+                            "label": "Completion Follow-up",
+                            "value": "email_tpl_completion_follow_up",
+                            "hints": {"email_template_id": "email_tpl_completion_follow_up", "entity_id": "entity.job"},
+                        }
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_service_report",
+                            "label": "Service Report",
+                            "value": "doc_tpl_service_report",
+                            "hints": {"document_template_id": "doc_tpl_service_report", "entity_id": "entity.job"},
+                        }
+                    ]
+                ),
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is completed, use our Completion Follow-up email template and create a new Handover Pack document template.",
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["create_document_template_record", "create_automation_record"])
+        template_op = ops[0]
+        automation_op = ops[1]
+        template_id = template_op.get("artifact_id")
+        self.assertTrue(isinstance(template_id, str) and template_id.startswith("doc_tpl_"))
+        steps = ((automation_op.get("automation") or {}).get("steps") or [])
+        email_inputs = (steps[0].get("inputs") or {}) if len(steps) > 0 and isinstance(steps[0], dict) else {}
+        document_inputs = (steps[1].get("inputs") or {}) if len(steps) > 1 and isinstance(steps[1], dict) else {}
+        self.assertEqual(email_inputs.get("template_id"), "email_tpl_completion_follow_up")
+        self.assertEqual(document_inputs.get("template_id"), template_id)
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(
+            [
+                item
+                for item in (plan.get("required_questions") or [])
+                if isinstance(item, str) and "template" in item.lower()
+            ],
+            [],
+        )
+
+    def test_plan_from_message_auto_selects_multiple_existing_templates_across_candidate_steps(self) -> None:
+        semantic_plan = {
+            "candidate_ops": [
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "job_customer_handoff",
+                    "automation": {
+                        "name": "Job Customer Handoff",
+                        "status": "draft",
+                        "trigger": {"kind": "event", "event_types": ["record.updated"]},
+                        "steps": [
+                            {
+                                "id": "approval_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to": "customer@example.com",
+                                    "subject": "Job approved",
+                                    "body_text": "Your job has been approved.",
+                                },
+                            },
+                            {
+                                "id": "inspection_doc",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Inspection Report",
+                                },
+                            },
+                            {
+                                "id": "completion_email",
+                                "kind": "action",
+                                "action_id": "system.send_email",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "to": "customer@example.com",
+                                    "subject": "Job completed",
+                                    "body_text": "Your job is now complete.",
+                                },
+                            },
+                            {
+                                "id": "completion_doc",
+                                "kind": "action",
+                                "action_id": "system.generate_document",
+                                "inputs": {
+                                    "entity_id": "entity.job",
+                                    "record_id": "{{trigger.record_id}}",
+                                    "title": "Completion Pack",
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+            "questions": [],
+            "question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "affected_modules": ["jobs"],
+        }
+        request = SimpleNamespace(state=SimpleNamespace(actor={"workspace_id": "default"}, cache={}))
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": {"module": {"id": "jobs", "name": "Jobs"}}}}),
+            patch.object(main, "_ai_build_preview_only_plan", lambda *args, **kwargs: None),
+            patch.object(main, "_ai_should_force_preview_fallback", lambda *args, **kwargs: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: copy.deepcopy(semantic_plan)),
+            patch.object(main, "_ai_run_preflight_candidate_ops", lambda _module_index, ops, answer_hints=None: (ops, [])),
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: (
+                    [
+                        {
+                            "id": "email_tpl_job_customer_update_approved",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_approved",
+                            "description": "Approval notice for approved jobs",
+                            "hints": {"email_template_id": "email_tpl_job_customer_update_approved", "entity_id": "entity.job"},
+                        },
+                        {
+                            "id": "email_tpl_job_customer_update_completed",
+                            "label": "Job Customer Update",
+                            "value": "email_tpl_job_customer_update_completed",
+                            "description": "Completion notice for finished jobs",
+                            "hints": {"email_template_id": "email_tpl_job_customer_update_completed", "entity_id": "entity.job"},
+                        },
+                    ]
+                    if kind == "email_template"
+                    else [
+                        {
+                            "id": "doc_tpl_job_bundle_inspection",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_inspection",
+                            "description": "inspection-report",
+                            "hints": {"document_template_id": "doc_tpl_job_bundle_inspection", "entity_id": "entity.job"},
+                        },
+                        {
+                            "id": "doc_tpl_job_bundle_completion",
+                            "label": "Job Document Bundle",
+                            "value": "doc_tpl_job_bundle_completion",
+                            "description": "completion-pack",
+                            "hints": {"document_template_id": "doc_tpl_job_bundle_completion", "entity_id": "entity.job"},
+                        },
+                    ]
+                ),
+            ),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                request,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": "", "workspace_id": "default"},
+                "When a job is approved, use our approval email and generate our inspection report. When a job is completed, use our completion email and generate our completion pack.",
+                answer_hints={},
+            )
+
+        ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        self.assertEqual((((steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_approved")
+        self.assertEqual((((steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_inspection")
+        self.assertEqual((((steps[2].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_completed")
+        self.assertEqual((((steps[3].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_completion")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
+        self.assertEqual(
+            [
+                item
+                for item in (plan.get("required_questions") or [])
+                if isinstance(item, str) and "template" in item.lower()
+            ],
+            [],
+        )
+
+    def test_scoped_automation_hints_auto_select_multiple_existing_templates_across_steps(self) -> None:
+        draft = {
+            "name": "Job Customer Handoff",
+            "status": "draft",
+            "trigger": {"kind": "event", "event_types": ["record.updated"]},
+            "steps": [
+                {
+                    "id": "approval_email",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "to": "customer@example.com",
+                        "subject": "Job approved",
+                        "body_text": "Your job has been approved.",
+                    },
+                },
+                {
+                    "id": "inspection_doc",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "record_id": "{{trigger.record_id}}",
+                        "title": "Inspection Report",
+                    },
+                },
+                {
+                    "id": "completion_email",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "to": "customer@example.com",
+                        "subject": "Job completed",
+                        "body_text": "Your job is now complete.",
+                    },
+                },
+                {
+                    "id": "completion_doc",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "record_id": "{{trigger.record_id}}",
+                        "title": "Completion Pack",
+                    },
+                },
+            ],
+        }
+
+        with patch.object(
+            main,
+            "_ai_workspace_template_decision_options",
+            lambda kind, workspace_id, limit=8: (
+                [
+                    {
+                        "id": "email_tpl_job_customer_update_approved",
+                        "label": "Job Customer Update",
+                        "value": "email_tpl_job_customer_update_approved",
+                        "description": "Approval notice for approved jobs",
+                        "hints": {"email_template_id": "email_tpl_job_customer_update_approved", "entity_id": "entity.job"},
+                    },
+                    {
+                        "id": "email_tpl_job_customer_update_completed",
+                        "label": "Job Customer Update",
+                        "value": "email_tpl_job_customer_update_completed",
+                        "description": "Completion notice for finished jobs",
+                        "hints": {"email_template_id": "email_tpl_job_customer_update_completed", "entity_id": "entity.job"},
+                    },
+                ]
+                if kind == "email_template"
+                else [
+                    {
+                        "id": "doc_tpl_job_bundle_inspection",
+                        "label": "Job Document Bundle",
+                        "value": "doc_tpl_job_bundle_inspection",
+                        "description": "inspection-report",
+                        "hints": {"document_template_id": "doc_tpl_job_bundle_inspection", "entity_id": "entity.job"},
+                    },
+                    {
+                        "id": "doc_tpl_job_bundle_completion",
+                        "label": "Job Document Bundle",
+                        "value": "doc_tpl_job_bundle_completion",
+                        "description": "completion-pack",
+                        "hints": {"document_template_id": "doc_tpl_job_bundle_completion", "entity_id": "entity.job"},
+                    },
+                ]
+            ),
+        ):
+            updated_draft, _assumptions, _advisories, questions, meta = main._artifact_ai_apply_scoped_automation_hints(
+                draft,
+                "When a job is approved, use our approval email and generate our inspection report. When a job is completed, use our completion email and generate our completion pack.",
+                {},
+                "default",
+                answer_hints={},
+            )
+
+        steps = ((updated_draft or {}).get("steps") or [])
+        self.assertEqual((((steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_approved")
+        self.assertEqual((((steps[1].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_inspection")
+        self.assertEqual((((steps[2].get("inputs") or {}).get("template_id"))), "email_tpl_job_customer_update_completed")
+        self.assertEqual((((steps[3].get("inputs") or {}).get("template_id"))), "doc_tpl_job_bundle_completion")
+        self.assertEqual(questions, [])
+        self.assertIsNone(meta)
+
     def test_plan_from_message_applies_selected_document_template_hint_to_automation_candidate(self) -> None:
         semantic_plan = {
             "candidate_ops": [
@@ -16397,6 +20684,1539 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual(captured_hints.get("document_template_id"), "doc_tpl_completion_pack")
         self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_completion_pack")
         self.assertEqual(captured_hints.get("answer_text"), "Completion Pack")
+
+    def test_decision_slot_answer_infers_document_template_selection_from_plain_text(self) -> None:
+        session_id = f"decision-slot-document-template-free-text-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, generate a document template for the customer pack.",
+                "message_type": "chat",
+                "created_at": "2026-04-19T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-19T00:00:10Z",
+                "affected_artifacts_json": [],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which document template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_document_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "doc_tpl_completion_pack",
+                                    "label": "Completion Pack",
+                                    "value": "doc_tpl_completion_pack",
+                                    "hints": {"document_template_id": "doc_tpl_completion_pack"},
+                                },
+                                {"id": "doc_tpl_service_report", "label": "Service Report", "value": "doc_tpl_service_report"},
+                            ],
+                        },
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(answer_hints)
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with patch.object(main, "_ai_plan_from_message", side_effect=fake_plan):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use the Completion Pack template.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("document_template_id"), "doc_tpl_completion_pack")
+        self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_completion_pack")
+        self.assertEqual(captured_hints.get("selected_option_value"), "doc_tpl_completion_pack")
+
+    def test_decision_slot_answer_merges_selected_option_step_scoped_template_hints(self) -> None:
+        session_id = f"decision-slot-document-template-step-scope-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "Use our inspection report template for the inspection step.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which document template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_document_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "doc_tpl_inspection_report",
+                                    "label": "Inspection Report",
+                                    "value": "doc_tpl_inspection_report",
+                                    "hints": {
+                                        "document_template_step_hints": [
+                                            {
+                                                "template_kind": "document_template",
+                                                "step_id": "inspection_doc",
+                                                "action_id": "system.generate_document",
+                                                "automation_name": "Job Customer Handoff",
+                                                "title": "Inspection Report",
+                                                "template_id": "doc_tpl_inspection_report",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {"id": "doc_tpl_completion_pack", "label": "Completion Pack", "value": "doc_tpl_completion_pack"},
+                            ],
+                        },
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(answer_hints)
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with patch.object(main, "_ai_plan_from_message", side_effect=fake_plan):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "hints": {
+                        "selected_option_id": "doc_tpl_inspection_report",
+                        "selected_option_value": "doc_tpl_inspection_report",
+                    },
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_inspection_report")
+        self.assertEqual(captured_hints.get("selected_option_label"), "Inspection Report")
+        self.assertEqual(captured_hints.get("answer_text"), "Inspection Report")
+        self.assertEqual(
+            captured_hints.get("document_template_step_hints"),
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "inspection_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "action_id": "system.generate_document",
+                    "title": "Inspection Report",
+                    "template_id": "doc_tpl_inspection_report",
+                }
+            ],
+        )
+
+    def test_template_selection_options_for_step_marks_create_new_as_step_scoped(self) -> None:
+        options = main._ai_template_selection_options_for_step(
+            "document_template",
+            [
+                {
+                    "id": "create_new_document_template",
+                    "label": "Create new document template",
+                    "value": "__create_new__",
+                    "hints": {"create_new_document_template": True, "document_template_id": "__create_new__"},
+                }
+            ],
+            {"name": "Job Customer Handoff"},
+            {
+                "id": "completion_doc",
+                "action_id": "system.generate_document",
+                "inputs": {"entity_id": "entity.job", "title": "Completion Pack"},
+            },
+            artifact_id="job_customer_handoff",
+        )
+
+        self.assertEqual(len(options), 1)
+        step_hints = ((options[0].get("hints") or {}).get("document_template_step_hints") or [])
+        self.assertEqual(
+            step_hints,
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "completion_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Completion Pack",
+                    "create_new": True,
+                }
+            ],
+        )
+
+    def test_confirm_plan_free_text_can_infer_mixed_template_step_hints_from_pending_ops(self) -> None:
+        session_id = f"confirm-plan-template-mixed-free-text-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, send a customer email and generate a handover pack.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Confirm this plan?"],
+                        "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan?"},
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "completion_email",
+                                            "kind": "action",
+                                            "action_id": "system.send_email",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "to": "customer@example.com",
+                                                "subject": "Job completed",
+                                                "body_text": "Your job is complete.",
+                                            },
+                                        },
+                                        {
+                                            "id": "handover_doc",
+                                            "kind": "action",
+                                            "action_id": "system.generate_document",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "title": "Handover Pack",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with (
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {
+                        "id": "email_tpl_completion_follow_up",
+                        "label": "Completion Follow-up",
+                        "value": "email_tpl_completion_follow_up",
+                        "hints": {"email_template_id": "email_tpl_completion_follow_up", "entity_id": "entity.job"},
+                    }
+                ]
+                if kind == "email_template"
+                else [],
+            ),
+            patch.object(main, "_ai_plan_from_message", side_effect=fake_plan),
+        ):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use our Completion Follow-up email template and create a new Handover Pack document template.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            captured_hints.get("email_template_step_hints"),
+            [
+                {
+                    "template_kind": "email_template",
+                    "step_id": "completion_email",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.send_email",
+                    "entity_id": "entity.job",
+                    "subject": "Job completed",
+                    "template_id": "email_tpl_completion_follow_up",
+                }
+            ],
+        )
+        self.assertEqual(
+            captured_hints.get("document_template_step_hints"),
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "handover_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Handover Pack",
+                    "create_new": True,
+                }
+            ],
+        )
+
+    def test_confirm_plan_free_text_can_infer_notify_recipient_step_hints_from_pending_ops(self) -> None:
+        session_id = f"confirm-plan-notify-mixed-free-text-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, send a handover alert and an assigned agent alert.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Confirm this plan?"],
+                        "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan?"},
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "handover_notify",
+                                            "kind": "action",
+                                            "action_id": "system.notify",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "title": "Handover Alert",
+                                                "body": "Share the handover summary.",
+                                            },
+                                        },
+                                        {
+                                            "id": "assigned_agent_notify",
+                                            "kind": "action",
+                                            "action_id": "system.notify",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "title": "Assigned Agent Alert",
+                                                "body": "Assigned agent follow-up needed.",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with (
+            patch.object(
+                main,
+                "list_workspace_members",
+                lambda workspace_id: [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick", "role": "admin"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly", "role": "member"},
+                ],
+            ),
+            patch.object(main, "_ai_plan_from_message", side_effect=fake_plan),
+        ):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Send the handover alert to Nick and the assigned agent alert to Kelly.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            captured_hints.get("notify_recipient_step_hints"),
+            [
+                {
+                    "step_id": "handover_notify",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.notify",
+                    "entity_id": "entity.job",
+                    "title": "Handover Alert",
+                    "body": "Share the handover summary.",
+                    "recipient_user_id": "user-nick",
+                    "recipient_email": "nick@octodrop.com",
+                },
+                {
+                    "step_id": "assigned_agent_notify",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.notify",
+                    "entity_id": "entity.job",
+                    "title": "Assigned Agent Alert",
+                    "body": "Assigned agent follow-up needed.",
+                    "recipient_user_id": "user-kelly",
+                    "recipient_email": "kelly@octodrop.com",
+                },
+            ],
+        )
+
+    def test_decision_slot_free_text_can_resolve_active_template_step_and_second_same_kind_step(self) -> None:
+        session_id = f"decision-slot-document-template-mixed-free-text-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, generate an inspection report and a handover pack.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which document template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_document_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "doc_tpl_inspection_report",
+                                    "label": "Inspection Report",
+                                    "value": "doc_tpl_inspection_report",
+                                    "hints": {
+                                        "document_template_step_hints": [
+                                            {
+                                                "template_kind": "document_template",
+                                                "step_id": "inspection_doc",
+                                                "action_id": "system.generate_document",
+                                                "automation_name": "Job Customer Handoff",
+                                                "artifact_id": "job_customer_handoff",
+                                                "entity_id": "entity.job",
+                                                "title": "Inspection Report",
+                                                "template_id": "doc_tpl_inspection_report",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {"id": "doc_tpl_completion_pack", "label": "Completion Pack", "value": "doc_tpl_completion_pack"},
+                            ],
+                        },
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "inspection_doc",
+                                            "kind": "action",
+                                            "action_id": "system.generate_document",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "title": "Inspection Report",
+                                            },
+                                        },
+                                        {
+                                            "id": "handover_doc",
+                                            "kind": "action",
+                                            "action_id": "system.generate_document",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "title": "Handover Pack",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with patch.object(main, "_ai_plan_from_message", side_effect=fake_plan):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use the Inspection Report template for the inspection step and create a new Handover Pack document template.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_inspection_report")
+        self.assertEqual(
+            captured_hints.get("document_template_step_hints"),
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "inspection_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Inspection Report",
+                    "template_id": "doc_tpl_inspection_report",
+                },
+                {
+                    "template_kind": "document_template",
+                    "step_id": "handover_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Handover Pack",
+                    "create_new": True,
+                },
+            ],
+        )
+
+    def test_decision_slot_free_text_can_resolve_two_same_kind_existing_templates(self) -> None:
+        session_id = f"decision-slot-document-template-two-existing-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, generate an inspection report and a handover pack.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which document template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_document_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "doc_tpl_inspection_report",
+                                    "label": "Inspection Report",
+                                    "value": "doc_tpl_inspection_report",
+                                    "hints": {
+                                        "document_template_step_hints": [
+                                            {
+                                                "template_kind": "document_template",
+                                                "step_id": "inspection_doc",
+                                                "action_id": "system.generate_document",
+                                                "automation_name": "Job Customer Handoff",
+                                                "artifact_id": "job_customer_handoff",
+                                                "entity_id": "entity.job",
+                                                "title": "Inspection Report",
+                                                "template_id": "doc_tpl_inspection_report",
+                                            }
+                                        ]
+                                    },
+                                }
+                            ],
+                        },
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "inspection_doc",
+                                            "kind": "action",
+                                            "action_id": "system.generate_document",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "title": "Inspection Report",
+                                            },
+                                        },
+                                        {
+                                            "id": "handover_doc",
+                                            "kind": "action",
+                                            "action_id": "system.generate_document",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "title": "Handover Pack",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with (
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {
+                        "id": "doc_tpl_inspection_report",
+                        "label": "Inspection Report",
+                        "value": "doc_tpl_inspection_report",
+                        "hints": {"document_template_id": "doc_tpl_inspection_report", "entity_id": "entity.job"},
+                    },
+                    {
+                        "id": "doc_tpl_handover_pack",
+                        "label": "Handover Pack",
+                        "value": "doc_tpl_handover_pack",
+                        "hints": {"document_template_id": "doc_tpl_handover_pack", "entity_id": "entity.job"},
+                    },
+                ]
+                if kind == "document_template"
+                else [],
+            ),
+            patch.object(main, "_ai_plan_from_message", side_effect=fake_plan),
+        ):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use the Inspection Report template for the inspection step and the Handover Pack template for the handover step.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("selected_option_id"), "doc_tpl_inspection_report")
+        self.assertEqual(
+            captured_hints.get("document_template_step_hints"),
+            [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "inspection_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Inspection Report",
+                    "template_id": "doc_tpl_inspection_report",
+                },
+                {
+                    "template_kind": "document_template",
+                    "step_id": "handover_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Handover Pack",
+                    "template_id": "doc_tpl_handover_pack",
+                },
+            ],
+        )
+
+    def test_decision_slot_free_text_can_resolve_active_email_template_step_and_second_same_kind_step(self) -> None:
+        session_id = f"decision-slot-email-template-mixed-free-text-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, email the customer the completion note and email the internal team a handover summary.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which email template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_email_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "email_tpl_completion_note",
+                                    "label": "Completion Note",
+                                    "value": "email_tpl_completion_note",
+                                    "hints": {
+                                        "email_template_step_hints": [
+                                            {
+                                                "template_kind": "email_template",
+                                                "step_id": "customer_email",
+                                                "action_id": "system.send_email",
+                                                "automation_name": "Job Customer Handoff",
+                                                "artifact_id": "job_customer_handoff",
+                                                "entity_id": "entity.job",
+                                                "subject": "Job completed",
+                                                "template_id": "email_tpl_completion_note",
+                                            }
+                                        ]
+                                    },
+                                },
+                                {"id": "email_tpl_handover_summary", "label": "Handover Summary", "value": "email_tpl_handover_summary"},
+                            ],
+                        },
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "customer_email",
+                                            "kind": "action",
+                                            "action_id": "system.send_email",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "to": "{{trigger.record.fields.customer_email}}",
+                                                "subject": "Job completed",
+                                            },
+                                        },
+                                        {
+                                            "id": "handover_email",
+                                            "kind": "action",
+                                            "action_id": "system.send_email",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "to": "ops@example.com",
+                                                "subject": "Handover summary",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with patch.object(main, "_ai_plan_from_message", side_effect=fake_plan):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use the Completion Note template for the customer email and create a new Handover Summary email template.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("selected_option_id"), "email_tpl_completion_note")
+        self.assertEqual(
+            captured_hints.get("email_template_step_hints"),
+            [
+                {
+                    "template_kind": "email_template",
+                    "step_id": "customer_email",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.send_email",
+                    "entity_id": "entity.job",
+                    "subject": "Job completed",
+                    "template_id": "email_tpl_completion_note",
+                },
+                {
+                    "template_kind": "email_template",
+                    "step_id": "handover_email",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.send_email",
+                    "entity_id": "entity.job",
+                    "subject": "Handover summary",
+                    "create_new": True,
+                },
+            ],
+        )
+
+    def test_decision_slot_free_text_can_resolve_two_same_kind_existing_email_templates(self) -> None:
+        session_id = f"decision-slot-email-template-two-existing-{uuid.uuid4()}"
+        main._ai_create_record(
+            _AI_ENTITY_SESSION,
+            {
+                "id": session_id,
+                "scope_mode": "auto",
+                "selected_artifact_type": "none",
+                "selected_artifact_key": "",
+                "status": "waiting_input",
+                "workspace_id": "default",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_MESSAGE,
+            {
+                "session_id": session_id,
+                "role": "user",
+                "body": "When a job is completed, email the customer the completion note and email the internal team a handover summary.",
+                "message_type": "chat",
+                "created_at": "2026-04-20T00:00:00Z",
+            },
+        )
+        main._ai_create_record(
+            _AI_ENTITY_PLAN,
+            {
+                "session_id": session_id,
+                "status": "waiting_input",
+                "created_at": "2026-04-20T00:00:10Z",
+                "affected_artifacts_json": [{"artifact_type": "automation", "artifact_id": "job_customer_handoff"}],
+                "plan_json": {
+                    "plan": {
+                        "required_questions": ["Which email template should this automation use?"],
+                        "required_question_meta": {
+                            "id": "automation_email_template",
+                            "kind": "decision_slot",
+                            "hint_field": "template_choice",
+                            "options": [
+                                {
+                                    "id": "email_tpl_completion_note",
+                                    "label": "Completion Note",
+                                    "value": "email_tpl_completion_note",
+                                    "hints": {
+                                        "email_template_step_hints": [
+                                            {
+                                                "template_kind": "email_template",
+                                                "step_id": "customer_email",
+                                                "action_id": "system.send_email",
+                                                "automation_name": "Job Customer Handoff",
+                                                "artifact_id": "job_customer_handoff",
+                                                "entity_id": "entity.job",
+                                                "subject": "Job completed",
+                                                "template_id": "email_tpl_completion_note",
+                                            }
+                                        ]
+                                    },
+                                }
+                            ],
+                        },
+                        "candidate_operations": [
+                            {
+                                "op": "create_automation_record",
+                                "artifact_type": "automation",
+                                "artifact_id": "job_customer_handoff",
+                                "automation": {
+                                    "name": "Job Customer Handoff",
+                                    "status": "draft",
+                                    "steps": [
+                                        {
+                                            "id": "customer_email",
+                                            "kind": "action",
+                                            "action_id": "system.send_email",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "to": "{{trigger.record.fields.customer_email}}",
+                                                "subject": "Job completed",
+                                            },
+                                        },
+                                        {
+                                            "id": "handover_email",
+                                            "kind": "action",
+                                            "action_id": "system.send_email",
+                                            "inputs": {
+                                                "entity_id": "entity.job",
+                                                "record_id": "{{trigger.record_id}}",
+                                                "to": "ops@example.com",
+                                                "subject": "Handover summary",
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+        captured_hints: dict[str, object] = {}
+
+        def fake_plan(_request, _session, _message, explicit_scope=None, answer_hints=None):
+            if isinstance(answer_hints, dict):
+                captured_hints.update(copy.deepcopy(answer_hints))
+            return (
+                {
+                    "scope": {"mode": "auto"},
+                    "affected_artifacts": [],
+                    "candidate_operations": [],
+                    "proposed_changes": [],
+                    "assumptions": [],
+                    "advisories": [],
+                    "required_questions": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+                    "risk_flags": [],
+                    "planner_state": {"intent": "create_automation_record"},
+                    "resolved_without_changes": False,
+                },
+                {"status": "waiting_input", "affected_modules": []},
+            )
+
+        client = TestClient(main.app)
+        with (
+            patch.object(
+                main,
+                "_ai_workspace_template_decision_options",
+                lambda kind, workspace_id, limit=8: [
+                    {
+                        "id": "email_tpl_completion_note",
+                        "label": "Completion Note",
+                        "value": "email_tpl_completion_note",
+                        "hints": {"email_template_id": "email_tpl_completion_note", "entity_id": "entity.job"},
+                    },
+                    {
+                        "id": "email_tpl_handover_summary",
+                        "label": "Handover Summary",
+                        "value": "email_tpl_handover_summary",
+                        "hints": {"email_template_id": "email_tpl_handover_summary", "entity_id": "entity.job"},
+                    },
+                ]
+                if kind == "email_template"
+                else [],
+            ),
+            patch.object(main, "_ai_plan_from_message", side_effect=fake_plan),
+        ):
+            response = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={
+                    "action": "custom",
+                    "text": "Use the Completion Note template for the customer email and the Handover Summary template for the handover email.",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured_hints.get("selected_option_id"), "email_tpl_completion_note")
+        self.assertEqual(
+            captured_hints.get("email_template_step_hints"),
+            [
+                {
+                    "template_kind": "email_template",
+                    "step_id": "customer_email",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.send_email",
+                    "entity_id": "entity.job",
+                    "subject": "Job completed",
+                    "template_id": "email_tpl_completion_note",
+                },
+                {
+                    "template_kind": "email_template",
+                    "step_id": "handover_email",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.send_email",
+                    "entity_id": "entity.job",
+                    "subject": "Handover summary",
+                    "template_id": "email_tpl_handover_summary",
+                },
+            ],
+        )
+
+    def test_candidate_template_hints_ignore_global_document_template_for_multi_step_mixed_reply(self) -> None:
+        candidate_ops = [
+            {
+                "op": "create_automation_record",
+                "artifact_type": "automation",
+                "artifact_id": "job_customer_handoff",
+                "automation": {
+                    "name": "Job Customer Handoff",
+                    "status": "draft",
+                    "steps": [
+                        {
+                            "id": "inspection_doc",
+                            "kind": "action",
+                            "action_id": "system.generate_document",
+                            "inputs": {
+                                "entity_id": "entity.job",
+                                "record_id": "{{trigger.record_id}}",
+                                "title": "Inspection Report",
+                            },
+                        },
+                        {
+                            "id": "handover_doc",
+                            "kind": "action",
+                            "action_id": "system.generate_document",
+                            "inputs": {
+                                "entity_id": "entity.job",
+                                "record_id": "{{trigger.record_id}}",
+                                "title": "Handover Pack",
+                            },
+                        },
+                    ],
+                },
+            }
+        ]
+        answer_hints = {
+            "document_template_id": "doc_tpl_inspection_report",
+            "selected_option_id": "doc_tpl_inspection_report",
+            "document_template_step_hints": [
+                {
+                    "template_kind": "document_template",
+                    "step_id": "inspection_doc",
+                    "automation_name": "Job Customer Handoff",
+                    "artifact_id": "job_customer_handoff",
+                    "action_id": "system.generate_document",
+                    "entity_id": "entity.job",
+                    "title": "Inspection Report",
+                    "template_id": "doc_tpl_inspection_report",
+                }
+            ],
+        }
+
+        next_ops, _assumptions, _advisories, questions, _question_meta = main._ai_apply_template_hints_to_candidate_ops(
+            candidate_ops,
+            "Use the Inspection Report template for the inspection step and create a new Handover Pack document template.",
+            "default",
+            answer_hints=answer_hints,
+        )
+
+        automation = next(
+            op.get("automation")
+            for op in next_ops
+            if isinstance(op, dict)
+            and op.get("op") == "create_automation_record"
+            and isinstance(op.get("automation"), dict)
+        )
+        steps = automation.get("steps") or []
+        inspection_step = next(step for step in steps if step.get("id") == "inspection_doc")
+        handover_step = next(step for step in steps if step.get("id") == "handover_doc")
+
+        self.assertEqual((inspection_step.get("inputs") or {}).get("template_id"), "doc_tpl_inspection_report")
+        handover_template_id = (handover_step.get("inputs") or {}).get("template_id")
+        self.assertTrue(isinstance(handover_template_id, str) and handover_template_id.strip())
+        self.assertNotEqual(handover_template_id, "doc_tpl_inspection_report")
+        self.assertTrue(
+            any(
+                isinstance(op, dict)
+                and op.get("op") == "create_document_template_record"
+                for op in next_ops
+            )
+        )
+        self.assertEqual(questions, [])
+
+    def test_candidate_template_hints_apply_only_to_targeted_step(self) -> None:
+        candidate_ops = [
+            {
+                "op": "create_automation_record",
+                "artifact_type": "automation",
+                "artifact_id": "job_customer_handoff",
+                "automation": {
+                    "name": "Job Customer Handoff",
+                    "status": "draft",
+                    "steps": [
+                        {
+                            "id": "inspection_doc",
+                            "kind": "action",
+                            "action_id": "system.generate_document",
+                            "inputs": {
+                                "entity_id": "entity.job",
+                                "record_id": "{{trigger.record_id}}",
+                                "title": "Inspection Report",
+                            },
+                        },
+                        {
+                            "id": "completion_doc",
+                            "kind": "action",
+                            "action_id": "system.generate_document",
+                            "inputs": {
+                                "entity_id": "entity.job",
+                                "record_id": "{{trigger.record_id}}",
+                                "title": "Completion Pack",
+                            },
+                        },
+                    ],
+                },
+            }
+        ]
+
+        with patch.object(
+            main,
+            "_ai_workspace_template_decision_options",
+            lambda kind, workspace_id, limit=8: [
+                {
+                    "id": "doc_tpl_customer_pack_a",
+                    "label": "Customer Pack A",
+                    "value": "doc_tpl_customer_pack_a",
+                    "hints": {"document_template_id": "doc_tpl_customer_pack_a"},
+                },
+                {
+                    "id": "doc_tpl_customer_pack_b",
+                    "label": "Customer Pack B",
+                    "value": "doc_tpl_customer_pack_b",
+                    "hints": {"document_template_id": "doc_tpl_customer_pack_b"},
+                },
+            ]
+            if kind == "document_template"
+            else [],
+        ), patch.object(main, "_ai_match_workspace_template_option_for_step", lambda *args, **kwargs: None):
+            updated_ops, _assumptions, _advisories, questions, meta = main._ai_apply_template_hints_to_candidate_ops(
+                candidate_ops,
+                "Use our inspection report template for the inspection document only.",
+                "default",
+                answer_hints={
+                    "document_template_step_hints": [
+                        {
+                            "template_kind": "document_template",
+                            "step_id": "inspection_doc",
+                            "action_id": "system.generate_document",
+                            "automation_name": "Job Customer Handoff",
+                            "artifact_id": "job_customer_handoff",
+                            "title": "Inspection Report",
+                            "template_id": "doc_tpl_inspection_report",
+                        }
+                    ]
+                },
+            )
+
+        ops = [op for op in updated_ops if isinstance(op, dict) and op.get("op") == "create_automation_record"]
+        steps = ((ops[0].get("automation") or {}).get("steps") or [])
+        self.assertEqual(((steps[0].get("inputs") or {}).get("template_id")), "doc_tpl_inspection_report")
+        self.assertFalse(isinstance((steps[1].get("inputs") or {}).get("template_id"), str) and (steps[1].get("inputs") or {}).get("template_id"))
+        self.assertEqual(questions, ["Which document template should this automation use?"])
+        self.assertEqual(meta.get("id"), "automation_document_template_1")
+        option_hints = ((meta.get("options") or [])[0].get("hints") or {}) if isinstance((meta.get("options") or [])[0], dict) else {}
+        self.assertEqual(
+            ((option_hints.get("document_template_step_hints") or [])[0].get("step_id")),
+            "completion_doc",
+        )
+
+    def test_scoped_automation_template_hints_apply_only_to_targeted_step(self) -> None:
+        draft = {
+            "name": "Job Customer Handoff",
+            "status": "draft",
+            "steps": [
+                {
+                    "id": "inspection_doc",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "record_id": "{{trigger.record_id}}",
+                        "title": "Inspection Report",
+                    },
+                },
+                {
+                    "id": "completion_doc",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "record_id": "{{trigger.record_id}}",
+                        "title": "Completion Pack",
+                    },
+                },
+            ],
+        }
+
+        with patch.object(
+            main,
+            "_ai_workspace_template_decision_options",
+            lambda kind, workspace_id, limit=8: [
+                {
+                    "id": "doc_tpl_customer_pack_a",
+                    "label": "Customer Pack A",
+                    "value": "doc_tpl_customer_pack_a",
+                    "hints": {"document_template_id": "doc_tpl_customer_pack_a"},
+                },
+                {
+                    "id": "doc_tpl_customer_pack_b",
+                    "label": "Customer Pack B",
+                    "value": "doc_tpl_customer_pack_b",
+                    "hints": {"document_template_id": "doc_tpl_customer_pack_b"},
+                },
+            ]
+            if kind == "document_template"
+            else [],
+        ), patch.object(main, "_ai_match_workspace_template_option_for_step", lambda *args, **kwargs: None):
+            updated_draft, _assumptions, _advisories, questions, meta = main._artifact_ai_apply_scoped_automation_hints(
+                draft,
+                "Use our inspection report template for the inspection document only.",
+                {},
+                "default",
+                answer_hints={
+                    "document_template_step_hints": [
+                        {
+                            "template_kind": "document_template",
+                            "step_id": "inspection_doc",
+                            "action_id": "system.generate_document",
+                            "automation_name": "Job Customer Handoff",
+                            "title": "Inspection Report",
+                            "template_id": "doc_tpl_inspection_report",
+                        }
+                    ]
+                },
+            )
+
+        steps = ((updated_draft or {}).get("steps") or [])
+        self.assertEqual(((steps[0].get("inputs") or {}).get("template_id")), "doc_tpl_inspection_report")
+        self.assertFalse(isinstance((steps[1].get("inputs") or {}).get("template_id"), str) and (steps[1].get("inputs") or {}).get("template_id"))
+        self.assertEqual(questions, ["Which document template should this automation use?"])
+        self.assertEqual(meta.get("id"), "automation_document_template")
+        option_hints = ((meta.get("options") or [])[0].get("hints") or {}) if isinstance((meta.get("options") or [])[0], dict) else {}
+        self.assertEqual(
+            ((option_hints.get("document_template_step_hints") or [])[0].get("step_id")),
+            "completion_doc",
+        )
+
+    def test_scoped_automation_notify_recipient_step_hints_apply_only_to_targeted_step(self) -> None:
+        draft = {
+            "name": "Job Customer Handoff",
+            "status": "draft",
+            "steps": [
+                {
+                    "id": "handover_notify",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "title": "Handover Alert",
+                        "body": "Share the handover summary.",
+                    },
+                },
+                {
+                    "id": "assigned_agent_notify",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {
+                        "entity_id": "entity.job",
+                        "title": "Assigned Agent Alert",
+                        "body": "The assigned agent needs a follow-up.",
+                    },
+                },
+            ],
+        }
+
+        updated_draft, _assumptions, _advisories, questions, meta = main._artifact_ai_apply_scoped_automation_hints(
+            draft,
+            "Send the handover alert to Nick and the assigned agent alert to Kelly.",
+            {
+                "members": [
+                    {"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"},
+                    {"user_id": "user-kelly", "email": "kelly@octodrop.com", "full_name": "Kelly"},
+                ]
+            },
+            "default",
+            answer_hints={
+                "notify_recipient_step_hints": [
+                    {
+                        "step_id": "handover_notify",
+                        "action_id": "system.notify",
+                        "automation_name": "Job Customer Handoff",
+                        "entity_id": "entity.job",
+                        "title": "Handover Alert",
+                        "recipient_user_id": "user-nick",
+                    },
+                    {
+                        "step_id": "assigned_agent_notify",
+                        "action_id": "system.notify",
+                        "automation_name": "Job Customer Handoff",
+                        "entity_id": "entity.job",
+                        "title": "Assigned Agent Alert",
+                        "recipient_user_id": "user-kelly",
+                    },
+                ]
+            },
+        )
+
+        steps = ((updated_draft or {}).get("steps") or [])
+        first_inputs = (steps[0].get("inputs") or {}) if isinstance(steps[0], dict) else {}
+        second_inputs = (steps[1].get("inputs") or {}) if isinstance(steps[1], dict) else {}
+        self.assertEqual(first_inputs.get("recipient_user_ids"), ["user-nick"])
+        self.assertEqual(first_inputs.get("recipient_user_id"), "user-nick")
+        self.assertEqual(second_inputs.get("recipient_user_ids"), ["user-kelly"])
+        self.assertEqual(second_inputs.get("recipient_user_id"), "user-kelly")
+        self.assertEqual(questions, [])
+        self.assertIsNone(meta)
 
     def test_apply_and_promote_automation_patchset_creates_draft_then_published_record(self) -> None:
         class ScopedAutomationStore:

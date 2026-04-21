@@ -743,6 +743,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
 
   const currentPath = location.pathname;
   const previewTarget = isStudioPreviewRoute ? searchParams.get("preview_target") || appHomeTarget || "" : "";
+  const showFrameNavigation = frameMode && searchParams.get("octo_ai_embed_nav") === "1";
   const buildPreviewRoute = (target) => {
     if (!moduleId) return "#";
     const params = new URLSearchParams(location.search || "");
@@ -888,7 +889,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     };
   }, [mobileAppMenuOpen, mobileHomeMenuOpen]);
 
-  const hideLeftChrome = frameMode && (isAppRoute || isStudioPreviewRoute);
+  const hideLeftChrome = frameMode && !showFrameNavigation && (isAppRoute || isStudioPreviewRoute);
   const hideRightChrome = frameMode;
   const leftChromeContent = isStudioRoute ? (
     isMobile ? (

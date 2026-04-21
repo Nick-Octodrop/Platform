@@ -9,6 +9,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
   onStop,
   disabled,
   busy = false,
+  allowEmptySend = false,
   placeholder = translateRuntime("settings.studio.agent.placeholder"),
   minRows = 1,
   maxRows = 6,
@@ -38,7 +39,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
 
   const trimmedValue = value?.trim() || "";
   const canStop = busy && typeof onStop === "function";
-  const sendDisabled = disabled || !trimmedValue;
+  const sendDisabled = disabled || (!trimmedValue && !allowEmptySend);
 
   return (
     <div className={`flex w-full items-end gap-2 ${className}`}>

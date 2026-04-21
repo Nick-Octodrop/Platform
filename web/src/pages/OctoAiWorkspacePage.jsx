@@ -29,6 +29,12 @@ import ProviderUnavailableState from "../components/ProviderUnavailableState.jsx
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import {
+  hasPendingPlanQuestion,
+  latestPlanQuestionPrompt,
+  questionSupersededByAppliedRevision,
+} from "./octoAiSessionState.js";
+import { summarizePlanOperations } from "./octoAiPlanPreview.js";
 
 function JsonBlock({ value }) {
   return (
@@ -378,6 +384,7 @@ function messageRoleLabel(msg, t) {
 function buildWorkspaceFrameSrc({ sessionId, sandboxWorkspaceId }) {
   const params = new URLSearchParams();
   params.set("octo_ai_frame", "1");
+  params.set("octo_ai_embed_nav", "1");
   params.set("octo_ai_sandbox", "1");
   if (sessionId) params.set("octo_ai_session", sessionId);
   if (sandboxWorkspaceId) params.set("octo_ai_workspace", sandboxWorkspaceId);
@@ -387,6 +394,7 @@ function buildWorkspaceFrameSrc({ sessionId, sandboxWorkspaceId }) {
 function buildLiveWorkspaceFrameSrc() {
   const params = new URLSearchParams();
   params.set("octo_ai_frame", "1");
+  params.set("octo_ai_embed_nav", "1");
   params.set("octo_ai_sandbox", "0");
   params.set("octo_ai_live", "1");
   return `/home?${params.toString()}`;
@@ -405,19 +413,6 @@ function resolveChangeRequestStage({ hasStarted, hasPendingQuestion, latestPatch
   if (hasPendingQuestion || !latestPatchset) return "planning";
   if (["validated", "approved", "draft"].includes(String(latestPatchset?.status || ""))) return "ready_to_apply";
   return "planning";
-}
-
-function questionSupersededByAppliedRevision(latestPlan, latestPatchset) {
-  if (!latestPlan) return false;
-  if (!latestPatchset || latestPatchset?.status !== "applied") return false;
-  const planCreatedAt = typeof latestPlan?.created_at === "string" ? latestPlan.created_at : "";
-  const appliedAt =
-    typeof latestPatchset?.applied_at === "string" && latestPatchset.applied_at
-      ? latestPatchset.applied_at
-      : typeof latestPatchset?.created_at === "string"
-        ? latestPatchset.created_at
-        : "";
-  return Boolean(planCreatedAt && appliedAt && appliedAt > planCreatedAt);
 }
 
 export default function OctoAiWorkspacePage() {
@@ -518,6 +513,23 @@ export default function OctoAiWorkspacePage() {
     if (!activeQuestion) return false;
     return !questionSupersededByAppliedRevision(latestPlan, latestPatchset);
   }, [activeQuestion, latestPatchset, latestPlan]);
+  const fieldSpecHints = useMemo(() => {
+    if (activeQuestionMeta?.kind !== "field_spec") return undefined;
+    return {
+      field_label: fieldSpecLabel.trim() || undefined,
+      field_type: fieldSpecType || undefined,
+      field_id: activeQuestionMeta?.defaults?.field_id || undefined,
+    };
+  }, [activeQuestionMeta?.defaults?.field_id, activeQuestionMeta?.kind, fieldSpecLabel, fieldSpecType]);
+  const canSubmitFieldSpecInline = useMemo(
+    () =>
+      activeQuestionMeta?.kind === "field_spec"
+      && typeof fieldSpecHints?.field_label === "string"
+      && fieldSpecHints.field_label.trim().length > 0
+      && typeof fieldSpecHints?.field_type === "string"
+      && fieldSpecHints.field_type.trim().length > 0,
+    [activeQuestionMeta?.kind, fieldSpecHints],
+  );
   const hasConversationStarted = useMemo(
     () => Array.isArray(data.messages) && data.messages.some((msg) => typeof chatMessageText(msg, octoT) === "string" && chatMessageText(msg, octoT).trim()),
     [data.messages, t],
@@ -582,6 +594,8 @@ export default function OctoAiWorkspacePage() {
   }, [previewNotice]);
 
   const changeSummaries = useMemo(() => {
+    const exactChanges = summarizePlanOperations(latestPlanOps);
+    if (exactChanges.length > 0) return exactChanges;
     if (Array.isArray(structuredPlan?.changes) && structuredPlan.changes.length > 0) {
       return structuredPlan.changes.map((item) => item?.summary).filter((item) => typeof item === "string" && item.trim());
     }
@@ -646,7 +660,7 @@ export default function OctoAiWorkspacePage() {
     setError("");
     try {
       const sessionRes = await getOctoAiSession(sessionId);
-      setData({
+      const nextData = {
         session: sessionRes?.session || null,
         messages: Array.isArray(sessionRes?.messages) ? sessionRes.messages : [],
         plans: Array.isArray(sessionRes?.plans) ? sessionRes.plans : [],
@@ -655,9 +669,12 @@ export default function OctoAiWorkspacePage() {
         validation_runs: Array.isArray(sessionRes?.validation_runs) ? sessionRes.validation_runs : [],
         sandboxes: Array.isArray(sessionRes?.sandboxes) ? sessionRes.sandboxes : [],
         event_logs: Array.isArray(sessionRes?.event_logs) ? sessionRes.event_logs : [],
-      });
+      };
+      setData(nextData);
+      return nextData;
     } catch (err) {
       setError(err?.message || octoT("errors.load_session"));
+      return null;
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -713,9 +730,18 @@ export default function OctoAiWorkspacePage() {
     });
   }
 
+  async function submitFieldSpecAnswer(extraText = "") {
+    if (!canSubmitFieldSpecInline || !fieldSpecHints) return;
+    await submitQuestionAnswer("custom", {
+      text: typeof extraText === "string" && extraText.trim() ? extraText.trim() : undefined,
+      hints: fieldSpecHints,
+    });
+  }
+
   async function submitChatRequest(rawText, options = {}) {
     const text = typeof rawText === "string" ? rawText.trim() : "";
-    if (!text || streaming || busy) return;
+    const inlineFieldSpecOnly = hasPendingQuestion && activeQuestionMeta?.kind === "field_spec" && canSubmitFieldSpecInline && !text;
+    if ((!text && !inlineFieldSpecOnly) || streaming || busy) return;
     if (!openAiConnected) {
       if (canManageSettings) {
         setOpenAiModalOpen(true);
@@ -726,13 +752,7 @@ export default function OctoAiWorkspacePage() {
     }
     const bypassPendingQuestion = options?.forceNewRequest === true || (hasPendingQuestion && chatTextLooksLikeNewRequest(text));
     if (hasPendingQuestion && !bypassPendingQuestion) {
-      const hints = activeQuestionMeta?.kind === "field_spec"
-        ? {
-            field_label: fieldSpecLabel.trim() || undefined,
-            field_type: fieldSpecType || undefined,
-            field_id: activeQuestionMeta?.defaults?.field_id || undefined,
-          }
-        : undefined;
+      const hints = activeQuestionMeta?.kind === "field_spec" ? fieldSpecHints : undefined;
       await submitQuestionAnswer("custom", { text, hints });
       if (options?.clearInput !== false) setMessage("");
       return;
@@ -806,18 +826,29 @@ export default function OctoAiWorkspacePage() {
 
   async function ensureValidatedRevision() {
     if (!sessionId) return "";
+    let payload = data;
     if (!data.session?.sandbox_workspace_id) {
       await ensureOctoAiSandbox(sessionId);
+      payload = (await refreshSession({ showLoading: false })) || payload;
     }
-    await generateOctoAiPatchset(sessionId, {});
-    const generated = await getOctoAiSession(sessionId);
-    const patchset = latestPatchsetFromList(generated?.patchsets, latestPlan?.id || "");
+    let plan = Array.isArray(payload?.plans) && payload.plans.length > 0 ? payload.plans[0] : null;
+    let patchset = latestPatchsetFromList(payload?.patchsets, plan?.id || "");
+    if (hasPendingPlanQuestion(plan, patchset)) {
+      throw new Error(latestPlanQuestionPrompt(plan) || octoT("errors.prepare_latest_revision"));
+    }
+    await generateOctoAiPatchset(sessionId, { plan_id: plan?.id || undefined });
+    payload = (await refreshSession({ showLoading: false })) || payload;
+    plan = Array.isArray(payload?.plans) && payload.plans.length > 0 ? payload.plans[0] : null;
+    patchset = latestPatchsetFromList(payload?.patchsets, plan?.id || "");
+    if (hasPendingPlanQuestion(plan, patchset)) {
+      throw new Error(latestPlanQuestionPrompt(plan) || octoT("errors.prepare_latest_revision"));
+    }
     if (!patchset?.id) {
       throw new Error(octoT("errors.no_patchset_generated"));
     }
     await validateOctoAiPatchset(patchset.id);
-    const refreshed = await refreshSession({ showLoading: false });
-    const validatedPatchset = latestPatchsetFromList(refreshed?.patchsets, patchset.plan_id || latestPlan?.id || "");
+    payload = (await refreshSession({ showLoading: false })) || payload;
+    const validatedPatchset = latestPatchsetFromList(payload?.patchsets, patchset.plan_id || plan?.id || "");
     if (!validatedPatchset?.id) {
       throw new Error(octoT("errors.no_validated_revision"));
     }
@@ -851,7 +882,13 @@ export default function OctoAiWorkspacePage() {
         action: "approve",
         question_id: activeQuestionMeta?.id || undefined,
       });
-      await refreshSession({ showLoading: false });
+      const refreshed = await refreshSession({ showLoading: false });
+      const refreshedPlan = Array.isArray(refreshed?.plans) && refreshed.plans.length > 0 ? refreshed.plans[0] : null;
+      const refreshedPatchset = latestPatchsetFromList(refreshed?.patchsets, refreshedPlan?.id || "");
+      if (hasPendingPlanQuestion(refreshedPlan, refreshedPatchset)) {
+        setPreviewNotice("");
+        return;
+      }
       const patchsetId = await ensureValidatedRevision();
       if (!patchsetId) {
         throw new Error(octoT("errors.no_validated_revision_apply"));
@@ -876,8 +913,15 @@ export default function OctoAiWorkspacePage() {
     setError("");
     setPreviewNotice(octoT("preview.applying_revision"));
     try {
-      const patchsetId = ["validated", "approved", "applied"].includes(String(latestPatchset.status || ""))
-        ? latestPatchset.id
+      const refreshed = (await refreshSession({ showLoading: false })) || data;
+      const refreshedPlan = Array.isArray(refreshed?.plans) && refreshed.plans.length > 0 ? refreshed.plans[0] : null;
+      const refreshedPatchset = latestPatchsetFromList(refreshed?.patchsets, refreshedPlan?.id || latestPlan?.id || "");
+      if (hasPendingPlanQuestion(refreshedPlan, refreshedPatchset)) {
+        setPreviewNotice("");
+        return;
+      }
+      const patchsetId = ["validated", "approved", "applied"].includes(String(refreshedPatchset?.status || ""))
+        ? refreshedPatchset.id
         : await ensureValidatedRevision();
       await applyOctoAiPatchset(patchsetId, true);
       await refreshSession({ showLoading: false });
@@ -1036,6 +1080,18 @@ export default function OctoAiWorkspacePage() {
           { label: octoT("actions.view_scope"), onClick: openChangesView },
         ];
       }
+      if (activeQuestionMeta?.kind === "field_spec") {
+        return [
+          {
+            label: octoT("actions.save_detail"),
+            primary: true,
+            onClick: () => submitFieldSpecAnswer(),
+            disabled: !canSubmitFieldSpecInline,
+            hint: octoT("hints.save_detail"),
+          },
+          { label: octoT("actions.view_scope"), onClick: openChangesView },
+        ];
+      }
       if (activeDecisionSlots.length > 0) {
         return [
           { label: "Use custom answer", primary: true, onClick: () => composerRef.current?.focus(), hint: "Pick an option below or type a custom value." },
@@ -1094,7 +1150,25 @@ export default function OctoAiWorkspacePage() {
       ];
     }
     return [];
-  }, [activeDecisionSlots.length, activeQuestionMeta?.kind, appliedRevisions.length, currentSandboxRevision?.id, hasPendingQuestion, latestPromotedRelease?.id, openChangesView, publishingRevision, requestStage, restoringRevision, selectedRevision, selectedRevisionRelease?.status, navigate, t]);
+  }, [
+    activeDecisionSlots.length,
+    activeQuestionMeta?.kind,
+    appliedRevisions.length,
+    canSubmitFieldSpecInline,
+    currentSandboxRevision?.id,
+    fieldSpecLabel,
+    fieldSpecType,
+    hasPendingQuestion,
+    latestPromotedRelease?.id,
+    navigate,
+    openChangesView,
+    publishingRevision,
+    requestStage,
+    restoringRevision,
+    selectedRevision,
+    selectedRevisionRelease?.status,
+    t,
+  ]);
 
   const previewPane = (
     <div className={`relative h-full min-h-0 overflow-hidden ${isMobile ? "bg-base-100" : DESKTOP_PANEL_SHELL}`}>
@@ -1264,12 +1338,28 @@ export default function OctoAiWorkspacePage() {
                   placeholder={octoT("field_spec.label_placeholder")}
                   value={fieldSpecLabel}
                   onChange={(e) => setFieldSpecLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (canSubmitFieldSpecInline && !(busy || streaming || applyingRevision || publishingRevision || restoringRevision)) {
+                        submitFieldSpecAnswer();
+                      }
+                    }
+                  }}
                 />
                 <AppSelect className="select select-bordered select-sm w-full" value={fieldSpecType} onChange={(e) => setFieldSpecType(e.target.value)}>
                   {(activeQuestionMeta?.options?.field_types || []).map((kind) => (
                     <option key={kind} value={kind}>{kind}</option>
                   ))}
                 </AppSelect>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary w-full sm:w-auto"
+                  disabled={!canSubmitFieldSpecInline || busy || streaming || applyingRevision || publishingRevision || restoringRevision}
+                  onClick={() => submitFieldSpecAnswer()}
+                >
+                  {octoT("actions.save_detail")}
+                </button>
               </div>
             ) : null}
             <AgentChatInput
@@ -1279,6 +1369,7 @@ export default function OctoAiWorkspacePage() {
               onSend={sendMessage}
               placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? octoT("placeholders.question_reply") : octoT("placeholders.question_clarification")) : composerPlaceholder}
               disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
+              allowEmptySend={activeQuestionMeta?.kind === "field_spec" && canSubmitFieldSpecInline}
               minRows={1}
             />
           </div>

@@ -1498,6 +1498,116 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         messages = [item.get("message") for item in validation_errors if isinstance(item, dict)]
         self.assertTrue(any("invalid record key 'biz_contact.name'" in str(message) for message in messages), messages)
 
+    def test_send_test_email_template_uses_draft_override_instead_of_stored_template(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Order Notice",
+                    "description": "",
+                    "subject": "PO {{ record['te_purchase_order.po_number'] }}",
+                    "body_html": "<p>Supplier {{ record['te_purchase_order.supplier_name'] }}</p>",
+                    "body_text": "Supplier {{ record['te_purchase_order.supplier_name'] }}",
+                    "variables_schema": {"entity_id": "entity.te_purchase_order"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        fake_connection = {
+            "id": "conn-email",
+            "type": "email",
+            "config": {"from_email": "noreply@example.com"},
+        }
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main.connection_store, "get_default_email", return_value=fake_connection),
+        ):
+            res = client.post(
+                f"/email/templates/{template_id}/send_test",
+                json={
+                    "to_email": "nick@example.com",
+                    "draft": {
+                        **created["template"],
+                        "subject": "SO {{ record['te_supplier_order.order_number'] }}",
+                        "body_html": "<p>Customer {{ record['te_supplier_order.customer_name'] }}</p>",
+                        "body_text": "Customer {{ record['te_supplier_order.customer_name'] }}",
+                        "variables_schema": {"entity_id": "entity.te_supplier_order"},
+                    },
+                    "sample": {
+                        "entity_id": "entity.te_supplier_order",
+                        "record_id": "so-1",
+                        "record": {
+                            "te_supplier_order.order_number": "SO-1001",
+                            "te_supplier_order.customer_name": "Northwind",
+                        },
+                    },
+                },
+            )
+
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        outbox = main.email_store.get_outbox(body.get("outbox_id"))
+        self.assertIsInstance(outbox, dict)
+        self.assertEqual(outbox.get("subject"), "SO SO-1001")
+        self.assertIn("Northwind", str(outbox.get("body_html") or ""))
+        self.assertNotIn("te_purchase_order", str(outbox.get("body_html") or ""))
+
+    def test_send_test_email_template_falls_back_to_draft_entity_when_sample_entity_missing(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Order Notice",
+                    "description": "",
+                    "subject": "PO {{ record['te_purchase_order.po_number'] }}",
+                    "body_html": "<p>Supplier {{ record['te_purchase_order.supplier_name'] }}</p>",
+                    "body_text": "Supplier {{ record['te_purchase_order.supplier_name'] }}",
+                    "variables_schema": {"entity_id": "entity.te_purchase_order"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        fake_connection = {
+            "id": "conn-email",
+            "type": "email",
+            "config": {"from_email": "noreply@example.com"},
+        }
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()),
+            patch.object(main.connection_store, "get_default_email", return_value=fake_connection),
+        ):
+            res = client.post(
+                f"/email/templates/{template_id}/send_test",
+                json={
+                    "to_email": "nick@example.com",
+                    "draft": {
+                        **created["template"],
+                        "subject": "SO {{ record['te_supplier_order.order_number'] }}",
+                        "body_html": "<p>Customer {{ record['te_supplier_order.customer_name'] }}</p>",
+                        "body_text": "Customer {{ record['te_supplier_order.customer_name'] }}",
+                        "variables_schema": {"entity_id": "entity.te_supplier_order"},
+                    },
+                    "sample": {
+                        "record": {
+                            "te_supplier_order.order_number": "SO-1001",
+                            "te_supplier_order.customer_name": "Northwind",
+                        },
+                    },
+                },
+            )
+
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        outbox = main.email_store.get_outbox(body.get("outbox_id"))
+        self.assertIsInstance(outbox, dict)
+        self.assertEqual(outbox.get("subject"), "SO SO-1001")
+        self.assertIn("Northwind", str(outbox.get("body_html") or ""))
+        self.assertNotIn("te_purchase_order", str(outbox.get("body_html") or ""))
+
     def test_email_template_ai_plan_derives_plain_text_when_model_omits_it(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -1623,6 +1733,45 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(res.status_code, 200, body)
         self.assertEqual(body.get("rendered_subject"), "Draft subject")
         self.assertIn("Draft body", body.get("rendered_html", ""))
+
+    def test_email_template_preview_falls_back_to_draft_entity_when_sample_entity_missing(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Welcome",
+                    "description": "",
+                    "subject": "Stored {{ record['te_purchase_order.po_number'] }}",
+                    "body_html": "<p>Stored {{ record['te_purchase_order.supplier_name'] }}</p>",
+                    "body_text": "Stored {{ record['te_purchase_order.supplier_name'] }}",
+                    "variables_schema": {"entity_id": "entity.te_purchase_order"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+            res = client.post(
+                f"/email/templates/{template_id}/preview",
+                json={
+                    "sample": {
+                        "record": {
+                            "te_supplier_order.order_number": "SO-1001",
+                            "te_supplier_order.customer_name": "Northwind",
+                        },
+                    },
+                    "draft": {
+                        **created["template"],
+                        "subject": "Draft {{ record['te_supplier_order.order_number'] }}",
+                        "body_html": "<p>Draft {{ record['te_supplier_order.customer_name'] }}</p>",
+                        "body_text": "Draft {{ record['te_supplier_order.customer_name'] }}",
+                        "variables_schema": {"entity_id": "entity.te_supplier_order"},
+                    },
+                },
+            )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertEqual(body.get("rendered_subject"), "Draft SO-1001")
+        self.assertIn("Northwind", body.get("rendered_html", ""))
+        self.assertNotIn("te_purchase_order", body.get("rendered_html", ""))
 
     def test_email_template_preview_uses_rich_render_context(self) -> None:
         client = TestClient(main.app)
@@ -1894,6 +2043,48 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(preview_res.status_code, 200, body)
         self.assertIn("pdf_base64", body)
         self.assertEqual(captured.get("html"), "<p></p>")
+
+    def test_document_template_preview_falls_back_to_draft_entity_when_sample_entity_missing(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "Purchase Order",
+                    "description": "",
+                    "html": "<h1>{{ record['te_purchase_order.po_number'] }}</h1>",
+                    "filename_pattern": "po-{{ record['te_purchase_order.po_number'] }}",
+                    "variables_schema": {"entity_id": "entity.te_purchase_order"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        fake_pdf = b"%PDF-1.4\npreview\n%%EOF"
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _template_manager_actor()),
+            patch.object(main, "using_supabase_storage", lambda: True),
+            patch.object(main, "render_pdf", lambda html, paper_size, margins, header_html, footer_html: fake_pdf),
+        ):
+            preview_res = client.post(
+                f"/docs/templates/{template_id}/preview",
+                json={
+                    "draft": {
+                        **created["template"],
+                        "html": "<h1>{{ record['te_supplier_order.order_number'] }}</h1>",
+                        "filename_pattern": "supplier-order-{{ record['te_supplier_order.order_number'] }}",
+                        "variables_schema": {"entity_id": "entity.te_supplier_order"},
+                    },
+                    "sample": {
+                        "record": {
+                            "te_supplier_order.order_number": "SO-1001",
+                        },
+                    },
+                },
+            )
+
+        body = preview_res.json()
+        self.assertEqual(preview_res.status_code, 200, body)
+        self.assertEqual(body.get("filename"), "supplier-order-SO-1001.pdf")
 
     def test_document_template_preview_attachment_download_allows_template_manager_without_records_read(self) -> None:
         client = TestClient(main.app)

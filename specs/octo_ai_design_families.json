@@ -71,16 +71,25 @@
     "default_list_mode": "list",
     "preferred_views": ["list", "form", "kanban", "graph"],
     "purpose_name_rules": [
-      {"match_any": ["instagram influencer", "instagram influencers", "influencer", "influencers", "creator outreach", "influencer outreach"], "name": "Influencers"}
+      {"match_any": ["instagram influencer", "instagram influencers", "influencer", "influencers", "creator outreach", "influencer outreach", "brand ambassador", "brand ambassadors", "creator partner", "creator partners", "affiliate partner", "affiliate partners", "ugc creator", "ugc creators"], "name": "Influencers"}
     ],
-    "detect_any": ["instagram influencer", "instagram influencers", "creator outreach", "influencer outreach", "creator seeding", "instagram handle", "creator handle", "affiliate code", "coupon code"],
+    "detect_any": ["instagram influencer", "instagram influencers", "creator outreach", "influencer outreach", "creator seeding", "instagram handle", "creator handle", "affiliate code", "coupon code", "brand ambassador", "brand ambassadors", "creator partner", "creator partners", "affiliate partner", "affiliate partners", "ugc creator", "ugc creators", "promo code", "referral code", "product seeding", "seeded products", "gifted products"],
     "detect_all": [
       ["instagram", "influencer"],
       ["influencer", "catalog"],
       ["influencer", "followers"],
       ["coupon", "followers"],
       ["coupon", "purchases"],
-      ["creator", "catalog"]
+      ["creator", "catalog"],
+      ["creator", "followers"],
+      ["creator", "purchases"],
+      ["ambassador", "catalog"],
+      ["ambassador", "coupon"],
+      ["ambassador", "followers"],
+      ["promo", "followers"],
+      ["promo", "purchases"],
+      ["seeding", "catalog"],
+      ["seeding", "products"]
     ],
     "primary_label": "Influencer Name",
     "summary_template": "{module_name} with creator profiles, coupon tracking, performance signals, and sent-product line items.",
@@ -179,6 +188,64 @@
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
     ]
   },
+  "recruiting": {
+    "icon_key": "lucide:Users",
+    "minimum_business_fields": 9,
+    "default_module_name": "Candidate Pipeline",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["candidate", "candidates", "applicant", "applicants", "recruit", "recruitment", "hiring", "interview"], "name": "Candidate Pipeline"}
+    ],
+    "detect_any": ["candidate", "candidates", "applicant", "applicants", "recruit", "recruitment", "hiring", "interview", "interviews", "offer", "resume", "cv", "recruiter", "expected start date"],
+    "detect_all": [
+      ["candidate", "interview"],
+      ["candidate", "offer"],
+      ["applicant", "interview"],
+      ["applicant", "resume"],
+      ["recruiter", "candidate"],
+      ["hiring", "offer"],
+      ["resume", "interview"]
+    ],
+    "primary_label": "Candidate Name",
+    "summary_template": "{module_name} with applicants, interviews, offer progression, recruiter ownership, and start-date tracking.",
+    "statuses": [
+      {"value": "applied", "label": "Applied"},
+      {"value": "screen", "label": "Screen"},
+      {"value": "interview", "label": "Interview"},
+      {"value": "offer", "label": "Offer"},
+      {"value": "hired", "label": "Hired"}
+    ],
+    "fields": [
+      {"suffix": "candidate_email", "type": "string", "label": "Candidate Email"},
+      {"suffix": "phone_number", "type": "string", "label": "Phone Number"},
+      {"suffix": "role_title", "type": "string", "label": "Role Title"},
+      {"suffix": "recruiter_name", "type": "string", "label": "Recruiter"},
+      {"suffix": "source", "type": "string", "label": "Source"},
+      {"suffix": "resume_url", "type": "string", "label": "Resume / CV"},
+      {"suffix": "interview_date", "type": "date", "label": "Interview Date"},
+      {"suffix": "offer_status", "type": "string", "label": "Offer Status"},
+      {"suffix": "expected_start_date", "type": "date", "label": "Expected Start Date"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "interview_round",
+        "entity_label": "Interview Round",
+        "nav_label": "Interview Rounds",
+        "related_title": "Interview Rounds",
+        "related_tab_label": "Interviews",
+        "fields": [
+          {"id": "stage_name", "type": "string", "label": "Stage", "required": true},
+          {"id": "scheduled_on", "type": "datetime", "label": "Scheduled On"},
+          {"id": "interviewer_name", "type": "string", "label": "Interviewer"},
+          {"id": "outcome", "type": "string", "label": "Outcome"},
+          {"id": "notes", "type": "text", "label": "Notes"}
+        ]
+      }
+    ]
+  },
   "pipeline": {
     "icon_key": "lucide:Workflow",
     "minimum_business_fields": 8,
@@ -243,15 +310,21 @@
     "default_list_mode": "list",
     "preferred_views": ["list", "form", "graph"],
     "purpose_name_rules": [
-      {"match_any": ["vehicle maintenance", "fleet maintenance"], "name": "Fleet Maintenance"}
+      {"match_any": ["vehicle maintenance", "fleet maintenance"], "name": "Fleet Maintenance"},
+      {"match_any": ["equipment maintenance", "asset maintenance", "tool maintenance", "maintenance register", "maintenance log", "service log"], "name": "Maintenance Register"}
     ],
-    "detect_any": ["odometer", "registration number", "service history", "next service"],
+    "detect_any": ["odometer", "registration number", "service history", "next service", "maintenance register", "maintenance log", "service log", "service history log"],
     "detect_all": [
       ["vehicle", "maintenance"],
       ["fleet", "maintenance"],
       ["vehicle", "service"],
       ["fleet", "service"],
-      ["asset", "maintenance"]
+      ["asset", "maintenance"],
+      ["equipment", "maintenance"],
+      ["tool", "maintenance"],
+      ["asset", "service history"],
+      ["equipment", "service history"],
+      ["tool", "service history"]
     ],
     "primary_label": "Vehicle Name",
     "summary_template": "{module_name} with vehicle records, maintenance history, service due dates, and condition tracking.",
@@ -288,7 +361,12 @@
     "purpose_name_rules": [
       {"match_any": ["purchase", "procurement", "vendor"], "name": "Purchase Requests"}
     ],
-    "detect_any": ["request", "approval", "expense", "purchase", "change", "maintenance", "onboarding task"],
+    "detect_any": ["request", "approval", "expense", "purchase", "change", "onboarding task", "maintenance request"],
+    "detect_all": [
+      ["maintenance", "request"],
+      ["repair", "request"],
+      ["service", "request"]
+    ],
     "primary_label": "Request",
     "summary_template": "{module_name} with request intake, approval flow, and due dates.",
     "statuses": [
@@ -314,13 +392,75 @@
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
     ]
   },
+  "service_desk": {
+    "icon_key": "lucide:LifeBuoy",
+    "minimum_business_fields": 9,
+    "default_module_name": "Service Desk",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["service desk", "help desk", "support desk", "ticketing", "ticket", "tickets", "case management"], "name": "Service Desk"}
+    ],
+    "detect_any": ["service desk", "help desk", "support desk", "ticket", "tickets", "ticketing", "support inbox", "customer support", "support queue", "case management", "sla response", "resolution notes", "assigned agent"],
+    "detect_all": [
+      ["service", "desk"],
+      ["help", "desk"],
+      ["support", "ticket"],
+      ["support", "queue"],
+      ["customer", "support"],
+      ["ticket", "sla"],
+      ["assigned", "agent"]
+    ],
+    "primary_label": "Ticket Number",
+    "summary_template": "{module_name} with customer tickets, agent ownership, SLA response tracking, and resolution workflow.",
+    "statuses": [
+      {"value": "new", "label": "New"},
+      {"value": "triaged", "label": "Triaged"},
+      {"value": "in_progress", "label": "In Progress"},
+      {"value": "waiting_on_customer", "label": "Waiting On Customer"},
+      {"value": "resolved", "label": "Resolved"},
+      {"value": "closed", "label": "Closed"}
+    ],
+    "fields": [
+      {"suffix": "customer_name", "type": "string", "label": "Customer"},
+      {"suffix": "customer_email", "type": "string", "label": "Customer Email"},
+      {"suffix": "issue_type", "type": "string", "label": "Issue Type"},
+      {"suffix": "channel", "type": "string", "label": "Channel"},
+      {"suffix": "priority", "type": "enum", "label": "Priority", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Urgent", "value": "urgent"}
+      ]},
+      {"suffix": "assigned_agent", "type": "user", "label": "Assigned Agent"},
+      {"suffix": "reported_at", "type": "datetime", "label": "Reported At"},
+      {"suffix": "response_due_at", "type": "datetime", "label": "Response Due At"},
+      {"suffix": "resolution_due_at", "type": "datetime", "label": "Resolution Due At"},
+      {"suffix": "resolution_summary", "type": "text", "label": "Resolution Summary"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "internal_note",
+        "entity_label": "Internal Note",
+        "nav_label": "Internal Notes",
+        "related_title": "Internal Notes",
+        "related_tab_label": "Internal Notes",
+        "fields": [
+          {"id": "noted_at", "type": "datetime", "label": "Noted At"},
+          {"id": "author_name", "type": "string", "label": "Author"},
+          {"id": "note_text", "type": "text", "label": "Note", "required": true}
+        ]
+      }
+    ]
+  },
   "compliance": {
     "icon_key": "lucide:ShieldCheck",
     "minimum_business_fields": 8,
     "default_module_name": "Compliance Tracker",
     "preferred_views": ["list", "form", "kanban", "graph"],
-    "detect_any": ["vendor compliance", "supplier compliance", "insurance expiry", "insurance renewal", "safety docs", "safety documents", "approved categories", "review notes"],
-    "detect_all": [["compliance", "vendor"], ["compliance", "supplier"], ["compliance", "insurance"], ["compliance", "certificate"], ["compliance", "onboarding"]],
+    "detect_any": ["vendor compliance", "supplier compliance", "insurance expiry", "insurance renewal", "safety docs", "safety documents", "approved categories", "review notes", "supplier onboarding", "vendor onboarding", "certificate expiry", "certificate renewal", "document expiry", "documents approved", "approved trades", "approved categories", "next review date"],
+    "detect_all": [["compliance", "vendor"], ["compliance", "supplier"], ["compliance", "insurance"], ["compliance", "certificate"], ["compliance", "onboarding"], ["supplier", "insurance"], ["supplier", "certificate"], ["supplier", "expiry"], ["vendor", "expiry"], ["onboarding", "certificate"], ["onboarding", "insurance"]],
     "primary_label": "Compliance Item",
     "summary_template": "{module_name} with document expiry, onboarding checks, approvals, and review tracking.",
     "statuses": [
@@ -377,17 +517,35 @@
     "minimum_business_fields": 8,
     "default_module_name": "Incident Tracking",
     "preferred_views": ["list", "form", "kanban", "graph"],
-    "detect_any": ["incident", "safety", "audit finding", "finding", "quality audit", "audit action"],
+    "purpose_name_rules": [
+      {"match_any": ["incident", "incident log", "incident register", "audit finding", "corrective action", "corrective actions", "near miss", "near-miss"], "name": "Incident Tracking"}
+    ],
+    "detect_any": ["incident", "incident log", "incident register", "safety incident", "audit finding", "finding", "quality audit", "audit action", "corrective action", "corrective actions", "non conformance", "non-conformance", "root cause analysis", "follow up action", "near miss", "near-miss", "closeout summary", "closure date"],
+    "detect_all": [
+      ["audit", "finding"],
+      ["corrective", "action"],
+      ["root", "cause"],
+      ["incident", "severity"],
+      ["non", "conformance"],
+      ["near", "miss"],
+      ["closure", "date"]
+    ],
     "primary_label": "Title",
     "summary_template": "{module_name} with incident lifecycle, severity, and follow-up tracking.",
     "statuses": [
-      {"value": "open", "label": "Open"},
+      {"value": "reported", "label": "Reported"},
       {"value": "investigating", "label": "Investigating"},
-      {"value": "contained", "label": "Contained"},
+      {"value": "corrective_action_pending", "label": "Corrective Action Pending"},
       {"value": "closed", "label": "Closed"}
     ],
     "fields": [
       {"suffix": "reported_on", "type": "date", "label": "Reported On"},
+      {"suffix": "incident_type", "type": "enum", "label": "Incident Type", "options": [
+        {"label": "Incident", "value": "incident"},
+        {"label": "Near Miss", "value": "near_miss"},
+        {"label": "Audit Finding", "value": "audit_finding"},
+        {"label": "Non-Conformance", "value": "non_conformance"}
+      ]},
       {"suffix": "severity", "type": "enum", "label": "Severity", "options": [
         {"label": "Low", "value": "low"},
         {"label": "Medium", "value": "medium"},
@@ -398,6 +556,10 @@
       {"suffix": "reported_by", "type": "string", "label": "Reported By"},
       {"suffix": "root_cause", "type": "text", "label": "Root Cause"},
       {"suffix": "follow_up", "type": "text", "label": "Follow Up"},
+      {"suffix": "corrective_action_owner", "type": "user", "label": "Corrective Action Owner"},
+      {"suffix": "corrective_due_date", "type": "date", "label": "Corrective Due Date"},
+      {"suffix": "closeout_summary", "type": "text", "label": "Closeout Summary"},
+      {"suffix": "closed_on", "type": "date", "label": "Closed On"},
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
     ]
   },
@@ -467,6 +629,73 @@
       {"suffix": "sprint_name", "type": "string", "label": "Sprint"},
       {"suffix": "notes", "type": "text", "label": "Notes"},
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ]
+  },
+  "field_service": {
+    "icon_key": "lucide:Wrench",
+    "minimum_business_fields": 9,
+    "default_module_name": "Work Orders",
+    "default_list_mode": "kanban",
+    "preferred_views": ["list", "form", "kanban", "calendar", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["work order", "work orders", "field service", "service operations", "site visit", "service visit"], "name": "Work Orders"},
+      {"match_any": ["dispatch", "dispatch board", "service dispatch", "route board", "route planning"], "name": "Dispatch"}
+    ],
+    "detect_any": ["work order", "work orders", "field service", "service operations", "site visit", "site visits", "service visit", "service visits", "technician scheduling", "customer visit", "customer visits", "job notes", "service report", "completion status", "dispatch", "dispatch board", "service dispatch", "route board", "route planning", "daily routes", "route stops", "dispatch notes", "technician assignment", "crew assignment", "run sheet"],
+    "detect_all": [
+      ["work", "order"],
+      ["service", "technician"],
+      ["service", "visit"],
+      ["site", "visit"],
+      ["technician", "scheduling"],
+      ["job", "notes"],
+      ["service", "report"],
+      ["dispatch", "board"],
+      ["route", "board"],
+      ["route", "planning"],
+      ["technician", "assignment"],
+      ["crew", "assignment"]
+    ],
+    "primary_label": "Work Order Number",
+    "summary_template": "{module_name} with work orders, technician scheduling, visit details, job notes, and completion tracking.",
+    "statuses": [
+      {"value": "new", "label": "New"},
+      {"value": "scheduled", "label": "Scheduled"},
+      {"value": "in_progress", "label": "In Progress"},
+      {"value": "completed", "label": "Completed"},
+      {"value": "cancelled", "label": "Cancelled"}
+    ],
+    "fields": [
+      {"suffix": "customer_name", "type": "string", "label": "Customer"},
+      {"suffix": "site_address", "type": "string", "label": "Site Address"},
+      {"suffix": "technician_name", "type": "string", "label": "Technician"},
+      {"suffix": "service_type", "type": "string", "label": "Service Type"},
+      {"suffix": "priority", "type": "enum", "label": "Priority", "options": [
+        {"label": "Low", "value": "low"},
+        {"label": "Medium", "value": "medium"},
+        {"label": "High", "value": "high"},
+        {"label": "Urgent", "value": "urgent"}
+      ]},
+      {"suffix": "scheduled_start", "type": "datetime", "label": "Scheduled Start"},
+      {"suffix": "scheduled_end", "type": "datetime", "label": "Scheduled End"},
+      {"suffix": "completion_notes", "type": "text", "label": "Completion Notes"},
+      {"suffix": "customer_email", "type": "string", "label": "Customer Email"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "job_note",
+        "entity_label": "Job Note",
+        "nav_label": "Job Notes",
+        "related_title": "Job Notes",
+        "related_tab_label": "Job Notes",
+        "fields": [
+          {"id": "noted_at", "type": "datetime", "label": "Noted At"},
+          {"id": "author_name", "type": "string", "label": "Author"},
+          {"id": "note_text", "type": "text", "label": "Note", "required": true},
+          {"id": "attachments", "type": "attachments", "label": "Attachments"}
+        ]
+      }
     ]
   },
   "workflow": {

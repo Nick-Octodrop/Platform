@@ -16,6 +16,8 @@ import {
 } from "../api.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
+import { hasPendingPlanQuestion, latestPlanQuestionPrompt } from "../pages/octoAiSessionState.js";
+import { summarizePlanOperations } from "../pages/octoAiPlanPreview.js";
 
 function questionKind(meta) {
   return meta && typeof meta === "object" && typeof meta.kind === "string" ? meta.kind : "text";
@@ -332,10 +334,14 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     return "";
   }, [latestPlan]);
   const activeDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
-  const hasPendingQuestion = Boolean(activeQuestion);
+  const hasPendingQuestion = useMemo(() => hasPendingPlanQuestion(latestPlan, latestPatchset), [latestPatchset, latestPlan]);
   const structuredPlan = useMemo(() => {
     const plan = latestPlan?.plan_json?.plan;
     return plan && typeof plan === "object" && plan.structured_plan && typeof plan.structured_plan === "object" ? plan.structured_plan : null;
+  }, [latestPlan]);
+  const latestPlanOps = useMemo(() => {
+    const direct = Array.isArray(latestPlan?.plan_json?.plan?.candidate_operations) ? latestPlan.plan_json.plan.candidate_operations : [];
+    return direct.filter((op) => op && typeof op === "object");
   }, [latestPlan]);
   const latestAdvisories = useMemo(() => {
     const advisories = latestPlan?.plan_json?.plan?.advisories;
@@ -358,11 +364,14 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   }, [data.messages]);
 
   const changeSummaries = useMemo(
-    () =>
-      Array.isArray(structuredPlan?.changes)
+    () => {
+      const exactChanges = summarizePlanOperations(latestPlanOps);
+      if (exactChanges.length > 0) return exactChanges;
+      return Array.isArray(structuredPlan?.changes)
         ? structuredPlan.changes.map((item) => item?.summary).filter((item) => typeof item === "string" && item.trim())
-        : [],
-    [structuredPlan],
+        : [];
+    },
+    [latestPlanOps, structuredPlan],
   );
   const detailSections = useMemo(
     () =>
@@ -535,6 +544,9 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     if (!planId) return;
 
     let patchset = latestPatchsetForPlan(payload, planId);
+    if (hasPendingPlanQuestion(plan, patchset)) {
+      throw new Error(latestPlanQuestionPrompt(plan) || t("settings.octo_ai.sandbox_dock.errors.apply_latest_plan"));
+    }
     if (patchset?.status === "applied") {
       refreshSandboxWorkspace();
       return;
@@ -543,6 +555,11 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     if (!patchset || patchset.plan_id !== planId) {
       await generateOctoAiPatchset(sessionId, { plan_id: planId });
       payload = await refreshSession();
+      const refreshedPlan = latestPlanFromPayload(payload);
+      const refreshedPatchset = latestPatchsetForPlan(payload, typeof refreshedPlan?.id === "string" ? refreshedPlan.id : planId);
+      if (hasPendingPlanQuestion(refreshedPlan, refreshedPatchset)) {
+        throw new Error(latestPlanQuestionPrompt(refreshedPlan) || t("settings.octo_ai.sandbox_dock.errors.apply_latest_plan"));
+      }
       patchset = latestPatchsetForPlan(payload, planId);
     }
 
@@ -642,7 +659,8 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     setBusy(true);
     setError("");
     try {
-      await applyLatestPlanToSandbox();
+      const payload = (await refreshSession()) || data;
+      await applyLatestPlanToSandbox(payload);
     } catch (err) {
       setError(err?.message || t("settings.octo_ai.sandbox_dock.errors.apply_latest_plan"));
     } finally {

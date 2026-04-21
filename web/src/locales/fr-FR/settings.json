@@ -2247,6 +2247,7 @@
       },
       "actions": {
         "apply_to_sandbox": "Appliquer au sandbox",
+        "save_detail": "Enregistrer le detail",
         "view_scope": "Voir la portee",
         "answer_in_chat": "Repondre dans le chat",
         "publish_selected_revision": "Publier la revision selectionnee",
@@ -2267,6 +2268,7 @@
       },
       "hints": {
         "confirm_plan": "Approuvez le plan, validez la revision, puis appliquez-la au sandbox.",
+        "save_detail": "Enregistrez le detail manquant directement depuis les champs en ligne.",
         "answer_in_chat": "Cette demande a besoin d’un detail supplementaire avant de pouvoir etre appliquee.",
         "view_scope": "Consultez la portee actuelle pendant que vous affinez encore la demande dans le chat.",
         "apply_revision": "Appliquez la revision validee et actualisez automatiquement l’aperçu.",
