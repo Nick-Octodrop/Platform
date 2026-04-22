@@ -63,15 +63,50 @@ function stringifyPretty(value) {
 
 function summarizeChanges(calls = [], opsByModule = [], t = null) {
   const translate = (key, values, fallback) => (typeof t === "function" ? t(key, values) : fallback);
+  const humanizeTail = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const tail = raw.split(".").pop() || raw;
+    return tail.replace(/[_-]+/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+  };
+  const summarizeFieldLabels = (fields = []) => {
+    const labels = (Array.isArray(fields) ? fields : [])
+      .filter((field) => field && typeof field === "object")
+      .map((field) => String(field.label || humanizeTail(field.id || "")).trim())
+      .filter(Boolean)
+      .filter((label, index, items) => items.indexOf(label) === index);
+    if (labels.length === 0) return "";
+    const visible = labels.slice(0, 6);
+    return labels.length > 6 ? `${visible.join(", ")}, +${labels.length - 6} more` : visible.join(", ");
+  };
   const summary = [];
   calls.forEach((call) => {
     if (!call || typeof call !== "object") return;
     const tool = call.tool;
-    const entityId = call.entity_id || call.args?.entity_id;
-    if (tool === "ensure_entity" && entityId) summary.push(translate("settings.studio.change_log.added_entity", { entityId }, `Added entity: ${entityId}`));
-    if (tool === "ensure_entity_pages" && entityId) summary.push(translate("settings.studio.change_log.ensured_pages_for", { entityId }, `Ensured pages for: ${entityId}`));
+    const entityDef = (call.entity && typeof call.entity === "object" ? call.entity : null) || (call.args?.entity && typeof call.args.entity === "object" ? call.args.entity : null);
+    const entityId = call.entity_id || call.args?.entity_id || entityDef?.id;
+    if (tool === "ensure_entity" && entityId) {
+      const fieldSummary = summarizeFieldLabels(entityDef?.fields || []);
+      if (fieldSummary) {
+        summary.push(`Configure ${humanizeTail(entityId)} with fields for ${fieldSummary}.`);
+      } else {
+        summary.push(translate("settings.studio.change_log.added_entity", { entityId }, `Added entity: ${entityId}`));
+      }
+    }
+    if (tool === "ensure_entity_pages" && entityId) {
+      summary.push(`Create list and form pages for ${humanizeTail(entityId)}.`);
+    }
     if (tool === "ensure_nav") summary.push(translate("settings.studio.change_log.ensured_app_navigation", null, "Ensured app navigation"));
-    if (tool === "ensure_relation") summary.push(translate("settings.studio.change_log.added_relation", null, "Added relation"));
+    if (tool === "ensure_relation") {
+      const relation = (call.relation && typeof call.relation === "object" ? call.relation : null) || (call.args?.relation && typeof call.args.relation === "object" ? call.args.relation : null);
+      const fromId = relation?.from || relation?.from_entity || relation?.from_field;
+      const toId = relation?.to || relation?.to_entity || relation?.to_field;
+      if (fromId && toId) {
+        summary.push(`Link ${humanizeTail(fromId)} to ${humanizeTail(toId)}.`);
+      } else {
+        summary.push(translate("settings.studio.change_log.added_relation", null, "Added relation"));
+      }
+    }
     if (tool === "ensure_workflow") summary.push(translate("settings.studio.change_log.added_workflow", null, "Added workflow"));
     if (tool === "ensure_ui_pattern") summary.push(translate("settings.studio.change_log.applied_ui_pattern", null, "Applied UI pattern"));
     if (tool === "ensure_actions_for_status") summary.push(translate("settings.studio.change_log.ensured_status_actions", null, "Ensured status actions"));

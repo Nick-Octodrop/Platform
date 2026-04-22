@@ -344,6 +344,134 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertIn("compiled_ok", validation)
 
+    def test_document_template_ai_plan_tolerates_round_filter_on_numeric_field_without_sample(self) -> None:
+        client = TestClient(main.app)
+        fake_quote_entity = {
+            "id": "entity.biz_quote",
+            "label": "Quote",
+            "fields": [
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                {"id": "biz_quote.total_amount", "label": "Total Amount", "type": "number"},
+            ],
+        }
+
+        def fake_find_entity(entity_id):
+            if entity_id in {"entity.biz_quote", "biz_quote"}:
+                return fake_quote_entity
+            return None
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "Quote Template",
+                    "description": "",
+                    "filename_pattern": "quote-template",
+                    "html": "<p>Quote</p>",
+                    "variables_schema": {"entity_id": "entity.biz_quote"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Prepared the quote template.",
+                        "draft": {
+                            "name": "Quote Template",
+                            "description": "Customer-facing quote PDF.",
+                            "filename_pattern": "Quote - {{ record['biz_quote.quote_number'] }}",
+                            "html": "<p>{{ record['biz_quote.total_amount']|round(2) }}</p>",
+                            "variables_schema": {"entity_id": "entity.biz_quote"},
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_find_entity_def_global", fake_find_entity),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/documents/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Create me a document template for sending quote to customer.",
+                        "draft": created["template"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertIn("|round(2)", body.get("draft", {}).get("html", ""))
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+            self.assertEqual(validation.get("errors"), [], validation)
+
+    def test_document_template_ai_plan_injects_workspace_logo_masthead_when_prompt_requests_logo(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "Customer Quote Document",
+                    "description": "",
+                    "filename_pattern": "customer-quote",
+                    "html": "<section><h1>Customer Quote</h1><p>Quote details</p></section>",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Added the company logo to the Customer Quote Document template.",
+                        "draft": {
+                            "name": "Customer Quote Document",
+                            "description": "Customer-facing quote PDF.",
+                            "filename_pattern": "customer-quote",
+                            "html": "<section><h1>Customer Quote</h1><p>Quote details</p></section>",
+                            "paper_size": "A4",
+                            "margin_top": "12mm",
+                            "margin_right": "12mm",
+                            "margin_bottom": "12mm",
+                            "margin_left": "12mm",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_branding_context_for_org", lambda _org_id: {
+                    "workspace": {"logo_url": "https://example.com/logo.png", "name": "Octodrop"},
+                    "company": {"logo_url": "https://example.com/logo.png", "name": "Octodrop"},
+                    "branding": {"logo_url": "https://example.com/logo.png"},
+                }),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/documents/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Add my logo to this customer quote document.",
+                        "draft": created["template"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            draft_html = body.get("draft", {}).get("html", "")
+            self.assertIn("workspace.logo_url", draft_html)
+            self.assertIn("<img src=", draft_html)
+            self.assertTrue(
+                any("Inserted the workspace logo masthead" in str(item) for item in (body.get("assumptions") or [])),
+                body,
+            )
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
     def test_document_template_ai_plan_context_exposes_lookup_aliases_and_runtime_examples(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -1746,6 +1874,130 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         )
         self.assertEqual(body.get("warnings"), ["Send from the correct mailbox before going live."])
 
+    def test_email_template_ai_plan_applies_workspace_branding_to_quote_email(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Quote Email Template",
+                    "description": "",
+                    "subject": "Quote",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Enhanced the branding of the Quote Email Template.",
+                        "draft": {
+                            "name": "Quote Email Template",
+                            "description": "Send customer quotes.",
+                            "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                            "body_html": (
+                                "<div style=\"background:#fff7ed;border:1px solid #fed7aa;border-radius:18px;padding:24px;\">"
+                                "<h1 style=\"color:#ea580c;\">Quote Details</h1>"
+                                "<p>Thank you for considering our services.</p>"
+                                "</div>"
+                            ),
+                            "body_text": "Quote details",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_branding_context_for_org", lambda _org_id: {
+                    "workspace": {"logo_url": "https://example.com/logo.png", "name": "Mekka", "primary_color": "#2563eb", "colors": {"primary": "#2563eb"}},
+                    "company": {"logo_url": "https://example.com/logo.png", "name": "Mekka", "primary_color": "#2563eb", "colors": {"primary": "#2563eb"}},
+                    "branding": {"logo_url": "https://example.com/logo.png", "primary_color": "#2563eb", "colors": {"primary": "#2563eb"}},
+                }),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/email/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Apply workspace branding more effectively to this email template \"Quote Email Template\" while keeping it production-ready and consistent with the existing structure.",
+                        "draft": created["template"],
+                    },
+                )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        draft_html = body.get("draft", {}).get("body_html", "")
+        self.assertIn("workspace.logo_url", draft_html)
+        self.assertIn("#2563eb", draft_html.lower())
+        self.assertNotIn("#ea580c", draft_html.lower())
+        self.assertNotIn("#fed7aa", draft_html.lower())
+        self.assertTrue(
+            any("Applied workspace logo and primary brand color" in str(item) for item in (body.get("assumptions") or [])),
+            body,
+        )
+
+    def test_email_template_ai_plan_replaces_dead_quote_cta_with_attachment_note(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/email/templates",
+                json={
+                    "name": "Quote Email Template",
+                    "description": "",
+                    "subject": "Quote",
+                    "body_html": "<p>Hello</p>",
+                    "body_text": "Hello",
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Created a new quote email template for customers.",
+                        "draft": {
+                            "name": "Quote Email Template",
+                            "description": "Send customer quotes.",
+                            "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                            "body_html": (
+                                "<div>"
+                                "<p>Please review your quote.</p>"
+                                "<a href=\"#\" style=\"display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;\">View Your Quote</a>"
+                                "</div>"
+                            ),
+                            "body_text": "Please review your quote.",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/email/templates/{template_id}/ai/plan",
+                    json={
+                        "prompt": "Create me a new quote email template to send customers for their quotes.",
+                        "draft": created["template"],
+                    },
+                )
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        draft_html = body.get("draft", {}).get("body_html", "")
+        self.assertNotIn("View Your Quote", draft_html)
+        self.assertIn("Your quote PDF is attached to this email.", draft_html)
+        self.assertIn("Your quote PDF is attached to this email.", body.get("draft", {}).get("body_text", ""))
+        self.assertTrue(
+            any("Replaced a placeholder quote CTA" in str(item) for item in (body.get("assumptions") or [])),
+            body,
+        )
+
     def test_email_template_preview_uses_draft_override(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -2006,6 +2258,36 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         undefined = set(validation.get("undefined") or [])
         self.assertNotIn("billing_invoice.contact_id_label", undefined, validation)
 
+    def test_document_template_draft_validation_tolerates_round_filter_on_numeric_placeholder_without_sample(self) -> None:
+        fake_quote_entity = {
+            "id": "entity.biz_quote",
+            "label": "Quote",
+            "fields": [
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                {"id": "biz_quote.total_amount", "label": "Total Amount", "type": "number"},
+            ],
+        }
+
+        def fake_find_entity(entity_id):
+            if entity_id in {"entity.biz_quote", "biz_quote"}:
+                return fake_quote_entity
+            return None
+
+        with patch.object(main, "_find_entity_def_global", fake_find_entity):
+            validation = main._artifact_ai_validate_doc_template_draft(
+                {
+                    "name": "Quote Template",
+                    "filename_pattern": "quote_{{ record['biz_quote.quote_number'] }}",
+                    "html": "<p>{{ record['biz_quote.total_amount']|round(2) }}</p>",
+                    "variables_schema": {"entity_id": "entity.biz_quote"},
+                }
+            )
+
+        self.assertTrue(validation.get("compiled_ok"), validation)
+        self.assertEqual(validation.get("errors"), [], validation)
+        undefined = set(validation.get("undefined") or [])
+        self.assertNotIn("biz_quote.total_amount", undefined, validation)
+
     def test_document_template_preview_tolerates_missing_lookup_label_alias_in_sample_record(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -2133,6 +2415,72 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         body = preview_res.json()
         self.assertEqual(preview_res.status_code, 200, body)
         self.assertEqual(body.get("filename"), "supplier-order-SO-1001.pdf")
+
+    def test_document_template_preview_renders_selected_record_values_from_store(self) -> None:
+        client = TestClient(main.app)
+        fake_quote_entity = {
+            "id": "entity.biz_quote",
+            "label": "Quote",
+            "fields": [
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+            ],
+        }
+
+        def fake_find_entity(_request, entity_id):
+            if entity_id in {"entity.biz_quote", "biz_quote"}:
+                return ("entity.biz_quote", fake_quote_entity)
+            return None
+
+        def fake_find_entity_global(entity_id):
+            if entity_id in {"entity.biz_quote", "biz_quote"}:
+                return fake_quote_entity
+            return None
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "Customer Quote",
+                    "description": "",
+                    "html": "<h1>{{ record['biz_quote.quote_number'] }}</h1>",
+                    "filename_pattern": "quote-{{ record['biz_quote.quote_number'] }}",
+                    "variables_schema": {"entity_id": "entity.biz_quote"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        record = main.generic_records.create(
+            "entity.biz_quote",
+            {"biz_quote.quote_number": "Q-1001"},
+        )
+        captured: dict[str, object] = {}
+        fake_pdf = b"%PDF-1.4\npreview\n%%EOF"
+
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _template_manager_actor()),
+            patch.object(main, "_find_entity_def", fake_find_entity),
+            patch.object(main, "_find_entity_def_global", fake_find_entity_global),
+            patch.object(main, "using_supabase_storage", lambda: True),
+            patch.object(
+                main,
+                "render_pdf",
+                lambda html, paper_size, margins, header_html, footer_html: (captured.setdefault("html", html), fake_pdf)[1],
+            ),
+        ):
+            preview_res = client.post(
+                f"/docs/templates/{template_id}/preview",
+                json={
+                    "sample": {
+                        "entity_id": "entity.biz_quote",
+                        "record_id": record["id"],
+                    },
+                },
+            )
+
+        body = preview_res.json()
+        self.assertEqual(preview_res.status_code, 200, body)
+        self.assertIn("pdf_base64", body)
+        self.assertEqual(captured.get("html"), "<h1>Q-1001</h1>")
 
     def test_document_template_preview_attachment_download_allows_template_manager_without_records_read(self) -> None:
         client = TestClient(main.app)
@@ -2648,6 +2996,384 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertIn("\"requested_focus\": \"validation\"", context_text)
         self.assertEqual((result.get("planner_state") or {}).get("requested_focus"), "validation")
 
+    def test_ai_artifact_plan_result_preserves_business_summary_for_scoped_automation_prompt(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "auto-1",
+            "name": "Reminder",
+            "description": "",
+            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+            "steps": [self._seed_automation_step()],
+            "status": "draft",
+        }
+        expected_draft = {
+            "name": "Reminder",
+            "description": "Wait two days before emailing overdue customers.",
+            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+            "steps": [self._seed_automation_step()],
+            "status": "draft",
+        }
+
+        with (
+            patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: {"event_catalog": [], "entities": []}),
+            patch.object(
+                main,
+                "_openai_chat_completion",
+                lambda *args, **kwargs: _fake_response(
+                    {
+                        "summary": "Revise the overdue reminder automation to wait two days before emailing the customer.",
+                        "draft": expected_draft,
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                ),
+            ),
+        ):
+            result = main._ai_artifact_plan_result(
+                "automation",
+                "auto-1",
+                "Wait two days before emailing overdue customers.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        requested_lines = result.get("requested_change_lines") or []
+        self.assertIn(
+            "Revise the overdue reminder automation to wait two days before emailing the customer.",
+            requested_lines,
+        )
+        self.assertIn(
+            main._ai_automation_summary_line({"op": "update_automation_record", "automation": expected_draft}),
+            requested_lines,
+        )
+
+    def test_ai_artifact_plan_result_adds_automation_diff_lines(self) -> None:
+        email_template = main.email_store.create_template(
+            {
+                "name": "Order Follow Up",
+                "subject": "Follow Up",
+                "body_html": "<p>Follow Up</p>",
+                "body_text": "Follow Up",
+            }
+        )
+        document_template = main.doc_template_store.create(
+            {
+                "name": "Completion Pack",
+                "filename_pattern": "completion-pack",
+                "html": "<p>Completion Pack</p>",
+            }
+        )
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "auto-1",
+            "name": "Reminder",
+            "description": "",
+            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+            "steps": [
+                {
+                    "id": "notify_team",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {"recipient_user_id": "user-1", "title": "Automation", "body": "Body"},
+                },
+                {
+                    "id": "email_customer",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {"to_internal_emails": ["ops@example.com"], "subject": "Hi", "body_text": "Hello"},
+                },
+                {
+                    "id": "doc_step",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {},
+                },
+            ],
+            "status": "draft",
+        }
+        expected_draft = {
+            "name": "Reminder",
+            "description": "Notify and email customers when a job completes.",
+            "trigger": {
+                "kind": "event",
+                "event_types": ["record.updated"],
+                "filters": [{"path": "status", "op": "eq", "value": "completed"}],
+            },
+            "steps": [
+                {
+                    "id": "notify_team",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {
+                        "recipient_user_id": "user-1",
+                        "recipient_user_ids": ["user-1", "user-2"],
+                        "title": "Automation",
+                        "body": "Body",
+                    },
+                },
+                {
+                    "id": "email_customer",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {
+                        "template_id": email_template["id"],
+                        "to_field_ids": ["job.customer_email"],
+                    },
+                },
+                {
+                    "id": "doc_step",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {"template_id": document_template["id"]},
+                },
+            ],
+            "status": "draft",
+        }
+
+        with patch.object(
+            main,
+            "_openai_chat_completion",
+            lambda *args, **kwargs: _fake_response(
+                {
+                    "summary": "Revise the completion workflow to notify the team, email the customer, and generate the completion pack when the job is completed.",
+                    "draft": expected_draft,
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            ),
+        ):
+            result = main._ai_artifact_plan_result(
+                "automation",
+                "auto-1",
+                "Notify the team and email the customer when the job is completed.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        requested_lines = result.get("requested_change_lines") or []
+        self.assertIn(
+            "Run when Job records change to Completed instead of when records are updated.",
+            requested_lines,
+        )
+        self.assertIn("Send workspace notifications to 2 users instead of a workspace notification to 1 user.", requested_lines)
+        self.assertIn(
+            f"Use email template '{email_template['name']}' for the email step instead of inline email content.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Send email to the Customer Email field instead of ops@example.com.",
+            requested_lines,
+        )
+        self.assertIn(f"Use document template '{document_template['name']}' for the document step.", requested_lines)
+        self.assertIn(
+            main._ai_automation_summary_line({"op": "update_automation_record", "automation": expected_draft}),
+            requested_lines,
+        )
+
+    def test_ai_artifact_plan_result_adds_email_diff_lines_when_summary_is_weak(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "email-1",
+            "name": "Order Confirmation",
+            "description": "",
+            "subject": "Order received",
+            "body_html": "<p>Thanks.</p>",
+            "body_text": "Thanks.",
+            "variables_schema": {"entity_id": "entity.quote"},
+        }
+        expected_draft = {
+            **current,
+            "subject": "Your order is confirmed",
+            "body_html": "<p>Thanks. We will send dispatch timing once your order is packed.</p>",
+            "body_text": "Thanks. We will send dispatch timing once your order is packed.",
+            "variables_schema": {"entity_id": "entity.sales_order"},
+        }
+
+        with patch.object(
+            main,
+            "_openai_chat_completion",
+            lambda *args, **kwargs: _fake_response(
+                {
+                    "summary": "Draft updated.",
+                    "draft": expected_draft,
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            ),
+        ):
+            result = main._ai_artifact_plan_result(
+                "email_template",
+                "email-1",
+                "Use sales order wording and dispatch timing.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        requested_lines = result.get("requested_change_lines") or []
+        self.assertIn(
+            "Retarget the template from Quote to Sales Order records.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Change the email subject from 'Order received' to 'Your order is confirmed'.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Change the email body from 'Thanks.' to 'Thanks. We will send dispatch timing once your order is packed.'.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Update email template 'Order Confirmation' for Sales Order records with subject 'Your order is confirmed'.",
+            requested_lines,
+        )
+
+    def test_ai_artifact_plan_result_adds_automation_message_diff_lines(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "auto-2",
+            "name": "Reminder",
+            "description": "",
+            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+            "steps": [
+                {
+                    "id": "notify_team",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {"recipient_user_id": "user-1", "title": "Automation", "body": "Old body"},
+                },
+                {
+                    "id": "email_customer",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {"to": "ops@example.com", "subject": "Old subject", "body_text": "Old email body"},
+                },
+                {
+                    "id": "doc_step",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {"title": "Old pack", "filename_pattern": "old-pack"},
+                },
+            ],
+            "status": "draft",
+        }
+        expected_draft = {
+            **current,
+            "steps": [
+                {
+                    "id": "notify_team",
+                    "kind": "action",
+                    "action_id": "system.notify",
+                    "inputs": {"recipient_user_id": "user-1", "title": "Job complete", "body": "New body"},
+                },
+                {
+                    "id": "email_customer",
+                    "kind": "action",
+                    "action_id": "system.send_email",
+                    "inputs": {"to": "ops@example.com", "subject": "New subject", "body_text": "New email body"},
+                },
+                {
+                    "id": "doc_step",
+                    "kind": "action",
+                    "action_id": "system.generate_document",
+                    "inputs": {"title": "New pack", "filename_pattern": "new-pack"},
+                },
+            ],
+        }
+
+        with patch.object(
+            main,
+            "_openai_chat_completion",
+            lambda *args, **kwargs: _fake_response(
+                {
+                    "summary": "Draft updated.",
+                    "draft": expected_draft,
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            ),
+        ):
+            result = main._ai_artifact_plan_result(
+                "automation",
+                "auto-2",
+                "Refresh the completion wording.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        requested_lines = result.get("requested_change_lines") or []
+        self.assertIn("Change the notification title from 'Automation' to 'Job complete'.", requested_lines)
+        self.assertIn("Change the notification message from 'Old body' to 'New body'.", requested_lines)
+        self.assertIn("Change the email step subject from 'Old subject' to 'New subject'.", requested_lines)
+        self.assertIn("Change the email step body from 'Old email body' to 'New email body'.", requested_lines)
+        self.assertIn("Change the document title from 'Old pack' to 'New pack'.", requested_lines)
+        self.assertIn("Change the generated filename pattern from 'old-pack' to 'new-pack'.", requested_lines)
+        self.assertTrue(
+            any(
+                isinstance(line, str) and line.startswith("Update automation 'Reminder'")
+                for line in requested_lines
+            )
+        )
+
+    def test_ai_artifact_plan_result_adds_document_diff_lines_when_summary_is_weak(self) -> None:
+        request = SimpleNamespace(state=SimpleNamespace(actor=_superadmin_actor()))
+        current = {
+            "id": "doc-1",
+            "name": "Sales Order Summary",
+            "description": "",
+            "filename_pattern": "quote-summary",
+            "html": "<p>Quote summary</p>",
+            "variables_schema": {"entity_id": "entity.quote"},
+        }
+        expected_draft = {
+            **current,
+            "filename_pattern": "sales-order-summary",
+            "html": "<p>Sales order summary with fulfilment timing.</p>",
+            "variables_schema": {"entity_id": "entity.sales_order"},
+        }
+
+        with patch.object(
+            main,
+            "_openai_chat_completion",
+            lambda *args, **kwargs: _fake_response(
+                {
+                    "summary": "Draft updated.",
+                    "draft": expected_draft,
+                    "assumptions": [],
+                    "warnings": [],
+                }
+            ),
+        ):
+            result = main._ai_artifact_plan_result(
+                "document_template",
+                "doc-1",
+                "Use the sales order record and update the layout.",
+                current,
+                request,
+                _superadmin_actor(),
+            )
+
+        requested_lines = result.get("requested_change_lines") or []
+        self.assertIn(
+            "Retarget the template from Quote to Sales Order records.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Change the filename pattern from 'quote-summary' to 'sales-order-summary'.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Change the document content from 'Quote summary' to 'Sales order summary with fulfilment timing.'.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Update document template 'Sales Order Summary' for Sales Order records with filename pattern 'sales-order-summary'.",
+            requested_lines,
+        )
+
     def test_automation_ai_plan_returns_validated_draft(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -3024,6 +3750,37 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(len(calls), 1, calls)
         self.assertEqual(len(members), 1)
         self.assertEqual((options[0].get("hints") or {}).get("recipient_email"), "ops@example.com")
+
+    def test_automations_meta_uses_shared_member_request_helper(self) -> None:
+        client = TestClient(main.app)
+        helper_calls: list[str] = []
+
+        def fake_member_helper(request, workspace_id: str | None):
+            helper_calls.append(workspace_id or "")
+            return [
+                {
+                    "user_id": "user-1",
+                    "email": "ops@example.com",
+                    "full_name": "Ops",
+                    "role": "admin",
+                }
+            ]
+
+        def fail_direct_member_lookup(_workspace_id: str):
+            raise AssertionError("automations/meta should use _ai_workspace_members_for_request")
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()), patch.object(
+            main, "_ai_workspace_members_for_request", fake_member_helper
+        ), patch.object(main, "list_workspace_members", fail_direct_member_lookup):
+            res = client.get("/automations/meta")
+
+        body = res.json()
+        self.assertEqual(res.status_code, 200, body)
+        self.assertTrue(body.get("ok"), body)
+        self.assertEqual(helper_calls, ["default"], helper_calls)
+        members = body.get("members") or []
+        self.assertEqual(len(members), 1, members)
+        self.assertEqual(members[0].get("email"), "ops@example.com")
 
     def test_automation_ai_plan_normalizes_contact_email_recipient_to_field_source(self) -> None:
         client = TestClient(main.app)
@@ -5376,6 +6133,377 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertTrue(validation.get("compiled_ok"), validation)
 
+    def test_automation_ai_plan_maps_common_create_record_field_guesses_to_real_entity_fields(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Contact Named Nico Lead Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Create a CRM lead when a contact named Nico is created and notify me.",
+                        "draft": {
+                            "name": "Contact Named Nico Lead Handoff",
+                            "description": "",
+                            "trigger": {
+                                "kind": "event",
+                                "event_types": ["biz_contacts.record.biz_contact.created"],
+                                "filters": [{"path": "entity_id", "op": "eq", "value": "entity.biz_contact"}],
+                                "expr": {
+                                    "op": "eq",
+                                    "left": {"var": "trigger.record.fields.biz_contact.full_name"},
+                                    "right": {"literal": "Nico"},
+                                },
+                            },
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.notify",
+                                    "inputs": {
+                                        "recipient_user_ids": ["user_current"],
+                                        "title": "Nico contact created",
+                                        "body": "A new contact named Nico was created.",
+                                    },
+                                },
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.create_record",
+                                    "entity_id": "entity.crm_lead",
+                                    "data": {
+                                        "title": "Nico lead",
+                                        "contact_name": "{{trigger.record.fields.biz_contact.full_name}}",
+                                        "contact_email": "{{trigger.record.fields.biz_contact.email}}",
+                                        "company_id": "{{trigger.record.fields.biz_contact.company_id}}",
+                                    },
+                                },
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            fake_meta = {
+                "event_types": ["biz_contacts.record.biz_contact.created"],
+                "event_catalog": [
+                    {
+                        "id": "biz_contacts.record.biz_contact.created",
+                        "label": "Contact created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_contact",
+                    }
+                ],
+                "system_actions": [
+                    {"id": "system.notify", "label": "Notify"},
+                    {"id": "system.create_record", "label": "Create record"},
+                ],
+                "module_actions": [],
+                "members": [{"user_id": "user_current", "email": "nick@octodrop.com", "name": "Nick"}],
+                "current_user_id": "user_current",
+                "entities": [
+                    {
+                        "id": "entity.biz_contact",
+                        "label": "Contact",
+                        "fields": [
+                            {"id": "biz_contact.full_name", "label": "Full Name", "type": "string"},
+                            {"id": "biz_contact.email", "label": "Email", "type": "email"},
+                            {"id": "biz_contact.company_id", "label": "Company", "type": "lookup"},
+                        ],
+                    },
+                    {
+                        "id": "entity.crm_lead",
+                        "label": "CRM Lead",
+                        "fields": [
+                            {"id": "crm_lead.lead_title", "label": "Title", "type": "string"},
+                            {"id": "crm_lead.full_name", "label": "Contact Name", "type": "string"},
+                            {"id": "crm_lead.email", "label": "Contact Email", "type": "email"},
+                            {"id": "crm_lead.account_id", "label": "Company", "type": "lookup"},
+                        ],
+                    },
+                ],
+                "field_path_catalog": [
+                    {
+                        "entity_id": "entity.biz_contact",
+                        "fields": [
+                            {
+                                "field_id": "biz_contact.full_name",
+                                "label": "Full Name",
+                                "type": "string",
+                                "paths": [
+                                    "trigger.record.fields.biz_contact.full_name",
+                                    "trigger.before.fields.biz_contact.full_name",
+                                    "trigger.after.fields.biz_contact.full_name",
+                                ],
+                            },
+                            {
+                                "field_id": "biz_contact.email",
+                                "label": "Email",
+                                "type": "email",
+                                "paths": [
+                                    "trigger.record.fields.biz_contact.email",
+                                    "trigger.before.fields.biz_contact.email",
+                                    "trigger.after.fields.biz_contact.email",
+                                ],
+                            },
+                            {
+                                "field_id": "biz_contact.company_id",
+                                "label": "Company",
+                                "type": "lookup",
+                                "paths": [
+                                    "trigger.record.fields.biz_contact.company_id",
+                                    "trigger.before.fields.biz_contact.company_id",
+                                    "trigger.after.fields.biz_contact.company_id",
+                                ],
+                            },
+                        ],
+                    }
+                ],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Update this automation so when a contact named Nico is created it will notify me and create a CRM lead entry.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            self.assertEqual(len(steps), 2, steps)
+            create_values = steps[1].get("inputs", {}).get("values") or {}
+            self.assertEqual(
+                create_values,
+                {
+                    "crm_lead.lead_title": "Nico lead",
+                    "crm_lead.full_name": "{{trigger.record.fields.biz_contact.full_name}}",
+                    "crm_lead.email": "{{trigger.record.fields.biz_contact.email}}",
+                    "crm_lead.account_id": "{{trigger.record.fields.biz_contact.company_id}}",
+                },
+            )
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_retries_invalid_create_record_field_ids_with_validation_feedback(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Contact Named Nico Lead Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+            call_count = {"value": 0}
+
+            def fake_openai(messages, model=None, temperature=0.2, response_format=None):
+                call_count["value"] += 1
+                if call_count["value"] == 1:
+                    return _fake_response(
+                        {
+                            "summary": "Create a CRM lead when a contact named Nico is created and notify me.",
+                            "draft": {
+                                "name": "Contact Named Nico Lead Handoff",
+                                "description": "",
+                                "trigger": {
+                                    "kind": "event",
+                                    "event_types": ["biz_contacts.record.biz_contact.created"],
+                                    "filters": [{"path": "entity_id", "op": "eq", "value": "entity.biz_contact"}],
+                                    "expr": {
+                                        "op": "eq",
+                                        "left": {"var": "trigger.record.fields.biz_contact.full_name"},
+                                        "right": {"literal": "Nico"},
+                                    },
+                                },
+                                "steps": [
+                                    {
+                                        "kind": "action",
+                                        "action_id": "system.notify",
+                                        "inputs": {
+                                            "recipient_user_ids": ["user_current"],
+                                            "title": "Nico contact created",
+                                            "body": "A new contact named Nico was created.",
+                                        },
+                                    },
+                                    {
+                                        "kind": "action",
+                                        "action_id": "system.create_record",
+                                        "entity_id": "entity.crm_lead",
+                                        "values": {
+                                            "nickname": "Nico lead",
+                                            "person_email": "{{trigger.record.fields.biz_contact.email}}",
+                                        },
+                                    },
+                                ],
+                                "status": "draft",
+                            },
+                            "assumptions": [],
+                            "warnings": [],
+                        }
+                    )
+                self.assertIn("Resolve these validation issues exactly:", messages[1]["content"])
+                self.assertIn("Unknown field id 'nickname'", messages[1]["content"])
+                self.assertIn("Unknown field id 'nickname'", messages[1]["content"])
+                return _fake_response(
+                    {
+                        "summary": "Updated the automation draft to use valid CRM lead fields.",
+                        "draft": {
+                            "name": "Contact Named Nico Lead Handoff",
+                            "description": "",
+                            "trigger": {
+                                "kind": "event",
+                                "event_types": ["biz_contacts.record.biz_contact.created"],
+                                "filters": [{"path": "entity_id", "op": "eq", "value": "entity.biz_contact"}],
+                                "expr": {
+                                    "op": "eq",
+                                    "left": {"var": "trigger.record.fields.biz_contact.full_name"},
+                                    "right": {"literal": "Nico"},
+                                },
+                            },
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.notify",
+                                    "inputs": {
+                                        "recipient_user_ids": ["user_current"],
+                                        "title": "Nico contact created",
+                                        "body": "A new contact named Nico was created.",
+                                    },
+                                },
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.create_record",
+                                    "entity_id": "entity.crm_lead",
+                                    "values": {
+                                        "crm_lead.full_name": "{{trigger.record.fields.biz_contact.full_name}}",
+                                        "crm_lead.email": "{{trigger.record.fields.biz_contact.email}}",
+                                    },
+                                },
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            fake_meta = {
+                "event_types": ["biz_contacts.record.biz_contact.created"],
+                "event_catalog": [
+                    {
+                        "id": "biz_contacts.record.biz_contact.created",
+                        "label": "Contact created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_contact",
+                    }
+                ],
+                "system_actions": [
+                    {"id": "system.notify", "label": "Notify"},
+                    {"id": "system.create_record", "label": "Create record"},
+                ],
+                "module_actions": [],
+                "members": [{"user_id": "user_current", "email": "nick@octodrop.com", "name": "Nick"}],
+                "current_user_id": "user_current",
+                "entities": [
+                    {
+                        "id": "entity.biz_contact",
+                        "label": "Contact",
+                        "fields": [
+                            {"id": "biz_contact.full_name", "label": "Full Name", "type": "string"},
+                            {"id": "biz_contact.email", "label": "Email", "type": "email"},
+                        ],
+                    },
+                    {
+                        "id": "entity.crm_lead",
+                        "label": "CRM Lead",
+                        "fields": [
+                            {"id": "crm_lead.full_name", "label": "Full Name", "type": "string"},
+                            {"id": "crm_lead.email", "label": "Email", "type": "email"},
+                        ],
+                    },
+                ],
+                "field_path_catalog": [
+                    {
+                        "entity_id": "entity.biz_contact",
+                        "fields": [
+                            {
+                                "field_id": "biz_contact.full_name",
+                                "label": "Full Name",
+                                "type": "string",
+                                "paths": [
+                                    "trigger.record.fields.biz_contact.full_name",
+                                    "trigger.before.fields.biz_contact.full_name",
+                                    "trigger.after.fields.biz_contact.full_name",
+                                ],
+                            },
+                            {
+                                "field_id": "biz_contact.email",
+                                "label": "Email",
+                                "type": "email",
+                                "paths": [
+                                    "trigger.record.fields.biz_contact.email",
+                                    "trigger.before.fields.biz_contact.email",
+                                    "trigger.after.fields.biz_contact.email",
+                                ],
+                            },
+                        ],
+                    }
+                ],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Update this automation so when a contact named Nico is created it will notify me and create a CRM lead entry.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            self.assertEqual(call_count["value"], 2)
+            steps = body.get("draft", {}).get("steps") or []
+            create_values = steps[1].get("inputs", {}).get("values") or {}
+            self.assertEqual(
+                create_values,
+                {
+                    "crm_lead.full_name": "{{trigger.record.fields.biz_contact.full_name}}",
+                    "crm_lead.email": "{{trigger.record.fields.biz_contact.email}}",
+                },
+            )
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
     def test_automation_ai_plan_normalizes_trigger_aliases_for_workflow_event(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -7105,6 +8233,92 @@ class TestArtifactAiEndpoints(unittest.TestCase):
                     ("email_template", "email_a", "update_email_template_record"),
                 ],
             )
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn(
+                main._ai_automation_summary_line(
+                    {
+                        "op": "update_automation_record",
+                        "automation": {
+                            "name": "Automation A",
+                            "status": "draft",
+                            "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                            "steps": [self._seed_automation_step()],
+                        },
+                    }
+                ),
+                requested_lines,
+            )
+            self.assertIn(
+                main._ai_email_template_summary_line(
+                    {
+                        "op": "update_email_template_record",
+                        "email_template": {
+                            "name": "Email A",
+                            "subject": "Updated",
+                            "body_html": "<p>Updated</p>",
+                            "body_text": "Updated",
+                        },
+                    }
+                ),
+                requested_lines,
+            )
+            self.assertNotIn("Update Automation A.", requested_lines)
+            self.assertNotIn("Update Email A.", requested_lines)
+
+    def test_octo_chat_preserves_strong_semantic_requested_change_lines(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Workspace orchestrator"}).json()["session"]
+
+            semantic_plan = {
+                "candidate_ops": [
+                    {
+                        "op": "update_email_template_record",
+                        "artifact_type": "email_template",
+                        "artifact_id": "email_a",
+                        "email_template": {
+                            "name": "Email A",
+                            "subject": "Updated",
+                            "body_html": "<p>Updated</p>",
+                            "body_text": "Updated",
+                        },
+                    }
+                ],
+                "questions": [],
+                "question_meta": None,
+                "assumptions": [],
+                "risk_flags": [],
+                "advisories": [],
+                "requested_change_lines": [
+                    "Revise the customer follow-up email so it confirms the updated approval wording."
+                ],
+                "affected_modules": [],
+                "plan_v1": None,
+            }
+
+            with (
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: semantic_plan),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": "Update the customer follow-up email."},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn(
+                "Revise the customer follow-up email so it confirms the updated approval wording.",
+                requested_lines,
+            )
+            self.assertIn(
+                "Update email template 'Email A' with subject 'Updated'.",
+                requested_lines,
+            )
 
     def test_octo_semantic_plan_resolves_workspace_artifact_labels_without_scoped_session(self) -> None:
         client = TestClient(main.app)
@@ -7205,6 +8419,506 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             self.assertEqual(len(ops), 1)
             self.assertEqual(ops[0].get("artifact_type"), "email_template")
             self.assertEqual(ops[0].get("artifact_id"), email_template["id"])
+
+    def test_octo_chat_preview_only_plan_keeps_specific_requested_change_lines(self) -> None:
+        client = TestClient(main.app)
+        jobs_manifest = {
+            "module": {"id": "jobs", "key": "jobs", "name": "Jobs"},
+            "entities": [{"id": "entity.job", "fields": [{"id": "job.title", "label": "Title", "type": "string"}]}],
+            "views": [],
+        }
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Preview-first rollout"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {"jobs": {"manifest": jobs_manifest}}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={
+                        "message": "Review the Jobs module and create a PDF certificate with customer name, job address, and technician signature. Explain everything you plan to add before building it."
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Extend the existing Jobs module.", requested_lines)
+            self.assertIn("Create the PDF certificate.", requested_lines)
+            self.assertIn("Include customer name, job address, and technician signature.", requested_lines)
+
+    def test_octo_chat_preview_only_plan_keeps_rollout_strategy_lines_for_missing_modules(self) -> None:
+        client = TestClient(main.app)
+        message = "For Invoices and Quotes, walk me through the sandbox, validation, and rollback plan before you build anything."
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Preview rollout controls"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Coordinate this rollout across Invoices and Quotes.", requested_lines)
+            self.assertIn("Keep this as a sandbox-first rollout plan.", requested_lines)
+            self.assertIn("Include validation checkpoints before apply.", requested_lines)
+            self.assertIn("Include a rollback path before apply.", requested_lines)
+            self.assertIn(
+                "Treat Invoices and Quotes as planned scope only because they do not currently exist in this workspace.",
+                requested_lines,
+            )
+
+    def test_octo_chat_preview_only_plan_supports_scope_free_roadmap_brief(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan a phased build roadmap for Sales Orders, Production, and Dispatch. "
+            "Show what you would deliver first before anything is built."
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Scope-free roadmap"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Coordinate this roadmap across Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Plan a phased build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Show what would be delivered first before later phases.", requested_lines)
+            self.assertIn("Start with Sales Orders in Phase 1.", requested_lines)
+            self.assertIn("Continue with Production in Phase 2.", requested_lines)
+            self.assertIn("Then expand to Dispatch in Phase 3.", requested_lines)
+
+    def test_octo_chat_preview_only_plan_keeps_phase_sequence_without_deliver_first(self) -> None:
+        client = TestClient(main.app)
+        message = "Plan a phased build roadmap for Sales Orders, Production, and Dispatch before anything is built."
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Phased roadmap"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Plan a phased build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Start with Sales Orders in Phase 1.", requested_lines)
+            self.assertIn("Continue with Production in Phase 2.", requested_lines)
+            self.assertIn("Then expand to Dispatch in Phase 3.", requested_lines)
+            self.assertNotIn("Show what would be delivered first before later phases.", requested_lines)
+
+    def test_octo_chat_preview_only_plan_keeps_build_order_without_phased_language(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan the build roadmap for Sales Orders, Production, Dispatch, and Quality Checks before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+            "- Quality Checks\n"
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Roadmap order"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Scope this rollout to Field Service as planned scope.", requested_lines)
+            self.assertIn("Plan the build roadmap covering Sales Orders, Production, Dispatch, and Quality Checks.", requested_lines)
+            self.assertIn("Start with Sales Orders first.", requested_lines)
+            self.assertIn("Then move to Production.", requested_lines)
+            self.assertIn("Then move to Dispatch.", requested_lines)
+            self.assertIn("Then move to Quality Checks.", requested_lines)
+            self.assertIn("Follow this build order: Sales Orders, Production, Dispatch, and Quality Checks.", requested_lines)
+            self.assertNotIn("Extend the existing Field Service module.", requested_lines)
+            self.assertNotIn("Phase 1", " ".join(requested_lines))
+
+    def test_octo_chat_preview_only_plan_keeps_track_order_without_build_order(self) -> None:
+        client = TestClient(main.app)
+        message = "Plan the build roadmap for Sales Orders, Production, Dispatch, and Quality Checks before anything is built."
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Roadmap tracks"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Scope this rollout to Field Service as planned scope.", requested_lines)
+            self.assertIn("Plan the build roadmap covering Sales Orders, Production, Dispatch, and Quality Checks.", requested_lines)
+            self.assertIn("Start with Sales Orders first.", requested_lines)
+            self.assertIn("Then move to Production.", requested_lines)
+            self.assertIn("Then move to Dispatch.", requested_lines)
+            self.assertIn("Then move to Quality Checks.", requested_lines)
+            self.assertNotIn("Extend the existing Field Service module.", requested_lines)
+            self.assertNotIn("Follow this build order:", " ".join(requested_lines))
+
+    def test_octo_chat_preview_only_plan_prefers_explicit_build_order_for_roadmap_headline(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Roadmap order override"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Coordinate this roadmap across Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Plan the build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Start with Sales Orders first.", requested_lines)
+            self.assertIn("Then move to Production.", requested_lines)
+            self.assertIn("Then move to Dispatch.", requested_lines)
+            self.assertNotIn("Plan the build roadmap covering Sales Orders, Dispatch, and Production.", requested_lines)
+            assistant_text = body.get("assistant_text") or ""
+            self.assertIn("Plan a plain-English build roadmap covering Sales Orders, Production, and Dispatch.", assistant_text)
+            self.assertNotIn("Plan a plain-English build roadmap covering Sales Orders, Dispatch, and Production.", assistant_text)
+
+    def test_octo_chat_preview_only_plan_prefers_explicit_build_order_for_scope_free_roadmap_coordination(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Scope-free roadmap order"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Coordinate this roadmap across Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertIn("Plan the build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+            self.assertNotIn("Coordinate this roadmap across Sales Orders, Dispatch, and Production.", requested_lines)
+
+    def test_octo_chat_preview_only_plan_keeps_two_track_roadmap_guidance_concrete(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan the build roadmap for Sales Orders and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Two-track roadmap"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            assistant_text = body.get("assistant_text") or ""
+            self.assertIn("Plan a plain-English build roadmap covering Sales Orders and Production.", assistant_text)
+            self.assertIn("Sales Orders", assistant_text)
+            self.assertIn("Production", assistant_text)
+            self.assertIn("Shape the end-to-end workflow around Sales Orders and Production.", assistant_text)
+            self.assertIn("Phase 1: Sales Orders and Production.", assistant_text)
+            self.assertIn("Phase 1: start with Sales Orders and Production.", assistant_text)
+            self.assertIn("Use Sales Orders as the first rollout anchor before expanding to Production.", assistant_text)
+            self.assertNotIn("Map the first draft plan across", assistant_text)
+            self.assertNotIn("Plan a preview-first rollout for this request", assistant_text)
+
+    def test_octo_chat_preview_only_plan_keeps_phase_two_from_build_order(self) -> None:
+        client = TestClient(main.app)
+        message = (
+            "Plan a phased build roadmap for Sales Orders, Production, Dispatch, and Quality Checks. "
+            "Show what you would deliver first, keep it sandbox-first, include validation and rollback.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+            "- Quality Checks\n"
+        )
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            session = client.post("/octo-ai/sessions", json={"title": "Roadmap build order"}).json()["session"]
+            with (
+                patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+                patch.object(main, "_ai_module_manifest_index", lambda _request: {}),
+                patch.object(main, "_ai_semantic_plan_from_model", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_scoped_artifact_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": message},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn("Start with Sales Orders in Phase 1.", requested_lines)
+            self.assertIn("Continue with Production in Phase 2.", requested_lines)
+            self.assertIn("Then expand to Dispatch in Phase 3.", requested_lines)
+            self.assertIn("Then expand to Quality Checks in Phase 4.", requested_lines)
+            self.assertIn("Follow this build order: Sales Orders, Production, Dispatch, and Quality Checks.", requested_lines)
+
+    def test_scoped_email_template_plan_preserves_business_summary_in_requested_change_lines(self) -> None:
+        email_name = "Order Confirmation"
+        email_template_payload = {
+            "name": email_name,
+            "description": "",
+            "subject": "Your order is confirmed",
+            "body_html": "<p>Thanks for your order.</p>",
+            "body_text": "Thanks for your order.",
+            "variables_schema": {"entity_id": "entity.sales_order"},
+        }
+
+        with TestClient(main.app) as client:
+            created = client.post("/email/templates", json=email_template_payload)
+            created_body = created.json()
+            self.assertEqual(created.status_code, 200, created_body)
+            email_template = created_body.get("template") or {}
+            with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+                create_response = client.post("/octo-ai/sessions", json={"title": "Scoped email update"})
+                self.assertEqual(create_response.status_code, 200, create_response.text)
+                session = create_response.json()["session"]
+                main._ai_update_record(
+                    main._AI_ENTITY_SESSION,
+                    session["id"],
+                    {
+                        "selected_artifact_type": "email_template",
+                        "selected_artifact_key": email_template["id"],
+                    },
+                )
+
+            def fake_openai(messages, **kwargs):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "summary": "Revise the order confirmation email to explain dispatch timing more clearly.",
+                                        "draft": {
+                                            **dict(email_template),
+                                            "body_html": "<p>Thanks for your order. We will send dispatch timing once your order is packed.</p>",
+                                            "body_text": "Thanks for your order. We will send dispatch timing once your order is packed.",
+                                        },
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+
+            with (
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": f"Update the {email_name} email template."},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn(
+                "Revise the order confirmation email to explain dispatch timing more clearly.",
+                requested_lines,
+            )
+            self.assertIn(
+                "Update email template 'Order Confirmation' for Sales Order records with subject 'Your order is confirmed'.",
+                requested_lines,
+            )
+
+    def test_scoped_document_template_plan_preserves_business_summary_in_requested_change_lines(self) -> None:
+        document_name = "Sales Order Summary"
+        document_template_payload = {
+            "name": document_name,
+            "description": "",
+            "filename_pattern": "sales-order-summary",
+            "html": "<p>Sales order summary</p>",
+            "variables_schema": {"entity_id": "entity.sales_order"},
+        }
+
+        with TestClient(main.app) as client:
+            created = client.post("/documents/templates", json=document_template_payload)
+            created_body = created.json()
+            self.assertEqual(created.status_code, 200, created_body)
+            document_template = created_body.get("template") or {}
+            with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+                create_response = client.post("/octo-ai/sessions", json={"title": "Scoped document update"})
+                self.assertEqual(create_response.status_code, 200, create_response.text)
+                session = create_response.json()["session"]
+                main._ai_update_record(
+                    main._AI_ENTITY_SESSION,
+                    session["id"],
+                    {
+                        "selected_artifact_type": "document_template",
+                        "selected_artifact_key": document_template["id"],
+                    },
+                )
+
+            def fake_openai(messages, **kwargs):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "summary": "Revise the sales order summary document to show fulfilment timing more clearly.",
+                                        "draft": {
+                                            **dict(document_template),
+                                            "html": "<p>Sales order summary with fulfilment timing and next steps.</p>",
+                                        },
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+
+            with (
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+                patch.object(main, "_ai_named_artifact_plan", lambda *args, **kwargs: None),
+                patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: None),
+            ):
+                res = client.post(
+                    f"/octo-ai/sessions/{session['id']}/chat",
+                    json={"message": f"Update the {document_name} document template."},
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            plan = body.get("plan") or {}
+            requested_lines = plan.get("requested_change_lines") or []
+            self.assertIn(
+                "Revise the sales order summary document to show fulfilment timing more clearly.",
+                requested_lines,
+            )
+            self.assertIn(
+                "Update document template 'Sales Order Summary' for Sales Order records with filename pattern 'sales-order-summary'.",
+                requested_lines,
+            )
 
 
 if __name__ == "__main__":

@@ -188,6 +188,122 @@
       {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
     ]
   },
+  "quoting": {
+    "icon_key": "lucide:FileText",
+    "minimum_business_fields": 9,
+    "default_module_name": "Quotes",
+    "default_list_mode": "list",
+    "preferred_views": ["list", "form", "kanban", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["quote", "quotes", "quotation", "quotations", "estimate", "estimates", "proposal", "proposals", "sales quote", "sales quotes"], "name": "Quotes"}
+    ],
+    "detect_any": ["quote", "quotes", "quotation", "quotations", "estimate", "estimates", "proposal", "proposals", "sales quote", "sales quotes", "quote line", "quote lines", "line item pricing", "quoted price", "quoted amount", "valid until"],
+    "detect_all": [
+      ["quote", "line items"],
+      ["quote", "products"],
+      ["quote", "pricing"],
+      ["estimate", "products"],
+      ["proposal", "products"],
+      ["sales", "quote"]
+    ],
+    "primary_label": "Quote Number",
+    "summary_template": "{module_name} with customer quotes, product-backed line items, pricing totals, and quote workflow.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "sent", "label": "Sent"},
+      {"value": "accepted", "label": "Accepted"},
+      {"value": "declined", "label": "Declined"},
+      {"value": "expired", "label": "Expired"}
+    ],
+    "fields": [
+      {"suffix": "customer_name", "type": "string", "label": "Customer"},
+      {"suffix": "quote_date", "type": "date", "label": "Quote Date"},
+      {"suffix": "valid_until", "type": "date", "label": "Valid Until"},
+      {"suffix": "currency", "type": "string", "label": "Currency", "default": "NZD"},
+      {"suffix": "subtotal_amount", "type": "number", "label": "Subtotal"},
+      {"suffix": "discount_amount", "type": "number", "label": "Discount"},
+      {"suffix": "tax_amount", "type": "number", "label": "Tax"},
+      {"suffix": "total_amount", "type": "number", "label": "Total Amount"},
+      {"suffix": "customer_reference", "type": "string", "label": "Customer Reference"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "line_item",
+        "entity_label": "Line Item",
+        "nav_label": "Line Items",
+        "related_title": "Line Items",
+        "related_tab_label": "Line Items",
+        "fields": [
+          {"id": "product_id", "type": "string", "label": "Product"},
+          {"id": "sku", "type": "string", "label": "SKU"},
+          {"id": "quantity", "type": "number", "label": "Quantity", "required": true, "default": 1},
+          {"id": "unit_price", "type": "number", "label": "Unit Price"},
+          {"id": "line_total", "type": "number", "label": "Line Total"},
+          {"id": "notes", "type": "text", "label": "Notes"}
+        ]
+      }
+    ]
+  },
+  "purchasing": {
+    "icon_key": "lucide:ShoppingCart",
+    "minimum_business_fields": 9,
+    "default_module_name": "Purchase Orders",
+    "default_list_mode": "list",
+    "preferred_views": ["list", "form", "kanban", "graph"],
+    "purpose_name_rules": [
+      {"match_any": ["purchase order", "purchase orders", "supplier order", "supplier orders", "vendor order", "vendor orders", "replenishment", "procurement"], "name": "Purchase Orders"}
+    ],
+    "detect_any": ["purchase order", "purchase orders", "supplier order", "supplier orders", "vendor order", "vendor orders", "replenishment", "procurement", "ordered qty", "expected delivery", "supplier invoice", "goods received", "parts ordered"],
+    "detect_all": [
+      ["purchase", "supplier"],
+      ["purchase", "line items"],
+      ["supplier", "line items"],
+      ["order", "supplier"],
+      ["order", "products"],
+      ["replenishment", "products"],
+      ["procurement", "supplier"]
+    ],
+    "primary_label": "Order Number",
+    "summary_template": "{module_name} with supplier-linked orders, ordered item lines, delivery dates, and purchasing workflow.",
+    "statuses": [
+      {"value": "draft", "label": "Draft"},
+      {"value": "submitted", "label": "Submitted"},
+      {"value": "ordered", "label": "Ordered"},
+      {"value": "received", "label": "Received"},
+      {"value": "closed", "label": "Closed"}
+    ],
+    "fields": [
+      {"suffix": "supplier_name", "type": "string", "label": "Supplier"},
+      {"suffix": "order_date", "type": "date", "label": "Order Date"},
+      {"suffix": "expected_date", "type": "date", "label": "Expected Delivery"},
+      {"suffix": "currency", "type": "string", "label": "Currency", "default": "NZD"},
+      {"suffix": "subtotal_amount", "type": "number", "label": "Subtotal"},
+      {"suffix": "tax_amount", "type": "number", "label": "Tax"},
+      {"suffix": "total_amount", "type": "number", "label": "Total Amount"},
+      {"suffix": "supplier_reference", "type": "string", "label": "Supplier Reference"},
+      {"suffix": "notes", "type": "text", "label": "Notes"},
+      {"suffix": "attachments", "type": "attachments", "label": "Attachments"}
+    ],
+    "related_entities": [
+      {
+        "entity_slug": "order_line",
+        "entity_label": "Order Line",
+        "nav_label": "Order Lines",
+        "related_title": "Order Lines",
+        "related_tab_label": "Order Lines",
+        "fields": [
+          {"id": "product_id", "type": "string", "label": "Product"},
+          {"id": "sku", "type": "string", "label": "SKU"},
+          {"id": "quantity", "type": "number", "label": "Quantity", "required": true, "default": 1},
+          {"id": "unit_cost", "type": "number", "label": "Unit Cost"},
+          {"id": "line_total", "type": "number", "label": "Line Total"},
+          {"id": "notes", "type": "text", "label": "Notes"}
+        ]
+      }
+    ]
+  },
   "recruiting": {
     "icon_key": "lucide:Users",
     "minimum_business_fields": 9,

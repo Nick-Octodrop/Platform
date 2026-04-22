@@ -494,25 +494,28 @@ export default function OctoAiWorkspacePage() {
     }
     return items;
   }, [pendingAssistantState, pendingChatMessage, visibleMessages]);
-  const activeQuestionMeta = useMemo(() => {
+  const rawQuestionMeta = useMemo(() => {
     const direct = latestPlan?.required_question_meta;
     if (direct && typeof direct === "object") return direct;
     const nested = latestPlan?.plan_json?.plan?.required_question_meta;
     if (nested && typeof nested === "object") return nested;
     return null;
   }, [latestPlan]);
-  const activeQuestion = useMemo(() => {
+  const rawQuestion = useMemo(() => {
     const direct = Array.isArray(latestPlan?.questions_json) ? latestPlan.questions_json : [];
     if (direct.length > 0 && typeof direct[0] === "string" && direct[0].trim()) return direct[0].trim();
     const nested = Array.isArray(latestPlan?.plan_json?.plan?.required_questions) ? latestPlan.plan_json.plan.required_questions : [];
     if (nested.length > 0 && typeof nested[0] === "string" && nested[0].trim()) return nested[0].trim();
     return "";
   }, [latestPlan]);
-  const activeDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
+  const rawDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
   const hasPendingQuestion = useMemo(() => {
-    if (!activeQuestion) return false;
+    if (!rawQuestion) return false;
     return !questionSupersededByAppliedRevision(latestPlan, latestPatchset);
-  }, [activeQuestion, latestPatchset, latestPlan]);
+  }, [rawQuestion, latestPatchset, latestPlan]);
+  const activeQuestionMeta = useMemo(() => (hasPendingQuestion ? rawQuestionMeta : null), [hasPendingQuestion, rawQuestionMeta]);
+  const activeQuestion = useMemo(() => (hasPendingQuestion ? rawQuestion : ""), [hasPendingQuestion, rawQuestion]);
+  const activeDecisionSlots = useMemo(() => (hasPendingQuestion ? rawDecisionSlots : []), [hasPendingQuestion, rawDecisionSlots]);
   const fieldSpecHints = useMemo(() => {
     if (activeQuestionMeta?.kind !== "field_spec") return undefined;
     return {

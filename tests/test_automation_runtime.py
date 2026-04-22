@@ -945,6 +945,120 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(created_records[0]["biz_job.customer_email"], "customer@example.com")
         self.assertEqual(created_records[0]["biz_job.status"], "new")
 
+    def test_create_record_step_renders_record_bracket_templates_at_action_runtime(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Create Lead From Contact",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"]},
+                "steps": [
+                    {
+                        "id": "step_create_lead",
+                        "kind": "action",
+                        "action_id": "system.create_record",
+                        "inputs": {
+                            "entity_id": "entity.crm_lead",
+                            "values": {
+                                "crm_lead.title": "{{ record['biz_contact.name'] }}",
+                                "crm_lead.contact_name": "{{ record['biz_contact.name'] }}",
+                                "crm_lead.contact_email": "{{ record['biz_contact.email'] }}",
+                                "crm_lead.company_id": "{{ record['biz_contact.company_entity_scope'] }}",
+                            },
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_contacts.record.biz_contact.created",
+                "trigger_payload": {
+                    "event": "biz_contacts.record.biz_contact.created",
+                    "entity_id": "entity.biz_contact",
+                    "record_id": "contact_1",
+                    "record": {
+                        "fields": {
+                            "biz_contact": {
+                                "name": "Nico",
+                                "email": "nico@example.com",
+                                "company_entity_scope": "company_1",
+                            },
+                            "name": "Nico",
+                            "email": "nico@example.com",
+                            "company_entity_scope": "company_1",
+                        },
+                        "flat": {
+                            "biz_contact.name": "Nico",
+                            "biz_contact.email": "nico@example.com",
+                            "biz_contact.company_entity_scope": "company_1",
+                        },
+                    },
+                },
+            }
+        )
+        created_records: list[dict] = []
+        entity_def = {
+            "id": "entity.crm_lead",
+            "fields": [
+                {"id": "crm_lead.title", "label": "Lead", "type": "string"},
+                {"id": "crm_lead.contact_name", "label": "Contact Name", "type": "string"},
+                {"id": "crm_lead.contact_email", "label": "Contact Email", "type": "email"},
+                {"id": "crm_lead.company_id", "label": "Company", "type": "lookup"},
+            ],
+        }
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "lead_1", **dict(clean)}
+                created_records.append(record)
+                return {"record_id": "lead_1", "record": record}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data)}
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker._find_entity_context", return_value=("crm_module", entity_def, {"module": {"id": "crm_module"}})),
+            patch("app.worker._emit_automation_event"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(len(created_records), 1, created_records)
+        self.assertEqual(created_records[0]["crm_lead.title"], "Nico")
+        self.assertEqual(created_records[0]["crm_lead.contact_name"], "Nico")
+        self.assertEqual(created_records[0]["crm_lead.contact_email"], "nico@example.com")
+        self.assertEqual(created_records[0]["crm_lead.company_id"], "company_1")
+
     def test_create_then_update_record_steps_share_outputs_and_render_templates(self):
         store = MemoryAutomationStore()
         job_store = MemoryJobStore()
@@ -1104,6 +1218,101 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(records_by_id["job_1"]["biz_job.source_quote_number"], "QUO-2026-0042")
         self.assertEqual(records_by_id["job_1"]["biz_job.customer_name"], "Northwind Holdings")
         self.assertEqual(records_by_id["job_1"]["biz_job.status"], "scheduled")
+
+    def test_create_record_action_resolves_var_references_before_validation(self):
+        created_records: list[dict] = []
+        entity_def = {
+            "id": "entity.crm_lead",
+            "fields": [
+                {"id": "crm_lead.contact_name", "label": "Contact Name", "type": "string"},
+                {"id": "crm_lead.contact_email", "label": "Contact Email", "type": "email"},
+                {"id": "crm_lead.contact_phone", "label": "Contact Phone", "type": "string"},
+            ],
+        }
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "lead_1", **dict(clean)}
+                created_records.append(record)
+                return {"record_id": "lead_1", "record": record}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data)}
+
+        ctx = {
+            "trigger": {
+                "entity_id": "entity.biz_contact",
+                "record_id": "contact_1",
+                "record": {
+                    "fields": {
+                        "biz_contact": {
+                            "name": "Nico",
+                            "email": "nico@example.com",
+                            "phone": "021000111",
+                        },
+                        "name": "Nico",
+                        "email": "nico@example.com",
+                        "phone": "021000111",
+                    }
+                },
+            }
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker._find_entity_context", return_value=("crm_module", entity_def, {"module": {"id": "crm_module"}})),
+            patch("app.worker._emit_automation_event"),
+        ):
+            result = _handle_system_action(
+                "system.create_record",
+                {
+                    "entity_id": "entity.crm_lead",
+                    "values": {
+                        "crm_lead.contact_name": {"var": "trigger.record.fields.biz_contact.name"},
+                        "crm_lead.contact_email": {"var": "trigger.record.fields.biz_contact.email"},
+                        "crm_lead.contact_phone": {"var": "trigger.record.fields.biz_contact.phone"},
+                    },
+                },
+                ctx,
+                None,
+            )
+
+        self.assertEqual(result["record_id"], "lead_1")
+        self.assertEqual(
+            created_records,
+            [
+                {
+                    "id": "lead_1",
+                    "crm_lead.contact_name": "Nico",
+                    "crm_lead.contact_email": "nico@example.com",
+                    "crm_lead.contact_phone": "021000111",
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

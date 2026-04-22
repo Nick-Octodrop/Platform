@@ -47,7 +47,11 @@ def _matches_filter(payload: dict, filt: dict) -> bool:
     op = filt.get("op")
     if not isinstance(path, str) or not isinstance(op, str):
         return False
-    value = _get_path(payload, path)
+    normalized_path = path.strip()
+    value = _get_path(payload, normalized_path)
+    if value is None and normalized_path.startswith("trigger."):
+        normalized_path = normalized_path[len("trigger.") :]
+        value = _get_path(payload, normalized_path)
     target = filt.get("value")
     if op == "eq":
         return value == target

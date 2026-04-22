@@ -1251,6 +1251,24 @@ def _resolve_raw_template_ref(value: str, ctx: dict) -> object:
     return _lookup_path(ctx, inner)
 
 
+def _automation_template_record_alias(trigger_payload: dict | None, key: str) -> dict | None:
+    if not isinstance(trigger_payload, dict):
+        return None
+    source = trigger_payload.get(key)
+    if not isinstance(source, dict):
+        return None
+    alias: dict = {}
+    fields = source.get("fields")
+    if isinstance(fields, dict):
+        alias.update(fields)
+    flat = source.get("flat")
+    if isinstance(flat, dict):
+        for field_id, field_value in flat.items():
+            if isinstance(field_id, str) and field_id not in alias:
+                alias[field_id] = field_value
+    return alias or None
+
+
 def _resolve_value(value: object, ctx: dict) -> object:
     if isinstance(value, dict) and set(value.keys()) == {"var"}:
         var_name = value.get("var")
@@ -1973,7 +1991,9 @@ def _run_generic_create_record(inputs: dict, ctx: dict) -> dict:
     if not entity_ctx:
         raise RuntimeError("Entity not found")
     module_id, entity_def, manifest = entity_ctx
-    values = _coerce_json_object(inputs.get("values"), "values")
+    values = _resolve_value(_coerce_json_object(inputs.get("values"), "values"), ctx)
+    if not isinstance(values, dict):
+        raise RuntimeError("values object required")
     workflow = app_main._find_entity_workflow(manifest, entity_def.get("id"))
     errors, clean = app_main._validate_record_payload(entity_def, values, for_create=True, workflow=workflow)
     lookup_errors = app_main._validate_lookup_fields(
@@ -2016,7 +2036,9 @@ def _run_generic_update_record(inputs: dict, ctx: dict) -> dict:
         raise RuntimeError("entity_id required")
     if not isinstance(record_id, str) or not record_id:
         raise RuntimeError("record_id required")
-    patch = _coerce_json_object(inputs.get("patch"), "patch")
+    patch = _resolve_value(_coerce_json_object(inputs.get("patch"), "patch"), ctx)
+    if not isinstance(patch, dict):
+        raise RuntimeError("patch object required")
     entity_ctx = _find_entity_context(entity_id)
     if not entity_ctx:
         raise RuntimeError("Entity not found")
@@ -3181,7 +3203,12 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         automation_store.update_run(run_id, {"status": "failed", "last_error": "Invalid steps"})
         return
 
-    ctx = {"trigger": run.get("trigger_payload") or {}, "steps": {}, "vars": {}, "last": None}
+    trigger_payload = run.get("trigger_payload") or {}
+    ctx = {"trigger": trigger_payload, "steps": {}, "vars": {}, "last": None}
+    for alias_key in ("record", "before", "after"):
+        alias_value = _automation_template_record_alias(trigger_payload, alias_key)
+        if isinstance(alias_value, dict):
+            ctx[alias_key] = alias_value
     sequence_state = {"value": -1}
     current_index = int(run.get("current_step_index") or 0)
     if run.get("status") != "running":

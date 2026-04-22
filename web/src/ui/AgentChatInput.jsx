@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Send, Square } from "lucide-react";
 import { translateRuntime } from "../i18n/runtime.js";
 
@@ -16,6 +16,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
   className = "",
 }, ref) {
   const textareaRef = useRef(null);
+  const [singleLineMetrics, setSingleLineMetrics] = useState({ active: false, size: 0 });
 
   useImperativeHandle(ref, () => textareaRef.current, []);
 
@@ -32,9 +33,14 @@ const AgentChatInput = forwardRef(function AgentChatInput({
     const minHeight = Math.ceil((Math.max(minRows, 1) * lineHeight) + chromeHeight);
     const maxHeight = Math.ceil((Math.max(maxRows, minRows, 1) * lineHeight) + chromeHeight);
     el.style.height = "0px";
-    const nextHeight = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+    const naturalHeight = el.scrollHeight;
+    const nextHeight = Math.min(Math.max(naturalHeight, minHeight), maxHeight);
     el.style.height = `${nextHeight}px`;
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+    setSingleLineMetrics({
+      active: naturalHeight <= (minHeight + 1),
+      size: nextHeight,
+    });
   }, [maxRows, minRows, value]);
 
   const trimmedValue = value?.trim() || "";
@@ -42,7 +48,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
   const sendDisabled = disabled || (!trimmedValue && !allowEmptySend);
 
   return (
-    <div className={`flex w-full items-end gap-2 ${className}`}>
+    <div className={`flex w-full ${singleLineMetrics.active ? "items-stretch" : "items-end"} gap-2 ${className}`}>
       <textarea
         ref={textareaRef}
         className="textarea textarea-bordered w-full min-w-0 flex-1 resize-none py-3 text-sm leading-5 no-scrollbar"
@@ -61,7 +67,10 @@ const AgentChatInput = forwardRef(function AgentChatInput({
         disabled={disabled}
       />
       <button
-        className={`btn btn-square h-11 w-11 shrink-0 self-end ${canStop ? "btn-ghost" : "btn-primary"}`}
+        className={`btn btn-square h-11 w-11 shrink-0 ${canStop ? "btn-ghost" : "btn-primary"}`}
+        style={singleLineMetrics.active && singleLineMetrics.size > 0
+          ? { height: `${singleLineMetrics.size}px`, width: `${singleLineMetrics.size}px`, minHeight: `${singleLineMetrics.size}px` }
+          : undefined}
         onClick={() => {
           if (canStop) {
             onStop?.();

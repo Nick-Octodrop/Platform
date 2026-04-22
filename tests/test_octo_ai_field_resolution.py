@@ -6447,8 +6447,11 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((field_map.get("sent_product.catalog_item") or {}).get("entity"), "entity.catalog_item")
 
         text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Capture linked records and ownership with Owner.", text)
+        self.assertIn("Track channel and performance detail with Instagram Handle, Platform, Coupon Code, and Followers.", text)
         self.assertIn("Track catalog-backed line items for products sent to influencers.", text)
         self.assertIn("Link each sent-product line item to Catalog Item records.", text)
+        self.assertIn("Start Products Sent with columns for SKU, Quantity, Unit Value, and Line Total.", text)
 
     def test_generate_module_design_spec_specializes_generic_line_items_to_products_lookup(self) -> None:
         prompt = (
@@ -6522,7 +6525,245 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             )
 
         text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Capture linked records and ownership with Owner, Customer, Customer Reference, and Client.", text)
+        self.assertIn("Track key dates and scheduling with Quote Date and Valid Until.", text)
+        self.assertIn("Track commercial and financial detail with Currency, Subtotal, Discount, and Tax.", text)
         self.assertIn("Add repeatable 'Line Items' rows in Quotes linked to Product records.", text)
+        self.assertIn("Start Line Items with columns for SKU, Quantity, Unit Price, and Line Total.", text)
+
+    def test_generate_module_design_spec_specializes_quote_customer_field_to_lookup(self) -> None:
+        prompt = (
+            "Create a Sales Quote Studio module with customer quotes and line items from our products module. "
+            "Each quote should link to the customer and each quote line should let us pick a product."
+        )
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [
+                        {"id": "contact.name", "type": "string", "label": "Name"},
+                        {"id": "contact.email", "type": "string", "label": "Email"},
+                    ],
+                }
+            ],
+        }
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "sales_quote_studio",
+            "Sales Quote Studio",
+            prompt,
+            module_index={
+                "contacts": {"manifest": contacts_manifest},
+                "products": {"manifest": products_manifest},
+            },
+        )
+
+        field_map = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        entity_slug = design_spec.get("entity_slug")
+        customer_field = field_map.get(f"{entity_slug}.customer_id")
+        self.assertIsInstance(customer_field, dict)
+        self.assertEqual(customer_field.get("type"), "lookup")
+        self.assertEqual(customer_field.get("entity"), "entity.contact")
+        self.assertEqual(customer_field.get("display_field"), "contact.name")
+
+    def test_plan_from_message_quote_describes_customer_and_product_links(self) -> None:
+        prompt = (
+            "create a sales quote studio module with customer quotes and line items from our products module, "
+            "so each quote links to the customer and each quote line can pick a product"
+        )
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [{"id": "contact.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [{"id": "product.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(
+                main,
+                "_ai_module_manifest_index",
+                lambda _request: {
+                    "contacts": {"manifest": contacts_manifest},
+                    "products": {"manifest": products_manifest},
+                },
+            ),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Link each Quote to Contact records.", text)
+        self.assertIn("Add repeatable 'Line Items' rows in Quotes linked to Product records.", text)
+        self.assertIn("Start Line Items with columns for SKU, Quantity, Unit Price, and Line Total.", text)
+        self.assertIn("Update the module dependency settings for Quotes to include Contacts and Products.", text)
+
+    def test_detect_new_module_family_prefers_purchasing_for_supplier_order_lines_brief(self) -> None:
+        prompt = (
+            "Create a Purchase Orders module to manage supplier orders, expected delivery dates, "
+            "and line items from our products module."
+        )
+        suppliers_manifest = {
+            "module": {"id": "suppliers", "key": "suppliers", "name": "Suppliers", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.supplier",
+                    "label": "Supplier",
+                    "fields": [
+                        {"id": "supplier.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+        }
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        family = main._ai_detect_new_module_family(
+            "Purchase Orders",
+            prompt,
+            module_index={
+                "suppliers": {"manifest": suppliers_manifest},
+                "products": {"manifest": products_manifest},
+            },
+        )
+        self.assertEqual(family, "purchasing")
+
+        design_spec = main._ai_generate_module_design_spec(
+            "purchase_orders",
+            "Purchase Orders",
+            prompt,
+            module_index={
+                "suppliers": {"manifest": suppliers_manifest},
+                "products": {"manifest": products_manifest},
+            },
+        )
+        self.assertEqual(design_spec.get("family"), "purchasing")
+        field_map = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        supplier_field = field_map.get("purchase_order.supplier_id")
+        self.assertIsInstance(supplier_field, dict)
+        self.assertEqual(supplier_field.get("type"), "lookup")
+        self.assertEqual(supplier_field.get("entity"), "entity.supplier")
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        order_line = next(item for item in related_entities if item.get("entity_slug") == "order_line")
+        line_field_map = {
+            field.get("id"): field
+            for field in (order_line.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        product_field = line_field_map.get("order_line.product_id")
+        self.assertIsInstance(product_field, dict)
+        self.assertEqual(product_field.get("type"), "lookup")
+        self.assertEqual(product_field.get("entity"), "entity.product")
+
+    def test_plan_from_message_purchase_orders_describes_supplier_and_product_links(self) -> None:
+        prompt = (
+            "create a purchase orders module for supplier orders with expected delivery dates and "
+            "order lines from our products module"
+        )
+        suppliers_manifest = {
+            "module": {"id": "suppliers", "key": "suppliers", "name": "Suppliers", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.supplier",
+                    "label": "Supplier",
+                    "fields": [
+                        {"id": "supplier.name", "type": "string", "label": "Name"},
+                    ],
+                }
+            ],
+        }
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(
+                main,
+                "_ai_module_manifest_index",
+                lambda _request: {
+                    "suppliers": {"manifest": suppliers_manifest},
+                    "products": {"manifest": products_manifest},
+                },
+            ),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Link each Purchase Order to Supplier records.", text)
+        self.assertIn("Add repeatable 'Order Lines' rows in Purchase Orders linked to Product records.", text)
+        self.assertIn("Start Order Lines with columns for SKU, Quantity, Unit Cost, and Line Total.", text)
 
     def test_detect_new_module_family_prefers_recruiting_for_applicant_interview_offer_brief(self) -> None:
         prompt = (
@@ -6634,6 +6875,280 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             if isinstance(item, dict)
         ]
         self.assertIn("route_stop", related_entity_slugs)
+
+    def test_generate_module_design_spec_adds_product_linked_material_lines_for_field_service_brief(self) -> None:
+        prompt = (
+            "Create a Work Orders module for service jobs with technician scheduling and materials line items "
+            "from our products module so each job can track parts used."
+        )
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "work_orders",
+            "Work Orders",
+            prompt,
+            module_index={"products": {"manifest": products_manifest}},
+        )
+
+        self.assertEqual(design_spec.get("family"), "field_service")
+        related_entities = [item for item in (design_spec.get("related_entities") or []) if isinstance(item, dict)]
+        material_line = next(item for item in related_entities if item.get("entity_slug") == "material_line")
+        field_map = {
+            field.get("id"): field
+            for field in (material_line.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        product_field = field_map.get("material_line.product_id")
+        self.assertIsInstance(product_field, dict)
+        self.assertEqual(product_field.get("type"), "lookup")
+        self.assertEqual(product_field.get("entity"), "entity.product")
+        self.assertEqual(product_field.get("display_field"), "product.name")
+
+    def test_plan_from_message_field_service_material_lines_describes_product_links(self) -> None:
+        prompt = (
+            "create a work orders module for service jobs with technician scheduling and materials line items "
+            "from our products module so each job can track parts used"
+        )
+        products_manifest = {
+            "module": {"id": "products", "key": "products", "name": "Products", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.product",
+                    "label": "Product",
+                    "fields": [
+                        {"id": "product.name", "type": "string", "label": "Name"},
+                        {"id": "product.sku", "type": "string", "label": "SKU"},
+                    ],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(main, "_ai_module_manifest_index", lambda _request: {"products": {"manifest": products_manifest}}),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Add repeatable 'Material Lines' rows in Work Orders linked to Product records.", text)
+        self.assertIn("Start Material Lines with columns for SKU, Quantity, Unit Cost, and Line Total.", text)
+
+    def test_generate_module_design_spec_specializes_work_order_customer_and_site_fields_to_lookups(self) -> None:
+        prompt = (
+            "Create a Work Orders module for service jobs with customer visits and job sites, "
+            "using our contacts and sites modules for the customer and site references."
+        )
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [{"id": "contact.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+        sites_manifest = {
+            "module": {"id": "sites", "key": "sites", "name": "Sites", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.site",
+                    "label": "Site",
+                    "fields": [{"id": "site.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "work_orders",
+            "Work Orders",
+            prompt,
+            module_index={
+                "contacts": {"manifest": contacts_manifest},
+                "sites": {"manifest": sites_manifest},
+            },
+        )
+
+        self.assertEqual(design_spec.get("family"), "field_service")
+        field_map = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((field_map.get("work_order.customer_id") or {}).get("type"), "lookup")
+        self.assertEqual((field_map.get("work_order.customer_id") or {}).get("entity"), "entity.contact")
+        self.assertEqual((field_map.get("work_order.site_id") or {}).get("type"), "lookup")
+        self.assertEqual((field_map.get("work_order.site_id") or {}).get("entity"), "entity.site")
+
+    def test_plan_from_message_field_service_describes_customer_and_site_links(self) -> None:
+        prompt = (
+            "create a work orders module for service jobs with customer visits and job sites, "
+            "using our contacts and sites modules for the customer and site references"
+        )
+        contacts_manifest = {
+            "module": {"id": "contacts", "key": "contacts", "name": "Contacts", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.contact",
+                    "label": "Contact",
+                    "fields": [{"id": "contact.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+        sites_manifest = {
+            "module": {"id": "sites", "key": "sites", "name": "Sites", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.site",
+                    "label": "Site",
+                    "fields": [{"id": "site.name", "type": "string", "label": "Name"}],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(
+                main,
+                "_ai_module_manifest_index",
+                lambda _request: {
+                    "contacts": {"manifest": contacts_manifest},
+                    "sites": {"manifest": sites_manifest},
+                },
+            ),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Capture linked records and ownership with Contact, Owner, Customer, and Site.", text)
+        self.assertIn("Track key dates and scheduling with Scheduled Start and Scheduled End.", text)
+        self.assertIn("Capture the core operating detail with Work Order Number, Status, Service Type, and Priority.", text)
+        self.assertIn("Link each Work Order to Contact records.", text)
+        self.assertIn("Link each Work Order to Site records.", text)
+        self.assertIn("Update the module dependency settings for Work Orders to include Contacts and Sites.", text)
+
+    def test_generate_module_design_spec_specializes_work_order_invoice_and_payment_fields_to_lookups(self) -> None:
+        prompt = (
+            "Create a Work Orders module for service jobs with invoice tracking and payment status, "
+            "using our invoices and payments modules for billing references."
+        )
+        invoices_manifest = {
+            "module": {"id": "invoices", "key": "invoices", "name": "Invoices", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.invoice",
+                    "label": "Invoice",
+                    "fields": [{"id": "invoice.number", "type": "string", "label": "Invoice Number"}],
+                }
+            ],
+        }
+        payments_manifest = {
+            "module": {"id": "payments", "key": "payments", "name": "Payments", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.payment",
+                    "label": "Payment",
+                    "fields": [{"id": "payment.reference", "type": "string", "label": "Reference"}],
+                }
+            ],
+        }
+
+        design_spec = main._ai_generate_module_design_spec(
+            "work_orders",
+            "Work Orders",
+            prompt,
+            module_index={
+                "invoices": {"manifest": invoices_manifest},
+                "payments": {"manifest": payments_manifest},
+            },
+        )
+
+        field_map = {
+            field.get("id"): field
+            for field in (design_spec.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertEqual((field_map.get("work_order.invoice_id") or {}).get("type"), "lookup")
+        self.assertEqual((field_map.get("work_order.invoice_id") or {}).get("entity"), "entity.invoice")
+        self.assertEqual((field_map.get("work_order.payment_id") or {}).get("type"), "lookup")
+        self.assertEqual((field_map.get("work_order.payment_id") or {}).get("entity"), "entity.payment")
+
+    def test_plan_from_message_field_service_describes_invoice_and_payment_links(self) -> None:
+        prompt = (
+            "create a work orders module for service jobs with invoice tracking and payment status, "
+            "using our invoices and payments modules for billing references"
+        )
+        invoices_manifest = {
+            "module": {"id": "invoices", "key": "invoices", "name": "Invoices", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.invoice",
+                    "label": "Invoice",
+                    "fields": [{"id": "invoice.number", "type": "string", "label": "Invoice Number"}],
+                }
+            ],
+        }
+        payments_manifest = {
+            "module": {"id": "payments", "key": "payments", "name": "Payments", "version": "1.0.0"},
+            "entities": [
+                {
+                    "id": "entity.payment",
+                    "label": "Payment",
+                    "fields": [{"id": "payment.reference", "type": "string", "label": "Reference"}],
+                }
+            ],
+        }
+
+        with (
+            patch.object(main, "_ai_build_workspace_graph", lambda _request: {}),
+            patch.object(
+                main,
+                "_ai_module_manifest_index",
+                lambda _request: {
+                    "invoices": {"manifest": invoices_manifest},
+                    "payments": {"manifest": payments_manifest},
+                },
+            ),
+            patch.object(main, "_openai_configured", lambda: False),
+            patch.object(main, "_ai_semantic_plan_from_model", lambda *_args, **_kwargs: None),
+        ):
+            plan, _derived = _ai_plan_from_message(
+                None,
+                {"scope_mode": "auto", "selected_artifact_type": "none", "selected_artifact_key": ""},
+                prompt,
+                answer_hints={},
+            )
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": prompt, "full_selected_artifacts": []})
+        self.assertIn("Link each Work Order to Invoice records.", text)
+        self.assertIn("Link each Work Order to Payment records.", text)
+        self.assertIn("Update the module dependency settings for Work Orders to include Invoices and Payments.", text)
 
     def test_detect_new_module_family_prefers_service_desk_for_ticket_brief(self) -> None:
         prompt = (
@@ -7481,6 +7996,19 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         steps = (((automation_ops[0].get("automation") or {}).get("steps")) or [])
         self.assertEqual((((steps[0].get("inputs") or {}).get("template_id"))), "email_tpl_completion_follow_up")
         self.assertEqual((((steps[1].get("inputs") or {}).get("template_id"))), template_id)
+        requested_lines = bundle.get("requested_change_lines") or []
+        self.assertIn(
+            "Reuse the existing email template 'Completion Follow-up' in the generated automation.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Create automation 'Job Completed Customer Handoff' to send the 'Completion Follow-up' email template to the Customer Email field and generate the 'Handover Pack' document when Job records change to Completed.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Create document template 'Handover Pack' for Job Completed Customer Handoff with filename pattern 'handover_pack'.",
+            requested_lines,
+        )
 
     def test_detect_new_module_family_prefers_fleet_for_equipment_maintenance_register_brief(self) -> None:
         prompt = (
@@ -7890,7 +8418,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         }
         captured_messages: dict[str, str] = {}
 
-        def _package_for(module_id: str, module_name: str, scoped_message: str) -> dict:
+        def _package_for(module_id: str, module_name: str, scoped_message: str, **_kwargs) -> dict:
             captured_messages[module_id] = scoped_message
             manifest = {
                 "module": {"id": module_id, "key": module_id, "name": module_name, "version": "0.1.0"},
@@ -7975,7 +8503,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             }
         }
 
-        def _package_for(module_id: str, module_name: str, _message: str) -> dict:
+        def _package_for(module_id: str, module_name: str, _message: str, **_kwargs) -> dict:
             if module_id == "work_management":
                 raw_spec = {
                     "family": "operations",
@@ -13596,6 +14124,378 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Completion Status", text)
         self.assertIn("plain-english draft plan first", text.lower())
 
+    def test_preview_only_plan_includes_specific_requested_change_lines(self) -> None:
+        plan = main._ai_build_preview_only_plan(
+            "Update the Jobs module and create a PDF certificate with customer name, job address, and technician signature. Explain everything you plan to add before building it.",
+            ["jobs"],
+            ["Jobs"],
+            [],
+        )
+
+        self.assertIsInstance(plan, dict)
+        requested_lines = plan.get("requested_change_lines") or []
+        self.assertIn("Extend the existing Jobs module.", requested_lines)
+        self.assertIn("Create the PDF certificate.", requested_lines)
+        self.assertIn("Include customer name, job address, and technician signature.", requested_lines)
+
+    def test_preview_strategy_requested_change_lines_cover_rollout_controls(self) -> None:
+        message = (
+            "Plan a phased build roadmap for Sales Orders, Production, Dispatch, and Quality Checks. "
+            "Show what you would deliver first, keep it sandbox-first, include validation and rollback.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+            "- Quality Checks\n"
+        )
+
+        lines = main._ai_preview_strategy_requested_change_lines(
+            message,
+            scope_labels=["Sales", "Production", "Dispatch", "Quality Checks"],
+            preview_style={"roadmap": True, "phased": True, "deliver_first": True},
+            roadmap_tracks=["Sales Orders", "Production", "Dispatch", "Quality Checks"],
+            explicit_build_order=["Sales Orders", "Production", "Dispatch", "Quality Checks"],
+        )
+
+        self.assertIn("Plan a phased build roadmap covering Sales Orders, Production, Dispatch, and Quality Checks.", lines)
+        self.assertIn("Show what would be delivered first before later phases.", lines)
+        self.assertIn("Start with Sales Orders in Phase 1.", lines)
+        self.assertIn("Continue with Production in Phase 2.", lines)
+        self.assertIn("Then expand to Dispatch in Phase 3.", lines)
+        self.assertIn("Then expand to Quality Checks in Phase 4.", lines)
+        self.assertIn("Follow this build order: Sales Orders, Production, Dispatch, and Quality Checks.", lines)
+        self.assertIn("Keep this as a sandbox-first rollout plan.", lines)
+        self.assertIn("Include validation checkpoints before apply.", lines)
+        self.assertIn("Include a rollback path before apply.", lines)
+
+    def test_preview_strategy_requested_change_lines_phase_sequence_without_deliver_first(self) -> None:
+        message = "Plan a phased build roadmap for Sales Orders, Production, and Dispatch before anything is built."
+
+        lines = main._ai_preview_strategy_requested_change_lines(
+            message,
+            scope_labels=[],
+            preview_style={"roadmap": True, "phased": True, "deliver_first": False},
+            roadmap_tracks=["Sales Orders", "Production", "Dispatch"],
+            explicit_build_order=[],
+        )
+
+        self.assertIn("Plan a phased build roadmap covering Sales Orders, Production, and Dispatch.", lines)
+        self.assertIn("Start with Sales Orders in Phase 1.", lines)
+        self.assertIn("Continue with Production in Phase 2.", lines)
+        self.assertIn("Then expand to Dispatch in Phase 3.", lines)
+        self.assertNotIn("Show what would be delivered first before later phases.", lines)
+
+    def test_preview_strategy_requested_change_lines_build_order_without_phased_language(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Production, Dispatch, and Quality Checks before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+            "- Quality Checks\n"
+        )
+
+        lines = main._ai_preview_strategy_requested_change_lines(
+            message,
+            scope_labels=[],
+            preview_style={"roadmap": True, "phased": False, "deliver_first": False},
+            roadmap_tracks=["Sales Orders", "Production", "Dispatch", "Quality Checks"],
+            explicit_build_order=["Sales Orders", "Production", "Dispatch", "Quality Checks"],
+        )
+
+        self.assertIn("Plan the build roadmap covering Sales Orders, Production, Dispatch, and Quality Checks.", lines)
+        self.assertIn("Start with Sales Orders first.", lines)
+        self.assertIn("Then move to Production.", lines)
+        self.assertIn("Then move to Dispatch.", lines)
+        self.assertIn("Then move to Quality Checks.", lines)
+        self.assertIn("Follow this build order: Sales Orders, Production, Dispatch, and Quality Checks.", lines)
+        self.assertNotIn("Phase 1", " ".join(lines))
+
+    def test_preview_strategy_requested_change_lines_track_order_without_build_order(self) -> None:
+        message = "Plan the build roadmap for Sales Orders, Production, Dispatch, and Quality Checks before anything is built."
+
+        lines = main._ai_preview_strategy_requested_change_lines(
+            message,
+            scope_labels=[],
+            preview_style={"roadmap": True, "phased": False, "deliver_first": False},
+            roadmap_tracks=["Sales Orders", "Production", "Dispatch", "Quality Checks"],
+            explicit_build_order=[],
+        )
+
+        self.assertIn("Plan the build roadmap covering Sales Orders, Production, Dispatch, and Quality Checks.", lines)
+        self.assertIn("Start with Sales Orders first.", lines)
+        self.assertIn("Then move to Production.", lines)
+        self.assertIn("Then move to Dispatch.", lines)
+        self.assertIn("Then move to Quality Checks.", lines)
+        self.assertNotIn("Follow this build order:", " ".join(lines))
+
+    def test_preview_strategy_requested_change_lines_prefers_explicit_build_order_for_roadmap_headline(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        lines = main._ai_preview_strategy_requested_change_lines(
+            message,
+            scope_labels=[],
+            preview_style={"roadmap": True, "phased": False, "deliver_first": False},
+            roadmap_tracks=["Sales Orders", "Dispatch", "Production"],
+            explicit_build_order=["Sales Orders", "Production", "Dispatch"],
+        )
+
+        self.assertIn("Plan the build roadmap covering Sales Orders, Production, and Dispatch.", lines)
+        self.assertIn("Start with Sales Orders first.", lines)
+        self.assertIn("Then move to Production.", lines)
+        self.assertIn("Then move to Dispatch.", lines)
+        self.assertNotIn("Plan the build roadmap covering Sales Orders, Dispatch, and Production.", lines)
+
+    def test_preview_plan_assistant_text_prefers_explicit_build_order_for_roadmap_headline(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Dispatch", "Production"],
+                "build_order": ["Sales Orders", "Production", "Dispatch"],
+            },
+            "requested_change_lines": [
+                "Coordinate this roadmap across Sales Orders, Production, and Dispatch.",
+                "Plan the build roadmap covering Sales Orders, Production, and Dispatch.",
+            ],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Plan a plain-English build roadmap covering Sales Orders, Production, and Dispatch.", text)
+        self.assertNotIn("Plan a plain-English build roadmap covering Sales Orders, Dispatch, and Production.", text)
+
+    def test_preview_plan_change_lines_prefers_explicit_build_order_for_first_delivery_guidance(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "deliver_first_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Dispatch", "Production"],
+                "build_order": ["Sales Orders", "Production", "Dispatch"],
+            },
+            "requested_change_lines": [],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        lines = main._ai_plan_change_lines(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Shape the end-to-end workflow around Sales Orders, Production, and Dispatch.", lines)
+        self.assertIn("Define the first delivery around Sales Orders and Production before any build work starts.", lines)
+        self.assertNotIn("Shape the end-to-end workflow around Sales Orders, Dispatch, and Production.", lines)
+
+    def test_preview_plan_change_lines_keeps_two_track_roadmap_guidance_concrete(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "deliver_first_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Production"],
+                "build_order": ["Sales Orders", "Production"],
+            },
+            "requested_change_lines": [],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        lines = main._ai_plan_change_lines(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Shape the end-to-end workflow around Sales Orders and Production.", lines)
+        self.assertIn("Define the first delivery around Sales Orders and Production before any build work starts.", lines)
+        self.assertNotIn("Map the first draft plan across", " ".join(lines))
+
+    def test_preview_plan_assistant_text_keeps_two_track_roadmap_headline_concrete(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Production"],
+                "build_order": ["Sales Orders", "Production"],
+            },
+            "requested_change_lines": [
+                "Coordinate this roadmap across Sales Orders and Production.",
+                "Plan the build roadmap covering Sales Orders and Production.",
+            ],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Plan a plain-English build roadmap covering Sales Orders and Production.", text)
+        self.assertNotIn("Plan a preview-first rollout for this request", text)
+
+    def test_preview_only_plan_prefers_explicit_build_order_for_scope_free_roadmap_coordination(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        plan = main._ai_build_preview_only_plan(message, [], [], [])
+
+        self.assertIsInstance(plan, dict)
+        requested_lines = plan.get("requested_change_lines") or []
+        self.assertIn("Coordinate this roadmap across Sales Orders, Production, and Dispatch.", requested_lines)
+        self.assertIn("Plan the build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+        self.assertNotIn("Coordinate this roadmap across Sales Orders, Dispatch, and Production.", requested_lines)
+
+    def test_preview_track_modules_prefers_explicit_build_order_sequence(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+        module_index = {
+            "sales": {},
+            "jobs": {},
+            "field_service": {},
+        }
+
+        modules = main._ai_preview_track_modules(message, module_index)
+
+        self.assertEqual(modules, ["sales", "jobs", "field_service"])
+
+    def test_preview_plan_architecture_decisions_prefers_explicit_build_order_anchor(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Dispatch", "Production"],
+                "build_order": ["Sales Orders", "Production", "Dispatch"],
+            },
+            "requested_change_lines": [],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        decisions = main._ai_plan_architecture_decisions(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Use Sales Orders as the first rollout anchor before expanding to Production and Dispatch.", decisions)
+        self.assertNotIn("Use Sales Orders as the first rollout anchor before expanding to Dispatch and Production.", decisions)
+
+    def test_preview_plan_first_delivery_slice_prefers_explicit_build_order_without_duplicate_phase_one(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders, Dispatch, and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+            "- Dispatch\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "deliver_first_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Dispatch", "Production"],
+                "build_order": ["Sales Orders", "Production", "Dispatch"],
+            },
+            "requested_change_lines": [],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        lines = main._ai_plan_first_delivery_slice(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertIn("Phase 1 to deliver first: start with Sales Orders and Production.", lines)
+        self.assertIn("Phase 2: follow with Dispatch.", lines)
+        self.assertNotIn("Phase 1: deliver Sales Orders and Production first.", lines)
+        self.assertNotIn("Hold Dispatch for later phases once the first handoff is stable.", lines)
+
+    def test_preview_plan_rollout_lines_include_two_track_single_group(self) -> None:
+        message = (
+            "Plan the build roadmap for Sales Orders and Production before anything is built.\n"
+            "Build order:\n"
+            "- Sales Orders\n"
+            "- Production\n"
+        )
+
+        plan = {
+            "planner_state": {
+                "intent": "preview_only_plan",
+                "request_summary": message,
+                "roadmap_requested": True,
+                "roadmap_tracks": ["Sales Orders", "Production"],
+                "build_order": ["Sales Orders", "Production"],
+            },
+            "requested_change_lines": [],
+            "candidate_operations": [],
+            "affected_artifacts": [],
+        }
+
+        lines = main._ai_plan_rollout_lines(plan, {"request_summary": message, "full_selected_artifacts": []})
+        self.assertEqual(lines, ["Phase 1: Sales Orders and Production."])
+
+    def test_preview_only_plan_supports_scope_free_roadmap_brief(self) -> None:
+        message = (
+            "Plan a phased build roadmap for Sales Orders, Production, and Dispatch. "
+            "Show what you would deliver first before anything is built."
+        )
+
+        plan = main._ai_build_preview_only_plan(message, [], [], [])
+
+        self.assertIsInstance(plan, dict)
+        self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
+        requested_lines = plan.get("requested_change_lines") or []
+        self.assertIn("Coordinate this roadmap across Sales Orders, Production, and Dispatch.", requested_lines)
+        self.assertIn("Plan a phased build roadmap covering Sales Orders, Production, and Dispatch.", requested_lines)
+        self.assertIn("Show what would be delivered first before later phases.", requested_lines)
+        self.assertIn("Start with Sales Orders in Phase 1.", requested_lines)
+        self.assertIn("Continue with Production in Phase 2.", requested_lines)
+        self.assertIn("Then expand to Dispatch in Phase 3.", requested_lines)
+
     def test_create_module_preview_brief_without_existing_scope_stays_in_confirm_flow(self) -> None:
         message = (
             "Create a module for training compliance with due dates, certificate uploads, expiry reminders, "
@@ -13620,6 +14520,7 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((plan.get("planner_state") or {}).get("intent"), "preview_only_plan")
         self.assertEqual((plan.get("planner_state") or {}).get("module_name"), "Training Compliance")
         self.assertEqual((plan.get("planner_state") or {}).get("requested_module_labels"), ["Training Compliance"])
+        self.assertIn("Create the new Training Compliance module.", plan.get("requested_change_lines") or [])
         text = _ai_plan_assistant_text(plan, {"request_summary": message, "full_selected_artifacts": []})
         self.assertIn("Training Compliance", text)
         self.assertIn("new module", text.lower())
@@ -14640,6 +15541,15 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "confirm_plan")
         self.assertEqual((plan.get("planner_state") or {}).get("requested_module_labels"), ["Invoices", "Quotes"])
         self.assertEqual((plan.get("planner_state") or {}).get("missing_module_labels"), ["Invoices", "Quotes"])
+        requested_lines = plan.get("requested_change_lines") or []
+        self.assertIn("Coordinate this rollout across Invoices and Quotes.", requested_lines)
+        self.assertIn("Keep this as a sandbox-first rollout plan.", requested_lines)
+        self.assertIn("Include validation checkpoints before apply.", requested_lines)
+        self.assertIn("Include a rollback path before apply.", requested_lines)
+        self.assertIn(
+            "Treat Invoices and Quotes as planned scope only because they do not currently exist in this workspace.",
+            requested_lines,
+        )
 
         text = _ai_plan_assistant_text(
             plan,
@@ -19786,7 +20696,14 @@ class TestOctoAiFieldResolution(unittest.TestCase):
                         "artifact_id": "ai_auto_contacts_inactive_notify",
                         "automation": {
                             "name": "Contacts Inactive Notification",
-                            "trigger": {"kind": "event", "event_types": ["workflow.status_changed"]},
+                            "trigger": {
+                                "kind": "event",
+                                "event_types": ["workflow.status_changed"],
+                                "filters": [
+                                    {"path": "entity_id", "op": "eq", "value": "entity.contact"},
+                                    {"path": "to", "op": "eq", "value": "inactive"},
+                                ],
+                            },
                             "steps": [
                                 {
                                     "kind": "action",
@@ -19802,7 +20719,319 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         )
 
         self.assertTrue(lines)
-        self.assertIn("Create automation 'Contacts Inactive Notification' to email nick@octodrop.com when workflow status changes.", lines[0])
+        self.assertIn(
+            "Create automation 'Contacts Inactive Notification' to send email to nick@octodrop.com when Contact records change to Inactive.",
+            lines[0],
+        )
+
+    def test_plan_change_lines_include_template_targeted_automation_summary(self) -> None:
+        email_template = main.email_store.create_template(
+            {
+                "name": "Completion Follow-up",
+                "subject": "Your job is complete",
+                "body_html": "<p>Your job is complete.</p>",
+                "body_text": "Your job is complete.",
+            }
+        )
+
+        lines = main._ai_plan_change_lines(
+            {
+                "proposed_changes": [
+                    {
+                        "op": "create_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": "ai_auto_jobs_completed_handoff",
+                        "automation": {
+                            "name": "Job Completed Customer Handoff",
+                            "trigger": {
+                                "kind": "event",
+                                "event_types": ["workflow.status_changed"],
+                                "filters": [
+                                    {"path": "entity_id", "op": "eq", "value": "entity.job"},
+                                    {"path": "to", "op": "eq", "value": "completed"},
+                                ],
+                            },
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "template_id": email_template["id"],
+                                        "to_field_ids": ["job.customer_email"],
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+            {"request_summary": "When a job is completed, send the completion follow-up email to the customer."},
+        )
+
+        self.assertTrue(lines)
+        self.assertIn(
+            "Create automation 'Job Completed Customer Handoff' to send the 'Completion Follow-up' email template to the Customer Email field when Job records change to Completed.",
+            lines[0],
+        )
+
+    def test_automation_summary_line_names_template_and_document_targets(self) -> None:
+        email_template = main.email_store.create_template(
+            {
+                "name": "Completion Follow-up",
+                "subject": "Your job is complete",
+                "body_html": "<p>Your job is complete.</p>",
+                "body_text": "Your job is complete.",
+            }
+        )
+        document_template = main.doc_template_store.create(
+            {
+                "name": "Handover Pack",
+                "filename_pattern": "handover_pack",
+                "html": "<p>Handover Pack</p>",
+            }
+        )
+
+        line = main._ai_automation_summary_line(
+            {
+                "op": "update_automation_record",
+                "automation": {
+                    "name": "Job Completed Customer Handoff",
+                    "trigger": {
+                        "kind": "event",
+                        "event_types": ["workflow.status_changed"],
+                        "filters": [
+                            {"path": "entity_id", "op": "eq", "value": "entity.job"},
+                            {"path": "to", "op": "eq", "value": "completed"},
+                        ],
+                    },
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "template_id": email_template["id"],
+                                "to_field_ids": ["job.customer_email"],
+                            },
+                        },
+                        {
+                            "kind": "action",
+                            "action_id": "system.generate_document",
+                            "inputs": {
+                                "template_id": document_template["id"],
+                            },
+                        },
+                    ],
+                },
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "Update automation 'Job Completed Customer Handoff' to send the 'Completion Follow-up' email template to the Customer Email field and generate the 'Handover Pack' document when Job records change to Completed.",
+        )
+
+    def test_plan_change_lines_include_notify_automation_summary(self) -> None:
+        lines = main._ai_plan_change_lines(
+            {
+                "proposed_changes": [
+                    {
+                        "op": "create_automation_record",
+                        "artifact_type": "automation",
+                        "artifact_id": "ai_auto_jobs_created_notify",
+                        "automation": {
+                            "name": "Jobs Job Created Notification",
+                            "trigger": {
+                                "kind": "event",
+                                "event_types": ["record.created"],
+                                "filters": [{"path": "entity_id", "op": "eq", "value": "entity.job"}],
+                            },
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.notify",
+                                    "inputs": {"recipient_user_ids": ["user_1", "user_2"]},
+                                }
+                            ],
+                        },
+                    }
+                ]
+            },
+            {"request_summary": "When a job is created, notify the ops team."},
+        )
+
+        self.assertTrue(lines)
+        self.assertIn(
+            "Create automation 'Jobs Job Created Notification' to send workspace notifications to 2 users when Job records are created.",
+            lines[0],
+        )
+
+    def test_multi_clause_plan_strengthens_weak_requested_change_lines_from_candidate_ops(self) -> None:
+        clause_results = iter(
+            [
+                {
+                    "candidate_ops": [
+                        {
+                            "op": "update_automation_record",
+                            "artifact_type": "automation",
+                            "artifact_id": "automation_a",
+                            "automation": {
+                                "name": "Automation A",
+                                "status": "draft",
+                                "trigger": {"kind": "event", "event_types": ["record.updated"], "filters": []},
+                                "steps": [
+                                    {
+                                        "kind": "action",
+                                        "action_id": "system.notify",
+                                        "inputs": {"recipient_user_id": "user-1", "title": "Automation", "body": "Body"},
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "questions": [],
+                    "question_meta": None,
+                    "assumptions": [],
+                    "advisories": [],
+                    "noop_notes": [],
+                    "requested_change_lines": ["Update Automation A."],
+                    "risk_flags": [],
+                    "affected_modules": [],
+                    "planner_state": {"intent": "automation_named_change"},
+                    "resolved_without_changes": False,
+                },
+                {
+                    "candidate_ops": [
+                        {
+                            "op": "update_email_template_record",
+                            "artifact_type": "email_template",
+                            "artifact_id": "email_a",
+                            "email_template": {
+                                "name": "Email A",
+                                "subject": "Updated",
+                                "body_html": "<p>Updated</p>",
+                                "body_text": "Updated",
+                            },
+                        }
+                    ],
+                    "questions": [],
+                    "question_meta": None,
+                    "assumptions": [],
+                    "advisories": [],
+                    "noop_notes": [],
+                    "requested_change_lines": ["Update Email A."],
+                    "risk_flags": [],
+                    "affected_modules": [],
+                    "planner_state": {"intent": "email_named_change"},
+                    "resolved_without_changes": False,
+                },
+            ]
+        )
+
+        with (
+            patch.object(main, "_ai_split_request_clauses", lambda _message: ["Update Automation A", "Update Email A"]),
+            patch.object(main, "_ai_slot_based_plan", lambda *args, **kwargs: next(clause_results)),
+            patch.object(main, "_ai_cross_module_field_rollout_plan", lambda *args, **kwargs: None),
+        ):
+            plan = main._ai_multi_clause_plan("Update Automation A and Email A.", [], {}, answer_hints=None, request=None)
+
+        self.assertIsInstance(plan, dict)
+        requested_lines = plan.get("requested_change_lines") or []
+        self.assertIn(
+            "Update automation 'Automation A' to send the 'Automation' workspace notification to 1 user when records are updated.",
+            requested_lines,
+        )
+        self.assertIn(
+            "Update email template 'Email A' with subject 'Updated'.",
+            requested_lines,
+        )
+        self.assertNotIn("Update Automation A.", requested_lines)
+        self.assertNotIn("Update Email A.", requested_lines)
+
+    def test_email_template_summary_line_includes_companion_purpose(self) -> None:
+        line = main._ai_email_template_summary_line(
+            {
+                "op": "create_email_template_record",
+                "email_template": {
+                    "name": "Completion Follow-up",
+                    "description": "Draft email template generated for automation 'Job Completed Customer Handoff'.",
+                    "subject": "Your job is complete",
+                    "variables_schema": {"entity_id": "entity.job"},
+                },
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "Create email template 'Completion Follow-up' for Job Completed Customer Handoff with subject 'Your job is complete'.",
+        )
+
+    def test_document_template_summary_line_includes_companion_purpose(self) -> None:
+        line = main._ai_document_template_summary_line(
+            {
+                "op": "create_document_template_record",
+                "document_template": {
+                    "name": "Handover Pack",
+                    "description": "Draft document template generated for automation 'Job Completed Customer Handoff'.",
+                    "filename_pattern": "handover_pack",
+                    "variables_schema": {"entity_id": "entity.job"},
+                },
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "Create document template 'Handover Pack' for Job Completed Customer Handoff with filename pattern 'handover_pack'.",
+        )
+
+    def test_email_template_summary_line_infers_entity_from_record_keys(self) -> None:
+        line = main._ai_email_template_summary_line(
+            {
+                "op": "create_email_template_record",
+                "email_template": {
+                    "name": "Sales Order Update",
+                    "subject": "Sales order update",
+                    "body_text": "Order {{ record['te_sales_order.order_number'] }} for {{ record['te_sales_order.customer_name'] }}",
+                },
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "Create email template 'Sales Order Update' for Sales Order records with subject 'Sales order update'.",
+        )
+
+    def test_document_template_summary_line_infers_entity_from_record_keys(self) -> None:
+        line = main._ai_document_template_summary_line(
+            {
+                "op": "create_document_template_record",
+                "document_template": {
+                    "name": "Sales Order Summary",
+                    "filename_pattern": "sales_order_summary",
+                    "body_html": "<div>{{ record['te_sales_order.order_number'] }}</div>",
+                },
+            }
+        )
+
+        self.assertEqual(
+            line,
+            "Create document template 'Sales Order Summary' for Sales Order records with filename pattern 'sales_order_summary'.",
+        )
+
+    def test_template_assumption_lines_promote_matched_workspace_templates_without_explicit_reuse_line(self) -> None:
+        lines = main._ai_template_assumptions_requested_change_lines(
+            [
+                "Matched the requested email template 'Completion Follow-up' from the workspace.",
+                "Matched the requested document template 'Handover Pack' from the workspace.",
+            ]
+        )
+
+        self.assertEqual(
+            lines,
+            [
+                "Reuse the existing email template 'Completion Follow-up' in the generated automation.",
+                "Reuse the existing document template 'Handover Pack' in the generated automation.",
+            ],
+        )
 
     def test_validate_patchset_accepts_automation_ops(self) -> None:
         request = SimpleNamespace(state=SimpleNamespace(actor={}))

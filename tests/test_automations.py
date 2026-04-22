@@ -26,6 +26,16 @@ class TestAutomations(unittest.TestCase):
         self.assertFalse(match_event(trigger, "record.updated", payload))
         self.assertFalse(match_event(trigger, "record.created", {"record": {"status": "closed"}}))
 
+    def test_match_event_filters_allow_trigger_prefix(self) -> None:
+        trigger = {
+            "kind": "event",
+            "event_types": ["record.created"],
+            "filters": [{"path": "trigger.record.status", "op": "eq", "value": "open"}],
+        }
+        payload = {"record": {"status": "open"}}
+        self.assertTrue(match_event(trigger, "record.created", payload))
+        self.assertFalse(match_event(trigger, "record.created", {"record": {"status": "closed"}}))
+
     def test_handle_event_creates_run(self) -> None:
         automation_store = MemoryAutomationStore()
         job_store = MemoryJobStore()

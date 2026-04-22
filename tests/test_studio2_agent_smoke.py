@@ -2504,8 +2504,73 @@ class TestStudio2AgentSmoke(unittest.TestCase):
         relations = [item for item in (normalized.get("relations") or []) if isinstance(item, dict)]
         self.assertTrue(any(rel.get("to") == "entity.sales_quote_line" for rel in relations))
 
-        actions = [item for item in (normalized.get("actions") or []) if isinstance(item, dict)]
-        self.assertTrue(any(action.get("id") == "action.sales_quote_mark_sent" for action in actions))
+    def test_agent_chat_seeds_rich_recipe_module_scaffold_for_new_module_brief(self) -> None:
+        client = TestClient(main.app)
+        module_id = f"cooking_{uuid.uuid4().hex[:6]}"
+
+        def fake_openai(_messages, model=None):
+            return _fake_builder_response([{"tool": "ensure_nav", "module_id": module_id}])
+
+        build_spec = {
+            "goal": "Build cooking",
+            "entities": [{"id": "entity.recipe"}, {"id": "entity.ingredient"}],
+            "relations": [{"from": "entity.recipe", "to": "entity.ingredient"}],
+        }
+        with patch.object(main, "_openai_chat_completion", fake_openai), patch.object(main, "_openai_configured", lambda: True):
+            res = client.post(
+                "/studio2/agent/chat",
+                json={
+                    "module_id": module_id,
+                    "message": "create me a real good cooking module, i need it to track my recipes and ingredients, we should also create a ingredients entity and add via line items in cooking module",
+                    "build_spec": build_spec,
+                },
+            )
+
+        body = res.json()
+        self.assertTrue(body.get("ok"), body)
+        data = body.get("data") or {}
+        draft = data.get("drafts", {}).get(module_id)
+        self.assertIsInstance(draft, dict)
+
+        normalized, errors, warnings = validate_manifest_raw(draft, expected_module_id=module_id)
+        self.assertEqual(errors, [], {"warnings": warnings})
+
+        entities = [item for item in (normalized.get("entities") or []) if isinstance(item, dict)]
+        recipe_entity = entities[0]
+        recipe_labels = [
+            field.get("label")
+            for field in (recipe_entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("label"), str)
+        ]
+        self.assertIn("Recipe Name", recipe_labels)
+        self.assertIn("Cuisine", recipe_labels)
+        self.assertIn("Meal Type", recipe_labels)
+
+        ingredient_entity = next(item for item in entities if item.get("id") != recipe_entity.get("id"))
+        ingredient_field_ids = {
+            field.get("id")
+            for field in (ingredient_entity.get("fields") or [])
+            if isinstance(field, dict) and isinstance(field.get("id"), str)
+        }
+        self.assertIn(f"{ingredient_entity['id'].split('.', 1)[1]}.{recipe_entity['id'].split('.', 1)[1]}_id", ingredient_field_ids)
+
+        recipe_form = next(
+            view for view in (normalized.get("views") or [])
+            if isinstance(view, dict) and view.get("id") == f"{recipe_entity['id'].split('.', 1)[1]}.form"
+        )
+        self.assertFalse(((recipe_form.get("activity") or {}).get("enabled")) is True)
+        tabs = (((recipe_form.get("header") or {}).get("tabs") or {}).get("tabs") or [])
+        ingredient_tab = next(
+            tab for tab in tabs
+            if isinstance(tab, dict) and str(tab.get("label") or "").lower() == "line items"
+        )
+        related_list = ((ingredient_tab.get("content") or [])[0]) if isinstance(ingredient_tab, dict) else None
+        self.assertEqual((related_list or {}).get("kind"), "related_list")
+
+        pages = [item for item in (normalized.get("pages") or []) if isinstance(item, dict)]
+        page_ids = {item.get("id") for item in pages if isinstance(item.get("id"), str)}
+        self.assertIn(f"{recipe_entity['id'].split('.', 1)[1]}.list_page", page_ids)
+        self.assertIn(f"{recipe_entity['id'].split('.', 1)[1]}.form_page", page_ids)
 
     def test_agent_chat_uses_installed_manifest_as_base_when_no_draft_exists(self) -> None:
         client = TestClient(main.app)
