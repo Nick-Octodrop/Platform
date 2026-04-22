@@ -1102,10 +1102,22 @@ function InlineLineItemsTable({
   const itemDisplayField = config?.item_lookup_display_field || null;
   const itemLookupDomain = config?.item_lookup_domain || null;
   const descriptionField = config?.description_field || null;
-  const itemFieldMap = config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {};
-  const parentFieldMap = config?.parent_field_map && typeof config.parent_field_map === "object" ? config.parent_field_map : {};
-  const defaults = config?.defaults && typeof config.defaults === "object" ? config.defaults : {};
-  const customLineDefaults = config?.custom_line_defaults && typeof config.custom_line_defaults === "object" ? config.custom_line_defaults : {};
+  const itemFieldMap = useMemo(
+    () => (config?.item_field_map && typeof config.item_field_map === "object" ? config.item_field_map : {}),
+    [config?.item_field_map]
+  );
+  const parentFieldMap = useMemo(
+    () => (config?.parent_field_map && typeof config.parent_field_map === "object" ? config.parent_field_map : {}),
+    [config?.parent_field_map]
+  );
+  const defaults = useMemo(
+    () => (config?.defaults && typeof config.defaults === "object" ? config.defaults : {}),
+    [config?.defaults]
+  );
+  const customLineDefaults = useMemo(
+    () => (config?.custom_line_defaults && typeof config.custom_line_defaults === "object" ? config.custom_line_defaults : {}),
+    [config?.custom_line_defaults]
+  );
   const columns = Array.isArray(config?.columns) ? config.columns : [];
   const itemPrefix = useMemo(() => {
     if (typeof itemDisplayField === "string" && itemDisplayField.includes(".")) {
