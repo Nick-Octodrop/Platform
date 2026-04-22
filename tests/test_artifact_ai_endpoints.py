@@ -3865,6 +3865,713 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             validation = body.get("validation") or {}
             self.assertTrue(validation.get("compiled_ok"), validation)
 
+    def test_automation_ai_plan_returns_send_email_recipient_decision_slot_when_missing(self) -> None:
+        client = TestClient(main.app)
+        actor = _superadmin_actor()
+        actor["user_id"] = "user-current"
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Contact welcome",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Send a welcome email when a contact is created.",
+                        "draft": {
+                            "name": "Contact welcome",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "id": "step_send_welcome",
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_contact",
+                                        "subject": "Welcome",
+                                        "body_text": "Thanks for joining us.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            fake_meta = {
+                "current_user_id": "user-current",
+                "entities": [
+                    {
+                        "id": "entity.biz_contact",
+                        "label": "Contact",
+                        "fields": [
+                            {"id": "biz_contact.email", "label": "Primary Email", "type": "email"},
+                            {"id": "biz_contact.billing_email", "label": "Billing Email", "type": "email"},
+                        ],
+                    }
+                ],
+                "event_catalog": [
+                    {
+                        "id": "biz_contacts.record.biz_contact.created",
+                        "label": "Contact created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_contact",
+                    }
+                ],
+                "event_types": ["biz_contacts.record.biz_contact.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "members": [{"user_id": "user-current", "email": "nick@octodrop.com", "full_name": "Nick"}],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Send a welcome email when a contact is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            meta = body.get("required_question_meta") or {}
+            self.assertEqual(meta.get("kind"), "decision_slot")
+            self.assertEqual(meta.get("slot_kind"), "email_recipient")
+            self.assertEqual(meta.get("prompt"), "Who should this email go to?")
+            option_labels = [str(option.get("label") or "") for option in (meta.get("options") or []) if isinstance(option, dict)]
+            self.assertTrue(any("Primary Email" in label for label in option_labels), option_labels)
+            self.assertTrue(any("Billing Email" in label for label in option_labels), option_labels)
+            self.assertTrue(any("Nick" in label for label in option_labels), option_labels)
+
+    def test_automation_ai_plan_normalizes_customer_recipient_phrase_to_matching_email_field(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote follow-up",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.record.biz_quote.created",
+                        "label": "Quote created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.billing_email", "label": "Billing Email", "type": "email"},
+                        ],
+                    }
+                ],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Send the follow-up to the customer.",
+                        "draft": {
+                            "name": "Quote follow-up",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to": "customer",
+                                        "subject": "Quote update",
+                                        "body_text": "Your quote is ready.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the customer when the quote is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to_field_ids"), ["biz_quote.customer_email"])
+            self.assertNotIn("to", step_inputs)
+
+    def test_automation_ai_plan_normalizes_billing_recipient_phrase_to_matching_email_field(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote billing follow-up",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.record.biz_quote.created",
+                        "label": "Quote created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.billing_email", "label": "Billing Email", "type": "email"},
+                        ],
+                    }
+                ],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Send the follow-up to billing.",
+                        "draft": {
+                            "name": "Quote billing follow-up",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to": "billing",
+                                        "subject": "Billing copy",
+                                        "body_text": "Your quote copy is attached.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email billing when the quote is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to_field_ids"), ["biz_quote.billing_email"])
+            self.assertNotIn("to", step_inputs)
+
+    def test_automation_ai_plan_normalizes_owner_phrase_to_lookup_recipient_field(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Job owner update",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_jobs.record.biz_job.created",
+                        "label": "Job created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_job",
+                    }
+                ],
+                "event_types": ["biz_jobs.record.biz_job.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_job",
+                        "label": "Job",
+                        "fields": [
+                            {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                            {"id": "biz_job.title", "label": "Title", "type": "string"},
+                        ],
+                    }
+                ],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the owner when a job is created.",
+                        "draft": {
+                            "name": "Job owner update",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_job",
+                                        "to": "owner",
+                                        "subject": "New job",
+                                        "body_text": "A new job was created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the owner when a job is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to_lookup_field_ids"), ["biz_job.owner_user_id"])
+            self.assertNotIn("to", step_inputs)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_normalizes_account_manager_phrase_to_lookup_recipient_field(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote account manager update",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.record.biz_quote.created",
+                        "label": "Quote created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.record.biz_quote.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.account_manager_id", "label": "Account Manager", "type": "lookup"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the account manager when a quote is created.",
+                        "draft": {
+                            "name": "Quote account manager update",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to": "account manager",
+                                        "subject": "New quote",
+                                        "body_text": "A new quote was created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the account manager when a quote is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to_lookup_field_ids"), ["biz_quote.account_manager_id"])
+            self.assertNotIn("to", step_inputs)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_combines_owner_lookup_and_literal_email_recipients_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Job owner update",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_jobs.record.biz_job.created",
+                        "label": "Job created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_job",
+                    }
+                ],
+                "event_types": ["biz_jobs.record.biz_job.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_job",
+                        "label": "Job",
+                        "fields": [
+                            {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                            {"id": "biz_job.title", "label": "Title", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the owner.",
+                        "draft": {
+                            "name": "Job owner update",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_job",
+                                        "subject": "New job",
+                                        "body_text": "A new job was created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the owner and accounts@example.com when a job is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to"), ["accounts@example.com"])
+            self.assertEqual(step_inputs.get("to_lookup_field_ids"), ["biz_job.owner_user_id"])
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_combines_account_manager_lookup_and_literal_email_recipients_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote account manager update",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.record.biz_quote.created",
+                        "label": "Quote created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.record.biz_quote.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.account_manager_id", "label": "Account Manager", "type": "lookup"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the account manager.",
+                        "draft": {
+                            "name": "Quote account manager update",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "subject": "New quote",
+                                        "body_text": "A new quote was created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email the account manager and accounts@example.com when a quote is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("to"), ["accounts@example.com"])
+            self.assertEqual(step_inputs.get("to_lookup_field_ids"), ["biz_quote.account_manager_id"])
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_defaults_send_email_to_current_user_when_prompt_requests_me(self) -> None:
+        client = TestClient(main.app)
+        actor = _superadmin_actor()
+        actor["user_id"] = "user-current"
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Internal alert",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email me when a contact is created.",
+                        "draft": {
+                            "name": "Internal alert",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_contact",
+                                        "subject": "New contact",
+                                        "body_text": "A new contact has been created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            fake_meta = {
+                "current_user_id": "user-current",
+                "entities": [
+                    {
+                        "id": "entity.biz_contact",
+                        "label": "Contact",
+                        "fields": [
+                            {"id": "biz_contact.email", "label": "Primary Email", "type": "email"},
+                        ],
+                    }
+                ],
+                "event_catalog": [
+                    {
+                        "id": "biz_contacts.record.biz_contact.created",
+                        "label": "Contact created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_contact",
+                    }
+                ],
+                "event_types": ["biz_contacts.record.biz_contact.created"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "members": [{"user_id": "user-current", "email": "nick@octodrop.com", "full_name": "Nick"}],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Email me when a contact is created.",
+                        "draft": created["automation"],
+                    },
+                )
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step = (body.get("draft", {}).get("steps") or [{}])[0]
+            inputs = step.get("inputs") or {}
+            self.assertEqual(inputs.get("to_internal_emails"), ["nick@octodrop.com"])
+            self.assertNotIn("to_field_ids", inputs)
+            self.assertIsNone(body.get("required_question_meta"))
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
     def test_automation_ai_plan_maps_partial_entity_change_to_matching_catalog_trigger(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
@@ -4478,6 +5185,95 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             values = [item.get("value") for item in (meta.get("options") or []) if isinstance(item, dict)]
             self.assertEqual(values, ["nick@octodrop.com"])
 
+    def test_automation_ai_plan_infers_notify_owner_lookup_recipient_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Notify job owner",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Notify the owner when a job is created.",
+                        "draft": {
+                            "name": "Notify job owner",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_jobs.record.biz_job.created"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.notify",
+                                    "inputs": {
+                                        "title": "New job created",
+                                        "body": "A new job was created.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            fake_meta = {
+                "entities": [
+                    {
+                        "id": "entity.biz_job",
+                        "label": "Job",
+                        "fields": [
+                            {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                            {"id": "biz_job.title", "label": "Title", "type": "string"},
+                        ],
+                    }
+                ],
+                "event_catalog": [
+                    {
+                        "id": "biz_jobs.record.biz_job.created",
+                        "label": "Job created",
+                        "event": "record.created",
+                        "entity_id": "entity.biz_job",
+                    }
+                ],
+                "event_types": ["biz_jobs.record.biz_job.created"],
+                "system_actions": [{"id": "system.notify", "label": "Notify workspace users"}],
+                "module_actions": [],
+                "members": [{"user_id": "user-current", "email": "nick@octodrop.com"}],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "Notify the owner when a job is created.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(step_inputs.get("recipient_lookup_field_ids"), ["biz_job.owner_user_id"])
+            self.assertFalse(body.get("required_question_meta"), body)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
     def test_automation_validation_flags_invalid_field_refs_and_template_ids(self) -> None:
         fake_meta = {
             "event_types": ["biz_contacts.record.biz_contact.created"],
@@ -4763,6 +5559,68 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertTrue(any("invalid record key 'biz_quote.customer_contact_name'" in str(message) for message in messages), messages)
         self.assertTrue(any("Try record['biz_quote.customer_name'] instead." in str(message) for message in messages), messages)
 
+    def test_automation_validation_flags_email_that_promises_attachment_without_source(self) -> None:
+        fake_meta = {
+            "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+            "event_catalog": [
+                {
+                    "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "label": "Quote accepted",
+                    "event": "action.clicked",
+                    "entity_id": "entity.biz_quote",
+                }
+            ],
+            "system_actions": [
+                {"id": "system.send_email", "label": "Send email"},
+            ],
+            "module_actions": [],
+            "entities": [
+                {
+                    "id": "entity.biz_quote",
+                    "label": "Quote",
+                    "display_field": "biz_quote.quote_number",
+                    "fields": [
+                        {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                    ],
+                }
+            ],
+            "field_path_catalog": [],
+            "email_templates": [],
+            "doc_templates": [],
+        }
+
+        validation = main._artifact_ai_validate_automation_draft(
+            {
+                "name": "Quote Accepted Email",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                    "filters": [{"path": "entity_id", "op": "eq", "value": "entity.biz_quote"}],
+                },
+                "steps": [
+                    {
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "to_field_ids": ["biz_quote.customer_email"],
+                            "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                            "body_text": "Your quote PDF is attached to this email.",
+                        },
+                    }
+                ],
+            },
+            fake_meta,
+        )
+
+        self.assertFalse(validation.get("compiled_ok"), validation)
+        messages = [item.get("message") for item in (validation.get("errors") or []) if isinstance(item, dict)]
+        self.assertTrue(
+            any("Email content promises an attachment" in str(message) for message in messages),
+            messages,
+        )
+
     def test_automation_validation_flags_cross_module_handoff_reference_errors(self) -> None:
         fake_meta = {
             "event_types": ["sales.workflow.quote.status_changed"],
@@ -4956,6 +5814,684 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             step_inputs = (((body.get("draft", {}).get("steps") or [None])[0]) or {}).get("inputs") or {}
             self.assertEqual(step_inputs.get("to_field_ids"), ["biz_quote.customer_email"])
             self.assertNotIn("to_lookup_field_ids", step_inputs)
+
+    def test_automation_ai_plan_wires_generated_quote_pdf_attachment_and_orders_document_before_email(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [
+                    {"id": "system.send_email", "label": "Send email"},
+                    {"id": "system.generate_document", "label": "Generate document"},
+                ],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [{"id": "doc_tpl_quote_pack", "name": "Quote Pack"}],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Generate the quote PDF and email it to the customer.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to_field_ids": ["biz_quote.customer_email"],
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Your quote PDF is attached to this email.",
+                                        "include_attachments": True,
+                                    },
+                                },
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.generate_document",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "record_id": "{{trigger.record_id}}",
+                                        "template_id": "doc_tpl_quote_pack",
+                                    },
+                                },
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, generate the quote PDF and email it to the customer as an attachment.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            self.assertEqual([item.get("action_id") for item in steps if isinstance(item, dict)][:2], ["system.generate_document", "system.send_email"])
+            email_inputs = (((steps or [None, None])[1]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("attachment_purpose"), "template:doc_tpl_quote_pack")
+            self.assertEqual(email_inputs.get("attachment_entity_id"), "entity.biz_quote")
+            self.assertEqual(email_inputs.get("attachment_record_id"), "{{trigger.record_id}}")
+            self.assertNotIn("include_attachments", email_inputs)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_inserts_generated_document_step_for_attachment_promise(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [
+                    {"id": "system.send_email", "label": "Send email"},
+                    {"id": "system.generate_document", "label": "Generate document"},
+                ],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [{"id": "doc_tpl_quote_pack", "name": "Quote Pack", "entity_id": "entity.biz_quote"}],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote PDF to the customer.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to_field_ids": ["biz_quote.customer_email"],
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Your quote PDF is attached to this email.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email the quote PDF to the customer as an attachment using our Quote Pack.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            self.assertEqual([item.get("action_id") for item in steps if isinstance(item, dict)][:2], ["system.generate_document", "system.send_email"])
+            doc_inputs = (((steps or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(doc_inputs.get("template_id"), "doc_tpl_quote_pack")
+            self.assertEqual(doc_inputs.get("entity_id"), "entity.biz_quote")
+            self.assertEqual(doc_inputs.get("record_id"), "{{trigger.record_id}}")
+            email_inputs = (((steps or [None, None])[1]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("attachment_purpose"), "template:doc_tpl_quote_pack")
+            self.assertEqual(email_inputs.get("attachment_entity_id"), "entity.biz_quote")
+            self.assertEqual(email_inputs.get("attachment_record_id"), "{{trigger.record_id}}")
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_normalizes_human_recipient_and_inserts_attachment_document_step(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [
+                    {"id": "system.send_email", "label": "Send email"},
+                    {"id": "system.generate_document", "label": "Generate document"},
+                ],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.customer_id", "label": "Customer", "type": "lookup", "entity": "entity.biz_contact"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [{"id": "doc_tpl_quote_pack", "name": "Quote Pack", "entity_id": "entity.biz_quote"}],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote PDF to the customer.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "to": ["customer"],
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Your quote PDF is attached to this email.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email the quote PDF to the customer as an attachment.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            self.assertEqual([item.get("action_id") for item in steps if isinstance(item, dict)][:2], ["system.generate_document", "system.send_email"])
+            email_inputs = (((steps or [None, None])[1]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("to_field_ids"), ["biz_quote.customer_email"])
+            self.assertNotIn("to", email_inputs)
+            self.assertEqual(email_inputs.get("attachment_purpose"), "template:doc_tpl_quote_pack")
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_infers_missing_customer_recipient_from_prompt_and_inserts_attachment_document_step(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [
+                    {"id": "system.send_email", "label": "Send email"},
+                    {"id": "system.generate_document", "label": "Generate document"},
+                ],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.customer_id", "label": "Customer", "type": "lookup", "entity": "entity.biz_contact"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [{"id": "doc_tpl_quote_pack", "name": "Quote Pack", "entity_id": "entity.biz_quote"}],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote PDF.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Your quote PDF is attached to this email.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email the customer the quote PDF as an attachment.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            self.assertEqual([item.get("action_id") for item in steps if isinstance(item, dict)][:2], ["system.generate_document", "system.send_email"])
+            email_inputs = (((steps or [None, None])[1]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("to_field_ids"), ["biz_quote.customer_email"])
+            self.assertEqual(email_inputs.get("attachment_purpose"), "template:doc_tpl_quote_pack")
+            self.assertFalse(body.get("required_question_meta"), body)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_infers_literal_email_recipient_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Please review your quote.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email accounts@example.com with the quote details.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            email_inputs = (((steps or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("to"), ["accounts@example.com"])
+            self.assertFalse(body.get("required_question_meta"), body)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_infers_multiple_literal_email_recipients_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Please review your quote.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email accounts@example.com and ops@example.com with the quote details.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            email_inputs = (((steps or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("to"), ["accounts@example.com", "ops@example.com"])
+            self.assertFalse(body.get("required_question_meta"), body)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
+
+    def test_automation_ai_plan_combines_customer_field_and_literal_email_recipients_from_prompt(self) -> None:
+        client = TestClient(main.app)
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/automations",
+                json={
+                    "name": "Quote Accepted Handoff",
+                    "description": "",
+                    "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                    "steps": [self._seed_automation_step()],
+                },
+            ).json()
+            automation_id = created["automation"]["id"]
+
+            fake_meta = {
+                "event_catalog": [
+                    {
+                        "id": "biz_quotes.action.quote_mark_accepted.clicked",
+                        "label": "Quote accepted",
+                        "event": "action.clicked",
+                        "entity_id": "entity.biz_quote",
+                    }
+                ],
+                "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"],
+                "system_actions": [{"id": "system.send_email", "label": "Send email"}],
+                "module_actions": [],
+                "entities": [
+                    {
+                        "id": "entity.biz_quote",
+                        "label": "Quote",
+                        "fields": [
+                            {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                            {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+                        ],
+                    }
+                ],
+                "members": [],
+                "connections": [],
+                "email_templates": [],
+                "doc_templates": [],
+            }
+
+            def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                return _fake_response(
+                    {
+                        "summary": "Email the quote.",
+                        "draft": {
+                            "name": "Quote Accepted Handoff",
+                            "description": "",
+                            "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"], "filters": []},
+                            "steps": [
+                                {
+                                    "kind": "action",
+                                    "action_id": "system.send_email",
+                                    "inputs": {
+                                        "entity_id": "entity.biz_quote",
+                                        "subject": "Your quote {{ record['biz_quote.quote_number'] }}",
+                                        "body_text": "Please review your quote.",
+                                    },
+                                }
+                            ],
+                            "status": "draft",
+                        },
+                        "assumptions": [],
+                        "warnings": [],
+                    }
+                )
+
+            with (
+                patch.object(main, "_artifact_ai_automation_meta", lambda request, actor: fake_meta),
+                patch.object(main, "_openai_chat_completion", fake_openai),
+                patch.object(main, "_openai_configured", lambda: True),
+            ):
+                res = client.post(
+                    f"/automations/{automation_id}/ai/plan",
+                    json={
+                        "prompt": "When the quote is accepted, email the customer and accounts@example.com with the quote details.",
+                        "draft": created["automation"],
+                    },
+                )
+
+            body = res.json()
+            self.assertEqual(res.status_code, 200, body)
+            self.assertTrue(body.get("ok"), body)
+            steps = body.get("draft", {}).get("steps") or []
+            email_inputs = (((steps or [None])[0]) or {}).get("inputs") or {}
+            self.assertEqual(email_inputs.get("to"), ["accounts@example.com"])
+            self.assertEqual(email_inputs.get("to_field_ids"), ["biz_quote.customer_email"])
+            self.assertFalse(body.get("required_question_meta"), body)
+            validation = body.get("validation") or {}
+            self.assertTrue(validation.get("compiled_ok"), validation)
 
     def test_automation_ai_plan_normalizes_update_record_patch_inputs(self) -> None:
         client = TestClient(main.app)

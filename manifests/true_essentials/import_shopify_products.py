@@ -419,6 +419,9 @@ def build_create_values(imported: dict[str, Any]) -> dict[str, Any]:
 
 def build_update_values(existing: dict[str, Any], imported: dict[str, Any], *, overwrite_local: bool) -> dict[str, Any]:
     merged: dict[str, Any] = {
+        "te_product.sales_currency": imported["sales_currency"],
+        "te_product.retail_price": imported["retail_price"],
+        "te_product.compare_at_price": imported["compare_at_price"],
         "te_product.shopify_handle": imported["shopify_handle"],
         "te_product.shopify_description_html": imported["shopify_description_html"],
         "te_product.shopify_product_url": imported["shopify_product_url"],
@@ -434,10 +437,6 @@ def build_update_values(existing: dict[str, Any], imported: dict[str, Any], *, o
         merged["te_product.title"] = imported["title"]
     if imported["variant_name"] and (overwrite_local or not str(existing.get("te_product.variant_name") or "").strip()):
         merged["te_product.variant_name"] = imported["variant_name"]
-    if overwrite_local or to_number(existing.get("te_product.retail_price")) <= 0:
-        merged["te_product.retail_price"] = imported["retail_price"]
-    if overwrite_local or to_number(existing.get("te_product.compare_at_price")) <= 0:
-        merged["te_product.compare_at_price"] = imported["compare_at_price"]
     if overwrite_local:
         merged["te_product.track_stock"] = imported["track_stock"]
         merged["te_product.status"] = imported["status"]
@@ -840,6 +839,7 @@ def main() -> int:
                     token=args.api_token,
                     workspace_id=args.workspace_id,
                 )
+                print(f"[create] {saved.record_id} sku={sku} product={imported['title']}")
                 by_variant_id[variant_id] = saved
                 if sku not in duplicate_skus:
                     by_sku[sku] = saved

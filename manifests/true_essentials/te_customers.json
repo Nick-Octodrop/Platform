@@ -82,7 +82,18 @@
           "type": "number",
           "label": "Orders Count",
           "readonly": true,
-          "default": 0
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.te_sales_order",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order.customer_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
         },
         {
           "id": "te_customer.total_spent_nzd",
@@ -90,7 +101,19 @@
           "label": "Total Spent (NZD)",
           "readonly": true,
           "default": 0,
-          "format": { "kind": "currency", "currency": "NZD", "precision": 2 }
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_sales_order",
+              "field": "te_sales_order.total_paid",
+              "where": {
+                "op": "eq",
+                "field": "te_sales_order.customer_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
         },
         { "id": "te_customer.last_order_name", "type": "string", "label": "Last Order", "readonly": true },
         { "id": "te_customer.last_order_date", "type": "date", "label": "Last Order Date", "readonly": true },

@@ -116,6 +116,19 @@ class TestShopifyOrderImport(unittest.TestCase):
                 "created_at": "2026-04-18T12:00:00Z",
                 "currency": "NZD",
                 "email": "kelly@example.com",
+                "current_subtotal_price": "112.50",
+                "current_total_discounts": "7.50",
+                "current_total_tax": "16.88",
+                "current_total_price": "129.38",
+                "total_received": "129.38",
+                "fulfillments": [
+                    {
+                        "created_at": "2026-04-19T00:00:00Z",
+                        "tracking_company": "NZ Post",
+                        "tracking_number": "TRACK-123",
+                        "tracking_url": "https://track.example/123",
+                    }
+                ],
                 "customer": {
                     "id": 101,
                     "first_name": "Kelly",
@@ -127,6 +140,15 @@ class TestShopifyOrderImport(unittest.TestCase):
             customer_row=customer_row,
         )
         self.assertEqual(values["te_sales_order.customer_id"], "cust-1")
+        self.assertEqual(values["te_sales_order.line_items_total"], 112.5)
+        self.assertEqual(values["te_sales_order.discount_total"], 7.5)
+        self.assertEqual(values["te_sales_order.tax_total"], 16.88)
+        self.assertEqual(values["te_sales_order.order_total"], 129.38)
+        self.assertEqual(values["te_sales_order.total_paid"], 129.38)
+        self.assertEqual(values["te_sales_order.fulfilled_at"], "2026-04-19")
+        self.assertEqual(values["te_sales_order.tracking_company"], "NZ Post")
+        self.assertEqual(values["te_sales_order.tracking_number"], "TRACK-123")
+        self.assertEqual(values["te_sales_order.tracking_url"], "https://track.example/123")
 
 
 if __name__ == "__main__":

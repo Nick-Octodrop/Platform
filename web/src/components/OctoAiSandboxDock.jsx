@@ -16,7 +16,7 @@ import {
 } from "../api.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
-import { hasPendingPlanQuestion, latestPlanQuestionPrompt } from "../pages/octoAiSessionState.js";
+import { hasPendingPlanQuestion, latestPlanFromList, latestPlanQuestionPrompt } from "../pages/octoAiSessionState.js";
 import { summarizePlanOperations } from "../pages/octoAiPlanPreview.js";
 
 function questionKind(meta) {
@@ -29,7 +29,18 @@ function questionNeedsTypedReply(meta) {
     const options = Array.isArray(meta?.options) ? meta.options.filter((item) => item && typeof item === "object") : [];
     return options.length === 0 || Boolean(meta?.allow_free_text);
   }
-  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(kind);
+  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution", "detail_required"].includes(kind);
+}
+
+function detailRequiredHint(meta) {
+  if (typeof meta?.detail_hint === "string" && meta.detail_hint.trim()) return meta.detail_hint.trim();
+  if (typeof meta?.why_needed === "string" && meta.why_needed.trim()) return meta.why_needed.trim();
+  return "Describe the concrete fields, pages, workflow, or artifact detail that is still missing.";
+}
+
+function detailRequiredPlaceholder(meta) {
+  if (typeof meta?.prompt === "string" && meta.prompt.trim()) return meta.prompt.trim();
+  return "Add the missing concrete detail for fields, pages, workflow, or related artifacts...";
 }
 
 function extractDecisionSlots(latestPlan) {
@@ -317,7 +328,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   const [data, setData] = useState({ session: null, messages: [], plans: [], patchsets: [], releases: [] });
   const isEmbedMode = useMemo(() => new URLSearchParams(location.search).get("octo_ai_embed") === "1", [location.search]);
 
-  const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
+  const latestPlan = useMemo(() => latestPlanFromList(data.plans), [data.plans]);
   const latestPatchset = useMemo(() => latestPatchsetFromList(data.patchsets, latestPlan?.id || ""), [data.patchsets, latestPlan?.id]);
   const rawQuestionMeta = useMemo(() => {
     const direct = latestPlan?.required_question_meta;
@@ -434,6 +445,9 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     if (activeQuestionMeta?.kind === "confirm_plan") {
       return t("settings.octo_ai.sandbox_dock.header.review_plan");
     }
+    if (activeQuestionMeta?.kind === "detail_required") {
+      return "Add more concrete rollout detail before sandbox apply.";
+    }
     if (latestPatchsetStatus === "applied") {
       return t("settings.octo_ai.sandbox_dock.header.sandbox_updated");
     }
@@ -522,7 +536,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
   ]);
 
   function latestPlanFromPayload(payload) {
-    return Array.isArray(payload?.plans) && payload.plans.length > 0 ? payload.plans[0] : null;
+    return latestPlanFromList(payload?.plans);
   }
 
   function latestPatchsetForPlan(payload, planId) {
@@ -808,9 +822,16 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
         {hasPendingQuestion ? (
           <div className="rounded-box border border-base-300 bg-base-200/60 p-3 space-y-2">
             <div className="text-xs font-semibold uppercase tracking-wide opacity-70">
-              {questionKind(activeQuestionMeta) === "confirm_plan" ? t("settings.octo_ai.sandbox_dock.labels.plan_review") : t("settings.octo_ai.sandbox_dock.labels.clarification_needed")}
+              {questionKind(activeQuestionMeta) === "confirm_plan"
+                ? t("settings.octo_ai.sandbox_dock.labels.plan_review")
+                : questionKind(activeQuestionMeta) === "detail_required"
+                  ? "Plan needs detail"
+                  : t("settings.octo_ai.sandbox_dock.labels.clarification_needed")}
             </div>
             <div className="text-sm leading-6">{activeQuestionMeta?.prompt || activeQuestion}</div>
+            {questionKind(activeQuestionMeta) === "detail_required" && detailRequiredHint(activeQuestionMeta) !== (activeQuestionMeta?.prompt || activeQuestion) ? (
+              <div className="text-xs opacity-70">{detailRequiredHint(activeQuestionMeta)}</div>
+            ) : null}
             {activeDecisionSlots.length > 0 ? (
               <div className="space-y-3">
                 {activeDecisionSlots.map((slot) => {
@@ -842,7 +863,11 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
               </div>
             ) : null}
             {questionNeedsTypedReply(activeQuestionMeta) ? (
-              <div className="text-xs opacity-70">{t("settings.octo_ai.sandbox_dock.hints.reply_with_missing_detail")}</div>
+              <div className="text-xs opacity-70">
+                {questionKind(activeQuestionMeta) === "detail_required"
+                  ? detailRequiredHint(activeQuestionMeta)
+                  : t("settings.octo_ai.sandbox_dock.hints.reply_with_missing_detail")}
+              </div>
             ) : null}
             {questionKind(activeQuestionMeta) === "confirm_plan" ? (
               <div className="flex flex-wrap gap-2">
@@ -864,13 +889,23 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
           placeholder={
             questionKind(activeQuestionMeta) === "confirm_plan"
               ? t("settings.octo_ai.sandbox_dock.placeholders.confirm_plan")
+              : questionKind(activeQuestionMeta) === "detail_required"
+                ? detailRequiredPlaceholder(activeQuestionMeta)
               : hasPendingQuestion
                 ? t("settings.octo_ai.sandbox_dock.placeholders.reply_missing_detail")
                 : t("settings.octo_ai.sandbox_dock.placeholders.describe_change")
           }
         />
         <button className={PRIMARY_BUTTON_SM} disabled={streaming || busy || !message.trim()} onClick={sendMessage}>
-          {streaming ? t("settings.octo_ai.sandbox_dock.status.planning") : questionKind(activeQuestionMeta) === "confirm_plan" ? t("settings.octo_ai.sandbox_dock.actions.send_revision") : hasPendingQuestion ? t("common.reply") : t("common.send")}
+          {streaming
+            ? t("settings.octo_ai.sandbox_dock.status.planning")
+            : questionKind(activeQuestionMeta) === "confirm_plan"
+              ? t("settings.octo_ai.sandbox_dock.actions.send_revision")
+              : questionKind(activeQuestionMeta) === "detail_required"
+                ? "Send detail"
+                : hasPendingQuestion
+                  ? t("common.reply")
+                  : t("common.send")}
         </button>
       </div>
     </div>

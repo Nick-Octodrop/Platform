@@ -69,6 +69,19 @@ def list_automations(base_url: str, *, token: str, workspace_id: str) -> list[di
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
+def list_mappings(base_url: str, *, token: str, workspace_id: str, connection_id: str) -> list[dict[str, Any]]:
+    status, payload = api_call(
+        "GET",
+        f"{base_url}/integrations/mappings?connection_id={connection_id}",
+        token=token,
+        workspace_id=workspace_id,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"list mappings failed: {collect_error_text(payload)}")
+    rows = payload.get("mappings")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
 def list_workspace_members(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
     status, payload = api_call("GET", f"{base_url}/access/members", token=token, workspace_id=workspace_id)
     if status >= 400 or not is_ok(payload):
@@ -185,10 +198,49 @@ def resolve_member_emails(
     return resolved
 
 
+def create_mapping(base_url: str, definition: dict[str, Any], *, token: str, workspace_id: str) -> dict[str, Any]:
+    status, payload = api_call(
+        "POST",
+        f"{base_url}/integrations/mappings",
+        token=token,
+        workspace_id=workspace_id,
+        body=definition,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"create mapping '{definition.get('name')}' failed: {collect_error_text(payload)}")
+    item = payload.get("mapping")
+    if not isinstance(item, dict):
+        raise RuntimeError(f"create mapping '{definition.get('name')}' failed: missing mapping payload")
+    return item
+
+
+def update_mapping(
+    base_url: str,
+    mapping_id: str,
+    definition: dict[str, Any],
+    *,
+    token: str,
+    workspace_id: str,
+) -> dict[str, Any]:
+    status, payload = api_call(
+        "PATCH",
+        f"{base_url}/integrations/mappings/{mapping_id}",
+        token=token,
+        workspace_id=workspace_id,
+        body=definition,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"update mapping '{definition.get('name')}' failed: {collect_error_text(payload)}")
+    item = payload.get("mapping")
+    if not isinstance(item, dict):
+        raise RuntimeError(f"update mapping '{definition.get('name')}' failed: missing mapping payload")
+    return item
+
+
 def create_automation(base_url: str, definition: dict[str, Any], *, token: str, workspace_id: str) -> dict[str, Any]:
     status, payload = api_call("POST", f"{base_url}/automations", token=token, workspace_id=workspace_id, body=definition)
     if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"create automation failed: {collect_error_text(payload)}")
+        raise RuntimeError(f"create automation '{definition.get('name')}' failed: {collect_error_text(payload)}")
     item = payload.get("automation")
     if not isinstance(item, dict):
         raise RuntimeError("create automation failed: missing automation payload")
@@ -204,7 +256,7 @@ def update_automation(base_url: str, automation_id: str, definition: dict[str, A
         body=definition,
     )
     if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"update automation failed: {collect_error_text(payload)}")
+        raise RuntimeError(f"update automation '{definition.get('name')}' failed: {collect_error_text(payload)}")
     item = payload.get("automation")
     if not isinstance(item, dict):
         raise RuntimeError("update automation failed: missing automation payload")
@@ -227,6 +279,29 @@ def publish_automation(base_url: str, automation_id: str, *, token: str, workspa
     return item
 
 
+def upsert_mapping_by_name(
+    base_url: str,
+    definition: dict[str, Any],
+    *,
+    token: str,
+    workspace_id: str,
+    connection_id: str,
+) -> tuple[str, dict[str, Any]]:
+    existing = next(
+        (
+            row
+            for row in list_mappings(base_url, token=token, workspace_id=workspace_id, connection_id=connection_id)
+            if str(row.get("name") or "").strip() == definition["name"]
+        ),
+        None,
+    )
+    if existing:
+        updated = update_mapping(base_url, str(existing.get("id") or ""), definition, token=token, workspace_id=workspace_id)
+        return "updated", updated
+    created = create_mapping(base_url, definition, token=token, workspace_id=workspace_id)
+    return "created", created
+
+
 def upsert_automation_by_name(base_url: str, definition: dict[str, Any], *, token: str, workspace_id: str) -> tuple[str, dict[str, Any]]:
     existing = next(
         (row for row in list_automations(base_url, token=token, workspace_id=workspace_id) if str(row.get("name") or "").strip() == definition["name"]),
@@ -239,82 +314,468 @@ def upsert_automation_by_name(base_url: str, definition: dict[str, Any], *, toke
     return "created", created
 
 
+def build_customer_mapping(connection_id: str) -> dict[str, Any]:
+    return {
+        "connection_id": connection_id,
+        "name": "TE Shopify - Customer Webhook Mapping",
+        "source_entity": "shopify.customer",
+        "target_entity": "entity.te_customer",
+        "mapping_json": {
+            "resource_key": "Customers",
+            "usage_scope": "automation",
+            "record_mode": "upsert",
+            "match_on": ["te_customer.email"],
+            "field_mappings": [
+                {"to": "te_customer.name", "path": "name", "skip_if_missing": True},
+                {"to": "te_customer.email", "path": "email", "skip_if_missing": True},
+                {"to": "te_customer.phone", "path": "phone", "skip_if_missing": True},
+                {"to": "te_customer.status", "path": "status", "default": "active"},
+                {"to": "te_customer.accepts_email_marketing", "path": "accepts_email_marketing", "default": False, "transform": "boolean"},
+                {"to": "te_customer.accepts_sms_marketing", "path": "accepts_sms_marketing", "default": False, "transform": "boolean"},
+                {"to": "te_customer.currency_preference", "path": "currency_preference", "default": "NZD"},
+                {"to": "te_customer.tags", "path": "tags", "default": ""},
+                {"to": "te_customer.shopify_customer_id", "path": "shopify_customer_id", "skip_if_missing": True},
+                {"to": "te_customer.shopify_state", "path": "shopify_state", "default": ""},
+                {"to": "te_customer.default_address_line_1", "path": "default_address_line_1", "default": ""},
+                {"to": "te_customer.default_address_line_2", "path": "default_address_line_2", "default": ""},
+                {"to": "te_customer.default_city", "path": "default_city", "default": ""},
+                {"to": "te_customer.default_region", "path": "default_region", "default": ""},
+                {"to": "te_customer.default_postcode", "path": "default_postcode", "default": ""},
+                {"to": "te_customer.default_country", "path": "default_country", "default": ""},
+                {"to": "te_customer.orders_count", "path": "orders_count", "default": 0, "transform": "integer"},
+                {"to": "te_customer.total_spent_nzd", "path": "total_spent_nzd", "default": 0, "transform": "number"},
+                {"to": "te_customer.last_order_name", "path": "last_order_name", "default": ""},
+                {"to": "te_customer.last_order_date", "path": "last_order_date", "default": ""},
+                {"to": "te_customer.shopify_last_sync_status", "value": "imported"},
+                {"to": "te_customer.shopify_last_sync_at", "ref": "$now"},
+                {"to": "te_customer.shopify_last_sync_error", "value": ""},
+            ],
+        },
+    }
+
+
+def build_product_mapping(connection_id: str) -> dict[str, Any]:
+    return {
+        "connection_id": connection_id,
+        "name": "TE Shopify - Product Variant Webhook Mapping",
+        "source_entity": "shopify.product_variant",
+        "target_entity": "entity.te_product",
+        "mapping_json": {
+            "resource_key": "Products",
+            "usage_scope": "automation",
+            "record_mode": "upsert",
+            "match_on": ["te_product.sku"],
+            "field_mappings": [
+                {"to": "te_product.sku", "path": "sku", "skip_if_missing": True},
+                {"to": "te_product.title", "path": "title", "skip_if_missing": True},
+                {"to": "te_product.variant_name", "path": "variant_name", "skip_if_missing": True},
+                {"to": "te_product.status", "path": "status", "default": "draft"},
+                {"to": "te_product.sales_currency", "path": "sales_currency", "default": "NZD"},
+                {"to": "te_product.retail_price", "path": "retail_price", "default": 0, "transform": "number"},
+                {"to": "te_product.compare_at_price", "path": "compare_at_price", "default": 0, "transform": "number"},
+                {"to": "te_product.track_stock", "path": "track_stock", "default": False, "transform": "boolean"},
+                {"to": "te_product.shopify_handle", "path": "shopify_handle", "default": ""},
+                {"to": "te_product.shopify_description_html", "path": "shopify_description_html", "default": ""},
+                {"to": "te_product.shopify_product_id", "path": "shopify_product_id", "skip_if_missing": True},
+                {"to": "te_product.shopify_variant_id", "path": "shopify_variant_id", "skip_if_missing": True},
+                {"to": "te_product.shopify_inventory_item_id", "path": "shopify_inventory_item_id", "skip_if_missing": True},
+                {"to": "te_product.shopify_status", "path": "shopify_status", "default": ""},
+                {"to": "te_product.shopify_last_sync_status", "value": "imported"},
+                {"to": "te_product.shopify_last_sync_at", "ref": "$now"},
+                {"to": "te_product.shopify_last_sync_error", "value": ""},
+            ],
+        },
+    }
+
+
+def build_sales_order_mapping(connection_id: str) -> dict[str, Any]:
+    return {
+        "connection_id": connection_id,
+        "name": "TE Shopify - Sales Order Webhook Mapping",
+        "source_entity": "shopify.order",
+        "target_entity": "entity.te_sales_order",
+        "mapping_json": {
+            "resource_key": "Orders",
+            "usage_scope": "automation",
+            "record_mode": "upsert",
+            "match_on": ["te_sales_order.shopify_order_id"],
+            "field_mappings": [
+                {"to": "te_sales_order.order_number", "path": "order_number", "skip_if_missing": True},
+                {"to": "te_sales_order.channel", "value": "shopify"},
+                {"to": "te_sales_order.status", "path": "status", "default": "open"},
+                {"to": "te_sales_order.financial_status", "path": "financial_status", "default": "pending"},
+                {"to": "te_sales_order.fulfillment_status", "path": "fulfillment_status", "default": "unfulfilled"},
+                {"to": "te_sales_order.order_date", "path": "order_date", "skip_if_missing": True},
+                {"to": "te_sales_order.currency", "path": "currency", "default": "NZD"},
+                {"to": "te_sales_order.shopify_order_id", "path": "shopify_order_id", "skip_if_missing": True},
+                {"to": "te_sales_order.shopify_order_name", "path": "shopify_order_name", "default": ""},
+                {"to": "te_sales_order.customer_name", "path": "customer_name", "default": ""},
+                {"to": "te_sales_order.customer_email", "path": "customer_email", "default": ""},
+                {"to": "te_sales_order.customer_phone", "path": "customer_phone", "default": ""},
+                {"to": "te_sales_order.shipping_name", "path": "shipping_name", "default": ""},
+                {"to": "te_sales_order.shipping_address_1", "path": "shipping_address_1", "default": ""},
+                {"to": "te_sales_order.shipping_address_2", "path": "shipping_address_2", "default": ""},
+                {"to": "te_sales_order.shipping_city", "path": "shipping_city", "default": ""},
+                {"to": "te_sales_order.shipping_region", "path": "shipping_region", "default": ""},
+                {"to": "te_sales_order.shipping_postcode", "path": "shipping_postcode", "default": ""},
+                {"to": "te_sales_order.shipping_country", "path": "shipping_country", "default": ""},
+                {"to": "te_sales_order.shipping_amount", "path": "shipping_amount", "default": 0, "transform": "number"},
+                {"to": "te_sales_order.order_total", "path": "order_total", "default": 0, "transform": "number"},
+                {"to": "te_sales_order.total_paid", "path": "total_paid", "default": 0, "transform": "number"},
+                {"to": "te_sales_order.customer_note", "path": "customer_note", "default": ""},
+                {"to": "te_sales_order.fulfilled_at", "path": "fulfilled_at", "default": ""},
+                {"to": "te_sales_order.tracking_company", "path": "tracking_company", "default": ""},
+                {"to": "te_sales_order.tracking_number", "path": "tracking_number", "default": ""},
+                {"to": "te_sales_order.tracking_url", "path": "tracking_url", "default": ""},
+                {"to": "te_sales_order.customer_id", "path": "customer_record_id", "skip_if_missing": True},
+                {"to": "te_sales_order.shopify_last_sync_status", "value": "imported"},
+                {"to": "te_sales_order.shopify_last_sync_at", "ref": "$now"},
+                {"to": "te_sales_order.shopify_last_sync_error", "value": ""},
+            ],
+        },
+    }
+
+
+def build_sales_order_line_mapping(connection_id: str) -> dict[str, Any]:
+    return {
+        "connection_id": connection_id,
+        "name": "TE Shopify - Sales Order Line Webhook Mapping",
+        "source_entity": "shopify.order_line",
+        "target_entity": "entity.te_sales_order_line",
+        "mapping_json": {
+            "resource_key": "Orders",
+            "usage_scope": "automation",
+            "record_mode": "upsert",
+            "match_on": ["te_sales_order_line.shopify_line_item_id"],
+            "field_mappings": [
+                {"to": "te_sales_order_line.sales_order_id", "path": "sales_order_id", "skip_if_missing": True},
+                {"to": "te_sales_order_line.shopify_line_item_id", "path": "shopify_line_item_id", "skip_if_missing": True},
+                {"to": "te_sales_order_line.shopify_product_id", "path": "shopify_product_id", "default": ""},
+                {"to": "te_sales_order_line.shopify_variant_id", "path": "shopify_variant_id", "default": ""},
+                {"to": "te_sales_order_line.sku_snapshot", "path": "sku_snapshot", "default": ""},
+                {"to": "te_sales_order_line.description", "path": "description", "default": "Shopify line item"},
+                {"to": "te_sales_order_line.uom_snapshot", "path": "uom_snapshot", "default": "EA"},
+                {"to": "te_sales_order_line.currency_snapshot", "path": "currency_snapshot", "default": "NZD"},
+                {"to": "te_sales_order_line.quantity", "path": "quantity", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.fulfillable_quantity", "path": "fulfillable_quantity", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.unit_price", "path": "unit_price", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.line_discount_total", "path": "line_discount_total", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.line_tax_total", "path": "line_tax_total", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.unit_cost_snapshot", "path": "unit_cost_snapshot", "default": 0, "transform": "number"},
+                {"to": "te_sales_order_line.product_id", "path": "product_record_id", "skip_if_missing": True},
+            ],
+        },
+    }
+
+
+def _shopify_customer_source(prefix: str) -> dict[str, Any]:
+    return {
+        "name": (
+            "{% if " + prefix + ".first_name and " + prefix + ".last_name %}"
+            "{{ " + prefix + ".first_name }} {{ " + prefix + ".last_name }}"
+            "{% elif " + prefix + ".default_address.name %}{{ " + prefix + ".default_address.name }}"
+            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% else %}Shopify Customer{% endif %}"
+        ),
+        "email": "{{ " + prefix + ".email | default('', true) }}",
+        "phone": "{{ " + prefix + ".phone | default(" + prefix + ".default_address.phone | default('', true), true) }}",
+        "status": "{% if " + prefix + ".state in ['disabled', 'declined'] %}inactive{% else %}active{% endif %}",
+        "accepts_email_marketing": "{% if " + prefix + ".email_marketing_consent.state == 'subscribed' %}true{% else %}false{% endif %}",
+        "accepts_sms_marketing": "{% if " + prefix + ".sms_marketing_consent.state == 'subscribed' %}true{% else %}false{% endif %}",
+        "currency_preference": "{{ " + prefix + ".currency | default('NZD', true) }}",
+        "tags": "{{ " + prefix + ".tags | default('', true) }}",
+        "shopify_customer_id": (
+            "{% if " + prefix + ".admin_graphql_api_id %}{{ " + prefix + ".admin_graphql_api_id }}"
+            "{% elif " + prefix + ".id %}gid://shopify/Customer/{{ " + prefix + ".id }}{% endif %}"
+        ),
+        "shopify_state": "{{ " + prefix + ".state | default('', true) }}",
+        "default_address_line_1": "{{ " + prefix + ".default_address.address1 | default('', true) }}",
+        "default_address_line_2": "{{ " + prefix + ".default_address.address2 | default('', true) }}",
+        "default_city": "{{ " + prefix + ".default_address.city | default('', true) }}",
+        "default_region": "{{ " + prefix + ".default_address.province | default('', true) }}",
+        "default_postcode": "{{ " + prefix + ".default_address.zip | default('', true) }}",
+        "default_country": "{{ " + prefix + ".default_address.country | default('', true) }}",
+        "orders_count": "{{ " + prefix + ".orders_count | default(0, true) }}",
+        "total_spent_nzd": "{{ " + prefix + ".total_spent | default(0, true) }}",
+        "last_order_name": "{{ " + prefix + ".last_order_name | default('', true) }}",
+        "last_order_date": "{{ (" + prefix + ".updated_at | default(" + prefix + ".created_at | default('', true), true))[:10] }}",
+    }
+
+
+def _order_customer_source(prefix: str) -> dict[str, Any]:
+    return {
+        "name": (
+            "{% if " + prefix + ".customer.first_name and " + prefix + ".customer.last_name %}"
+            "{{ " + prefix + ".customer.first_name }} {{ " + prefix + ".customer.last_name }}"
+            "{% elif " + prefix + ".shipping_address.name %}{{ " + prefix + ".shipping_address.name }}"
+            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% else %}Order Customer{% endif %}"
+        ),
+        "email": "{{ " + prefix + ".email | default(" + prefix + ".customer.email | default('', true), true) }}",
+        "phone": "{{ " + prefix + ".phone | default(" + prefix + ".customer.phone | default(" + prefix + ".shipping_address.phone | default('', true), true), true) }}",
+        "status": "active",
+        "accepts_email_marketing": False,
+        "accepts_sms_marketing": False,
+        "currency_preference": "{{ " + prefix + ".currency | default('NZD', true) }}",
+        "tags": "",
+        "shopify_customer_id": (
+            "{% if " + prefix + ".customer.admin_graphql_api_id %}{{ " + prefix + ".customer.admin_graphql_api_id }}"
+            "{% elif " + prefix + ".customer.id %}gid://shopify/Customer/{{ " + prefix + ".customer.id }}{% endif %}"
+        ),
+        "shopify_state": "{{ " + prefix + ".customer.state | default('enabled', true) }}",
+        "default_address_line_1": "{{ " + prefix + ".shipping_address.address1 | default('', true) }}",
+        "default_address_line_2": "{{ " + prefix + ".shipping_address.address2 | default('', true) }}",
+        "default_city": "{{ " + prefix + ".shipping_address.city | default('', true) }}",
+        "default_region": "{{ " + prefix + ".shipping_address.province | default('', true) }}",
+        "default_postcode": "{{ " + prefix + ".shipping_address.zip | default('', true) }}",
+        "default_country": "{{ " + prefix + ".shipping_address.country | default('', true) }}",
+        "orders_count": 1,
+        "total_spent_nzd": "{{ " + prefix + ".current_total_price | default(" + prefix + ".total_price | default(0, true), true) }}",
+        "last_order_name": "{{ " + prefix + ".name | default('', true) }}",
+        "last_order_date": "{{ (" + prefix + ".updated_at | default(" + prefix + ".created_at | default('', true), true))[:10] }}",
+    }
+
+
+def _product_variant_source(product_var: str, variant_var: str) -> dict[str, Any]:
+    return {
+        "sku": "{{ " + variant_var + ".sku | default('', true) }}",
+        "title": "{{ " + product_var + ".title | default(" + variant_var + ".sku | default('', true), true) }}",
+        "variant_name": "{% if " + variant_var + ".title and " + variant_var + ".title != 'Default Title' %}{{ " + variant_var + ".title }}{% endif %}",
+        "status": (
+            "{% if " + product_var + ".status == 'ACTIVE' %}active"
+            "{% elif " + product_var + ".status == 'ARCHIVED' %}archived"
+            "{% else %}draft{% endif %}"
+        ),
+        "sales_currency": "{{ " + product_var + ".currency | default('NZD', true) }}",
+        "retail_price": "{{ " + variant_var + ".price | default(0, true) }}",
+        "compare_at_price": "{{ " + variant_var + ".compare_at_price | default(0, true) }}",
+        "track_stock": "{% if " + variant_var + ".inventory_management %}true{% else %}false{% endif %}",
+        "shopify_handle": "{{ " + product_var + ".handle | default('', true) }}",
+        "shopify_description_html": "{{ " + product_var + ".body_html | default(" + product_var + ".descriptionHtml | default('', true), true) }}",
+        "shopify_product_id": (
+            "{% if " + product_var + ".admin_graphql_api_id %}{{ " + product_var + ".admin_graphql_api_id }}"
+            "{% elif " + product_var + ".id %}gid://shopify/Product/{{ " + product_var + ".id }}{% endif %}"
+        ),
+        "shopify_variant_id": (
+            "{% if " + variant_var + ".admin_graphql_api_id %}{{ " + variant_var + ".admin_graphql_api_id }}"
+            "{% elif " + variant_var + ".id %}gid://shopify/ProductVariant/{{ " + variant_var + ".id }}{% endif %}"
+        ),
+        "shopify_inventory_item_id": (
+            "{% if " + variant_var + ".inventory_item_id %}gid://shopify/InventoryItem/{{ " + variant_var + ".inventory_item_id }}{% endif %}"
+        ),
+        "shopify_status": "{{ " + product_var + ".status | default('', true) }}",
+    }
+
+
+def _order_source(prefix: str) -> dict[str, Any]:
+    return {
+        "order_number": "{{ " + prefix + ".name | default(" + prefix + ".order_number | default('', true), true) }}",
+        "status": (
+            "{% if " + prefix + ".cancelled_at %}cancelled"
+            "{% elif " + prefix + ".financial_status in ['refunded', 'partially_refunded'] %}refunded"
+            "{% elif " + prefix + ".fulfillment_status in ['fulfilled', 'restocked'] %}fulfilled"
+            "{% elif " + prefix + ".financial_status in ['paid', 'partially_paid'] %}paid"
+            "{% else %}open{% endif %}"
+        ),
+        "financial_status": "{{ " + prefix + ".financial_status | default('pending', true) }}",
+        "fulfillment_status": "{{ " + prefix + ".fulfillment_status | default('unfulfilled', true) }}",
+        "order_date": "{{ (" + prefix + ".created_at | default('', true))[:10] }}",
+        "currency": "{{ " + prefix + ".currency | default('NZD', true) }}",
+        "shopify_order_id": (
+            "{% if " + prefix + ".admin_graphql_api_id %}{{ " + prefix + ".admin_graphql_api_id }}"
+            "{% elif " + prefix + ".id %}gid://shopify/Order/{{ " + prefix + ".id }}{% endif %}"
+        ),
+        "shopify_order_name": "{{ " + prefix + ".name | default('', true) }}",
+        "customer_name": (
+            "{% if " + prefix + ".customer.first_name and " + prefix + ".customer.last_name %}"
+            "{{ " + prefix + ".customer.first_name }} {{ " + prefix + ".customer.last_name }}"
+            "{% elif " + prefix + ".shipping_address.name %}{{ " + prefix + ".shipping_address.name }}"
+            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% else %}Shopify Customer{% endif %}"
+        ),
+        "customer_email": "{{ " + prefix + ".email | default(" + prefix + ".customer.email | default('', true), true) }}",
+        "customer_phone": "{{ " + prefix + ".phone | default(" + prefix + ".customer.phone | default(" + prefix + ".shipping_address.phone | default('', true), true), true) }}",
+        "shipping_name": "{{ " + prefix + ".shipping_address.name | default('', true) }}",
+        "shipping_address_1": "{{ " + prefix + ".shipping_address.address1 | default('', true) }}",
+        "shipping_address_2": "{{ " + prefix + ".shipping_address.address2 | default('', true) }}",
+        "shipping_city": "{{ " + prefix + ".shipping_address.city | default('', true) }}",
+        "shipping_region": "{{ " + prefix + ".shipping_address.province | default('', true) }}",
+        "shipping_postcode": "{{ " + prefix + ".shipping_address.zip | default('', true) }}",
+        "shipping_country": "{{ " + prefix + ".shipping_address.country | default('', true) }}",
+        "shipping_amount": "{{ " + prefix + ".total_shipping_price_set.shop_money.amount | default(0, true) }}",
+        "order_total": "{{ " + prefix + ".current_total_price | default(" + prefix + ".total_price | default(0, true), true) }}",
+        "total_paid": "{{ " + prefix + ".total_received | default(" + prefix + ".total_paid | default(0, true), true) }}",
+        "customer_note": "{{ " + prefix + ".note | default('', true) }}",
+        "fulfilled_at": "{{ (" + prefix + ".fulfillments[0].created_at | default('', true))[:10] }}",
+        "tracking_company": "{{ " + prefix + ".fulfillments[0].tracking_company | default('', true) }}",
+        "tracking_number": "{{ " + prefix + ".fulfillments[0].tracking_number | default('', true) }}",
+        "tracking_url": "{{ " + prefix + ".fulfillments[0].tracking_url | default('', true) }}",
+        "customer_record_id": "{{ steps.upsert_order_customer.record_id | default('', true) }}",
+    }
+
+
+def _line_item_source(line_var: str, order_var: str) -> dict[str, Any]:
+    return {
+        "sales_order_id": "{{ steps.upsert_sales_order.record_id }}",
+        "shopify_line_item_id": (
+            "{% if " + line_var + ".admin_graphql_api_id %}{{ " + line_var + ".admin_graphql_api_id }}"
+            "{% elif " + line_var + ".id %}gid://shopify/LineItem/{{ " + line_var + ".id }}{% endif %}"
+        ),
+        "shopify_product_id": (
+            "{% if " + line_var + ".product_id %}gid://shopify/Product/{{ " + line_var + ".product_id }}{% endif %}"
+        ),
+        "shopify_variant_id": (
+            "{% if " + line_var + ".variant_id %}gid://shopify/ProductVariant/{{ " + line_var + ".variant_id }}{% endif %}"
+        ),
+        "sku_snapshot": "{{ " + line_var + ".sku | default('', true) }}",
+        "description": (
+            "{% if " + line_var + ".variant_title and " + line_var + ".variant_title != 'Default Title' %}"
+            "{{ " + line_var + ".title | default('', true) }} - {{ " + line_var + ".variant_title }}"
+            "{% elif " + line_var + ".title %}{{ " + line_var + ".title }}"
+            "{% elif " + line_var + ".name %}{{ " + line_var + ".name }}"
+            "{% else %}Shopify line item{% endif %}"
+        ),
+        "uom_snapshot": "EA",
+        "currency_snapshot": "{{ " + order_var + ".currency | default('NZD', true) }}",
+        "quantity": "{{ " + line_var + ".quantity | default(0, true) }}",
+        "fulfillable_quantity": "{{ " + line_var + ".fulfillable_quantity | default(0, true) }}",
+        "unit_price": "{{ " + line_var + ".price | default(0, true) }}",
+        "line_discount_total": "{{ " + line_var + ".total_discount | default(0, true) }}",
+        "line_tax_total": "{{ " + line_var + ".tax_lines[0].price | default(0, true) }}",
+        "unit_cost_snapshot": 0,
+        "product_record_id": "{{ steps.find_product_for_line.first.record_id | default('', true) }}",
+    }
+
+
 def build_orders_consumer_automation(
     *,
     status: str,
+    order_mapping_id: str,
+    order_line_mapping_id: str,
+    customer_mapping_id: str,
     notify_recipient_user_ids: list[str] | None = None,
     email_recipients: list[str] | None = None,
 ) -> dict[str, Any]:
     steps: list[dict[str, Any]] = [
         {
-            "id": "upsert_shopify_order",
+            "id": "maybe_upsert_customer",
+            "kind": "condition",
+            "expr": {
+                "op": "or",
+                "children": [
+                    {"op": "exists", "left": {"var": "trigger.payload.email"}},
+                    {"op": "exists", "left": {"var": "trigger.payload.customer.email"}},
+                ],
+            },
+            "then_steps": [
+                {
+                    "id": "upsert_order_customer",
+                    "kind": "action",
+                    "action_id": "system.apply_integration_mapping",
+                    "inputs": {
+                        "connection_id": {"var": "trigger.connection_id"},
+                        "mapping_id": customer_mapping_id,
+                        "source_record": _order_customer_source("trigger.payload"),
+                        "resource_key": "Customers",
+                    },
+                }
+            ],
+        },
+        {
+            "id": "upsert_sales_order",
             "kind": "action",
-            "action_id": "system.shopify_upsert_order_webhook",
+            "action_id": "system.apply_integration_mapping",
             "inputs": {
                 "connection_id": {"var": "trigger.connection_id"},
-                "payload": {"var": "trigger.payload"},
+                "mapping_id": order_mapping_id,
+                "source_record": _order_source("trigger.payload"),
+                "resource_key": "Orders",
             },
-        }
+        },
+        {
+            "id": "upsert_sales_order_lines",
+            "kind": "foreach",
+            "over": "{{ trigger.payload.line_items }}",
+            "item_name": "line_item",
+            "steps": [
+                {
+                    "id": "find_product_for_line",
+                    "kind": "action",
+                    "action_id": "system.query_records",
+                    "store_as": "find_product_for_line",
+                    "inputs": {
+                        "entity_id": "entity.te_product",
+                        "limit": 1,
+                        "filter_expr": {
+                            "op": "eq",
+                            "field": "te_product.sku",
+                            "value": "{{ line_item.sku | default('', true) }}",
+                        },
+                    },
+                },
+                {
+                    "id": "upsert_sales_order_line",
+                    "kind": "action",
+                    "action_id": "system.apply_integration_mapping",
+                    "inputs": {
+                        "connection_id": {"var": "trigger.connection_id"},
+                        "mapping_id": order_line_mapping_id,
+                        "source_record": _line_item_source("line_item", "trigger.payload"),
+                        "resource_key": "Orders",
+                    },
+                },
+            ],
+        },
     ]
+    new_order_then_steps: list[dict[str, Any]] = []
     if notify_recipient_user_ids:
+        new_order_then_steps.append(
+            {
+                "id": "send_order_notifications",
+                "kind": "action",
+                "action_id": "system.notify",
+                "inputs": {
+                    "recipient_user_ids": notify_recipient_user_ids,
+                    "entity_id": "entity.te_sales_order",
+                    "record_id": "{{ steps.upsert_sales_order.record_id }}",
+                    "title": "New Shopify order {{ trigger.payload.name or trigger.payload.order_number }}",
+                    "body": "{{ trigger.payload.email or 'A customer' }} placed Shopify order {{ trigger.payload.name or trigger.payload.order_number }}.",
+                    "severity": "info",
+                    "link_mode": "trigger_record",
+                },
+            }
+        )
+    if email_recipients:
+        new_order_then_steps.append(
+            {
+                "id": "send_order_email_alert",
+                "kind": "action",
+                "action_id": "system.send_email",
+                "inputs": {
+                    "to": email_recipients,
+                    "entity_id": "entity.te_sales_order",
+                    "record_id": "{{ steps.upsert_sales_order.record_id }}",
+                    "subject": "New Shopify order {{ trigger.payload.name or trigger.payload.order_number }}",
+                    "body_text": (
+                        "{{ trigger.payload.email or 'A customer' }} placed Shopify order "
+                        "{{ trigger.payload.name or trigger.payload.order_number }}.\n"
+                        "Total: {{ trigger.payload.current_total_price or trigger.payload.total_price }} {{ trigger.payload.currency or 'NZD' }}\n"
+                        "Open in Octodrop: /data/te_sales_order/{{ steps.upsert_sales_order.record_id }}"
+                    ),
+                },
+            }
+        )
+    if new_order_then_steps:
         steps.append(
             {
                 "id": "notify_new_shopify_order",
                 "kind": "condition",
                 "expr": {
-                    "op": "and",
-                    "conditions": [
-                        {
-                            "op": "eq",
-                            "left": {"var": "steps.upsert_shopify_order.action"},
-                            "right": {"literal": "created"},
-                        },
-                        {
-                            "op": "eq",
-                            "left": {"var": "trigger.event_key"},
-                            "right": {"literal": "shopify.orders.create"},
-                        },
-                    ],
+                    "op": "eq",
+                    "left": {"var": "steps.upsert_sales_order.operation"},
+                    "right": {"literal": "created"},
                 },
-                "then_steps": [
-                    {
-                        "id": "send_order_notifications",
-                        "kind": "action",
-                        "action_id": "system.notify",
-                        "inputs": {
-                            "recipient_user_ids": notify_recipient_user_ids,
-                            "entity_id": "entity.te_sales_order",
-                            "record_id": {"var": "steps.upsert_shopify_order.order_record_id"},
-                            "title": "New Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}",
-                            "body": "{{ record.te_sales_order.customer_name or 'A customer' }} placed Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}.",
-                            "severity": "info",
-                            "link_mode": "trigger_record",
-                        },
-                    }
-                ]
-                + (
-                    [
-                        {
-                            "id": "send_order_email_alert",
-                            "kind": "action",
-                            "action_id": "system.send_email",
-                            "inputs": {
-                                "to": email_recipients,
-                                "entity_id": "entity.te_sales_order",
-                                "record_id": {"var": "steps.upsert_shopify_order.order_record_id"},
-                                "subject": "New Shopify order {{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}",
-                                "body_text": (
-                                    "{{ record.te_sales_order.customer_name or 'A customer' }} placed Shopify order "
-                                    "{{ record.te_sales_order.order_number or trigger.payload.name or trigger.payload.order_number }}.\n"
-                                    "Total: {{ record.te_sales_order.order_total }} {{ record.te_sales_order.currency }}\n"
-                                    "Open in Octodrop: /data/te_sales_order/{{ steps.upsert_shopify_order.order_record_id }}"
-                                ),
-                            },
-                        }
-                    ]
-                    if email_recipients
-                    else []
-                ),
+                "then_steps": new_order_then_steps,
             }
         )
     return {
@@ -334,10 +795,17 @@ def build_orders_consumer_automation(
     }
 
 
-def build_refunds_consumer_automation(*, status: str) -> dict[str, Any]:
+def build_refunds_consumer_automation(
+    *,
+    status: str,
+    connection_id: str,
+    order_mapping_id: str,
+    order_line_mapping_id: str,
+    customer_mapping_id: str,
+) -> dict[str, Any]:
     return {
         "name": "Shopify Phase 2 - Refunds Inbound",
-        "description": "Refresh the linked TE sales order when Shopify emits a refund webhook.",
+        "description": "Refresh the linked TE sales order from Shopify when Shopify emits a refund webhook.",
         "status": status,
         "trigger": {
             "kind": "event",
@@ -346,19 +814,65 @@ def build_refunds_consumer_automation(*, status: str) -> dict[str, Any]:
         },
         "steps": [
             {
-                "id": "refresh_refunded_order",
+                "id": "fetch_refunded_order",
                 "kind": "action",
-                "action_id": "system.shopify_refresh_order_from_refund_webhook",
+                "action_id": "system.integration_request",
+                "store_as": "fetch_refunded_order",
                 "inputs": {
-                    "connection_id": {"var": "trigger.connection_id"},
-                    "payload": {"var": "trigger.payload"},
+                    "connection_id": connection_id,
+                    "method": "GET",
+                    "path": "/orders/{{ trigger.payload.order_id }}.json",
+                    "query": {"status": "any"},
                 },
-            }
+            },
+            {
+                "id": "refund_order_found",
+                "kind": "condition",
+                "expr": {"op": "exists", "left": {"var": "steps.fetch_refunded_order.body_json.order.id"}},
+                "stop_on_false": True,
+                "then_steps": [
+                    {
+                        "id": "maybe_upsert_refund_customer",
+                        "kind": "condition",
+                        "expr": {
+                            "op": "or",
+                            "children": [
+                                {"op": "exists", "left": {"var": "steps.fetch_refunded_order.body_json.order.email"}},
+                                {"op": "exists", "left": {"var": "steps.fetch_refunded_order.body_json.order.customer.email"}},
+                            ],
+                        },
+                        "then_steps": [
+                            {
+                                "id": "upsert_refund_order_customer",
+                                "kind": "action",
+                                "action_id": "system.apply_integration_mapping",
+                                "inputs": {
+                                    "connection_id": {"var": "trigger.connection_id"},
+                                    "mapping_id": customer_mapping_id,
+                                    "source_record": _order_customer_source("steps.fetch_refunded_order.body_json.order"),
+                                    "resource_key": "Customers",
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "id": "upsert_refunded_sales_order",
+                        "kind": "action",
+                        "action_id": "system.apply_integration_mapping",
+                        "inputs": {
+                            "connection_id": {"var": "trigger.connection_id"},
+                            "mapping_id": order_mapping_id,
+                            "source_record": _order_source("steps.fetch_refunded_order.body_json.order"),
+                            "resource_key": "Orders",
+                        },
+                    },
+                ],
+            },
         ],
     }
 
 
-def build_customers_consumer_automation(*, status: str) -> dict[str, Any]:
+def build_customers_consumer_automation(*, status: str, customer_mapping_id: str) -> dict[str, Any]:
     return {
         "name": "Shopify Phase 2 - Customers Inbound",
         "description": "Upsert TE customer records from inbound Shopify customer webhooks.",
@@ -375,17 +889,19 @@ def build_customers_consumer_automation(*, status: str) -> dict[str, Any]:
             {
                 "id": "upsert_shopify_customer",
                 "kind": "action",
-                "action_id": "system.shopify_upsert_customer_webhook",
+                "action_id": "system.apply_integration_mapping",
                 "inputs": {
                     "connection_id": {"var": "trigger.connection_id"},
-                    "payload": {"var": "trigger.payload"},
+                    "mapping_id": customer_mapping_id,
+                    "source_record": _shopify_customer_source("trigger.payload"),
+                    "resource_key": "Customers",
                 },
             }
         ],
     }
 
 
-def build_products_consumer_automation(*, status: str) -> dict[str, Any]:
+def build_products_consumer_automation(*, status: str, product_mapping_id: str) -> dict[str, Any]:
     return {
         "name": "Shopify Phase 2 - Products Inbound",
         "description": "Upsert TE products from inbound Shopify product webhooks.",
@@ -400,21 +916,53 @@ def build_products_consumer_automation(*, status: str) -> dict[str, Any]:
         },
         "steps": [
             {
-                "id": "upsert_shopify_product",
-                "kind": "action",
-                "action_id": "system.shopify_upsert_product_webhook",
-                "inputs": {
-                    "connection_id": {"var": "trigger.connection_id"},
-                    "payload": {"var": "trigger.payload"},
-                },
+                "id": "upsert_shopify_product_variants",
+                "kind": "foreach",
+                "over": "{{ trigger.payload.variants }}",
+                "item_name": "variant",
+                "steps": [
+                    {
+                        "id": "sku_present",
+                        "kind": "condition",
+                        "expr": {"op": "exists", "left": {"var": "variant.sku"}},
+                        "stop_on_false": True,
+                        "then_steps": [
+                            {
+                                "id": "upsert_shopify_product",
+                                "kind": "action",
+                                "action_id": "system.apply_integration_mapping",
+                                "inputs": {
+                                    "connection_id": {"var": "trigger.connection_id"},
+                                    "mapping_id": product_mapping_id,
+                                    "source_record": _product_variant_source("trigger.payload", "variant"),
+                                    "resource_key": "Products",
+                                },
+                            }
+                        ],
+                    }
+                ],
             }
         ],
     }
 
 
+def all_mapping_definitions(*, connection_id: str) -> list[dict[str, Any]]:
+    return [
+        build_customer_mapping(connection_id),
+        build_product_mapping(connection_id),
+        build_sales_order_mapping(connection_id),
+        build_sales_order_line_mapping(connection_id),
+    ]
+
+
 def all_automation_definitions(
     *,
     publish: bool,
+    connection_id: str,
+    customer_mapping_id: str,
+    product_mapping_id: str,
+    order_mapping_id: str,
+    order_line_mapping_id: str,
     notify_recipient_user_ids: list[str] | None = None,
     order_email_recipients: list[str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -422,12 +970,21 @@ def all_automation_definitions(
     return [
         build_orders_consumer_automation(
             status=status,
+            customer_mapping_id=customer_mapping_id,
+            order_mapping_id=order_mapping_id,
+            order_line_mapping_id=order_line_mapping_id,
             notify_recipient_user_ids=notify_recipient_user_ids,
             email_recipients=order_email_recipients,
         ),
-        build_refunds_consumer_automation(status=status),
-        build_customers_consumer_automation(status=status),
-        build_products_consumer_automation(status=status),
+        build_refunds_consumer_automation(
+            status=status,
+            connection_id=connection_id,
+            customer_mapping_id=customer_mapping_id,
+            order_mapping_id=order_mapping_id,
+            order_line_mapping_id=order_line_mapping_id,
+        ),
+        build_customers_consumer_automation(status=status, customer_mapping_id=customer_mapping_id),
+        build_products_consumer_automation(status=status, product_mapping_id=product_mapping_id),
     ]
 
 
@@ -436,6 +993,7 @@ def main() -> int:
     parser.add_argument("--base-url", default=os.getenv("OCTO_BASE_URL", "http://localhost:8000"))
     parser.add_argument("--token", default=os.getenv("OCTO_API_TOKEN"))
     parser.add_argument("--workspace-id", default=os.getenv("OCTO_WORKSPACE_ID"))
+    parser.add_argument("--connection-id", default=os.getenv("OCTO_SHOPIFY_CONNECTION_ID"))
     parser.add_argument("--publish", action="store_true", help="Publish the automations after create/update")
     parser.add_argument(
         "--order-notify-recipient",
@@ -465,30 +1023,59 @@ def main() -> int:
         raise SystemExit("Missing --token or OCTO_API_TOKEN")
     if not args.workspace_id:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
+    if not args.connection_id:
+        raise SystemExit("Missing --connection-id or OCTO_SHOPIFY_CONNECTION_ID")
 
     base_url = args.base_url.rstrip("/")
+    for definition in all_mapping_definitions(connection_id=args.connection_id):
+        action, mapping = upsert_mapping_by_name(
+            base_url,
+            definition,
+            token=args.token,
+            workspace_id=args.workspace_id,
+            connection_id=args.connection_id,
+        )
+        print(f"[mapping] {action} {definition['name']} -> {mapping.get('id')}")
+    saved_mappings = {
+        row["name"]: row
+        for row in list_mappings(base_url, token=args.token, workspace_id=args.workspace_id, connection_id=args.connection_id)
+        if isinstance(row, dict) and isinstance(row.get("name"), str)
+    }
+
     notify_recipient_user_ids: list[str] | None = None
     order_email_recipients: list[str] | None = None
     if not args.skip_order_notifications:
-        requested_recipients = args.order_notify_recipients or ["nick", "kelly"]
-        notify_recipient_user_ids = resolve_member_user_ids(
-            base_url,
-            requested_recipients,
-            token=args.token,
-            workspace_id=args.workspace_id,
-        )
-        print(f"[automation] order notifications -> {', '.join(notify_recipient_user_ids)}")
+        requested_recipients = args.order_notify_recipients or []
+        if requested_recipients:
+            notify_recipient_user_ids = resolve_member_user_ids(
+                base_url,
+                requested_recipients,
+                token=args.token,
+                workspace_id=args.workspace_id,
+            )
+            print(f"[automation] order notifications -> {', '.join(notify_recipient_user_ids)}")
+        else:
+            print("[automation] order notifications skipped: no recipients provided")
     if not args.skip_order_emails:
-        requested_email_recipients = args.order_email_to or args.order_notify_recipients or ["nick", "kelly"]
-        order_email_recipients = resolve_member_emails(
-            base_url,
-            requested_email_recipients,
-            token=args.token,
-            workspace_id=args.workspace_id,
-        )
-        print(f"[automation] order emails -> {', '.join(order_email_recipients)}")
+        requested_email_recipients = args.order_email_to or args.order_notify_recipients or []
+        if requested_email_recipients:
+            order_email_recipients = resolve_member_emails(
+                base_url,
+                requested_email_recipients,
+                token=args.token,
+                workspace_id=args.workspace_id,
+            )
+            print(f"[automation] order emails -> {', '.join(order_email_recipients)}")
+        else:
+            print("[automation] order emails skipped: no recipients provided")
+
     for definition in all_automation_definitions(
         publish=args.publish,
+        connection_id=args.connection_id,
+        customer_mapping_id=str(saved_mappings["TE Shopify - Customer Webhook Mapping"]["id"]),
+        product_mapping_id=str(saved_mappings["TE Shopify - Product Variant Webhook Mapping"]["id"]),
+        order_mapping_id=str(saved_mappings["TE Shopify - Sales Order Webhook Mapping"]["id"]),
+        order_line_mapping_id=str(saved_mappings["TE Shopify - Sales Order Line Webhook Mapping"]["id"]),
         notify_recipient_user_ids=notify_recipient_user_ids,
         order_email_recipients=order_email_recipients,
     ):

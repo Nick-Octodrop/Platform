@@ -124,6 +124,10 @@
         { "id": "te_sales_order.customer_name", "type": "string", "label": "Customer Name" },
         { "id": "te_sales_order.customer_email", "type": "string", "label": "Customer Email" },
         { "id": "te_sales_order.customer_phone", "type": "string", "label": "Customer Phone" },
+        { "id": "te_sales_order.fulfilled_at", "type": "date", "label": "Fulfilled Date" },
+        { "id": "te_sales_order.tracking_company", "type": "string", "label": "Tracking Carrier" },
+        { "id": "te_sales_order.tracking_number", "type": "string", "label": "Tracking Number" },
+        { "id": "te_sales_order.tracking_url", "type": "string", "label": "Tracking URL" },
         { "id": "te_sales_order.shipping_name", "type": "string", "label": "Shipping Name" },
         { "id": "te_sales_order.shipping_address_1", "type": "string", "label": "Shipping Address 1" },
         { "id": "te_sales_order.shipping_address_2", "type": "string", "label": "Shipping Address 2" },
@@ -426,11 +430,21 @@
         { "field_id": "te_sales_order.balance_due" }
       ],
       "default_sort": [{ "field": "te_sales_order.order_date", "direction": "desc" }],
-      "open_record_target": "page:te_sales_order.form_page",
-      "filters": {
-        "default": "open",
-        "items": [
-          { "id": "all", "label": "All" },
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_sales_order_new" }],
+        "open_record_target": "page:te_sales_order.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search sales orders...",
+          "fields": [
+            "te_sales_order.order_number",
+            "te_sales_order.shopify_order_name",
+            "te_sales_order.customer_name",
+            "te_sales_order.customer_email"
+          ]
+        },
+        "filters": [
+          { "id": "all", "label": "All", "domain": { "op": "in", "field": "te_sales_order.status", "value": ["draft", "open", "paid", "fulfilled", "cancelled"] } },
           { "id": "open", "label": "Open", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "open" } },
           { "id": "fulfilled", "label": "Fulfilled", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "fulfilled" } },
           { "id": "cancelled", "label": "Cancelled", "domain": { "op": "eq", "field": "te_sales_order.status", "value": "cancelled" } }
@@ -452,6 +466,7 @@
             "te_sales_order.channel",
             "te_sales_order.financial_status",
             "te_sales_order.fulfillment_status",
+            "te_sales_order.fulfilled_at",
             "te_sales_order.order_date",
             "te_sales_order.currency",
             "te_sales_order.shopify_order_name",
@@ -475,7 +490,10 @@
             "te_sales_order.shipping_city",
             "te_sales_order.shipping_region",
             "te_sales_order.shipping_postcode",
-            "te_sales_order.shipping_amount"
+            "te_sales_order.shipping_amount",
+            "te_sales_order.tracking_company",
+            "te_sales_order.tracking_number",
+            "te_sales_order.tracking_url"
           ]
         },
         {
@@ -661,7 +679,7 @@
               "kind": "view_modes",
               "entity_id": "entity.te_sales_order",
               "default_mode": "list",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_sales_order.list" }
               ]
@@ -684,7 +702,7 @@
               "kind": "view_modes",
               "entity_id": "entity.te_sales_order",
               "default_mode": "list",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_sales_order.list" }
               ]

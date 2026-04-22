@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   hasPendingPlanQuestion,
+  latestPlanFromList,
   latestPlanQuestionPrompt,
   questionSupersededByAppliedRevision,
 } from "./octoAiSessionState.js";
@@ -55,4 +56,19 @@ test("hasPendingPlanQuestion does not let an older applied patchset suppress a n
   };
   assert.equal(questionSupersededByAppliedRevision(newerPlan, olderAppliedPatchset), false);
   assert.equal(hasPendingPlanQuestion(newerPlan, olderAppliedPatchset), true);
+});
+
+test("latestPlanFromList prefers the newest plan instead of raw API order", () => {
+  const olderPlan = {
+    id: "plan_old",
+    created_at: "2026-04-21T10:00:00.000Z",
+    questions_json: ["Confirm this plan?"],
+  };
+  const newerPlan = {
+    id: "plan_new",
+    created_at: "2026-04-21T10:05:00.000Z",
+    questions_json: ["Add more concrete detail."],
+  };
+  assert.deepEqual(latestPlanFromList([olderPlan, newerPlan]), newerPlan);
+  assert.deepEqual(latestPlanFromList([newerPlan, olderPlan]), newerPlan);
 });

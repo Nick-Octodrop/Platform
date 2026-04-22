@@ -27,10 +27,13 @@ class TestSetupSalesFinanceSync(unittest.TestCase):
         self.assertEqual(automation["name"], "TE Sales -> Finance Income")
         self.assertEqual(automation["trigger"]["event_types"], ["record.created", "record.updated"])
         self.assertIn({"path": "entity_id", "op": "eq", "value": "entity.te_sales_order"}, automation["trigger"]["filters"])
-        step = automation["steps"][0]
-        self.assertEqual(step["action_id"], "system.sync_sales_order_to_finance")
-        self.assertEqual(step["inputs"]["entity_id"], "entity.te_sales_order")
-        self.assertEqual(step["inputs"]["record_id"], "{{ trigger.record_id }}")
+        self.assertEqual(automation["steps"][0]["action_id"], "system.query_records")
+        self.assertEqual(automation["steps"][1]["action_id"], "system.query_records")
+        decision = automation["steps"][2]
+        self.assertEqual(decision["kind"], "condition")
+        self.assertEqual(decision["then_steps"][0]["then_steps"][0]["action_id"], "system.update_record")
+        self.assertEqual(decision["then_steps"][0]["else_steps"][0]["action_id"], "system.create_record")
+        self.assertEqual(decision["else_steps"][0]["then_steps"][0]["action_id"], "system.update_record")
 
 
 if __name__ == "__main__":

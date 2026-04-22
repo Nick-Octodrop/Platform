@@ -96,7 +96,7 @@ class TestShopifyImport(unittest.TestCase):
         )
         self.assertEqual(len(variants), 2)
 
-    def test_build_update_values_preserves_local_title_and_price_by_default(self) -> None:
+    def test_build_update_values_preserves_local_title_but_refreshes_shopify_sell_prices(self) -> None:
         module = _load_import_module()
         values = module.build_update_values(
             {
@@ -114,6 +114,7 @@ class TestShopifyImport(unittest.TestCase):
                 "title": "Shopify Title",
                 "variant_name": "Mini",
                 "status": "active",
+                "sales_currency": "NZD",
                 "retail_price": 99.0,
                 "compare_at_price": 120.0,
                 "track_stock": False,
@@ -128,7 +129,7 @@ class TestShopifyImport(unittest.TestCase):
             overwrite_local=False,
         )
         self.assertNotIn("te_product.title", values)
-        self.assertNotIn("te_product.retail_price", values)
+        self.assertEqual(values["te_product.retail_price"], 99.0)
         self.assertEqual(values["te_product.compare_at_price"], 120.0)
         self.assertEqual(values["te_product.variant_name"], "Mini")
         self.assertEqual(values["te_product.shopify_variant_id"], "gid://shopify/ProductVariant/11")

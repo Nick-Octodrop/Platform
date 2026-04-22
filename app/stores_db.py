@@ -3200,7 +3200,6 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                         "key": "products",
                         "label": "Products",
                         "source_entity": "shopify.products",
-                        "suggested_target_entity": "entity.te_product",
                         "fields": [
                             {"path": "id", "label": "Product ID", "type": "string"},
                             {"path": "title", "label": "Title", "type": "string"},
@@ -3240,7 +3239,6 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                         "key": "inventory_levels",
                         "label": "Inventory Levels",
                         "source_entity": "shopify.inventory_levels",
-                        "suggested_target_entity": "entity.te_product",
                         "fields": [
                             {"path": "inventoryItem.id", "label": "Inventory item ID", "type": "string"},
                             {"path": "location.id", "label": "Location ID", "type": "string"},
@@ -3260,7 +3258,6 @@ _SYSTEM_INTEGRATION_PROVIDERS: list[dict[str, Any]] = [
                         "key": "orders",
                         "label": "Orders",
                         "source_entity": "shopify.orders",
-                        "suggested_target_entity": "entity.te_sales_order",
                         "fields": [
                             {"path": "id", "label": "Order ID", "type": "string"},
                             {"path": "name", "label": "Order number", "type": "string"},

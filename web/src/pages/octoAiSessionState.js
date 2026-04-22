@@ -1,3 +1,30 @@
+function planActivityTimestamp(plan) {
+  if (!plan || typeof plan !== "object") return 0;
+  const candidates = [
+    plan.updated_at,
+    plan.created_at,
+  ];
+  for (const value of candidates) {
+    if (typeof value !== "string" || !value) continue;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function comparePlansNewestFirst(left, right) {
+  const timestampDelta = planActivityTimestamp(right) - planActivityTimestamp(left);
+  if (timestampDelta !== 0) return timestampDelta;
+  const leftId = typeof left?.id === "string" ? left.id : "";
+  const rightId = typeof right?.id === "string" ? right.id : "";
+  return rightId.localeCompare(leftId);
+}
+
+export function latestPlanFromList(plans) {
+  if (!Array.isArray(plans) || plans.length === 0) return null;
+  return [...plans].sort(comparePlansNewestFirst)[0] || null;
+}
+
 export function latestPlanQuestion(latestPlan) {
   const direct = Array.isArray(latestPlan?.questions_json) ? latestPlan.questions_json : [];
   for (const item of direct) {

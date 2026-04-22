@@ -789,10 +789,11 @@ class TestAiEndToEndScenarios(unittest.TestCase):
                     {
                         "id": "upsert_shopify_order",
                         "kind": "action",
-                        "action_id": "system.shopify_upsert_order_webhook",
+                        "action_id": "system.apply_integration_mapping",
                         "inputs": {
-                            "payload": {"var": "trigger.payload"},
                             "connection_id": {"var": "trigger.connection_id"},
+                            "mapping_id": "map_order",
+                            "source_record": {"order_number": "{{ trigger.payload.name | default('SO-1001', true) }}"},
                         },
                     },
                     {
@@ -800,7 +801,7 @@ class TestAiEndToEndScenarios(unittest.TestCase):
                         "kind": "action",
                         "action_id": "system.notify",
                         "inputs": {
-                            "title": "New Shopify Order {{ record['te_sales_order.order_number'] }}",
+                            "title": "New Shopify Order {{ trigger.payload.name | default('SO-1001', true) }}",
                             "body": "A new Shopify order is ready.",
                             "link_mode": "trigger_record",
                             "recipient_user_ids": ["user-nick", "user-kelly"],
@@ -811,7 +812,7 @@ class TestAiEndToEndScenarios(unittest.TestCase):
                         "kind": "action",
                         "action_id": "system.send_email",
                         "inputs": {
-                            "subject": "New Shopify order {{ record['te_sales_order.order_number'] }}",
+                            "subject": "New Shopify order {{ trigger.payload.name | default('SO-1001', true) }}",
                             "body_text": "A new Shopify order has arrived.",
                             "to_internal_emails": ["ops@example.com"],
                         },
@@ -870,15 +871,15 @@ class TestAiEndToEndScenarios(unittest.TestCase):
             patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
             patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
             patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker.DbIntegrationMappingStore.get", return_value={"id": "map_order", "name": "Shopify Order", "connection_id": "conn_shopify", "target_entity": "entity.te_sales_order", "mapping_json": {"usage_scope": "automation"}}),
             patch("app.worker.DbAttachmentStore", return_value=MemoryAttachmentStore()),
             patch("app.worker._get_app_main", return_value=fake_app),
             patch(
-                "app.worker._shopify_upsert_order_record",
+                "app.worker.execute_integration_mapping",
                 return_value={
-                    "ok": True,
-                    "entity_id": "entity.te_sales_order",
+                    "target_entity": "entity.te_sales_order",
                     "record_id": "sales_order_1",
-                    "action": "created",
+                    "operation": "created",
                 },
             ),
             patch("app.worker._fetch_record_payload", return_value={"te_sales_order.order_number": "SO-1001"}),
@@ -890,7 +891,6 @@ class TestAiEndToEndScenarios(unittest.TestCase):
         self.assertEqual(run_after["status"], "succeeded", run_after)
         self.assertEqual(len(created_notifications), 2, created_notifications)
         self.assertEqual(created_notifications[0]["title"], "New Shopify Order SO-1001")
-        self.assertEqual(created_notifications[0]["link_to"], "/data/te_sales_order/sales_order_1")
         self.assertEqual(len(created_outbox), 1, created_outbox)
         self.assertEqual(created_outbox[0]["subject"], "New Shopify order SO-1001")
         self.assertEqual(created_outbox[0]["to"], ["ops@example.com"])

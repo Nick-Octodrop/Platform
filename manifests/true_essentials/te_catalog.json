@@ -142,6 +142,64 @@
           }
         },
         {
+          "id": "te_product.sale_discount_percent",
+          "type": "number",
+          "label": "Sale Discount %",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "percent", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "and",
+                "args": [
+                  {
+                    "op": "gt",
+                    "args": [
+                      { "ref": "$current.te_product.compare_at_price" },
+                      0
+                    ]
+                  },
+                  {
+                    "op": "lt",
+                    "args": [
+                      { "ref": "$current.te_product.retail_price" },
+                      { "ref": "$current.te_product.compare_at_price" }
+                    ]
+                  }
+                ]
+              },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          {
+                            "op": "sub",
+                            "args": [
+                              { "ref": "$current.te_product.compare_at_price" },
+                              { "ref": "$current.te_product.retail_price" }
+                            ]
+                          },
+                          { "ref": "$current.te_product.compare_at_price" }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
           "id": "te_product.buy_currency",
           "type": "enum",
           "label": "Buy Currency",
@@ -747,6 +805,8 @@
         { "field_id": "te_product.standard_cost_nzd" },
         { "field_id": "te_product.effective_cost_nzd" },
         { "field_id": "te_product.retail_price" },
+        { "field_id": "te_product.compare_at_price" },
+        { "field_id": "te_product.sale_discount_percent" },
         { "field_id": "te_product.gross_margin_nzd" },
         { "field_id": "te_product.gross_margin_percent" }
       ],
@@ -890,6 +950,7 @@
             "te_product.sales_currency",
             "te_product.retail_price",
             "te_product.compare_at_price",
+            "te_product.sale_discount_percent",
             "te_product.is_on_sale"
           ]
         },

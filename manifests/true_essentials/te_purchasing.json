@@ -799,7 +799,7 @@
               "kind": "view_modes",
               "entity_id": "entity.te_purchase_order",
               "default_mode": "kanban",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_purchase_order.list" },
                 { "mode": "kanban", "target": "view:te_purchase_order.kanban", "default_group_by": "te_purchase_order.status" },
@@ -825,7 +825,7 @@
               "kind": "view_modes",
               "entity_id": "entity.te_purchase_order",
               "default_mode": "kanban",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 { "mode": "list", "target": "view:te_purchase_order.list" },
                 { "mode": "kanban", "target": "view:te_purchase_order.kanban", "default_group_by": "te_purchase_order.status" },

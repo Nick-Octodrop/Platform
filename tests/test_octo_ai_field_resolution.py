@@ -15434,6 +15434,135 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             structured["first_delivery_slice"],
         )
 
+    def test_structured_plan_summary_groups_create_module_with_supporting_artifacts(self) -> None:
+        plan = {
+            "planner_state": {
+                "intent": "create_module",
+                "module_name": "Cooking",
+            },
+            "affected_artifacts": [],
+            "proposed_changes": [
+                {
+                    "op": "create_module",
+                    "artifact_type": "module",
+                    "artifact_id": "cooking",
+                    "manifest": {
+                        "module": {"id": "cooking", "key": "cooking", "name": "Cooking"},
+                    },
+                },
+                {
+                    "op": "create_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "email_tpl_recipe_ready",
+                    "email_template": {"name": "Recipe Ready"},
+                },
+                {
+                    "op": "create_document_template_record",
+                    "artifact_type": "document_template",
+                    "artifact_id": "doc_tpl_recipe_pack",
+                    "document_template": {"name": "Recipe Pack"},
+                },
+                {
+                    "op": "create_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "automation_recipe_pack",
+                    "automation": {"name": "Recipe Pack Delivery"},
+                },
+            ],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+        }
+
+        structured = _ai_build_structured_plan(plan, {"request_summary": "Create a cooking module with a handoff automation and supporting templates."})
+
+        self.assertEqual(
+            structured["summary"],
+            "Create the Cooking module with supporting automation, email template, and document template.",
+        )
+        section_keys = [section.get("key") for section in (structured.get("sections") or []) if isinstance(section, dict)]
+        self.assertIn("supporting_rollout", section_keys)
+        self.assertNotIn("templates", section_keys)
+        self.assertNotIn("automations", section_keys)
+        self.assertNotIn("dependencies", section_keys)
+        text = _ai_plan_assistant_text(plan, {"request_summary": "Create a cooking module with a handoff automation and supporting templates."})
+        self.assertIn("Planned changes:", text)
+        planned_section = text.split("Planned changes:", 1)[1]
+        self.assertLess(planned_section.index("Create module 'Cooking'."), planned_section.index("Create automation 'Recipe Pack Delivery'."))
+        self.assertLess(planned_section.index("Create module 'Cooking'."), planned_section.index("Create email template 'Recipe Ready'."))
+
+    def test_structured_plan_summary_groups_existing_module_with_supporting_artifacts(self) -> None:
+        plan = {
+            "planner_state": {
+                "intent": "change_workspace",
+            },
+            "affected_artifacts": [
+                {"artifact_type": "module", "artifact_id": "jobs"},
+            ],
+            "proposed_changes": [
+                {
+                    "op": "add_field",
+                    "artifact_type": "module",
+                    "artifact_id": "jobs",
+                    "field": {"id": "job.handover_status", "label": "Handover Status", "type": "enum"},
+                },
+                {
+                    "op": "update_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "automation_job_handover",
+                    "automation": {"name": "Job Handover"},
+                },
+                {
+                    "op": "update_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "email_tpl_handover_summary",
+                    "email_template": {"name": "Handover Summary"},
+                },
+            ],
+            "required_questions": ["Confirm this plan?"],
+            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan"},
+        }
+
+        structured = _ai_build_structured_plan(
+            plan,
+            {
+                "request_summary": "Update Jobs with a handover field, automation, and email template.",
+                "full_selected_artifacts": [
+                    {
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "manifest": {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}},
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(
+            structured["summary"],
+            "Update Jobs with supporting automation and email template.",
+        )
+        section_keys = [section.get("key") for section in (structured.get("sections") or []) if isinstance(section, dict)]
+        self.assertIn("supporting_rollout", section_keys)
+        self.assertNotIn("templates", section_keys)
+        self.assertNotIn("automations", section_keys)
+        self.assertNotIn("dependencies", section_keys)
+        text = _ai_plan_assistant_text(
+            plan,
+            {
+                "request_summary": "Update Jobs with a handover field, automation, and email template.",
+                "full_selected_artifacts": [
+                    {
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "manifest": {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}},
+                    }
+                ],
+            },
+        )
+        self.assertIn("Planned changes:", text)
+        planned_section = text.split("Planned changes:", 1)[1]
+        self.assertLess(planned_section.index("Add field 'Handover Status' (enum) in Jobs."), planned_section.index("Update automation 'Job Handover'."))
+        self.assertLess(planned_section.index("Add field 'Handover Status' (enum) in Jobs."), planned_section.index("Update email template 'Handover Summary'."))
+
     def test_project_handover_connector_brief_prefers_preview_only_plan(self) -> None:
         module_index = {
             "sales": {"manifest": {"module": {"id": "sales", "key": "sales", "name": "Sales"}, "entities": [], "views": []}},
@@ -15523,6 +15652,136 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         warning_message = (validation.get("warnings") or [{}])[0].get("message", "")
         self.assertIn("planning-only draft", warning_message)
         self.assertNotIn("No changes were required.", warning_message)
+
+    def test_sandbox_applied_status_text_groups_mixed_rollout(self) -> None:
+        text = main._ai_sandbox_applied_status_text(
+            {"title": "Update Jobs handover"},
+            {
+                "patch_json": {
+                    "operations": [
+                        {
+                            "op": "add_field",
+                            "artifact_type": "module",
+                            "artifact_id": "jobs",
+                            "field": {"id": "job.handover_status", "label": "Handover Status", "type": "enum"},
+                        },
+                        {
+                            "op": "update_automation_record",
+                            "artifact_type": "automation",
+                            "artifact_id": "automation_job_handover",
+                            "automation": {"name": "Job Handover"},
+                        },
+                        {
+                            "op": "update_email_template_record",
+                            "artifact_type": "email_template",
+                            "artifact_id": "email_tpl_handover_summary",
+                            "email_template": {"name": "Handover Summary"},
+                        },
+                    ]
+                },
+                "validation_json": {
+                    "results": [
+                        {
+                            "module_id": "jobs",
+                            "manifest": {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}},
+                        }
+                    ]
+                },
+            },
+        )
+
+        self.assertIn("Applied rollout: Update Jobs with supporting automation and email template.", text)
+        applied_section = text.split("Applied changes:", 1)[1]
+        self.assertLess(applied_section.index("Add field 'Handover Status' in Jobs."), applied_section.index("Update automation 'Job Handover'."))
+        self.assertLess(applied_section.index("Add field 'Handover Status' in Jobs."), applied_section.index("Update email template 'Handover Summary'."))
+
+    def test_live_published_status_text_groups_mixed_rollout(self) -> None:
+        text = main._ai_live_published_status_text(
+            {"title": "Create Cooking rollout"},
+            {
+                "patch_json": {
+                    "operations": [
+                        {
+                            "op": "create_module",
+                            "artifact_type": "module",
+                            "artifact_id": "cooking",
+                        },
+                        {
+                            "op": "create_automation_record",
+                            "artifact_type": "automation",
+                            "artifact_id": "automation_recipe_pack",
+                            "automation": {"name": "Recipe Pack Delivery"},
+                        },
+                        {
+                            "op": "create_document_template_record",
+                            "artifact_type": "document_template",
+                            "artifact_id": "doc_tpl_recipe_pack",
+                            "document_template": {"name": "Recipe Pack"},
+                        },
+                    ]
+                },
+                "validation_json": {
+                    "results": [
+                        {
+                            "module_id": "cooking",
+                            "manifest": {"module": {"id": "cooking", "key": "cooking", "name": "Cooking"}},
+                        }
+                    ]
+                },
+            },
+            {"title": "Cooking v1"},
+        )
+
+        self.assertIn("Published rollout: Create the Cooking module with supporting automation and document template.", text)
+        published_section = text.split("Published changes:", 1)[1]
+        self.assertLess(published_section.index("Create module 'Cooking'."), published_section.index("Create automation 'Recipe Pack Delivery'."))
+        self.assertLess(published_section.index("Create module 'Cooking'."), published_section.index("Create document template 'Recipe Pack'."))
+
+    def test_ready_revision_status_text_groups_mixed_rollout(self) -> None:
+        plan = {
+            "planner_state": {"intent": "change_workspace"},
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "jobs"}],
+            "proposed_changes": [
+                {
+                    "op": "add_field",
+                    "artifact_type": "module",
+                    "artifact_id": "jobs",
+                    "field": {"id": "job.handover_status", "label": "Handover Status", "type": "enum"},
+                },
+                {
+                    "op": "update_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "automation_job_handover",
+                    "automation": {"name": "Job Handover"},
+                },
+                {
+                    "op": "update_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "email_tpl_handover_summary",
+                    "email_template": {"name": "Handover Summary"},
+                },
+            ],
+            "required_questions": [],
+        }
+        text = main._ai_ready_revision_status_text(
+            plan,
+            {
+                "request_summary": "Update Jobs with a handover field, automation, and email template.",
+                "full_selected_artifacts": [
+                    {
+                        "artifact_type": "module",
+                        "artifact_id": "jobs",
+                        "manifest": {"module": {"id": "jobs", "key": "jobs", "name": "Jobs"}},
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Ready for sandbox: Update Jobs with supporting automation and email template.", text)
+        self.assertIn("Prepared rollout:", text)
+        prepared_section = text.split("Prepared rollout:", 1)[1]
+        self.assertLess(prepared_section.index("Add field 'Handover Status' (enum) in Jobs."), prepared_section.index("Update automation 'Job Handover'."))
+        self.assertLess(prepared_section.index("Add field 'Handover Status' (enum) in Jobs."), prepared_section.index("Update email template 'Handover Summary'."))
 
     def test_preview_only_request_with_only_missing_modules_stays_truthful_and_patchset_safe(self) -> None:
         with (
@@ -18680,6 +18939,178 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("already absent", warning_message)
         self.assertNotIn("field_missing_noop", warning_message)
 
+    def test_generate_patchset_rejects_thin_create_module_plan(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "thin_plan_gate",
+                    "status": "ready_to_apply",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "last_activity_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-03-18T00:01:00Z",
+                    "questions_json": [],
+                    "required_question_meta": None,
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "cooking"}],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [],
+                            "candidate_operations": [
+                                {
+                                    "op": "create_module",
+                                    "artifact_type": "module",
+                                    "artifact_id": "cooking",
+                                    "manifest": {
+                                        "manifest_version": "1.3",
+                                        "module": {"id": "cooking", "key": "cooking", "name": "Cooking", "version": "0.1.0"},
+                                        "entities": [],
+                                        "views": [],
+                                        "pages": [],
+                                        "actions": [],
+                                        "relations": [],
+                                        "app": {"nav": []},
+                                    },
+                                }
+                            ],
+                            "requested_change_lines": ["Create module 'Cooking'."],
+                            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "cooking"}],
+                        },
+                        "context": {"full_selected_artifacts": []},
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            response = client.post(f"/octo-ai/sessions/{session_id}/patchsets/generate", json={})
+            body = response.json()
+
+        self.assertFalse(body.get("ok"), body)
+        self.assertEqual(response.status_code, 400, body)
+        self.assertEqual((body.get("errors") or [{}])[0].get("code"), "AI_PLAN_TOO_THIN")
+
+    def test_validate_patchset_rejects_thin_create_module_plan(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "thin_plan_validate_gate",
+                    "status": "ready_to_apply",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "sandbox_workspace_id": "default",
+                    "last_activity_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-03-18T00:01:00Z",
+                    "questions_json": [],
+                    "required_question_meta": None,
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "cooking"}],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": [],
+                            "candidate_operations": [
+                                {
+                                    "op": "create_module",
+                                    "artifact_type": "module",
+                                    "artifact_id": "cooking",
+                                    "manifest": {
+                                        "manifest_version": "1.3",
+                                        "module": {"id": "cooking", "key": "cooking", "name": "Cooking", "version": "0.1.0"},
+                                        "entities": [],
+                                        "views": [],
+                                        "pages": [],
+                                        "actions": [],
+                                        "relations": [],
+                                        "app": {"nav": []},
+                                    },
+                                }
+                            ],
+                            "requested_change_lines": ["Create module 'Cooking'."],
+                            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "cooking"}],
+                        },
+                        "context": {"full_selected_artifacts": []},
+                    },
+                },
+            )
+            plan_id = _ai_record_data(plan)["id"]
+            patchset = _ai_create_record(
+                _AI_ENTITY_PATCHSET,
+                {
+                    "session_id": session_id,
+                    "plan_id": plan_id,
+                    "status": "draft",
+                    "base_snapshot_refs_json": [],
+                    "patch_json": {
+                        "operations": [
+                            {
+                                "op": "create_module",
+                                "artifact_type": "module",
+                                "artifact_id": "cooking",
+                                "manifest": {
+                                    "manifest_version": "1.3",
+                                    "module": {"id": "cooking", "key": "cooking", "name": "Cooking", "version": "0.1.0"},
+                                    "entities": [],
+                                    "views": [],
+                                    "pages": [],
+                                    "actions": [],
+                                    "relations": [],
+                                    "app": {"nav": []},
+                                },
+                            }
+                        ],
+                        "noop": False,
+                    },
+                    "validation_json": None,
+                    "apply_log_json": [],
+                    "created_at": "2026-03-18T00:02:00Z",
+                    "applied_at": None,
+                },
+            )
+
+            response = client.post(f"/octo-ai/patchsets/{_ai_record_data(patchset)['id']}/validate", json={})
+            body = response.json()
+
+        self.assertTrue(body.get("ok"), body)
+        self.assertFalse((body.get("validation") or {}).get("ok"), body)
+        self.assertEqual((body.get("validation", {}).get("errors") or [{}])[0].get("code"), "AI_PLAN_TOO_THIN")
+
     def test_patchset_validation_accepts_create_module_with_follow_up_ops(self) -> None:
         with patch.object(main, "_ai_module_manifest_index", lambda _request: {}), patch.object(main, "_validate_dependency_state", lambda *_args, **_kwargs: ([], [])):
             validation = _ai_validate_patchset_against_workspace(
@@ -19482,6 +19913,114 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         session = _ai_get_record(_AI_ENTITY_SESSION, session_id)
         self.assertEqual(session.get("latest_patchset_id"), "")
         self.assertEqual(session.get("status"), "waiting_input")
+
+    def test_persist_plan_result_turns_thin_plan_into_detail_required_question(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "Thin plan detail gate"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+
+        plan = {
+            "scope": {"mode": "auto"},
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "cooking"}],
+            "proposed_changes": [],
+            "required_questions": [],
+            "required_question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "requested_change_lines": ["Create module 'Cooking'."],
+            "candidate_operations": [
+                {
+                    "op": "create_module",
+                    "artifact_type": "module",
+                    "artifact_id": "cooking",
+                    "manifest": {
+                        "manifest_version": "1.3",
+                        "module": {"id": "cooking", "key": "cooking", "name": "Cooking", "version": "0.1.0"},
+                        "entities": [],
+                        "views": [],
+                        "pages": [],
+                        "actions": [],
+                        "relations": [],
+                        "app": {"nav": []},
+                    },
+                }
+            ],
+        }
+        context = {"request_summary": "Create a cooking module for recipes and ingredients.", "full_selected_artifacts": []}
+        plan_record, assistant_text = main._ai_persist_plan_result(
+            session_id,
+            plan,
+            context,
+            {"status": "ready_to_apply", "affected_modules": ["cooking"]},
+        )
+
+        persisted_plan = main._ai_plan_body_from_record_data(plan_record)
+        session = _ai_get_record(_AI_ENTITY_SESSION, session_id)
+        self.assertEqual(session.get("status"), "waiting_input")
+        self.assertEqual(persisted_plan.get("required_questions"), [
+            "This plan is still too thin to apply safely. Tell me the concrete module fields, pages, workflow, and layout you want added."
+        ])
+        self.assertEqual((persisted_plan.get("required_question_meta") or {}).get("id"), "plan_quality_detail")
+        self.assertIn("too thin", assistant_text.lower())
+        self.assertIn("concrete module fields, pages, workflow, and layout", assistant_text.lower())
+        self.assertNotIn("confirm the plan", assistant_text.lower())
+
+    def test_persist_plan_result_turns_thin_mixed_plan_into_specific_detail_required_question(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "Thin mixed plan detail gate"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+
+        plan = {
+            "scope": {"mode": "auto"},
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "jobs"}],
+            "proposed_changes": [],
+            "required_questions": [],
+            "required_question_meta": None,
+            "assumptions": [],
+            "risk_flags": [],
+            "advisories": [],
+            "requested_change_lines": ["Update Jobs."],
+            "candidate_operations": [
+                {
+                    "op": "add_field",
+                    "artifact_type": "module",
+                    "artifact_id": "jobs",
+                    "field": {"id": "job.handover_status", "label": "Handover Status", "type": "enum"},
+                },
+                {
+                    "op": "update_automation_record",
+                    "artifact_type": "automation",
+                    "artifact_id": "automation_job_handover",
+                    "automation": {"name": "Job Handover"},
+                },
+                {
+                    "op": "update_email_template_record",
+                    "artifact_type": "email_template",
+                    "artifact_id": "email_tpl_handover_summary",
+                    "email_template": {"name": "Handover Summary"},
+                },
+            ],
+        }
+        context = {"request_summary": "Update Jobs with a handover field, automation, and email template.", "full_selected_artifacts": []}
+        plan_record, assistant_text = main._ai_persist_plan_result(
+            session_id,
+            plan,
+            context,
+            {"status": "ready_to_apply", "affected_modules": ["jobs"]},
+        )
+
+        persisted_plan = main._ai_plan_body_from_record_data(plan_record)
+        self.assertEqual(
+            persisted_plan.get("required_questions"),
+            [
+                "This plan is still too thin to apply safely. Tell me the concrete automation trigger, automation outcomes, template purpose, and template content targets you want added."
+            ],
+        )
+        self.assertIn("automation trigger", assistant_text.lower())
+        self.assertIn("template content targets", assistant_text.lower())
 
     def test_rollback_patchset_updates_latest_patchset_to_remaining_applied_revision(self) -> None:
         with TestClient(main.app) as client:

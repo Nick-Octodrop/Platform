@@ -16,7 +16,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
   className = "",
 }, ref) {
   const textareaRef = useRef(null);
-  const [singleLineMetrics, setSingleLineMetrics] = useState({ active: false, size: 0 });
+  const [buttonSize, setButtonSize] = useState(0);
 
   useImperativeHandle(ref, () => textareaRef.current, []);
 
@@ -37,10 +37,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
     const nextHeight = Math.min(Math.max(naturalHeight, minHeight), maxHeight);
     el.style.height = `${nextHeight}px`;
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-    setSingleLineMetrics({
-      active: naturalHeight <= (minHeight + 1),
-      size: nextHeight,
-    });
+    setButtonSize((current) => (current > 0 ? current : nextHeight));
   }, [maxRows, minRows, value]);
 
   const trimmedValue = value?.trim() || "";
@@ -48,7 +45,7 @@ const AgentChatInput = forwardRef(function AgentChatInput({
   const sendDisabled = disabled || (!trimmedValue && !allowEmptySend);
 
   return (
-    <div className={`flex w-full ${singleLineMetrics.active ? "items-stretch" : "items-end"} gap-2 ${className}`}>
+    <div className={`flex w-full items-end gap-2 ${className}`}>
       <textarea
         ref={textareaRef}
         className="textarea textarea-bordered w-full min-w-0 flex-1 resize-none py-3 text-sm leading-5 no-scrollbar"
@@ -67,9 +64,9 @@ const AgentChatInput = forwardRef(function AgentChatInput({
         disabled={disabled}
       />
       <button
-        className={`btn btn-square h-11 w-11 shrink-0 ${canStop ? "btn-ghost" : "btn-primary"}`}
-        style={singleLineMetrics.active && singleLineMetrics.size > 0
-          ? { height: `${singleLineMetrics.size}px`, width: `${singleLineMetrics.size}px`, minHeight: `${singleLineMetrics.size}px` }
+        className={`btn shrink-0 px-0 ${canStop ? "btn-ghost" : "btn-primary"}`}
+        style={buttonSize > 0
+          ? { height: `${buttonSize}px`, minHeight: `${buttonSize}px`, width: `${buttonSize}px` }
           : undefined}
         onClick={() => {
           if (canStop) {

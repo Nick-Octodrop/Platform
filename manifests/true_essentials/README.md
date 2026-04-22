@@ -45,6 +45,11 @@
 - Customer master records for True Essentials with Shopify linkage, marketing-consent flags, address data, and reusable CRM fields
 - Gives sales orders, email automations, and retention workflows a first-class customer entity instead of relying on free-text order snapshots
 
+### `te_influencers.json`
+- Influencer master records with handle, contact, engagement, and internal rating fields
+- Product-send records with stock-tracked line items so gifting inventory leaves `te_product.stock_on_hand` when a send is marked sent
+- Send-level cost visibility, campaign notes, coupon tracking, and revenue-attribution fields for lightweight influencer ROI review
+
 ## Assumptions made
 
 - The suite is intended to be installed together for the same workspace.
@@ -178,6 +183,12 @@ Current limitation:
 
 After the import-first setup is stable, register inbound Shopify webhooks and keep a single reconciliation command available for catch-up runs.
 
+Operational note:
+- there is no first-class `manual` automation trigger in the current platform
+- for a full manual Shopify refresh, use the existing reconciliation command:
+  - `python manifests/true_essentials/reconcile_shopify.py --connection-name "TE Shopify"`
+- for connection-level sync from the platform side, use the integration connection sync path instead of trying to fake a manifest action button
+
 1. Register Shopify inbound webhooks in Octodrop and Shopify:
    - `python manifests/true_essentials/setup_shopify_phase2.py --connection-name "TE Shopify"`
 2. Run a full dry-run reconciliation:
@@ -206,19 +217,18 @@ Operational model:
 
 Once webhook subscriptions are registered, install the inbound consumer automations so webhook deliveries actually upsert TE records.
 
-1. Deploy or restart the Octodrop backend first so the new worker actions exist:
-   - `system.shopify_upsert_order_webhook`
-   - `system.shopify_refresh_order_from_refund_webhook`
-   - `system.shopify_upsert_customer_webhook`
-   - `system.shopify_upsert_product_webhook`
-2. Register the inbound consumer automations:
+1. Register the inbound consumer automations plus their saved integration mappings:
    - `python manifests/true_essentials/setup_shopify_phase2_consumers.py --publish`
 
 The consumer automations do this:
 - `orders/create`, `orders/updated`, and `orders/cancelled` upsert `te_sales_order` plus `te_sales_order_line`
-- `refunds/create` refreshes the linked Shopify order and reapplies the latest sales-order state
+- `refunds/create` fetches the current Shopify order through the connection and reapplies the latest sales-order state
 - `customers/create` and `customers/update` upsert `te_customer`
-- `products/create` and `products/update` upsert `te_product` and import Shopify product images into `te_product.shopify_image_attachments`
+- `products/create` and `products/update` upsert `te_product` variants by SKU
+
+Operational note:
+- the webhook consumer flow now uses generic integration mappings, `integration_request`, `query_records`, and standard create/update actions instead of TE-specific platform runtime hooks
+- inbound product image attachment import is no longer done in the live webhook consumer path; use `reconcile_shopify.py --import-images` when you want a full image catch-up into `te_product.shopify_image_attachments`
 
 Finance behavior:
 - inbound order webhooks still flow through `te_sales`

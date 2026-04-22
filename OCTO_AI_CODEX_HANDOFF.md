@@ -98,6 +98,132 @@ These items are in the active improvement lane and should stay aligned across St
   - scoped AIs should surface required input, advisories, and risks in the same plan-stage card shape
   - quality/risk feedback should not live only in Octo workspace plans
 
+## Current Reality Snapshot
+
+This handoff was updated after a long AI reliability pass. The highest-value current state is:
+
+- plan quality gating is now materially stricter
+- mixed module + automation + template plans read more coherently
+- automation email/notify recipient realism is much better
+- automation document/email attachment behavior is more truthful
+- automation runtime trust is better covered end to end
+- Octo UI stale confirm-state handling is better, but this remains a thing to watch closely
+
+The center of gravity is no longer just planner wording. It is now:
+
+`truthful plan -> correct gating -> realistic draft -> trustworthy runtime behavior`
+
+## What Was Improved Recently
+
+These are important recent gains and should not be regressed:
+
+### 1. Thin-plan gating
+
+- weak create-module and mixed rollout plans are now blocked before sandbox patch generation
+- thin plans can be pushed back to `waiting_input` with a real `detail_required` question instead of looking confirmable
+- thin-plan prompts now ask for concrete missing topics based on rollout shape, for example:
+  - module fields
+  - pages
+  - workflow
+  - layout
+  - automation trigger
+  - automation outcomes
+  - template purpose
+  - template content targets
+
+### 2. Mixed-rollout coherence
+
+Octo plan rendering is materially better for requests that span:
+
+- module work
+- automations
+- email templates
+- document templates
+
+The same grouped rollout language is now aligned across:
+
+- plan headline
+- planned changes ordering
+- structured plan sections
+- ready-for-sandbox summary
+- sandbox-applied summary
+- live-published summary
+
+Module work should lead. Supporting automations/templates/interfaces should follow.
+
+### 3. Studio create-module quality
+
+- Studio create-module requests no longer seed from the emptiest shell path by default
+- richer deterministic scaffolds are used for new-module briefs
+- scaffold-only plans are treated more honestly as low quality instead of “ready to apply”
+- extra in-form scaffold activity tabs were removed from that seeded path
+
+### 4. Document template realism
+
+- document template validation no longer crashes on numeric filters like `|round(2)` because placeholder data is typed instead of all-string
+- explicit logo/branding requests now inject real workspace branding more reliably
+- selected-record preview rendering was fixed so real field values show again when previewing against a chosen record
+
+### 5. Email template realism
+
+- workspace branding is applied more aggressively in branded email drafts
+- common orange fallback palette is remapped toward workspace branding when the request is clearly branded
+- fake quote CTA buttons are removed when there is no real URL behind them
+- “quote attached” style copy is preferred when there is no real view link
+
+### 6. Automation draft realism
+
+- create/update-record steps now reconcile guessed field names to real entity field ids more reliably
+- automation AI has bounded self-repair behavior for invalid drafts
+- send-email recipient inference is much better for:
+  - literal email addresses
+  - multiple literal recipients
+  - customer/billing/contact email phrases
+  - owner/account-manager style lookup recipients
+  - mixed direct + field recipients
+  - mixed direct + lookup recipients
+- explicit `email me` intent now maps to current-user/internal email behavior more reliably
+- notify steps now support lookup-style recipients such as owner fields, not just literal workspace user ids
+
+### 7. Automation attachment realism
+
+- if an automation email promises an attached document/PDF and a real `generate_document` step exists, the attachment fields are auto-wired
+- if the email promises an attachment and no source exists, validation fails deterministically instead of shipping a lie
+- if the prompt clearly implies a document attachment flow and one matching document template exists, the AI can synthesize the missing `generate_document` step before the email on first pass
+
+### 8. Automation runtime trust
+
+Recent runtime fixes in `app/worker.py` matter a lot:
+
+- `record` alias support was tightened so AI-authored bracket templates like `{{ record['biz_contact.email'] }}` resolve correctly
+- `system.generate_document` now runs inline during automations when needed, so the following `system.send_email` step can attach the generated document in the same run
+- owner/user lookup email recipients now resolve to workspace member emails at runtime
+- related-record lookup recipients now inspect target entity/email-like fields more flexibly instead of only relying on a tiny hardcoded email-field set
+- mixed recipient sources are now covered end to end:
+  - direct email
+  - internal member email
+  - field-based recipient
+  - lookup/user/owner recipient
+- fallback record targeting now prefers the latest record-producing step before the trigger record
+- when an event only has `entity_id` + `record_id`, runtime now hydrates:
+  - `trigger.record`
+  - `trigger.after`
+  from the fetched record snapshot when missing
+
+That means AI-authored downstream flows are now more trustworthy for patterns like:
+
+- create record -> email created record -> notify owner
+- generate document -> email customer with attachment -> notify owner
+- create then update using `trigger.after` templates even when the event payload is sparse
+
+### 9. Octo AI stale confirm-state fixes
+
+- question supersession logic was added so older plan questions can be cleared by newer applied revisions
+- both Octo workspace and sandbox dock now use shared “latest plan” selection instead of trusting raw plan array order
+- this fixes a real branch where the red `Confirm this plan...` banner could still bind to an older plan after sandbox apply
+
+This area is better, but still worth watching because stale session ordering/state bugs are high-friction trust killers.
+
 ## Key Product Decisions
 
 ### Sandbox/session model
@@ -268,6 +394,11 @@ These are important; do not accidentally regress them:
 - Semantic sections merge with fallback deterministic sections.
 - Fallback summaries for field-add requests can now read real ops instead of depending only on brittle planner state.
 - Naming improvements for create-module requests and follow-up rename/carry-over handling.
+- Thin plans no longer drift as easily into sandbox-ready/apply-ready states.
+- Mixed module + automation + template plans now read more like one rollout.
+- Document/email template AIs are more truthful about branding, attachments, and previews.
+- Automation drafts now infer real recipients and attachments more often on first pass.
+- Automation runtime now has stronger end-to-end trust for generated attachments and downstream record targeting.
 
 ## User Expectations That Matter
 
@@ -294,17 +425,60 @@ The user cares a lot about these:
 
 If you are continuing work, the next highest-value priorities are:
 
-### 1. Improve semantic naming and follow-up scope
+### 1. Keep raising trust, not just generation volume
+
+The best work now is the work that makes AI-authored changes behave the way the user thinks they will behave.
 
 Focus on:
 
-- infer clean module names from purpose phrases
-- preserve current draft module scope across follow-ups
-- let explicit renames override earlier inferred names cleanly
+- stronger end-to-end runtime coverage for common business handoff flows
+- fewer fake-success planner states
+- fewer “valid but misleading” drafts
+- clearer apply/publish/sandbox state truthfulness
 
-### 2. Make `PlanV1` richer and more central
+### 2. Keep improving plan quality gating
 
-Keep pushing more planner meaning into `PlanV1`, especially:
+Keep weak plans from appearing sandbox-ready.
+
+Focus on:
+
+- concrete fields
+- placement/layout
+- workflow/action detail
+- module/artifact dependencies
+- required follow-up detail only when it materially affects correctness
+
+### 3. Keep mixed-rollout coherence aligned everywhere
+
+When a request spans a module plus supporting automations/templates:
+
+- the title should read as one rollout
+- the planned changes should be ordered module-first
+- the structured sections should stay grouped
+- the post-apply/publish summaries should tell the same story
+
+### 4. Keep improving artifact realism
+
+Focus on:
+
+- real branding behavior
+- real attachment behavior
+- real recipient behavior
+- real preview behavior
+- no fake links/buttons/claims
+
+### 5. Keep improving automation realism and runtime parity
+
+The best next lane after the recent fixes is more high-frequency end-to-end automation coverage for flows like:
+
+- contact created -> create CRM lead -> notify owner/current user
+- quote approved -> generate PDF -> email customer -> notify owner
+- job created/updated -> email customer/contact -> notify owner
+- follow-up record creation + downstream email/notify on the created record
+
+### 6. Keep `PlanV1` rich and central
+
+Keep pushing real planner meaning into `PlanV1`, especially:
 
 - field detail
 - placement detail
@@ -313,23 +487,11 @@ Keep pushing more planner meaning into `PlanV1`, especially:
 - automations/templates/integrations
 - sandbox verification steps
 
-### 3. Add plan-quality evals
-
-Do not only test rough correctness.
-
-Also fail plans when they are:
-
-- too vague
-- missing placement
-- missing field type
-- missing workflow detail
-- asking unnecessary clarifications
-
-### 4. Keep using real prompt language
+### 7. Keep using real prompt language
 
 Prefer real-world business/admin prompts over synthetic toy prompts.
 
-### 5. Keep the deterministic safety layer
+### 8. Keep the deterministic safety layer
 
 Do not abandon:
 
@@ -370,6 +532,11 @@ python3 -m py_compile app/main.py
 
 Run targeted pytest for the directly touched Octo AI tests.
 
+For current high-value runtime work, also prefer focused automation runtime coverage, especially:
+
+- `tests/test_automation_runtime.py`
+- `tests/test_artifact_ai_endpoints.py`
+
 After frontend changes:
 
 ```powershell
@@ -381,8 +548,8 @@ npm --prefix web run build
 
 The project is no longer at “toy prototype” stage.
 
-The main remaining gap is not raw patch generation; it is:
+The main remaining gap is not raw patch generation. It is:
 
-`semantic request understanding -> detailed truthful plan -> safe deterministic execution`
+`semantic request understanding -> truthful detailed plan -> realistic draft -> safe deterministic execution`
 
 That is the axis to keep improving.

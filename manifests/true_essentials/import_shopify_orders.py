@@ -251,11 +251,17 @@ def map_fulfillment_status(value: Any) -> str:
     return "unfulfilled"
 
 
-def iso_date(value: Any) -> str:
+def iso_date(value: Any, *, default_today: bool = False) -> str:
     text = str(value or "").strip()
     if not text:
-        return datetime.now(timezone.utc).date().isoformat()
-    return text[:10]
+        return datetime.now(timezone.utc).date().isoformat() if default_today else ""
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed.date().isoformat()
+    except Exception:
+        return datetime.now(timezone.utc).date().isoformat() if default_today else ""
 
 
 def shipping_amount(order: dict[str, Any]) -> float:
@@ -266,6 +272,81 @@ def shipping_amount(order: dict[str, Any]) -> float:
             continue
         total += to_number(line.get("discounted_price") if line.get("discounted_price") is not None else line.get("price"))
     return round(total, 2)
+
+
+def order_line_items_total(order: dict[str, Any]) -> float:
+    subtotal = order.get("current_subtotal_price")
+    if subtotal in (None, ""):
+        subtotal = order.get("subtotal_price")
+    if subtotal not in (None, ""):
+        return round(to_number(subtotal), 2)
+    total = 0.0
+    for line_item in order.get("line_items") if isinstance(order.get("line_items"), list) else []:
+        if not isinstance(line_item, dict):
+            continue
+        total += (to_number(line_item.get("price")) * (to_number(line_item.get("quantity")) or 0)) - to_number(line_item.get("total_discount"))
+    return round(total, 2)
+
+
+def order_discount_total(order: dict[str, Any]) -> float:
+    total = order.get("current_total_discounts")
+    if total in (None, ""):
+        total = order.get("total_discounts")
+    if total not in (None, ""):
+        return round(to_number(total), 2)
+    discount = 0.0
+    for line_item in order.get("line_items") if isinstance(order.get("line_items"), list) else []:
+        if isinstance(line_item, dict):
+            discount += to_number(line_item.get("total_discount"))
+    return round(discount, 2)
+
+
+def order_tax_total(order: dict[str, Any]) -> float:
+    total = order.get("current_total_tax")
+    if total in (None, ""):
+        total = order.get("total_tax")
+    if total not in (None, ""):
+        return round(to_number(total), 2)
+    tax = 0.0
+    for line_item in order.get("line_items") if isinstance(order.get("line_items"), list) else []:
+        if isinstance(line_item, dict):
+            tax += line_tax_total(line_item)
+    return round(tax, 2)
+
+
+def primary_fulfillment(order: dict[str, Any]) -> dict[str, Any]:
+    selected: dict[str, Any] = {}
+    fulfillments = order.get("fulfillments")
+    for item in fulfillments if isinstance(fulfillments, list) else []:
+        if isinstance(item, dict):
+            selected = item
+    return selected
+
+
+def fulfillment_tracking_number(fulfillment: dict[str, Any]) -> str:
+    value = str(fulfillment.get("tracking_number") or "").strip()
+    if value:
+        return value
+    numbers = fulfillment.get("tracking_numbers")
+    if isinstance(numbers, list):
+        for item in numbers:
+            text = str(item or "").strip()
+            if text:
+                return text
+    return ""
+
+
+def fulfillment_tracking_url(fulfillment: dict[str, Any]) -> str:
+    value = str(fulfillment.get("tracking_url") or "").strip()
+    if value:
+        return value
+    urls = fulfillment.get("tracking_urls")
+    if isinstance(urls, list):
+        for item in urls:
+            text = str(item or "").strip()
+            if text:
+                return text
+    return ""
 
 
 def line_tax_total(line_item: dict[str, Any]) -> float:
@@ -341,7 +422,16 @@ def build_order_values(
 ) -> dict[str, Any]:
     financial_status = map_financial_status(order.get("financial_status"))
     fulfillment_status = map_fulfillment_status(order.get("fulfillment_status"))
+    fulfillment = primary_fulfillment(order)
     values = dict(existing or {})
+    existing_order_date = iso_date(values.get("te_sales_order.order_date"), default_today=True)
+    existing_fulfilled_at = iso_date(values.get("te_sales_order.fulfilled_at"))
+    order_date = iso_date(order.get("created_at"), default_today=True) or existing_order_date
+    fulfilled_at = (
+        iso_date(fulfillment.get("created_at") or fulfillment.get("updated_at"))
+        if fulfillment
+        else existing_fulfilled_at
+    )
     shipping = order.get("shipping_address") if isinstance(order.get("shipping_address"), dict) else {}
     customer = order.get("customer") if isinstance(order.get("customer"), dict) else {}
     values.update(
@@ -351,7 +441,7 @@ def build_order_values(
             "te_sales_order.status": order_status(financial_status, fulfillment_status, order.get("cancelled_at")),
             "te_sales_order.financial_status": financial_status,
             "te_sales_order.fulfillment_status": fulfillment_status,
-            "te_sales_order.order_date": iso_date(order.get("created_at")),
+            "te_sales_order.order_date": order_date,
             "te_sales_order.currency": str(order.get("currency") or "NZD").strip() or "NZD",
             "te_sales_order.shopify_order_id": str(order.get("admin_graphql_api_id") or order.get("id") or "").strip(),
             "te_sales_order.shopify_order_name": str(order.get("name") or "").strip(),
@@ -366,7 +456,18 @@ def build_order_values(
             "te_sales_order.shipping_region": str(shipping.get("province") or "").strip(),
             "te_sales_order.shipping_postcode": str(shipping.get("zip") or "").strip(),
             "te_sales_order.shipping_country": str(shipping.get("country") or "").strip(),
+            "te_sales_order.fulfilled_at": fulfilled_at,
+            "te_sales_order.tracking_company": str(fulfillment.get("tracking_company") or "").strip() if fulfillment else "",
+            "te_sales_order.tracking_number": fulfillment_tracking_number(fulfillment),
+            "te_sales_order.tracking_url": fulfillment_tracking_url(fulfillment),
+            "te_sales_order.line_items_total": order_line_items_total(order),
+            "te_sales_order.discount_total": order_discount_total(order),
+            "te_sales_order.tax_total": order_tax_total(order),
             "te_sales_order.shipping_amount": shipping_amount(order),
+            "te_sales_order.order_total": round(
+                to_number(order.get("current_total_price") if order.get("current_total_price") is not None else order.get("total_price")),
+                2,
+            ),
             "te_sales_order.total_paid": to_number(order.get("total_received")),
             "te_sales_order.shopify_last_sync_at": now_iso(),
             "te_sales_order.shopify_last_sync_status": "imported",
@@ -374,6 +475,12 @@ def build_order_values(
             "te_sales_order.customer_note": str(order.get("note") or "").strip(),
         }
     )
+    if not order_date:
+        values.pop("te_sales_order.order_date", None)
+    if fulfilled_at:
+        values["te_sales_order.fulfilled_at"] = fulfilled_at
+    else:
+        values.pop("te_sales_order.fulfilled_at", None)
     if customer_row:
         values["te_sales_order.customer_id"] = customer_row.record_id
     return values

@@ -828,6 +828,1130 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(created_outbox[0]["to"], ["ops@example.com"])
         self.assertIn("job", result)
 
+    def test_send_email_step_resolves_owner_lookup_recipient_to_workspace_member_email(self):
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_job.title", "label": "Title", "type": "string"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", return_value={"biz_job.owner_user_id": "user-owner", "biz_job.title": "Install"}),
+            patch("app.worker._find_entity_def", return_value=entity_def),
+            patch("app.workspaces.list_workspace_members", return_value=[{"user_id": "user-owner", "email": "owner@example.com"}]),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "entity_id": "entity.biz_job",
+                    "to_lookup_field_ids": ["biz_job.owner_user_id"],
+                    "subject": "New job",
+                    "body_text": "A new job was created.",
+                },
+                {
+                    "trigger": {"event": "biz_jobs.record.biz_job.created"},
+                    "last": {"entity_id": "entity.biz_job", "record_id": "job_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["owner@example.com"])
+        self.assertIn("job", result)
+
+    def test_notify_step_resolves_owner_lookup_recipient_from_record(self):
+        created_notifications: list[dict] = []
+
+        class _FakeNotificationStore:
+            def create(self, payload):
+                item = {"id": f"notif_{len(created_notifications) + 1}", **payload}
+                created_notifications.append(item)
+                return item
+
+        fake_app = SimpleNamespace(
+            _enrich_template_record=lambda record_data, entity_def: dict(record_data or {}),
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_job.title", "label": "Title", "type": "string"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
+            patch("app.worker._fetch_record_payload", return_value={"biz_job.owner_user_id": "user-owner", "biz_job.title": "Install"}),
+            patch("app.worker._find_entity_def", return_value=entity_def),
+        ):
+            result = _handle_system_action(
+                "system.notify",
+                {
+                    "entity_id": "entity.biz_job",
+                    "recipient_lookup_field_ids": ["biz_job.owner_user_id"],
+                    "title": "New job",
+                    "body": "A new job was created.",
+                },
+                {
+                    "trigger": {"event": "biz_jobs.record.biz_job.created"},
+                    "last": {"entity_id": "entity.biz_job", "record_id": "job_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_notifications), 1, created_notifications)
+        self.assertEqual(created_notifications[0]["recipient_user_id"], "user-owner")
+        self.assertEqual(result["notifications"][0]["recipient_user_id"], "user-owner")
+
+    def test_send_email_step_fails_when_owner_lookup_recipient_has_no_workspace_email(self):
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                raise AssertionError("create_outbox should not be called when no recipient email resolves")
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", return_value={"biz_job.owner_user_id": "user-owner"}),
+            patch("app.worker._find_entity_def", return_value=entity_def),
+            patch("app.workspaces.list_workspace_members", return_value=[{"user_id": "user-owner"}]),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Email recipients not resolved"):
+                _handle_system_action(
+                    "system.send_email",
+                    {
+                        "entity_id": "entity.biz_job",
+                        "to_lookup_field_ids": ["biz_job.owner_user_id"],
+                        "subject": "New job",
+                        "body_text": "A new job was created.",
+                    },
+                    {
+                        "trigger": {"event": "biz_jobs.record.biz_job.created"},
+                        "last": {"entity_id": "entity.biz_job", "record_id": "job_1"},
+                    },
+                    MemoryJobStore(),
+                )
+
+    def test_send_email_step_resolves_related_lookup_recipient_using_entity_email_field(self):
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.customer_id", "label": "Customer", "type": "lookup", "entity": "entity.biz_contact"},
+            ],
+        }
+        contact_entity_def = {
+            "id": "entity.biz_contact",
+            "fields": [
+                {"id": "biz_contact.contact_email", "label": "Contact Email", "type": "string"},
+            ],
+        }
+
+        def _fake_fetch(entity_id, record_id):
+            if entity_id == "entity.biz_quote" and record_id == "quote_1":
+                return {"biz_quote.customer_id": "contact_1"}
+            if entity_id == "entity.biz_contact" and record_id == "contact_1":
+                return {"biz_contact.contact_email": "customer@example.com"}
+            return None
+
+        def _fake_find_entity_def(entity_id):
+            if entity_id == "entity.biz_quote":
+                return quote_entity_def
+            if entity_id == "entity.biz_contact":
+                return contact_entity_def
+            return None
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", side_effect=_fake_fetch),
+            patch("app.worker._find_entity_def", side_effect=_fake_find_entity_def),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "entity_id": "entity.biz_quote",
+                    "to_lookup_field_ids": ["biz_quote.customer_id"],
+                    "subject": "Your quote",
+                    "body_text": "Please review your quote.",
+                },
+                {
+                    "trigger": {"event": "biz_quotes.record.biz_quote.created"},
+                    "last": {"entity_id": "entity.biz_quote", "record_id": "quote_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["customer@example.com"])
+        self.assertIn("job", result)
+
+    def test_send_email_step_fails_when_related_lookup_recipient_has_no_email_field(self):
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                raise AssertionError("create_outbox should not be called when no recipient email resolves")
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.customer_id", "label": "Customer", "type": "lookup", "entity": "entity.biz_contact"},
+            ],
+        }
+        contact_entity_def = {
+            "id": "entity.biz_contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+            ],
+        }
+
+        def _fake_fetch(entity_id, record_id):
+            if entity_id == "entity.biz_quote" and record_id == "quote_1":
+                return {"biz_quote.customer_id": "contact_1"}
+            if entity_id == "entity.biz_contact" and record_id == "contact_1":
+                return {"biz_contact.name": "Nico"}
+            return None
+
+        def _fake_find_entity_def(entity_id):
+            if entity_id == "entity.biz_quote":
+                return quote_entity_def
+            if entity_id == "entity.biz_contact":
+                return contact_entity_def
+            return None
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", side_effect=_fake_fetch),
+            patch("app.worker._find_entity_def", side_effect=_fake_find_entity_def),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Email recipients not resolved"):
+                _handle_system_action(
+                    "system.send_email",
+                    {
+                        "entity_id": "entity.biz_quote",
+                        "to_lookup_field_ids": ["biz_quote.customer_id"],
+                        "subject": "Your quote",
+                        "body_text": "Please review your quote.",
+                    },
+                    {
+                        "trigger": {"event": "biz_quotes.record.biz_quote.created"},
+                        "last": {"entity_id": "entity.biz_quote", "record_id": "quote_1"},
+                    },
+                    MemoryJobStore(),
+                )
+
+    def test_send_email_step_combines_direct_internal_field_and_lookup_recipients(self):
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        job_entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_job.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_job.title", "label": "Title", "type": "string"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch(
+                "app.worker._fetch_record_payload",
+                return_value={
+                    "biz_job.owner_user_id": "user-owner",
+                    "biz_job.customer_email": "customer@example.com",
+                    "biz_job.title": "Install",
+                },
+            ),
+            patch("app.worker._find_entity_def", return_value=job_entity_def),
+            patch("app.workspaces.list_workspace_members", return_value=[{"user_id": "user-owner", "email": "owner@example.com"}]),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "entity_id": "entity.biz_job",
+                    "to": ["accounts@example.com"],
+                    "to_internal_emails": ["ops@example.com"],
+                    "to_field_ids": ["biz_job.customer_email"],
+                    "to_lookup_field_ids": ["biz_job.owner_user_id"],
+                    "subject": "New job",
+                    "body_text": "A new job was created.",
+                },
+                {
+                    "trigger": {"event": "biz_jobs.record.biz_job.created"},
+                    "last": {"entity_id": "entity.biz_job", "record_id": "job_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(
+            created_outbox[0]["to"],
+            ["accounts@example.com", "ops@example.com", "customer@example.com", "owner@example.com"],
+        )
+        self.assertIn("job", result)
+
+    def test_send_email_step_dedupes_mixed_recipient_sources_case_insensitively(self):
+        created_outbox: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        job_entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_job.customer_email", "label": "Customer Email", "type": "email"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore"),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch(
+                "app.worker.DbConnectionStore",
+                return_value=_FakeConnectionStore(),
+            ),
+            patch(
+                "app.worker._fetch_record_payload",
+                return_value={
+                    "biz_job.owner_user_id": "user-owner",
+                    "biz_job.customer_email": "CUSTOMER@example.com",
+                },
+            ),
+            patch("app.worker._find_entity_def", return_value=job_entity_def),
+            patch("app.workspaces.list_workspace_members", return_value=[{"user_id": "user-owner", "email": "owner@example.com"}]),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "entity_id": "entity.biz_job",
+                    "to": ["customer@example.com", "OWNER@example.com"],
+                    "to_internal_emails": ["owner@example.com"],
+                    "to_field_ids": ["biz_job.customer_email"],
+                    "to_lookup_field_ids": ["biz_job.owner_user_id"],
+                    "subject": "New job",
+                    "body_text": "A new job was created.",
+                },
+                {
+                    "trigger": {"event": "biz_jobs.record.biz_job.created"},
+                    "last": {"entity_id": "entity.biz_job", "record_id": "job_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["customer@example.com", "OWNER@example.com"])
+        self.assertIn("job", result)
+
+    def test_send_email_step_combines_mixed_recipients_with_linked_attachment_purpose(self):
+        created_outbox: list[dict] = []
+
+        class _FakeAttachmentStore:
+            def list_links(self, entity_id, record_id, purpose):
+                if entity_id == "entity.biz_quote" and record_id == "quote_1" and purpose == "template:doc_tpl_quote_pack":
+                    return [{"attachment_id": "att_quote_pdf"}]
+                return []
+
+            def get_attachment(self, attachment_id):
+                if attachment_id == "att_quote_pdf":
+                    return {
+                        "id": "att_quote_pdf",
+                        "filename": "quote-pack.pdf",
+                        "mime_type": "application/pdf",
+                        "storage_key": "attachments/quote-pack.pdf",
+                    }
+                return None
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+            ],
+        }
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore", return_value=_FakeAttachmentStore()),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch(
+                "app.worker._fetch_record_payload",
+                return_value={
+                    "biz_quote.owner_user_id": "user-owner",
+                    "biz_quote.customer_email": "customer@example.com",
+                    "biz_quote.quote_number": "QUO-1001",
+                },
+            ),
+            patch("app.worker._find_entity_def", return_value=quote_entity_def),
+            patch("app.workspaces.list_workspace_members", return_value=[{"user_id": "user-owner", "email": "owner@example.com"}]),
+        ):
+            result = _handle_system_action(
+                "system.send_email",
+                {
+                    "entity_id": "entity.biz_quote",
+                    "to": ["accounts@example.com"],
+                    "to_field_ids": ["biz_quote.customer_email"],
+                    "to_lookup_field_ids": ["biz_quote.owner_user_id"],
+                    "attachment_purpose": "template:doc_tpl_quote_pack",
+                    "subject": "Quote {{ record['biz_quote.quote_number'] }}",
+                    "body_text": "Please review the attached quote.",
+                },
+                {
+                    "trigger": {"event": "biz_quotes.action.quote_mark_accepted.clicked"},
+                    "last": {"entity_id": "entity.biz_quote", "record_id": "quote_1"},
+                },
+                MemoryJobStore(),
+            )
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(
+            created_outbox[0]["to"],
+            ["accounts@example.com", "customer@example.com", "owner@example.com"],
+        )
+        self.assertEqual(created_outbox[0]["subject"], "Quote QUO-1001")
+        self.assertEqual(
+            created_outbox[0]["attachments_json"],
+            [
+                {
+                    "attachment_id": "att_quote_pdf",
+                    "filename": "quote-pack.pdf",
+                    "mime_type": "application/pdf",
+                    "storage_key": "attachments/quote-pack.pdf",
+                }
+            ],
+        )
+        self.assertIn("job", result)
+
+    def test_run_automation_generates_document_inline_before_following_email_step(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        created_outbox: list[dict] = []
+        attachments_by_id: dict[str, dict] = {}
+        linked_by_purpose: dict[tuple[str, str, str], list[str]] = {}
+
+        class _FakeAttachmentStore:
+            def create_attachment(self, payload):
+                attachment = {"id": "att_generated_quote_pdf", **payload}
+                attachments_by_id[attachment["id"]] = attachment
+                return attachment
+
+            def link(self, payload):
+                attachment_id = payload.get("attachment_id")
+                entity_id = payload.get("entity_id")
+                record_id = payload.get("record_id")
+                purpose = payload.get("purpose")
+                if not all(isinstance(item, str) and item for item in (attachment_id, entity_id, record_id, purpose)):
+                    return payload
+                linked_by_purpose.setdefault((entity_id, record_id, purpose), []).append(attachment_id)
+                return payload
+
+            def list_links(self, entity_id, record_id, purpose):
+                return [
+                    {"attachment_id": attachment_id}
+                    for attachment_id in linked_by_purpose.get((entity_id, record_id, purpose), [])
+                ]
+
+            def get_attachment(self, attachment_id):
+                return attachments_by_id.get(attachment_id)
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+            def get_outbox(self, _outbox_id):
+                return created_outbox[0] if created_outbox else None
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding, localization=None: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        fake_attachment_store = _FakeAttachmentStore()
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+            ],
+        }
+        quote_record = {
+            "biz_quote.customer_email": "customer@example.com",
+            "biz_quote.quote_number": "QUO-1001",
+        }
+
+        automation = store.create(
+            {
+                "name": "Quote accepted send pack",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"]},
+                "steps": [
+                    {
+                        "id": "generate_quote_pack",
+                        "kind": "action",
+                        "action_id": "system.generate_document",
+                        "inputs": {
+                            "template_id": "doc_tpl_quote_pack",
+                            "entity_id": "entity.biz_quote",
+                            "purpose": "template:doc_tpl_quote_pack",
+                        },
+                    },
+                    {
+                        "id": "email_quote_pack",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "to_field_ids": ["biz_quote.customer_email"],
+                            "attachment_purpose": "template:doc_tpl_quote_pack",
+                            "subject": "Quote {{ record['biz_quote.quote_number'] }}",
+                            "body_text": "Please review the attached quote.",
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.action.quote_mark_accepted.clicked",
+                "trigger_payload": {
+                    "event": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                },
+            }
+        )
+
+        def _fake_handle_doc_generate(job, org_id):
+            payload = job.get("payload") or {}
+            attachment = fake_attachment_store.create_attachment(
+                {
+                    "filename": "quote-pack.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1234,
+                    "storage_key": "attachments/quote-pack.pdf",
+                    "sha256": "sha256-generated",
+                    "created_by": "worker",
+                    "source": "generated",
+                }
+            )
+            fake_attachment_store.link(
+                {
+                    "attachment_id": attachment.get("id"),
+                    "entity_id": payload.get("entity_id"),
+                    "record_id": payload.get("record_id"),
+                    "purpose": payload.get("purpose"),
+                }
+            )
+            fake_attachment_store.link(
+                {
+                    "attachment_id": attachment.get("id"),
+                    "entity_id": payload.get("entity_id"),
+                    "record_id": payload.get("record_id"),
+                    "purpose": f"template:{payload.get('template_id')}",
+                }
+            )
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore", return_value=fake_attachment_store),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", return_value=quote_record),
+            patch("app.worker._find_entity_def", return_value=quote_entity_def),
+            patch("app.worker._handle_doc_generate", side_effect=_fake_handle_doc_generate),
+            patch("app.worker.get_org_id", return_value="default"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded")
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["customer@example.com"])
+        self.assertEqual(created_outbox[0]["subject"], "Quote QUO-1001")
+        self.assertEqual(
+            created_outbox[0]["attachments_json"],
+            [
+                {
+                    "attachment_id": "att_generated_quote_pdf",
+                    "filename": "quote-pack.pdf",
+                    "mime_type": "application/pdf",
+                    "storage_key": "attachments/quote-pack.pdf",
+                }
+            ],
+        )
+        self.assertEqual(job_store.list("default", job_type="doc.generate"), [])
+        self.assertEqual(len(job_store.list("default", job_type="email.send")), 1)
+
+    def test_run_automation_quote_handoff_generates_document_emails_customer_and_notifies_owner(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        created_outbox: list[dict] = []
+        created_notifications: list[dict] = []
+        attachments_by_id: dict[str, dict] = {}
+        linked_by_purpose: dict[tuple[str, str, str], list[str]] = {}
+
+        class _FakeAttachmentStore:
+            def create_attachment(self, payload):
+                attachment = {"id": "att_generated_quote_pdf", **payload}
+                attachments_by_id[attachment["id"]] = attachment
+                return attachment
+
+            def link(self, payload):
+                attachment_id = payload.get("attachment_id")
+                entity_id = payload.get("entity_id")
+                record_id = payload.get("record_id")
+                purpose = payload.get("purpose")
+                if not all(isinstance(item, str) and item for item in (attachment_id, entity_id, record_id, purpose)):
+                    return payload
+                linked_by_purpose.setdefault((entity_id, record_id, purpose), []).append(attachment_id)
+                return payload
+
+            def list_links(self, entity_id, record_id, purpose):
+                return [
+                    {"attachment_id": attachment_id}
+                    for attachment_id in linked_by_purpose.get((entity_id, record_id, purpose), [])
+                ]
+
+            def get_attachment(self, attachment_id):
+                return attachments_by_id.get(attachment_id)
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+            def get_outbox(self, _outbox_id):
+                return created_outbox[0] if created_outbox else None
+
+        class _FakeNotificationStore:
+            def create(self, payload):
+                item = {"id": f"notif_{len(created_notifications) + 1}", **payload}
+                created_notifications.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding, localization=None: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _enrich_template_record=lambda record_data, entity_def: dict(record_data or {}),
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        fake_attachment_store = _FakeAttachmentStore()
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_quote.owner_user_id", "label": "Owner", "type": "user"},
+                {"id": "biz_quote.quote_number", "label": "Quote Number", "type": "string"},
+            ],
+        }
+        quote_record = {
+            "biz_quote.customer_email": "customer@example.com",
+            "biz_quote.owner_user_id": "user-owner",
+            "biz_quote.quote_number": "QUO-1001",
+        }
+
+        automation = store.create(
+            {
+                "name": "Quote accepted handoff",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.action.quote_mark_accepted.clicked"]},
+                "steps": [
+                    {
+                        "id": "generate_quote_pack",
+                        "kind": "action",
+                        "action_id": "system.generate_document",
+                        "inputs": {
+                            "template_id": "doc_tpl_quote_pack",
+                            "entity_id": "entity.biz_quote",
+                            "purpose": "template:doc_tpl_quote_pack",
+                        },
+                    },
+                    {
+                        "id": "email_customer",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "to_field_ids": ["biz_quote.customer_email"],
+                            "attachment_purpose": "template:doc_tpl_quote_pack",
+                            "subject": "Quote {{ record['biz_quote.quote_number'] }}",
+                            "body_text": "Please review the attached quote.",
+                        },
+                    },
+                    {
+                        "id": "notify_owner",
+                        "kind": "action",
+                        "action_id": "system.notify",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "recipient_lookup_field_ids": ["biz_quote.owner_user_id"],
+                            "title": "Quote sent",
+                            "body": "Quote {{ record['biz_quote.quote_number'] }} was emailed to the customer.",
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.action.quote_mark_accepted.clicked",
+                "trigger_payload": {
+                    "event": "biz_quotes.action.quote_mark_accepted.clicked",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                },
+            }
+        )
+
+        def _fake_handle_doc_generate(job, org_id):
+            payload = job.get("payload") or {}
+            attachment = fake_attachment_store.create_attachment(
+                {
+                    "filename": "quote-pack.pdf",
+                    "mime_type": "application/pdf",
+                    "size": 1234,
+                    "storage_key": "attachments/quote-pack.pdf",
+                    "sha256": "sha256-generated",
+                    "created_by": "worker",
+                    "source": "generated",
+                }
+            )
+            fake_attachment_store.link(
+                {
+                    "attachment_id": attachment.get("id"),
+                    "entity_id": payload.get("entity_id"),
+                    "record_id": payload.get("record_id"),
+                    "purpose": payload.get("purpose"),
+                }
+            )
+            fake_attachment_store.link(
+                {
+                    "attachment_id": attachment.get("id"),
+                    "entity_id": payload.get("entity_id"),
+                    "record_id": payload.get("record_id"),
+                    "purpose": f"template:{payload.get('template_id')}",
+                }
+            )
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore", return_value=fake_attachment_store),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._fetch_record_payload", return_value=quote_record),
+            patch("app.worker._find_entity_def", return_value=quote_entity_def),
+            patch("app.worker._handle_doc_generate", side_effect=_fake_handle_doc_generate),
+            patch("app.worker.get_org_id", return_value="default"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded")
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["customer@example.com"])
+        self.assertEqual(created_outbox[0]["subject"], "Quote QUO-1001")
+        self.assertEqual(
+            created_outbox[0]["attachments_json"],
+            [
+                {
+                    "attachment_id": "att_generated_quote_pdf",
+                    "filename": "quote-pack.pdf",
+                    "mime_type": "application/pdf",
+                    "storage_key": "attachments/quote-pack.pdf",
+                }
+            ],
+        )
+        self.assertEqual(len(created_notifications), 1, created_notifications)
+        self.assertEqual(created_notifications[0]["recipient_user_id"], "user-owner")
+        self.assertEqual(created_notifications[0]["title"], "Quote sent")
+        self.assertEqual(created_notifications[0]["body"], "Quote QUO-1001 was emailed to the customer.")
+        self.assertEqual(job_store.list("default", job_type="doc.generate"), [])
+        self.assertEqual(len(job_store.list("default", job_type="email.send")), 1)
+
+    def test_run_automation_create_record_then_email_and_notify_targets_created_record(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        created_outbox: list[dict] = []
+        created_notifications: list[dict] = []
+        created_records: list[dict] = []
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": f"outbox_{len(created_outbox) + 1}", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeNotificationStore:
+            def create(self, payload):
+                item = {"id": f"notif_{len(created_notifications) + 1}", **payload}
+                created_notifications.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        contact_entity_def = {
+            "id": "entity.biz_contact",
+            "fields": [
+                {"id": "biz_contact.name", "label": "Name", "type": "string"},
+                {"id": "biz_contact.email", "label": "Email", "type": "email"},
+                {"id": "biz_contact.owner_user_id", "label": "Owner", "type": "user"},
+            ],
+        }
+        lead_entity_def = {
+            "id": "entity.crm_lead",
+            "fields": [
+                {"id": "crm_lead.title", "label": "Lead", "type": "string"},
+                {"id": "crm_lead.contact_email", "label": "Contact Email", "type": "email"},
+                {"id": "crm_lead.owner_user_id", "label": "Owner", "type": "user"},
+            ],
+        }
+        contact_record = {
+            "biz_contact.name": "Nico",
+            "biz_contact.email": "nico@example.com",
+            "biz_contact.owner_user_id": "user-owner",
+        }
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "lead_1", **dict(clean)}
+                created_records.append(record)
+                return {"record_id": "lead_1", "record": record}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data or {})}
+
+            def _build_template_render_context(self, record_data, entity_def, entity_id, branding, localization=None):
+                return {
+                    "record": dict(record_data or {}),
+                    "entity_id": entity_id,
+                    **(branding or {}),
+                }
+
+            def _enrich_template_record(self, record_data, entity_def):
+                return dict(record_data or {})
+
+            def _branding_context_for_org(self, _org_id):
+                return {}
+
+        automation = store.create(
+            {
+                "name": "Create lead and handoff",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_contacts.record.biz_contact.created"]},
+                "steps": [
+                    {
+                        "id": "create_lead",
+                        "kind": "action",
+                        "action_id": "system.create_record",
+                        "inputs": {
+                            "entity_id": "entity.crm_lead",
+                            "values": {
+                                "crm_lead.title": "Lead for {{ record['biz_contact.name'] }}",
+                                "crm_lead.contact_email": "{{ record['biz_contact.email'] }}",
+                                "crm_lead.owner_user_id": "{{ record['biz_contact.owner_user_id'] }}",
+                            },
+                        },
+                    },
+                    {
+                        "id": "email_lead",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "to_field_ids": ["crm_lead.contact_email"],
+                            "subject": "{{ record['crm_lead.title'] }} created",
+                            "body_text": "We created {{ record['crm_lead.title'] }}.",
+                        },
+                    },
+                    {
+                        "id": "notify_owner",
+                        "kind": "action",
+                        "action_id": "system.notify",
+                        "inputs": {
+                            "recipient_lookup_field_ids": ["crm_lead.owner_user_id"],
+                            "title": "Lead assigned",
+                            "body": "Lead is ready for follow-up.",
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_contacts.record.biz_contact.created",
+                "trigger_payload": {
+                    "event": "biz_contacts.record.biz_contact.created",
+                    "entity_id": "entity.biz_contact",
+                    "record_id": "contact_1",
+                },
+            }
+        )
+
+        def _find_entity_def(entity_id):
+            if entity_id == "entity.biz_contact":
+                return contact_entity_def
+            if entity_id == "entity.crm_lead":
+                return lead_entity_def
+            return None
+
+        def _find_entity_context(entity_id):
+            if entity_id == "entity.crm_lead":
+                return ("crm_module", lead_entity_def, {"module": {"id": "crm_module"}})
+            return None
+
+        def _fetch_record_payload(entity_id, record_id=None):
+            if entity_id == "entity.biz_contact":
+                return dict(contact_record)
+            if entity_id == "entity.crm_lead" and record_id == "lead_1" and created_records:
+                return dict(created_records[-1])
+            return {}
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbNotificationStore", return_value=_FakeNotificationStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch("app.worker._find_entity_context", side_effect=_find_entity_context),
+            patch("app.worker._find_entity_def", side_effect=_find_entity_def),
+            patch("app.worker._fetch_record_payload", side_effect=_fetch_record_payload),
+            patch("app.worker._emit_automation_event"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(len(created_records), 1, created_records)
+        self.assertEqual(created_records[0]["crm_lead.title"], "Lead for Nico")
+        self.assertEqual(created_records[0]["crm_lead.contact_email"], "nico@example.com")
+        self.assertEqual(created_records[0]["crm_lead.owner_user_id"], "user-owner")
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(created_outbox[0]["to"], ["nico@example.com"])
+        self.assertEqual(created_outbox[0]["subject"], "Lead for Nico created")
+        self.assertEqual(created_outbox[0]["body_text"], "We created Lead for Nico.")
+        self.assertEqual(len(created_notifications), 1, created_notifications)
+        self.assertEqual(created_notifications[0]["recipient_user_id"], "user-owner")
+        self.assertEqual(created_notifications[0]["title"], "Lead assigned")
+        self.assertEqual(created_notifications[0]["body"], "Lead is ready for follow-up.")
+
     def test_create_record_step_renders_trigger_field_templates_at_action_runtime(self):
         store = MemoryAutomationStore()
         job_store = MemoryJobStore()
@@ -1208,6 +2332,151 @@ class TestAutomationRuntime(unittest.TestCase):
             patch("app.worker._get_app_main", return_value=_FakeAppMain()),
             patch("app.worker._find_entity_context", return_value=("jobs_module", entity_def, {"module": {"id": "jobs_module"}})),
             patch("app.worker._find_existing_record", side_effect=fake_find_existing_record),
+            patch("app.worker._emit_automation_event"),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        run_after = store.get_run(run["id"])
+        self.assertEqual(run_after["status"], "succeeded", run_after)
+        self.assertEqual(records_by_id["job_1"]["biz_job.reference"], "JOB-QUO-2026-0042")
+        self.assertEqual(records_by_id["job_1"]["biz_job.source_quote_number"], "QUO-2026-0042")
+        self.assertEqual(records_by_id["job_1"]["biz_job.customer_name"], "Northwind Holdings")
+        self.assertEqual(records_by_id["job_1"]["biz_job.status"], "scheduled")
+
+    def test_create_then_update_record_steps_hydrate_trigger_after_from_fetched_record_when_missing(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        automation = store.create(
+            {
+                "name": "Create Then Update Job With Hydrated After",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["biz_quotes.record.biz_quote.updated"]},
+                "steps": [
+                    {
+                        "id": "step_create_job",
+                        "kind": "action",
+                        "action_id": "system.create_record",
+                        "store_as": "create_job",
+                        "inputs": {
+                            "entity_id": "entity.biz_job",
+                            "values": {
+                                "biz_job.reference": "JOB-{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.source_quote_number": "{{trigger.record.fields.biz_quote.quote_number}}",
+                                "biz_job.customer_name": "{{trigger.record.fields.biz_quote.customer_name}}",
+                                "biz_job.status": "draft",
+                            },
+                        },
+                    },
+                    {
+                        "id": "step_update_job",
+                        "kind": "action",
+                        "action_id": "system.update_record",
+                        "inputs": {
+                            "entity_id": "entity.biz_job",
+                            "record_id": "{{steps.step_create_job.record_id}}",
+                            "patch": {
+                                "biz_job.status": "scheduled",
+                                "biz_job.customer_name": "{{trigger.after.fields.biz_quote.customer_name}}",
+                            },
+                        },
+                    },
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "biz_quotes.record.biz_quote.updated",
+                "trigger_payload": {
+                    "event": "biz_quotes.record.biz_quote.updated",
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                },
+            }
+        )
+        entity_def = {
+            "id": "entity.biz_job",
+            "fields": [
+                {"id": "biz_job.reference", "label": "Reference", "type": "string"},
+                {"id": "biz_job.source_quote_number", "label": "Source Quote Number", "type": "string"},
+                {"id": "biz_job.customer_name", "label": "Customer Name", "type": "string"},
+                {"id": "biz_job.status", "label": "Status", "type": "string"},
+            ],
+        }
+        records_by_id: dict[str, dict] = {}
+        quote_record = {
+            "biz_quote.quote_number": "QUO-2026-0042",
+            "biz_quote.customer_name": "Northwind Holdings",
+        }
+
+        class _FakeAppMain:
+            def _find_entity_workflow(self, manifest, entity_id):
+                return None
+
+            def _validate_record_payload(self, entity_def, values, for_create=True, workflow=None):
+                return [], dict(values)
+
+            def _validate_lookup_fields(self, entity_def, registry, snapshot_fn):
+                return []
+
+            def _registry_for_request(self, request):
+                return {}
+
+            def _get_snapshot(self, request, module_id, manifest_hash):
+                return None
+
+            def _enforce_lookup_domains(self, entity_def, clean):
+                return []
+
+            def _create_record_with_computed_fields(self, request, entity_id, entity_def, clean):
+                record = {"id": "job_1", **dict(clean)}
+                records_by_id["job_1"] = record
+                return {"record_id": "job_1", "record": dict(record)}
+
+            def _validate_patch_payload(self, entity_def, patch, before_record, workflow=None):
+                updated = dict(before_record or {})
+                updated.update(dict(patch or {}))
+                return [], updated
+
+            def _update_record_with_computed_fields(self, request, entity_id, entity_def, record_id, updated):
+                records_by_id[record_id] = {"id": record_id, **dict(updated)}
+                return {"record_id": record_id, "record": dict(records_by_id[record_id])}
+
+            def _add_chatter_entry(self, *args, **kwargs):
+                return None
+
+            def _activity_add_record_created_event(self, *args, **kwargs):
+                return None
+
+            def _automation_record_snapshot(self, record_data, entity_def):
+                return {"flat": dict(record_data or {})}
+
+            def _changed_fields(self, before_record, after_record):
+                changed = []
+                before_record = before_record or {}
+                after_record = after_record or {}
+                for key in sorted(set(before_record) | set(after_record)):
+                    if before_record.get(key) != after_record.get(key):
+                        changed.append(key)
+                return changed
+
+        def fake_find_existing_record(entity_id, record_id):
+            record = records_by_id.get(record_id)
+            if not isinstance(record, dict):
+                return None
+            return entity_id, {"record": dict(record)}
+
+        def fake_fetch_record_payload(entity_id, record_id=None):
+            if entity_id == "entity.biz_quote" and record_id == "quote_1":
+                return dict(quote_record)
+            return {}
+
+        with (
+            patch("app.worker._get_app_main", return_value=_FakeAppMain()),
+            patch("app.worker._find_entity_context", return_value=("jobs_module", entity_def, {"module": {"id": "jobs_module"}})),
+            patch("app.worker._find_existing_record", side_effect=fake_find_existing_record),
+            patch("app.worker._fetch_record_payload", side_effect=fake_fetch_record_payload),
             patch("app.worker._emit_automation_event"),
         ):
             _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)

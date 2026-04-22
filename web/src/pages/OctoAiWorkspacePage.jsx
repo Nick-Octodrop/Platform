@@ -31,6 +31,7 @@ import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import {
   hasPendingPlanQuestion,
+  latestPlanFromList,
   latestPlanQuestionPrompt,
   questionSupersededByAppliedRevision,
 } from "./octoAiSessionState.js";
@@ -224,7 +225,18 @@ function questionNeedsTypedReply(meta) {
     const options = Array.isArray(meta?.options) ? meta.options.filter((item) => item && typeof item === "object") : [];
     return options.length === 0 || Boolean(meta?.allow_free_text);
   }
-  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution"].includes(kind);
+  return ["text", "module_target", "entity_target", "field_target", "tab_target", "target_resolution", "detail_required"].includes(kind);
+}
+
+function detailRequiredHint(meta) {
+  if (typeof meta?.detail_hint === "string" && meta.detail_hint.trim()) return meta.detail_hint.trim();
+  if (typeof meta?.why_needed === "string" && meta.why_needed.trim()) return meta.why_needed.trim();
+  return "Describe the concrete fields, pages, workflow, or artifact detail that is still missing.";
+}
+
+function detailRequiredPlaceholder(meta) {
+  if (typeof meta?.prompt === "string" && meta.prompt.trim()) return meta.prompt.trim();
+  return "Add the missing concrete detail for fields, pages, workflow, or related artifacts...";
 }
 
 function extractDecisionSlots(latestPlan) {
@@ -451,7 +463,7 @@ export default function OctoAiWorkspacePage() {
   const canManageSettings = hasCapability("workspace.manage_settings");
   const octoT = (key, values) => t(`settings.octo_ai.workspace.${key}`, values);
 
-  const latestPlan = useMemo(() => (Array.isArray(data.plans) && data.plans.length > 0 ? data.plans[0] : null), [data.plans]);
+  const latestPlan = useMemo(() => latestPlanFromList(data.plans), [data.plans]);
   const latestPatchset = useMemo(() => latestPatchsetFromList(data.patchsets, latestPlan?.id || ""), [data.patchsets, latestPlan?.id]);
   const latestRelease = useMemo(() => (Array.isArray(data.releases) && data.releases.length > 0 ? data.releases[0] : null), [data.releases]);
   const latestPromotedRelease = useMemo(() => (Array.isArray(data.releases) ? data.releases.find((item) => item?.status === "promoted") || null : null), [data.releases]);
@@ -1083,6 +1095,12 @@ export default function OctoAiWorkspacePage() {
           { label: octoT("actions.view_scope"), onClick: openChangesView },
         ];
       }
+      if (activeQuestionMeta?.kind === "detail_required") {
+        return [
+          { label: "Add detail", primary: true, onClick: () => composerRef.current?.focus(), hint: detailRequiredHint(activeQuestionMeta) },
+          { label: octoT("actions.view_scope"), onClick: openChangesView },
+        ];
+      }
       if (activeQuestionMeta?.kind === "field_spec") {
         return [
           {
@@ -1259,8 +1277,13 @@ export default function OctoAiWorkspacePage() {
           <div className="border-t border-base-200 pt-3 space-y-2">
             {hasPendingQuestion && activeQuestion ? (
               <div className="rounded-lg border border-base-300 bg-base-50 px-3 py-2 text-sm">
-                <div className="text-xs font-medium uppercase tracking-wide opacity-60">{octoT("chat.needs_input")}</div>
+                <div className="text-xs font-medium uppercase tracking-wide opacity-60">
+                  {activeQuestionMeta?.kind === "detail_required" ? "Plan needs detail" : octoT("chat.needs_input")}
+                </div>
                 <div className="mt-1 whitespace-pre-wrap">{activeQuestion}</div>
+                {activeQuestionMeta?.kind === "detail_required" && detailRequiredHint(activeQuestionMeta) !== activeQuestion ? (
+                  <div className="mt-2 text-xs opacity-70">{detailRequiredHint(activeQuestionMeta)}</div>
+                ) : null}
                 {activeDecisionSlots.length > 0 ? (
                   <div className="mt-3 space-y-3">
                     {activeDecisionSlots.map((slot) => {
@@ -1370,7 +1393,15 @@ export default function OctoAiWorkspacePage() {
               value={message}
               onChange={setMessage}
               onSend={sendMessage}
-              placeholder={hasPendingQuestion ? (questionNeedsTypedReply(activeQuestionMeta) ? octoT("placeholders.question_reply") : octoT("placeholders.question_clarification")) : composerPlaceholder}
+              placeholder={
+                hasPendingQuestion
+                  ? (
+                    activeQuestionMeta?.kind === "detail_required"
+                      ? detailRequiredPlaceholder(activeQuestionMeta)
+                      : (questionNeedsTypedReply(activeQuestionMeta) ? octoT("placeholders.question_reply") : octoT("placeholders.question_clarification"))
+                  )
+                  : composerPlaceholder
+              }
               disabled={streaming || busy || applyingRevision || publishingRevision || restoringRevision}
               allowEmptySend={activeQuestionMeta?.kind === "field_spec" && canSubmitFieldSpecInline}
               minRows={1}

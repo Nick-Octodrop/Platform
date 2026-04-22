@@ -10058,8 +10058,6 @@ def _ai_automation_summary_line(op: dict) -> str | None:
             if isinstance(title, str) and title.strip():
                 return f"generate the '{title.strip()}' document"
             return "generate a document"
-        if action_id == "system.shopify_upsert_order_webhook":
-            return "upsert order records from Shopify"
         if isinstance(action_id, str) and action_id.strip():
             return _ai_titleize_slug(action_id.split(".")[-1])
         return None
@@ -24600,12 +24598,7 @@ async def automations_meta(request: Request) -> dict:
         {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
         {"id": "system.integration_sync", "label": "Run integration sync"},
-        {"id": "system.shopify_upsert_customer_webhook", "label": "Upsert Shopify customer from webhook"},
-        {"id": "system.shopify_upsert_product_webhook", "label": "Upsert Shopify product from webhook"},
-        {"id": "system.shopify_upsert_order_webhook", "label": "Upsert Shopify order from webhook"},
-        {"id": "system.shopify_refresh_order_from_refund_webhook", "label": "Refresh Shopify order from refund webhook"},
         {"id": "system.shopify_sync_product_media", "label": "Sync Shopify product media"},
-        {"id": "system.sync_sales_order_to_finance", "label": "Sync sales order to finance"},
         {"id": "system.noop", "label": "No-op (test)"},
     ]
     entities: list[dict] = []
@@ -36437,6 +36430,160 @@ def _ai_plan_change_lines(plan: dict, context: dict) -> list[str]:
     return lines
 
 
+def _ai_plan_quality_issues(plan: dict | None, context: dict | None = None) -> list[dict]:
+    if not isinstance(plan, dict):
+        return []
+    if plan.get("resolved_without_changes"):
+        return []
+    candidate_ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+    if not candidate_ops:
+        return []
+    context = context if isinstance(context, dict) else {}
+    operation_families = _ai_plan_operation_families(
+        candidate_ops,
+        ((plan.get("planner_state") or {}).get("intent") if isinstance(plan.get("planner_state"), dict) else None),
+        request_summary=context.get("request_summary") if isinstance(context.get("request_summary"), str) else None,
+        plan=plan,
+        context=context,
+    )
+    create_module_ops = [op for op in candidate_ops if op.get("artifact_type") == "module" and op.get("op") == "create_module"]
+    missing_topics: list[str] = []
+    if create_module_ops:
+        missing_topics.extend(["module fields", "pages", "workflow", "layout"])
+    if "automation_change" in operation_families:
+        missing_topics.extend(["automation trigger", "automation outcomes"])
+    if "template_change" in operation_families:
+        missing_topics.extend(["template purpose", "template content targets"])
+    missing_topics = _ai_dedupe_text_list(missing_topics)
+    change_lines = _ai_sanitize_plan_text_lines(_ai_plan_change_lines(plan, context))
+    if not change_lines:
+        return [
+            {
+                "code": "AI_PLAN_TOO_THIN",
+                "message": "The plan needs more concrete rollout detail before it can be validated for sandbox apply.",
+                "path": "requested_change_lines",
+                "detail": {
+                    "hint": "Add concrete rollout lines for the planned changes.",
+                    **({"missing_topics": missing_topics} if missing_topics else {}),
+                },
+            }
+        ]
+
+    module_ops = [op for op in candidate_ops if op.get("artifact_type") == "module"]
+    artifact_types = {
+        op.get("artifact_type")
+        for op in candidate_ops
+        if isinstance(op.get("artifact_type"), str) and op.get("artifact_type")
+    }
+    detail_lines = [
+        line
+        for line in change_lines
+        if not re.match(r"^(Create|Update) module\b", line, flags=re.IGNORECASE)
+    ]
+    detail_keywords = (
+        "field",
+        "fields",
+        "page",
+        "pages",
+        "view",
+        "views",
+        "workflow",
+        "status",
+        "tab",
+        "section",
+        "relation",
+        "line item",
+        "action",
+        "template",
+        "automation",
+        "interface",
+    )
+    has_specific_detail = any(
+        any(keyword in line.lower() for keyword in detail_keywords)
+        for line in detail_lines
+    )
+    if create_module_ops and not has_specific_detail:
+        missing_topics.extend(["module fields", "pages", "workflow", "layout"])
+    if "automation_change" in operation_families:
+        automation_detail_keywords = ("when ", "trigger", "notify", "email", "document", "recipient", "template")
+        has_automation_detail = any(
+            "automation" in line.lower() and any(keyword in line.lower() for keyword in automation_detail_keywords)
+            for line in change_lines
+        )
+        if not has_automation_detail:
+            missing_topics.extend(["automation trigger", "automation outcomes"])
+    if "template_change" in operation_families:
+        template_detail_keywords = ("subject", "filename pattern", "customer", "record", "attached", "template")
+        has_template_detail = any(
+            ("email template" in line.lower() or "document template" in line.lower())
+            and any(keyword in line.lower() for keyword in template_detail_keywords)
+            for line in change_lines
+        )
+        if not has_template_detail:
+            missing_topics.extend(["template purpose", "template content targets"])
+    missing_topics = _ai_dedupe_text_list(missing_topics)
+
+    issues: list[dict] = []
+    if create_module_ops and (len(detail_lines) < 2 or not has_specific_detail):
+        issues.append(
+            {
+                "code": "AI_PLAN_TOO_THIN",
+                "message": "New module plans must describe concrete fields, pages, workflow, or layout details before sandbox apply.",
+                "path": "requested_change_lines",
+                "detail": {
+                    "hint": "Expand the plan beyond the module headline before generating a patchset.",
+                    **({"missing_topics": missing_topics} if missing_topics else {}),
+                },
+            }
+        )
+    elif len(artifact_types) >= 2 and len(change_lines) < 2:
+        issues.append(
+            {
+                "code": "AI_PLAN_TOO_THIN",
+                "message": "Multi-artifact plans need more than one concrete rollout line before sandbox apply.",
+                "path": "requested_change_lines",
+                "detail": {
+                    "hint": "Spell out the concrete changes for each artifact before generating a patchset.",
+                    **({"missing_topics": missing_topics} if missing_topics else {}),
+                },
+            }
+        )
+    return issues
+
+
+def _ai_plan_quality_question_meta(issues: list[dict] | None) -> dict | None:
+    issue_list = [item for item in (issues or []) if isinstance(item, dict)]
+    if not issue_list:
+        return None
+    missing_topics: list[str] = []
+    for item in issue_list:
+        detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+        for topic in detail.get("missing_topics") or []:
+            if isinstance(topic, str) and topic.strip() and topic.strip() not in missing_topics:
+                missing_topics.append(topic.strip())
+    if missing_topics:
+        prompt = (
+            "This plan is still too thin to apply safely. Tell me the concrete "
+            f"{_ai_join_human_list(missing_topics[:6])} you want added."
+        )
+    else:
+        prompt = "This plan is still too thin to apply safely. Tell me what concrete fields, pages, workflow, or artifact details you want added."
+    lead = issue_list[0]
+    detail = lead.get("detail") if isinstance(lead.get("detail"), dict) else {}
+    hint = detail.get("hint") if isinstance(detail.get("hint"), str) and detail.get("hint").strip() else None
+    why_needed = lead.get("message") if isinstance(lead.get("message"), str) and lead.get("message").strip() else prompt
+    return {
+        "id": "plan_quality_detail",
+        "kind": "detail_required",
+        "prompt": prompt,
+        "label": prompt,
+        "why_needed": why_needed,
+        "hint_field": "answer_text",
+        "allow_free_text": True,
+        "detail_hint": hint,
+    }
+
+
 def _ai_plan_rollout_summary(op: dict, context: dict) -> str:
     if not isinstance(op, dict):
         return "apply the planned change"
@@ -37681,6 +37828,66 @@ def _ai_merge_notify_recipient_step_hints(existing: list[dict] | None, incoming:
     return merged
 
 
+def _ai_normalize_send_email_recipient_step_hint_entry(entry: dict | None) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    for key in ("step_id", "automation_name", "artifact_id", "action_id", "entity_id", "subject", "body_text", "body_html"):
+        value = entry.get(key)
+        if isinstance(value, str) and value.strip():
+            normalized[key] = value.strip()
+    if normalized.get("action_id") not in {None, "system.send_email"}:
+        return None
+    if "action_id" not in normalized:
+        normalized["action_id"] = "system.send_email"
+    for field_name in ("to_field_ids", "to_lookup_field_ids", "to_internal_emails", "to"):
+        value = entry.get(field_name)
+        if isinstance(value, list):
+            cleaned = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+            if cleaned:
+                normalized[field_name] = cleaned
+    if isinstance(entry.get("to_expr"), str) and entry.get("to_expr").strip():
+        normalized["to_expr"] = entry.get("to_expr").strip()
+    if isinstance(entry.get("recipient_email"), str) and entry.get("recipient_email").strip():
+        normalized["recipient_email"] = entry.get("recipient_email").strip()
+    if not any(
+        key in normalized
+        for key in ("to_field_ids", "to_lookup_field_ids", "to_internal_emails", "to", "to_expr", "recipient_email")
+    ):
+        return None
+    return normalized
+
+
+def _ai_merge_send_email_recipient_step_hints(existing: list[dict] | None, incoming: list[dict] | None) -> list[dict]:
+    merged: list[dict] = []
+    index_by_identity: dict[tuple[str, ...], int] = {}
+
+    def _identity(item: dict) -> tuple[str, ...]:
+        return (
+            item.get("step_id") or "",
+            item.get("automation_name") or "",
+            item.get("artifact_id") or "",
+            item.get("action_id") or "",
+            item.get("entity_id") or "",
+            item.get("subject") or "",
+            item.get("body_text") or "",
+            item.get("body_html") or "",
+        )
+
+    for source in (existing or []), (incoming or []):
+        for raw_item in source:
+            item = _ai_normalize_send_email_recipient_step_hint_entry(raw_item)
+            if not isinstance(item, dict):
+                continue
+            identity = _identity(item)
+            if identity in index_by_identity:
+                merged[index_by_identity[identity]] = item
+            else:
+                index_by_identity[identity] = len(merged)
+                merged.append(item)
+    return merged
+
+
 def _ai_apply_structured_answer_hints(target: dict[str, Any], parsed: dict | None) -> dict[str, Any]:
     if not isinstance(target, dict) or not isinstance(parsed, dict):
         return target
@@ -37747,6 +37954,10 @@ def _ai_apply_structured_answer_hints(target: dict[str, Any], parsed: dict | Non
     target["notify_recipient_step_hints"] = _ai_merge_notify_recipient_step_hints(
         target.get("notify_recipient_step_hints") if isinstance(target.get("notify_recipient_step_hints"), list) else [],
         parsed.get("notify_recipient_step_hints") if isinstance(parsed.get("notify_recipient_step_hints"), list) else [],
+    )
+    target["send_email_recipient_step_hints"] = _ai_merge_send_email_recipient_step_hints(
+        target.get("send_email_recipient_step_hints") if isinstance(target.get("send_email_recipient_step_hints"), list) else [],
+        parsed.get("send_email_recipient_step_hints") if isinstance(parsed.get("send_email_recipient_step_hints"), list) else [],
     )
     for template_kind in ("email_template", "document_template"):
         field_name = _ai_template_step_hint_field(template_kind)
@@ -37847,6 +38058,53 @@ def _ai_build_notify_recipient_step_hint(
     if normalized_recipient_user_ids:
         hint["recipient_user_ids"] = normalized_recipient_user_ids
     return _ai_normalize_notify_recipient_step_hint_entry(hint)
+
+
+def _ai_build_send_email_recipient_step_hint(
+    automation: dict | None,
+    step: dict | None,
+    *,
+    to_field_ids: list[str] | None = None,
+    to_lookup_field_ids: list[str] | None = None,
+    to_internal_emails: list[str] | None = None,
+    to: list[str] | None = None,
+    to_expr: str | None = None,
+    recipient_email: str | None = None,
+    artifact_id: str | None = None,
+) -> dict | None:
+    if not isinstance(step, dict):
+        return None
+    action_id = step.get("action_id") if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    if action_id != "system.send_email":
+        return None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    hint: dict[str, Any] = {"action_id": action_id}
+    if isinstance(step.get("id"), str) and step.get("id").strip():
+        hint["step_id"] = step.get("id").strip()
+    if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip():
+        hint["automation_name"] = automation.get("name").strip()
+    if isinstance(artifact_id, str) and artifact_id.strip():
+        hint["artifact_id"] = artifact_id.strip()
+    if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip():
+        hint["entity_id"] = inputs.get("entity_id").strip()
+    for key in ("subject", "body_text", "body_html"):
+        value = inputs.get(key)
+        if isinstance(value, str) and value.strip():
+            hint[key] = value.strip()
+    for field_name, values in (
+        ("to_field_ids", to_field_ids),
+        ("to_lookup_field_ids", to_lookup_field_ids),
+        ("to_internal_emails", to_internal_emails),
+        ("to", to),
+    ):
+        cleaned = [item.strip() for item in (values or []) if isinstance(item, str) and item.strip()]
+        if cleaned:
+            hint[field_name] = cleaned
+    if isinstance(to_expr, str) and to_expr.strip():
+        hint["to_expr"] = to_expr.strip()
+    if isinstance(recipient_email, str) and recipient_email.strip():
+        hint["recipient_email"] = recipient_email.strip()
+    return _ai_normalize_send_email_recipient_step_hint_entry(hint)
 
 
 def _ai_find_template_step_hint(
@@ -37995,6 +38253,85 @@ def _ai_find_notify_recipient_step_hint(
     return copy.deepcopy(ranked[0][2]) if isinstance(ranked[0][2], dict) else None
 
 
+def _ai_find_send_email_recipient_step_hint(
+    answer_hints: dict | None,
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> dict | None:
+    if not isinstance(answer_hints, dict) or not isinstance(step, dict):
+        return None
+    entries = answer_hints.get("send_email_recipient_step_hints") if isinstance(answer_hints.get("send_email_recipient_step_hints"), list) else []
+    if not entries:
+        return None
+    step_id = step.get("id").strip() if isinstance(step.get("id"), str) and step.get("id").strip() else None
+    action_id = step.get("action_id").strip() if isinstance(step.get("action_id"), str) and step.get("action_id").strip() else None
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    entity_id = inputs.get("entity_id").strip() if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+    automation_name = (
+        automation.get("name").strip()
+        if isinstance(automation, dict) and isinstance(automation.get("name"), str) and automation.get("name").strip()
+        else None
+    )
+    summary_value = (
+        inputs.get("subject").strip()
+        if isinstance(inputs.get("subject"), str) and inputs.get("subject").strip()
+        else inputs.get("body_text").strip()
+        if isinstance(inputs.get("body_text"), str) and inputs.get("body_text").strip()
+        else inputs.get("body_html").strip()
+        if isinstance(inputs.get("body_html"), str) and inputs.get("body_html").strip()
+        else None
+    )
+    normalized_artifact_id = artifact_id.strip() if isinstance(artifact_id, str) and artifact_id.strip() else None
+    ranked: list[tuple[int, int, dict]] = []
+    for raw_entry in entries:
+        entry = _ai_normalize_send_email_recipient_step_hint_entry(raw_entry)
+        if not isinstance(entry, dict):
+            continue
+        score = 0
+        if isinstance(step_id, str) and isinstance(entry.get("step_id"), str):
+            if entry.get("step_id") != step_id:
+                continue
+            score += 100
+        if isinstance(action_id, str) and isinstance(entry.get("action_id"), str):
+            if entry.get("action_id") != action_id:
+                continue
+            score += 10
+        if isinstance(automation_name, str) and isinstance(entry.get("automation_name"), str):
+            if _ai_norm_token(entry.get("automation_name")) != _ai_norm_token(automation_name):
+                continue
+            score += 20
+        if isinstance(normalized_artifact_id, str) and isinstance(entry.get("artifact_id"), str):
+            if entry.get("artifact_id") != normalized_artifact_id:
+                continue
+            score += 20
+        if isinstance(entity_id, str) and isinstance(entry.get("entity_id"), str):
+            if not _match_entity_id(entity_id, entry.get("entity_id")):
+                continue
+            score += 10
+        entry_summary = (
+            entry.get("subject")
+            if isinstance(entry.get("subject"), str)
+            else entry.get("body_text")
+            if isinstance(entry.get("body_text"), str)
+            else entry.get("body_html")
+        )
+        if isinstance(summary_value, str) and isinstance(entry_summary, str):
+            if _ai_norm_token(entry_summary) != _ai_norm_token(summary_value):
+                continue
+            score += 25
+        if score <= 0:
+            continue
+        ranked.append((score, len(json.dumps(entry, sort_keys=True)), entry))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], -item[1]))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0] and ranked[0][1] == ranked[1][1]:
+        return None
+    return copy.deepcopy(ranked[0][2]) if isinstance(ranked[0][2], dict) else None
+
+
 def _ai_template_selection_options_for_step(
     template_kind: str,
     options: list[dict],
@@ -38068,6 +38405,40 @@ def _ai_notify_recipient_selection_options_for_step(
         if isinstance(step_hint, dict):
             hints["notify_recipient_step_hints"] = _ai_merge_notify_recipient_step_hints(
                 hints.get("notify_recipient_step_hints") if isinstance(hints.get("notify_recipient_step_hints"), list) else [],
+                [step_hint],
+            )
+        entry["hints"] = hints
+        scoped_options.append(entry)
+    return scoped_options
+
+
+def _ai_send_email_recipient_selection_options_for_step(
+    options: list[dict],
+    automation: dict | None,
+    step: dict | None,
+    *,
+    artifact_id: str | None = None,
+) -> list[dict]:
+    scoped_options: list[dict] = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        entry = copy.deepcopy(option)
+        hints = entry.get("hints") if isinstance(entry.get("hints"), dict) else {}
+        step_hint = _ai_build_send_email_recipient_step_hint(
+            automation,
+            step,
+            to_field_ids=hints.get("to_field_ids") if isinstance(hints.get("to_field_ids"), list) else None,
+            to_lookup_field_ids=hints.get("to_lookup_field_ids") if isinstance(hints.get("to_lookup_field_ids"), list) else None,
+            to_internal_emails=hints.get("to_internal_emails") if isinstance(hints.get("to_internal_emails"), list) else None,
+            to=hints.get("to") if isinstance(hints.get("to"), list) else None,
+            to_expr=hints.get("to_expr") if isinstance(hints.get("to_expr"), str) else None,
+            recipient_email=hints.get("recipient_email") if isinstance(hints.get("recipient_email"), str) else None,
+            artifact_id=artifact_id,
+        )
+        if isinstance(step_hint, dict):
+            hints["send_email_recipient_step_hints"] = _ai_merge_send_email_recipient_step_hints(
+                hints.get("send_email_recipient_step_hints") if isinstance(hints.get("send_email_recipient_step_hints"), list) else [],
                 [step_hint],
             )
         entry["hints"] = hints
@@ -38183,6 +38554,43 @@ def _ai_decision_slot_option_notify_context_score(option_hints: dict | None, tex
     return best_score
 
 
+def _ai_decision_slot_option_send_email_recipient_context_score(option_hints: dict | None, text: str | None) -> int:
+    if not isinstance(option_hints, dict):
+        return 0
+    entries = option_hints.get("send_email_recipient_step_hints") if isinstance(option_hints.get("send_email_recipient_step_hints"), list) else []
+    if not entries:
+        return 0
+    text_tokens = set(_ai_step_context_match_tokens(text))
+    normalized_text = _ai_norm_token(text)
+    if not text_tokens or not normalized_text:
+        return 0
+    best_score = 0
+    for raw_entry in entries:
+        entry = _ai_normalize_send_email_recipient_step_hint_entry(raw_entry)
+        if not isinstance(entry, dict):
+            continue
+        candidate_values: list[str] = []
+        step_id = entry.get("step_id") if isinstance(entry.get("step_id"), str) and entry.get("step_id").strip() else None
+        if isinstance(step_id, str):
+            candidate_values.extend([step_id.strip(), step_id.replace("_", " ").replace("-", " ").strip(), _ai_humanize_identifier(step_id) or ""])
+        for key in ("subject", "body_text", "automation_name"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                candidate_values.append(value.strip())
+        for candidate_value in candidate_values:
+            candidate_norm = _ai_norm_token(candidate_value)
+            candidate_tokens = set(_ai_step_context_match_tokens(candidate_value))
+            if not candidate_norm or not candidate_tokens:
+                continue
+            shared_count = len(candidate_tokens & text_tokens)
+            score = shared_count
+            if re.search(rf"\b{re.escape(candidate_norm)}\b", normalized_text):
+                score += 2
+            if score > best_score:
+                best_score = score
+    return best_score
+
+
 def _ai_decision_slot_kind_cue_score(slot_kind: str | None, text: str | None) -> int:
     normalized_kind = slot_kind.strip() if isinstance(slot_kind, str) and slot_kind.strip() else ""
     normalized_text = _ai_norm_token(text)
@@ -38276,6 +38684,8 @@ def _ai_match_decision_slot_option_from_text(decision_slot: dict | None, text: s
                 option_score = (
                     _ai_decision_slot_option_notify_context_score(option_hints, clause)
                     if slot_kind in {"notify_recipient", "recipient_email"}
+                    else _ai_decision_slot_option_send_email_recipient_context_score(option_hints, clause)
+                    if slot_kind == "email_recipient"
                     else _ai_decision_slot_option_step_context_score(option_hints, slot_kind, clause)
                 )
                 if option_score > clause_score:
@@ -38294,11 +38704,13 @@ def _ai_match_decision_slot_option_from_text(decision_slot: dict | None, text: s
         option_hints = option.get("hints") if isinstance(option.get("hints"), dict) else {}
         has_step_scoped_hints = any(
             isinstance(option_hints.get(key), list) and option_hints.get(key)
-            for key in ("email_template_step_hints", "document_template_step_hints")
+            for key in ("email_template_step_hints", "document_template_step_hints", "send_email_recipient_step_hints")
         )
         step_context_score = (
             _ai_decision_slot_option_notify_context_score(option_hints, text)
             if slot_kind in {"notify_recipient", "recipient_email"}
+            else _ai_decision_slot_option_send_email_recipient_context_score(option_hints, text)
+            if slot_kind == "email_recipient"
             else _ai_decision_slot_option_step_context_score(option_hints, slot_kind, text)
         )
         is_create_new = bool(
@@ -39761,6 +40173,7 @@ def _artifact_ai_apply_scoped_automation_hints(
             assumptions.append(f"Matched the requested document template '{label_text}' from the workspace.")
     recipient_hint = None
     recipient_step_hints = answer_hints.get("notify_recipient_step_hints") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("notify_recipient_step_hints"), list) else []
+    send_email_recipient_step_hints = answer_hints.get("send_email_recipient_step_hints") if isinstance(answer_hints, dict) and isinstance(answer_hints.get("send_email_recipient_step_hints"), list) else []
     if isinstance(answer_hints, dict):
         for key in ("recipient_user_id", "recipient_email", "selected_option_value"):
             value = answer_hints.get(key)
@@ -39772,6 +40185,7 @@ def _artifact_ai_apply_scoped_automation_hints(
     member_options = _ai_workspace_member_decision_options_from_members(
         meta.get("members") if isinstance(meta, dict) and isinstance(meta.get("members"), list) else [],
     )
+    current_user_email = _artifact_ai_current_workspace_member_email(meta)
 
     for step in _artifact_ai_iter_automation_steps(normalized_draft.get("steps")):
         action_id = step.get("action_id") if isinstance(step.get("action_id"), str) else ""
@@ -39780,6 +40194,13 @@ def _artifact_ai_apply_scoped_automation_hints(
             step["inputs"] = inputs
 
         if action_id == "system.notify":
+            notify_entity_id = (
+                inputs.get("entity_id").strip()
+                if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()
+                else None
+            )
+            if not isinstance(notify_entity_id, str) or not notify_entity_id:
+                notify_entity_id = _artifact_ai_automation_trigger_entity_id(meta, normalized_draft.get("trigger") if isinstance(normalized_draft.get("trigger"), dict) else None)
             current_user_id = meta.get("current_user_id") if isinstance(meta, dict) else None
             current_user_values = set()
             if isinstance(current_user_id, str) and current_user_id.strip():
@@ -39818,6 +40239,20 @@ def _artifact_ai_apply_scoped_automation_hints(
                 if notify_values and all(item in current_user_values for item in notify_values):
                     inputs.pop("recipient_user_ids", None)
                     inputs.pop("recipient_user_id", None)
+            if (
+                not request_current_user
+                and not isinstance(recipient_hint, str)
+                and not _artifact_ai_notify_step_has_recipient(inputs)
+            ):
+                inferred_lookup_field = _artifact_ai_match_lookup_recipient_field(meta, notify_entity_id, prompt)
+                if (
+                    isinstance(inferred_lookup_field, str)
+                    and inferred_lookup_field.strip()
+                    and _artifact_ai_prompt_explicitly_mentions_lookup_field(meta, notify_entity_id, inferred_lookup_field, prompt)
+                ):
+                    inputs["recipient_lookup_field_ids"] = [inferred_lookup_field.strip()]
+                    _artifact_ai_resolve_notify_recipients(inputs, meta, fallback_current_user=False)
+                    assumptions.append("Added the notification recipient source named in the prompt.")
             if not _artifact_ai_notify_step_has_recipient(inputs):
                 if request_current_user:
                     if isinstance(current_user_id, str) and current_user_id.strip():
@@ -39845,6 +40280,224 @@ def _artifact_ai_apply_scoped_automation_hints(
                     }
                     questions = [question_meta["prompt"]]
         elif action_id == "system.send_email":
+            send_email_entity_id = (
+                inputs.get("entity_id").strip()
+                if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()
+                else None
+            )
+            if not isinstance(send_email_entity_id, str) or not send_email_entity_id:
+                send_email_entity_id = _artifact_ai_trigger_entity_id(normalized_draft)
+            inferred_literal_emails = _artifact_ai_email_addresses(prompt)
+            matched_send_email_hint = _ai_find_send_email_recipient_step_hint(answer_hints, normalized_draft, step) if send_email_recipient_step_hints else None
+            if isinstance(matched_send_email_hint, dict):
+                for key in ("to", "to_field_ids", "to_field_id", "to_lookup_field_ids", "to_lookup_field_id", "to_internal_emails", "to_expr"):
+                    inputs.pop(key, None)
+                for key in ("to_field_ids", "to_lookup_field_ids", "to_internal_emails", "to"):
+                    values = matched_send_email_hint.get(key)
+                    if isinstance(values, list) and values:
+                        inputs[key] = copy.deepcopy(values)
+                if isinstance(matched_send_email_hint.get("to_expr"), str) and matched_send_email_hint.get("to_expr").strip():
+                    inputs["to_expr"] = matched_send_email_hint.get("to_expr").strip()
+                elif isinstance(matched_send_email_hint.get("recipient_email"), str) and matched_send_email_hint.get("recipient_email").strip():
+                    recipient_email = matched_send_email_hint.get("recipient_email").strip()
+                    if any(
+                        isinstance(option, dict)
+                        and isinstance(option.get("value"), str)
+                        and option.get("value").strip().lower() == recipient_email.lower()
+                        for option in member_options
+                    ):
+                        inputs["to_internal_emails"] = [recipient_email]
+                    else:
+                        matched_field = _artifact_ai_match_email_field(meta, send_email_entity_id, recipient_email)
+                        if isinstance(matched_field, str) and matched_field.strip():
+                            inputs["to_field_ids"] = [matched_field.strip()]
+                        elif "@" in recipient_email:
+                            inputs["to"] = [recipient_email]
+                _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                assumptions.append("Used the step-specific selected recipient for the matching email step.")
+            elif isinstance(recipient_hint, str) and recipient_hint:
+                matched_field = _artifact_ai_match_email_field(meta, send_email_entity_id, recipient_hint)
+                if isinstance(matched_field, str) and matched_field.strip():
+                    for key in ("to", "to_field_ids", "to_field_id", "to_lookup_field_ids", "to_lookup_field_id", "to_internal_emails", "to_expr"):
+                        inputs.pop(key, None)
+                    inputs["to_field_ids"] = [matched_field.strip()]
+                    _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                    assumptions.append("Used the selected record email field for the automation email step.")
+                elif "@" in recipient_hint:
+                    for key in ("to", "to_field_ids", "to_field_id", "to_lookup_field_ids", "to_lookup_field_id", "to_internal_emails", "to_expr"):
+                        inputs.pop(key, None)
+                    if any(
+                        isinstance(option, dict)
+                        and isinstance(option.get("value"), str)
+                        and option.get("value").strip().lower() == recipient_hint.lower()
+                        for option in member_options
+                    ):
+                        inputs["to_internal_emails"] = [recipient_hint]
+                        assumptions.append("Used the selected workspace email recipient for the automation email step.")
+                    else:
+                        inputs["to"] = [recipient_hint]
+                        assumptions.append("Used the selected literal email recipient for the automation email step.")
+                    _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+            elif not request_current_user:
+                _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+            if (
+                not request_current_user
+                and not isinstance(matched_send_email_hint, dict)
+                and not (isinstance(recipient_hint, str) and recipient_hint)
+                and inferred_literal_emails
+            ):
+                existing_direct_emails = [
+                    item.strip()
+                    for item in (inputs.get("to") or [])
+                    if isinstance(item, str) and item.strip()
+                ] if isinstance(inputs.get("to"), list) else (
+                    [inputs.get("to").strip()] if isinstance(inputs.get("to"), str) and inputs.get("to").strip() else []
+                )
+                existing_internal_emails = [
+                    item.strip()
+                    for item in (inputs.get("to_internal_emails") or [])
+                    if isinstance(item, str) and item.strip()
+                ]
+                normalized_inferred_email_keys = {
+                    item.lower()
+                    for item in inferred_literal_emails
+                    if isinstance(item, str) and item.strip()
+                }
+                existing_recipient_keys = {
+                    item.lower()
+                    for item in (existing_direct_emails + existing_internal_emails)
+                    if isinstance(item, str) and item.strip()
+                }
+                if normalized_inferred_email_keys != existing_recipient_keys:
+                    for key in ("to", "to_field_ids", "to_field_id", "to_lookup_field_ids", "to_lookup_field_id", "to_internal_emails", "to_expr"):
+                        inputs.pop(key, None)
+                    internal_emails: list[str] = []
+                    direct_emails: list[str] = []
+                    for inferred_email in inferred_literal_emails:
+                        if any(
+                            isinstance(option, dict)
+                            and isinstance(option.get("value"), str)
+                            and option.get("value").strip().lower() == inferred_email.lower()
+                            for option in member_options
+                        ):
+                            internal_emails.append(inferred_email.strip())
+                        else:
+                            direct_emails.append(inferred_email.strip())
+                    if internal_emails:
+                        inputs["to_internal_emails"] = internal_emails
+                    if direct_emails:
+                        inputs["to"] = direct_emails
+                    assumptions.append(
+                        "Inferred the email recipients from the prompt."
+                        if len(normalized_inferred_email_keys) > 1
+                        else "Inferred the literal email recipient from the prompt."
+                    )
+                    _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+            if (
+                not request_current_user
+                and not isinstance(matched_send_email_hint, dict)
+                and not (isinstance(recipient_hint, str) and recipient_hint)
+            ):
+                inferred_field = _artifact_ai_match_email_field(meta, send_email_entity_id, prompt)
+                if (
+                    isinstance(inferred_field, str)
+                    and inferred_field.strip()
+                    and _artifact_ai_prompt_explicitly_mentions_email_field(meta, send_email_entity_id, inferred_field, prompt)
+                ):
+                    field_ids = [
+                        item.strip()
+                        for item in (inputs.get("to_field_ids") or [])
+                        if isinstance(item, str) and item.strip()
+                    ] if isinstance(inputs.get("to_field_ids"), list) else []
+                    if isinstance(inputs.get("to_field_id"), str) and inputs.get("to_field_id").strip():
+                        field_ids.append(inputs.get("to_field_id").strip())
+                    if inferred_field.strip() not in field_ids:
+                        inputs["to_field_ids"] = field_ids + [inferred_field.strip()]
+                        _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                        assumptions.append("Added the record email recipient named in the prompt.")
+                inferred_lookup_field = _artifact_ai_match_lookup_recipient_field(meta, send_email_entity_id, prompt)
+                if (
+                    isinstance(inferred_lookup_field, str)
+                    and inferred_lookup_field.strip()
+                    and _artifact_ai_prompt_explicitly_mentions_lookup_field(meta, send_email_entity_id, inferred_lookup_field, prompt)
+                ):
+                    lookup_field_ids = [
+                        item.strip()
+                        for item in (inputs.get("to_lookup_field_ids") or [])
+                        if isinstance(item, str) and item.strip()
+                    ] if isinstance(inputs.get("to_lookup_field_ids"), list) else []
+                    if isinstance(inputs.get("to_lookup_field_id"), str) and inputs.get("to_lookup_field_id").strip():
+                        lookup_field_ids.append(inputs.get("to_lookup_field_id").strip())
+                    if inferred_lookup_field.strip() not in lookup_field_ids:
+                        inputs["to_lookup_field_ids"] = lookup_field_ids + [inferred_lookup_field.strip()]
+                        _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                        assumptions.append("Added the lookup email recipient source named in the prompt.")
+            if request_current_user and isinstance(current_user_email, str) and current_user_email.strip():
+                for key in ("to", "to_field_ids", "to_field_id", "to_lookup_field_ids", "to_lookup_field_id", "to_internal_emails", "to_expr"):
+                    inputs.pop(key, None)
+                inputs["to_internal_emails"] = [current_user_email.strip()]
+                _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                assumptions.append("Defaulted the email recipient to the current workspace member because the request explicitly asked for it.")
+            elif not _artifact_ai_send_email_step_has_recipient(inputs):
+                if inferred_literal_emails:
+                    internal_emails: list[str] = []
+                    direct_emails: list[str] = []
+                    for inferred_email in inferred_literal_emails:
+                        if any(
+                            isinstance(option, dict)
+                            and isinstance(option.get("value"), str)
+                            and option.get("value").strip().lower() == inferred_email.lower()
+                            for option in member_options
+                        ):
+                            internal_emails.append(inferred_email.strip())
+                        else:
+                            direct_emails.append(inferred_email.strip())
+                    if internal_emails:
+                        inputs["to_internal_emails"] = internal_emails
+                    if direct_emails:
+                        inputs["to"] = direct_emails
+                    assumptions.append(
+                        "Inferred the email recipients from the prompt."
+                        if len(inferred_literal_emails) > 1
+                        else "Inferred the literal email recipient from the prompt."
+                    )
+                    _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                else:
+                    inferred_field = _artifact_ai_match_email_field(meta, send_email_entity_id, prompt)
+                    if isinstance(inferred_field, str) and inferred_field.strip():
+                        inputs["to_field_ids"] = [inferred_field.strip()]
+                        _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                        assumptions.append("Inferred the email recipient from the prompt.")
+                    else:
+                        inferred_lookup_field = _artifact_ai_match_lookup_recipient_field(meta, send_email_entity_id, prompt)
+                        if isinstance(inferred_lookup_field, str) and inferred_lookup_field.strip():
+                            inputs["to_lookup_field_ids"] = [inferred_lookup_field.strip()]
+                            _artifact_ai_normalize_send_email_inputs(inputs, meta, send_email_entity_id)
+                            assumptions.append("Inferred the email recipient source from the prompt.")
+            if not request_current_user and not _artifact_ai_send_email_step_has_recipient(inputs):
+                if question_meta is None:
+                    options = _ai_send_email_recipient_selection_options_for_step(
+                        _artifact_ai_send_email_recipient_decision_options(meta, send_email_entity_id, member_options),
+                        normalized_draft,
+                        step,
+                    )
+                    if options:
+                        question_meta = {
+                            "id": "automation_email_recipient",
+                            "kind": "decision_slot",
+                            "slot_kind": "email_recipient",
+                            "label": "Email recipient",
+                            "prompt": "Who should this email go to?",
+                            "why_needed": "The automation draft is ready, but the email step still needs a recipient source before apply.",
+                            "required_before": "apply",
+                            "allow_create_new": False,
+                            "allow_free_text": True,
+                            "hint_field": "recipient_email",
+                            "options": options,
+                        }
+                        questions = [question_meta["prompt"]]
+                    else:
+                        advisories.append("This email step still needs a recipient source before apply.")
             template_id = inputs.get("template_id") if isinstance(inputs.get("template_id"), str) and inputs.get("template_id").strip() else ""
             has_inline_content = _ai_send_email_step_has_inline_content(inputs)
             if not template_id:
@@ -39873,7 +40526,7 @@ def _artifact_ai_apply_scoped_automation_hints(
                             "allow_free_text": False,
                             "hint_field": "template_choice",
                             "options": options,
-                        }
+                    }
                         questions = [question_meta["prompt"]]
                     else:
                         advisories.append("No existing email templates are available in this workspace, so this email step still needs a template or inline content.")
@@ -39907,6 +40560,23 @@ def _artifact_ai_apply_scoped_automation_hints(
                         questions = [question_meta["prompt"]]
                     else:
                         advisories.append("No existing document templates are available in this workspace, so this document step still needs a template before apply.")
+
+    attachment_default_entity_id = _artifact_ai_automation_trigger_entity_id(
+        meta,
+        normalized_draft.get("trigger") if isinstance(normalized_draft.get("trigger"), dict) else None,
+    )
+    inserted_steps, inserted_assumptions = _artifact_ai_insert_generated_document_steps_for_attachment_emails(
+        normalized_draft.get("steps") if isinstance(normalized_draft.get("steps"), list) else [],
+        prompt=prompt,
+        workspace_id=workspace_id,
+        default_entity_id=attachment_default_entity_id,
+        meta=meta,
+    )
+    normalized_draft["steps"] = _artifact_ai_wire_generated_document_attachments(
+        inserted_steps,
+        default_entity_id=attachment_default_entity_id,
+    )
+    assumptions.extend(inserted_assumptions)
 
     return (
         normalized_draft,
@@ -40289,6 +40959,14 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
     validation: list[str] = []
     architecture = _ai_plan_architecture_decisions(plan, render_context)
     first_delivery = _ai_plan_first_delivery_slice(plan, render_context)
+    operation_families = _ai_plan_operation_families(
+        ops,
+        planner_intent,
+        request_summary=request_summary,
+        plan=plan,
+        context=render_context,
+    )
+    mixed_module_rollout = _ai_operation_families_has_mixed_module_rollout(operation_families)
 
     if preview_components:
         templates.extend(preview_components.get("templates", []))
@@ -40603,22 +41281,47 @@ def _ai_plan_detail_sections(plan: dict, context: dict) -> list[dict]:
                     conditions.append(f"{module_label}: action '{action_label}' {title.lower()} {summary}.")
             continue
 
-    sections: list[dict] = []
-    for key, title, items in (
+    supporting_rollout: list[str] = []
+    if mixed_module_rollout:
+        for item in [*templates, *automations, *dependencies]:
+            if isinstance(item, str) and item.strip() and item not in supporting_rollout:
+                supporting_rollout.append(item)
+
+    ordered_sandbox_checks = [item for item in sandbox_checks if isinstance(item, str) and item.strip()]
+    if mixed_module_rollout and ordered_sandbox_checks:
+        primary_checks = [item for item in ordered_sandbox_checks if not _ai_change_line_supporting_artifact(item)]
+        supporting_checks = [item for item in ordered_sandbox_checks if _ai_change_line_supporting_artifact(item)]
+        ordered_sandbox_checks = [*primary_checks, *supporting_checks]
+
+    section_specs: list[tuple[str, str, list[str]]] = [
         ("architecture", "Recommended module architecture", architecture),
         ("first_delivery", "First delivery slice", first_delivery),
-        ("templates", "Templates", templates),
         ("fields", "Fields", fields),
         ("placement", "Placement", placement),
         ("workflow_actions", "Workflow & actions", workflow_actions),
         ("conditions", "Conditions", conditions),
-        ("automations", "Automations", automations),
-        ("dependencies", "Dependencies & interfaces", dependencies),
         ("views", "Views & pages", views),
-        ("quality_fit", "Quality & design fit", quality_fit),
-        ("sandbox_checks", "What to check in sandbox", sandbox_checks),
-        ("validation", "Validation & rollout", validation),
-    ):
+    ]
+    if mixed_module_rollout:
+        section_specs.append(("supporting_rollout", "Supporting automations, templates, & interfaces", supporting_rollout))
+    else:
+        section_specs.extend(
+            [
+                ("templates", "Templates", templates),
+                ("automations", "Automations", automations),
+                ("dependencies", "Dependencies & interfaces", dependencies),
+            ]
+        )
+    section_specs.extend(
+        [
+            ("quality_fit", "Quality & design fit", quality_fit),
+            ("sandbox_checks", "What to check in sandbox", ordered_sandbox_checks),
+            ("validation", "Validation & rollout", validation),
+        ]
+    )
+
+    sections: list[dict] = []
+    for key, title, items in section_specs:
         deduped: list[str] = []
         for item in items:
             if isinstance(item, str) and item.strip() and item not in deduped:
@@ -41042,6 +41745,15 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
         context=render_context,
     )
     primary_operation_family = operation_families[0] if operation_families else None
+    coherent_summary = _ai_plan_coherent_summary(
+        plan,
+        render_context,
+        proposed_ops,
+        modules,
+        operation_families,
+    )
+    if isinstance(coherent_summary, str) and coherent_summary.strip():
+        summary = coherent_summary.strip()
     sections = _ai_plan_detail_sections(plan, render_context)
     blueprint_items = _ai_design_spec_blueprint_items(design_spec)
     if blueprint_items:
@@ -41104,6 +41816,75 @@ def _ai_plan_v1_base(plan: dict, context: dict) -> dict:
         "risks": [item for item in (plan.get("risk_flags") or []) if isinstance(item, str) and item.strip()],
         "noop_notes": [item for item in (plan.get("noop_notes") or []) if isinstance(item, str) and item.strip()],
     }
+
+
+def _ai_plan_coherent_summary(
+    plan: dict,
+    context: dict,
+    operations: list[dict] | None,
+    modules: list[dict] | None,
+    operation_families: list[str] | None,
+) -> str | None:
+    if not isinstance(plan, dict):
+        return None
+    planner_state = plan.get("planner_state") if isinstance(plan.get("planner_state"), dict) else {}
+    planner_intent = planner_state.get("intent") if isinstance(planner_state.get("intent"), str) else ""
+    if planner_intent in {"preview_only_plan", "preview_only_noop"}:
+        return None
+    ops = [item for item in (operations or []) if isinstance(item, dict)]
+    if not ops:
+        return None
+
+    changed_module_labels = _ai_dedupe_scope_labels(
+        [
+            _ai_plan_artifact_label("module", op.get("artifact_id"), context, op=op)
+            for op in ops
+            if op.get("artifact_type") == "module"
+        ]
+    )
+    if not changed_module_labels:
+        changed_module_labels = _ai_dedupe_scope_labels(
+            [
+                item.get("module_label")
+                for item in (modules or [])
+                if isinstance(item, dict)
+                and isinstance(item.get("module_label"), str)
+                and item.get("module_label").strip()
+                and item.get("status") in {"planned", "in_scope"}
+            ]
+        )
+
+    create_module_count = sum(1 for op in ops if op.get("op") == "create_module")
+    automation_count = sum(1 for op in ops if op.get("op") in {"create_automation_record", "update_automation_record"})
+    email_template_count = sum(1 for op in ops if op.get("op") in {"create_email_template_record", "update_email_template_record"})
+    document_template_count = sum(1 for op in ops if op.get("op") in {"create_document_template_record", "update_document_template_record"})
+
+    has_module_rollout = create_module_count > 0 or any(
+        family in {"data_model_change", "ui_layout_change", "workflow_change", "module_change", "cross_module_change"}
+        for family in (operation_families or [])
+    )
+    if not has_module_rollout or not changed_module_labels:
+        return None
+
+    supporting_phrases: list[str] = []
+    if automation_count > 0:
+        supporting_phrases.append("automation" if automation_count == 1 else "automations")
+    if email_template_count > 0:
+        supporting_phrases.append("email template" if email_template_count == 1 else "email templates")
+    if document_template_count > 0:
+        supporting_phrases.append("document template" if document_template_count == 1 else "document templates")
+
+    if create_module_count > 0:
+        if len(changed_module_labels) == 1:
+            base = f"Create the {changed_module_labels[0]} module"
+        else:
+            base = f"Create coordinated modules for {_ai_join_human_list(changed_module_labels[:6])}"
+    else:
+        base = f"Update {_ai_join_human_list(changed_module_labels[:6])}"
+
+    if supporting_phrases:
+        return f"{base} with supporting {_ai_join_human_list(supporting_phrases)}."
+    return f"{base}."
 
 
 def _ai_merge_plan_v1(raw_plan_v1: dict | None, fallback: dict) -> dict:
@@ -41445,6 +42226,52 @@ def _ai_should_compact_create_module_sections(plan: dict, structured_plan: dict)
     )
 
 
+def _ai_change_line_supporting_artifact(line: str) -> bool:
+    if not isinstance(line, str) or not line.strip():
+        return False
+    lowered = line.strip().lower()
+    if "automation" in lowered:
+        return True
+    if "email template" in lowered or "document template" in lowered:
+        return True
+    if lowered.startswith("reuse the existing email template") or lowered.startswith("reuse the existing document template"):
+        return True
+    return False
+
+
+def _ai_operation_families_has_mixed_module_rollout(operation_families: list[str] | None) -> bool:
+    families = [item for item in (operation_families or []) if isinstance(item, str) and item.strip()]
+    has_module_rollout = any(
+        item in {"create_module", "data_model_change", "ui_layout_change", "workflow_change", "module_change", "cross_module_change"}
+        for item in families
+    )
+    has_supporting_artifacts = any(item in {"automation_change", "template_change"} for item in families)
+    return has_module_rollout and has_supporting_artifacts
+
+
+def _ai_plan_has_mixed_module_rollout(structured_plan: dict | None) -> bool:
+    if not isinstance(structured_plan, dict):
+        return False
+    families = [item for item in (structured_plan.get("operation_families") or []) if isinstance(item, str) and item.strip()]
+    return _ai_operation_families_has_mixed_module_rollout(families)
+
+
+def _ai_plan_order_change_lines(lines: list[str], structured_plan: dict | None) -> list[str]:
+    ordered = [item for item in lines if isinstance(item, str) and item.strip()]
+    if not ordered or not _ai_plan_has_mixed_module_rollout(structured_plan):
+        return ordered
+    primary_lines: list[str] = []
+    supporting_lines: list[str] = []
+    for line in ordered:
+        if _ai_change_line_supporting_artifact(line):
+            supporting_lines.append(line)
+        else:
+            primary_lines.append(line)
+    if not primary_lines or not supporting_lines:
+        return ordered
+    return [*primary_lines, *supporting_lines]
+
+
 def _ai_plan_assistant_text(plan: dict, context: dict) -> str:
     render_context = _ai_context_with_planned_modules(plan, context)
     structured_plan = plan.get("structured_plan") if isinstance(plan.get("structured_plan"), dict) else _ai_build_structured_plan(plan, context)
@@ -41466,6 +42293,7 @@ def _ai_plan_assistant_text(plan: dict, context: dict) -> str:
     for line in [*requested_change_lines, *changes]:
         if line not in combined_change_lines:
             combined_change_lines.append(line)
+    combined_change_lines = _ai_plan_order_change_lines(combined_change_lines, structured_plan)
     rollout_lines = _ai_sanitize_plan_text_lines(_ai_plan_rollout_lines(plan, render_context))
     dependency_lines = _ai_sanitize_plan_text_lines(_ai_plan_dependency_lines(plan, render_context))
     noop_notes = _ai_sanitize_plan_text_lines([item for item in (plan.get("noop_notes") or []) if isinstance(item, str) and item.strip()])
@@ -41602,8 +42430,14 @@ def _ai_build_structured_plan(plan: dict, context: dict) -> dict:
 def _ai_ready_revision_status_text(plan: dict, context: dict) -> str:
     render_context = _ai_context_with_planned_modules(plan, context)
     structured_plan = plan.get("structured_plan") if isinstance(plan.get("structured_plan"), dict) else _ai_build_structured_plan(plan, context)
-    understanding = _ai_plan_understanding_text(plan, render_context)
+    semantic_summary = structured_plan.get("summary") if isinstance(structured_plan.get("summary"), str) else ""
+    understanding = (
+        semantic_summary.strip()
+        if semantic_summary.strip() and not _ai_is_low_signal_plan_summary(semantic_summary)
+        else _ai_plan_understanding_text(plan, render_context)
+    )
     changes = _ai_sanitize_plan_text_lines(_ai_plan_change_lines(plan, render_context))
+    changes = _ai_plan_order_change_lines(changes, structured_plan)
     checks: list[str] = []
     if isinstance(structured_plan, dict) and isinstance(structured_plan.get("sections"), list):
         for section in structured_plan.get("sections") or []:
@@ -41617,13 +42451,113 @@ def _ai_ready_revision_status_text(plan: dict, context: dict) -> str:
     if understanding:
         lines.append(f"Ready for sandbox: {_ai_sanitize_plan_text_line(understanding)}")
     if changes:
-        lines.append("Prepared revision:")
+        lines.append("Prepared rollout:")
         lines.extend([f"- {line}" for line in changes[:3]])
     if checks:
         lines.append("Check in sandbox:")
         lines.extend([f"- {line}" for line in checks[:2]])
     lines.append("Next step: Apply to Sandbox.")
     return "\n".join(lines)
+
+
+def _ai_runtime_module_label_for_op(op: dict, validated_module_labels: dict[str, str]) -> str | None:
+    if not isinstance(op, dict):
+        return None
+    if op.get("artifact_type") != "module":
+        return None
+    artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else None
+    if not isinstance(artifact_id, str) or not artifact_id:
+        return None
+    label = validated_module_labels.get(artifact_id) or artifact_id
+    if re.match(r"^module_[a-z0-9]+$", label, flags=re.IGNORECASE):
+        label = _ai_humanize_identifier(label) or label.replace("module_", "module ").strip()
+    return label
+
+
+def _ai_runtime_op_summary_line(op: dict, validated_module_labels: dict[str, str]) -> str | None:
+    if not isinstance(op, dict):
+        return None
+    summary = None
+    artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else "the module"
+    artifact_label = validated_module_labels.get(artifact_id) or artifact_id
+    if re.match(r"^module_[a-z0-9]+$", artifact_label, flags=re.IGNORECASE):
+        artifact_label = _ai_humanize_identifier(artifact_label) or artifact_label.replace("module_", "module ").strip()
+    if op.get("op") == "add_field":
+        field = op.get("field") if isinstance(op.get("field"), dict) else {}
+        field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
+        if field_label:
+            summary = f"Add field '{field_label}' in {artifact_label}."
+    elif op.get("op") == "insert_section_field":
+        placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
+        field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
+        field_label = field_id.split(".")[-1].replace("_", " ").title() if isinstance(field_id, str) else "field"
+        if placement_label:
+            summary = f"Place field '{field_label}' in the '{placement_label}' tab in {artifact_label}."
+    elif op.get("op") == "create_module":
+        summary = f"Create module '{artifact_label}'."
+    elif op.get("op") in {"create_automation_record", "update_automation_record"}:
+        summary = _ai_automation_summary_line(op)
+    elif op.get("op") in {"create_email_template_record", "update_email_template_record"}:
+        summary = _ai_email_template_summary_line(op)
+    elif op.get("op") in {"create_document_template_record", "update_document_template_record"}:
+        summary = _ai_document_template_summary_line(op)
+    return summary.strip() if isinstance(summary, str) and summary.strip() else None
+
+
+def _ai_runtime_rollout_summary_and_lines(ops: list[dict], validated_module_labels: dict[str, str]) -> tuple[str | None, list[str]]:
+    clean_ops = [op for op in (ops or []) if isinstance(op, dict)]
+    change_lines: list[str] = []
+    operation_families: list[str] = []
+    changed_module_labels = _ai_dedupe_scope_labels(
+        [
+            _ai_runtime_module_label_for_op(op, validated_module_labels)
+            for op in clean_ops
+            if isinstance(_ai_runtime_module_label_for_op(op, validated_module_labels), str)
+        ]
+    )
+    create_module_count = 0
+    automation_count = 0
+    email_template_count = 0
+    document_template_count = 0
+
+    for op in clean_ops:
+        family = _ai_plan_operation_family_for_op(op.get("op") if isinstance(op, dict) else None)
+        if isinstance(family, str) and family not in operation_families:
+            operation_families.append(family)
+        if op.get("op") == "create_module":
+            create_module_count += 1
+        elif op.get("op") in {"create_automation_record", "update_automation_record"}:
+            automation_count += 1
+        elif op.get("op") in {"create_email_template_record", "update_email_template_record"}:
+            email_template_count += 1
+        elif op.get("op") in {"create_document_template_record", "update_document_template_record"}:
+            document_template_count += 1
+        summary = _ai_runtime_op_summary_line(op, validated_module_labels)
+        if isinstance(summary, str) and summary:
+            change_lines.append(summary)
+
+    ordered_change_lines = _ai_plan_order_change_lines(change_lines, {"operation_families": operation_families})
+    coherent_summary: str | None = None
+    if _ai_operation_families_has_mixed_module_rollout(operation_families) and changed_module_labels:
+        supporting_phrases: list[str] = []
+        if automation_count > 0:
+            supporting_phrases.append("automation" if automation_count == 1 else "automations")
+        if email_template_count > 0:
+            supporting_phrases.append("email template" if email_template_count == 1 else "email templates")
+        if document_template_count > 0:
+            supporting_phrases.append("document template" if document_template_count == 1 else "document templates")
+        if create_module_count > 0:
+            if len(changed_module_labels) == 1:
+                coherent_summary = f"Create the {changed_module_labels[0]} module"
+            else:
+                coherent_summary = f"Create coordinated modules for {_ai_join_human_list(changed_module_labels[:6])}"
+        else:
+            coherent_summary = f"Update {_ai_join_human_list(changed_module_labels[:6])}"
+        if supporting_phrases:
+            coherent_summary = f"{coherent_summary} with supporting {_ai_join_human_list(supporting_phrases)}."
+        else:
+            coherent_summary = f"{coherent_summary}."
+    return coherent_summary, ordered_change_lines
 
 
 def _ai_sandbox_applied_status_text(session_data: dict | None, patch_data: dict | None) -> str:
@@ -41645,40 +42579,15 @@ def _ai_sandbox_applied_status_text(session_data: dict | None, patch_data: dict 
                 validated_module_labels[module_id] = module_name
             elif isinstance(module_key, str) and module_key:
                 validated_module_labels[module_id] = _ai_humanize_identifier(module_key) or module_key
-    change_lines: list[str] = []
-    for op in ops:
-        summary = None
-        artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else "the module"
-        artifact_label = validated_module_labels.get(artifact_id) or artifact_id
-        if re.match(r"^module_[a-z0-9]+$", artifact_label, flags=re.IGNORECASE):
-            artifact_label = _ai_humanize_identifier(artifact_label) or artifact_label.replace("module_", "module ").strip()
-        if op.get("op") == "add_field":
-            field = op.get("field") if isinstance(op.get("field"), dict) else {}
-            field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
-            if field_label:
-                summary = f"Add field '{field_label}' in {artifact_label}."
-        elif op.get("op") == "insert_section_field":
-            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
-            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
-            field_label = field_id.split(".")[-1].replace("_", " ").title() if isinstance(field_id, str) else "field"
-            if placement_label:
-                summary = f"Place field '{field_label}' in the '{placement_label}' tab in {artifact_label}."
-        elif op.get("op") == "create_module":
-            summary = f"Create module '{artifact_label}'."
-        elif op.get("op") in {"create_automation_record", "update_automation_record"}:
-            summary = _ai_automation_summary_line(op)
-        elif op.get("op") in {"create_email_template_record", "update_email_template_record"}:
-            summary = _ai_email_template_summary_line(op)
-        elif op.get("op") in {"create_document_template_record", "update_document_template_record"}:
-            summary = _ai_document_template_summary_line(op)
-        if isinstance(summary, str) and summary.strip():
-            change_lines.append(f"- {summary.strip()}")
+    coherent_summary, ordered_change_lines = _ai_runtime_rollout_summary_and_lines(ops, validated_module_labels)
     lines = ["Sandbox updated."]
     if isinstance(session_title, str) and session_title.strip():
         lines.append(f"Request: {session_title.strip()}")
-    if change_lines:
+    if isinstance(coherent_summary, str) and coherent_summary.strip():
+        lines.append(f"Applied rollout: {coherent_summary.strip()}")
+    if ordered_change_lines:
         lines.append("Applied changes:")
-        lines.extend(change_lines[:4])
+        lines.extend([f"- {line}" for line in ordered_change_lines[:4]])
     lines.append("Next step: Test the sandbox result, then publish to live when you're satisfied or ask for another revision.")
     return "\n".join(lines)
 
@@ -41703,48 +42612,52 @@ def _ai_live_published_status_text(session_data: dict | None, patch_data: dict |
                 validated_module_labels[module_id] = module_name
             elif isinstance(module_key, str) and module_key:
                 validated_module_labels[module_id] = _ai_humanize_identifier(module_key) or module_key
-    change_lines: list[str] = []
-    for op in ops:
-        summary = None
-        artifact_id = op.get("artifact_id") if isinstance(op.get("artifact_id"), str) and op.get("artifact_id").strip() else "the module"
-        artifact_label = validated_module_labels.get(artifact_id) or artifact_id
-        if re.match(r"^module_[a-z0-9]+$", artifact_label, flags=re.IGNORECASE):
-            artifact_label = _ai_humanize_identifier(artifact_label) or artifact_label.replace("module_", "module ").strip()
-        if op.get("op") == "add_field":
-            field = op.get("field") if isinstance(op.get("field"), dict) else {}
-            field_label = field.get("label") if isinstance(field.get("label"), str) and field.get("label").strip() else None
-            if field_label:
-                summary = f"Add field '{field_label}' in {artifact_label}."
-        elif op.get("op") == "insert_section_field":
-            placement_label = op.get("placement_label") if isinstance(op.get("placement_label"), str) and op.get("placement_label").strip() else None
-            field_id = op.get("field_id") if isinstance(op.get("field_id"), str) and op.get("field_id").strip() else None
-            field_label = field_id.split(".")[-1].replace("_", " ").title() if isinstance(field_id, str) else "field"
-            if placement_label:
-                summary = f"Place field '{field_label}' in the '{placement_label}' tab in {artifact_label}."
-        elif op.get("op") == "create_module":
-            summary = f"Create module '{artifact_label}'."
-        elif op.get("op") in {"create_automation_record", "update_automation_record"}:
-            summary = _ai_automation_summary_line(op)
-        elif op.get("op") in {"create_email_template_record", "update_email_template_record"}:
-            summary = _ai_email_template_summary_line(op)
-        elif op.get("op") in {"create_document_template_record", "update_document_template_record"}:
-            summary = _ai_document_template_summary_line(op)
-        if isinstance(summary, str) and summary.strip():
-            change_lines.append(f"- {summary.strip()}")
+    coherent_summary, ordered_change_lines = _ai_runtime_rollout_summary_and_lines(ops, validated_module_labels)
     lines = ["Published to live."]
     if isinstance(session_title, str) and session_title.strip():
         lines.append(f"Request: {session_title.strip()}")
     if isinstance(release_title, str) and release_title.strip():
         lines.append(f"Release: {release_title.strip()}")
-    if change_lines:
+    if isinstance(coherent_summary, str) and coherent_summary.strip():
+        lines.append(f"Published rollout: {coherent_summary.strip()}")
+    if ordered_change_lines:
         lines.append("Published changes:")
-        lines.extend(change_lines[:4])
+        lines.extend([f"- {line}" for line in ordered_change_lines[:4]])
     lines.append("Next step: Review the live workspace or continue iterating in this session.")
     return "\n".join(lines)
 
 
 def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived: dict, *, message_style: str = "default") -> tuple[dict, str]:
     persisted_plan = copy.deepcopy(plan)
+    quality_issues = _ai_plan_quality_issues(persisted_plan, context)
+    quality_messages = [
+        item.get("message").strip()
+        for item in quality_issues
+        if isinstance(item.get("message"), str) and item.get("message").strip()
+    ]
+    existing_questions = [
+        item
+        for item in (persisted_plan.get("required_questions") or [])
+        if isinstance(item, str) and item.strip()
+    ]
+    if quality_messages and not existing_questions and not persisted_plan.get("resolved_without_changes"):
+        question_meta = _ai_plan_quality_question_meta(quality_issues) or {}
+        prompt = (
+            question_meta.get("prompt")
+            if isinstance(question_meta.get("prompt"), str) and question_meta.get("prompt").strip()
+            else "This plan is still too thin to apply safely. Tell me what concrete fields, pages, workflow, or artifact details you want added."
+        )
+        persisted_plan["required_questions"] = [prompt]
+        persisted_plan["required_question_meta"] = question_meta
+        advisories = [
+            item
+            for item in (persisted_plan.get("advisories") or [])
+            if isinstance(item, str) and item.strip()
+        ]
+        for message in quality_messages:
+            if message not in advisories:
+                advisories.append(message)
+        persisted_plan["advisories"] = advisories
     normalized_question_meta = _ai_normalize_required_question_meta(
         persisted_plan.get("required_question_meta") if isinstance(persisted_plan.get("required_question_meta"), dict) else None,
         [item for item in (persisted_plan.get("required_questions") or []) if isinstance(item, str) and item.strip()],
@@ -41787,7 +42700,7 @@ def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived:
         _AI_ENTITY_SESSION,
         session_id,
         {
-            "status": derived.get("status") or "planning",
+            "status": ("waiting_input" if (persisted_plan.get("required_questions") or []) else (derived.get("status") or "planning")),
             "summary": assistant_text,
             "latest_plan_id": plan_data.get("id"),
             "latest_patchset_id": "",
@@ -45602,10 +46515,11 @@ async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
             )
         plan_json = latest.get("plan_json") if isinstance(latest.get("plan_json"), dict) else {}
         plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+        plan_context = plan_json.get("context") if isinstance(plan_json.get("context"), dict) else {}
         planned_operations = [op for op in (plan_body.get("candidate_operations") or []) if isinstance(op, dict)]
         questions = plan_body.get("required_questions") if isinstance(plan_body.get("required_questions"), list) else []
         resolved_without_changes = bool(plan_body.get("resolved_without_changes"))
-        noop_reason = _ai_noop_reason_text(plan_body, plan_json.get("context"))
+        noop_reason = _ai_noop_reason_text(plan_body, plan_context)
         if isinstance(questions, list) and questions:
             return _error_response(
                 "AI_PLAN_QUESTIONS_REQUIRED",
@@ -45614,6 +46528,9 @@ async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
                 detail={"questions": questions},
                 status=400,
             )
+        quality_errors = _ai_plan_quality_issues(plan_body, plan_context)
+        if quality_errors:
+            return _validation_response(quality_errors, [], status=400)
         operations = body.get("operations")
         if isinstance(operations, list) and operations:
             if _ai_operations_signature(operations) != _ai_operations_signature(planned_operations):
@@ -45725,11 +46642,19 @@ async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
         patchset, _workspace_id = bound
         patch_data = _ai_record_data(patchset)
         session_data = _ai_get_record(_AI_ENTITY_SESSION, patch_data.get("session_id")) if isinstance(patch_data.get("session_id"), str) else None
-        ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data) or _workspace_id
-        if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
-            return _error_response("AI_SANDBOX_NOT_READY", "Patchset validation requires an active sandbox workspace", "session_id", status=409)
-        with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
-            result = _ai_validate_patchset_against_workspace(request, patch_data)
+        plan_record = _ai_get_record(_AI_ENTITY_PLAN, patch_data.get("plan_id")) if isinstance(patch_data.get("plan_id"), str) else None
+        plan_json = plan_record.get("plan_json") if isinstance(plan_record, dict) and isinstance(plan_record.get("plan_json"), dict) else {}
+        plan_body = plan_json.get("plan") if isinstance(plan_json.get("plan"), dict) else {}
+        plan_context = plan_json.get("context") if isinstance(plan_json.get("context"), dict) else {}
+        quality_errors = _ai_plan_quality_issues(plan_body, plan_context)
+        if quality_errors:
+            result = {"ok": False, "errors": quality_errors, "warnings": [], "results": []}
+        else:
+            ops_workspace_id = _ai_strict_sandbox_workspace_id_for_session(session_data) or _workspace_id
+            if not isinstance(ops_workspace_id, str) or not ops_workspace_id:
+                return _error_response("AI_SANDBOX_NOT_READY", "Patchset validation requires an active sandbox workspace", "session_id", status=409)
+            with _ai_ops_workspace_scope(request, ops_workspace_id, request_actor):
+                result = _ai_validate_patchset_against_workspace(request, patch_data)
         next_status = "validated" if result.get("ok") else "invalid"
         validation_run = None
         session_id = patch_data.get("session_id")
@@ -45762,9 +46687,7 @@ async def octo_ai_validate_patchset(request: Request, patchset_id: str) -> dict:
                 severity="info" if result.get("ok") else "warning",
                 payload={"patchset_id": patchset_id, "ok": bool(result.get("ok"))},
             )
-        latest_plan = _ai_latest_plan_for_session(session_id) if isinstance(session_id, str) else None
-        latest_plan_json = latest_plan.get("plan_json") if isinstance(latest_plan, dict) and isinstance(latest_plan.get("plan_json"), dict) else {}
-        latest_plan_body = latest_plan_json.get("plan") if isinstance(latest_plan_json.get("plan"), dict) else {}
+        latest_plan_body = plan_body
         return _ok_response(
             {"patchset": _ai_record_data(updated), "validation": result, "plan": latest_plan_body},
             warnings=result.get("warnings") or [],
@@ -48190,12 +49113,6 @@ def _template_related_line_config(entity_name: str | None) -> dict | None:
             "line_entity_id": "entity.billing_invoice_line",
             "parent_field_id": "billing_invoice_line.invoice_id",
             "aliases": ["billing_invoice.lines", "billing_invoice_line_items", "lines", "line_items"],
-        }
-    if _template_entity_matches(entity_name, "entity.te_purchase_order"):
-        return {
-            "line_entity_id": "entity.te_purchase_order_line",
-            "parent_field_id": "te_purchase_order_line.purchase_order_id",
-            "aliases": ["te_purchase_order.lines", "te_purchase_order_line_items", "lines", "line_items"],
         }
     if _template_entity_matches(entity_name, "entity.biz_purchase_order"):
         return {
@@ -54553,12 +55470,7 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
         {"id": "system.notify", "label": "Notify workspace users"},
         {"id": "system.apply_integration_mapping", "label": "Apply integration mapping"},
         {"id": "system.integration_request", "label": "Call integration"},
-        {"id": "system.shopify_upsert_customer_webhook", "label": "Upsert Shopify customer from webhook"},
-        {"id": "system.shopify_upsert_product_webhook", "label": "Upsert Shopify product from webhook"},
-        {"id": "system.shopify_upsert_order_webhook", "label": "Upsert Shopify order from webhook"},
-        {"id": "system.shopify_refresh_order_from_refund_webhook", "label": "Refresh Shopify order from refund webhook"},
         {"id": "system.shopify_sync_product_media", "label": "Sync Shopify product media"},
-        {"id": "system.sync_sales_order_to_finance", "label": "Sync sales order to finance"},
     ]
     module_actions: list[dict] = []
     for mod in _get_registry_list(request):
@@ -54694,10 +55606,11 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
             },
             {
                 "action_id": "system.notify",
-                "required_inputs": ["recipient_user_ids or recipient_user_id", "title", "body"],
-                "optional_inputs": ["severity", "link_mode", "link_to", "link_entity_id", "link_record_id", "link_custom_url"],
+                "required_inputs": ["recipient_user_ids or recipient_user_id or recipient_lookup_field_ids", "title", "body"],
+                "optional_inputs": ["recipient_lookup_field_ids", "severity", "link_mode", "link_to", "link_entity_id", "link_record_id", "link_custom_url"],
                 "notes": [
                     "Use inputs.recipient_user_ids when notifying one or more workspace users; inputs.recipient_user_id also works for a single user.",
+                    "Use recipient_lookup_field_ids for owner/user/account-manager style recipient fields on the current record.",
                     "recipient_user_ids may include literal user ids or { var: 'trigger.record.fields.owner_id' } style references.",
                     "Always include concrete inputs.title and inputs.body strings for the notification content.",
                     "When linking the notification to a record, prefer link_mode trigger_record or record plus link_to.",
@@ -54812,7 +55725,7 @@ def _artifact_ai_automation_reference_contract(meta: dict | None) -> dict:
             suffix = field_id.split(".")[-1].lower()
             if field_type == "email" or "email" in label or "email" in suffix:
                 email_ids.append(field_id)
-            if field_type == "lookup":
+            if field_type in {"lookup", "user", "owner"}:
                 lookup_ids.append(field_id)
         if field_ids:
             entity_field_ids_by_entity[entity_id] = field_ids
@@ -55325,6 +56238,32 @@ def _artifact_ai_resolve_notify_recipients(inputs: dict, meta: dict | None, *, f
             inputs["recipient_user_id"] = first_value
         else:
             inputs.pop("recipient_user_id", None)
+    lookup_values: list[str] = []
+    if isinstance(inputs.get("recipient_lookup_field_ids"), list):
+        lookup_values.extend(
+            item.strip()
+            for item in inputs.get("recipient_lookup_field_ids")
+            if isinstance(item, str) and item.strip()
+        )
+    elif isinstance(inputs.get("recipient_lookup_field_ids"), str) and inputs.get("recipient_lookup_field_ids").strip():
+        lookup_values.extend(
+            item.strip()
+            for item in inputs.get("recipient_lookup_field_ids").split(",")
+            if isinstance(item, str) and item.strip()
+        )
+    if isinstance(inputs.get("recipient_lookup_field_id"), str) and inputs.get("recipient_lookup_field_id").strip():
+        lookup_values.append(inputs.get("recipient_lookup_field_id").strip())
+    if lookup_values:
+        deduped_lookup_values: list[str] = []
+        seen_lookup_values: set[str] = set()
+        for value in lookup_values:
+            key = value.lower()
+            if key in seen_lookup_values:
+                continue
+            seen_lookup_values.add(key)
+            deduped_lookup_values.append(value)
+        inputs["recipient_lookup_field_ids"] = copy.deepcopy(deduped_lookup_values)
+        inputs["recipient_lookup_field_id"] = deduped_lookup_values[0]
 
 
 def _artifact_ai_prompt_requests_current_user(prompt: str | None) -> bool:
@@ -55372,6 +56311,11 @@ def _artifact_ai_notify_step_has_recipient(inputs: dict | None) -> bool:
         for item in recipients
     ):
         return True
+    lookup_recipients = inputs.get("recipient_lookup_field_ids")
+    if isinstance(lookup_recipients, list) and any(isinstance(item, str) and item.strip() for item in lookup_recipients):
+        return True
+    if isinstance(inputs.get("recipient_lookup_field_id"), str) and inputs.get("recipient_lookup_field_id").strip():
+        return True
     return isinstance(inputs.get("recipient_user_id"), str) and inputs.get("recipient_user_id").strip()
 
 
@@ -55410,6 +56354,21 @@ def _artifact_ai_email_field_candidates(meta: dict | None, entity_id: str | None
     return results
 
 
+def _artifact_ai_lookup_recipient_field_candidates(meta: dict | None, entity_id: str | None) -> list[dict]:
+    fields = _artifact_ai_automation_entity_fields(meta, entity_id)
+    results: list[dict] = []
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id.strip():
+            continue
+        field_type = str(field.get("type") or "").strip().lower()
+        if field_type in {"lookup", "user", "owner"}:
+            results.append(field)
+    return results
+
+
 def _artifact_ai_match_email_field(meta: dict | None, entity_id: str | None, raw_value: Any) -> str | None:
     if not isinstance(raw_value, str) or not raw_value.strip():
         return None
@@ -55419,6 +56378,11 @@ def _artifact_ai_match_email_field(meta: dict | None, entity_id: str | None, raw
     normalized = _ai_norm_token(raw_value)
     if not normalized:
         return None
+    request_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", normalized)
+        if token and token not in {"email", "emails", "mail", "address", "addresses", "field", "fields", "to", "the", "a", "an"}
+    }
     for field in fields:
         field_id = str(field.get("id") or "").strip()
         suffix = field_id.split(".")[-1] if field_id else ""
@@ -55426,6 +56390,215 @@ def _artifact_ai_match_email_field(meta: dict | None, entity_id: str | None, raw
         candidates = [field_id, suffix, label]
         if any(isinstance(candidate, str) and _ai_norm_token(candidate) == normalized for candidate in candidates if candidate):
             return field_id
+    ranked: list[tuple[int, int, str]] = []
+    for field in fields:
+        field_id = str(field.get("id") or "").strip()
+        if not field_id:
+            continue
+        suffix = field_id.split(".")[-1]
+        label = str(field.get("label") or "").strip()
+        candidate_values = [field_id, suffix, label, _ai_humanize_identifier(suffix) or ""]
+        best_score = 0
+        for candidate in candidate_values:
+            candidate_norm = _ai_norm_token(candidate)
+            if not candidate_norm:
+                continue
+            candidate_tokens = {
+                token
+                for token in re.split(r"[^a-z0-9]+", candidate_norm)
+                if token and token not in {"email", "emails", "mail", "address", "addresses", "field", "fields"}
+            }
+            score = 0
+            if normalized in candidate_norm:
+                score += 25
+            if candidate_norm in normalized:
+                score += 15
+            shared_tokens = request_tokens & candidate_tokens
+            if shared_tokens:
+                score += len(shared_tokens) * 12
+                if request_tokens and request_tokens.issubset(candidate_tokens):
+                    score += 10
+            if score > best_score:
+                best_score = score
+        if best_score > 0:
+            ranked.append((best_score, -len(field_id), field_id))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0] and ranked[0][2] != ranked[1][2]:
+        return None
+    return ranked[0][2]
+
+
+def _artifact_ai_prompt_explicitly_mentions_email_field(meta: dict | None, entity_id: str | None, field_id: str | None, prompt: Any) -> bool:
+    if not isinstance(field_id, str) or not field_id.strip() or not isinstance(prompt, str) or not prompt.strip():
+        return False
+    normalized_prompt = _ai_norm_token(prompt)
+    if not normalized_prompt:
+        return False
+    target = field_id.strip()
+    for field in _artifact_ai_email_field_candidates(meta, entity_id):
+        if not isinstance(field, dict):
+            continue
+        candidate_id = str(field.get("id") or "").strip()
+        if candidate_id != target:
+            continue
+        suffix = candidate_id.split(".")[-1]
+        label = str(field.get("label") or "").strip()
+        candidate_values = [suffix, label, _ai_humanize_identifier(suffix) or ""]
+        tokens: set[str] = set()
+        for candidate in candidate_values:
+            candidate_norm = _ai_norm_token(candidate)
+            if not candidate_norm:
+                continue
+            for token in re.split(r"[^a-z0-9]+", candidate_norm):
+                if token and token not in {"email", "emails", "mail", "address", "addresses", "field", "fields"}:
+                    tokens.add(token)
+        return bool(tokens) and any(token in normalized_prompt for token in tokens)
+    return False
+
+
+def _artifact_ai_email_addresses(text: Any) -> list[str]:
+    if not isinstance(text, str) or not text.strip():
+        return []
+    matches = re.findall(r"\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b", text, re.IGNORECASE)
+    if not matches:
+        return []
+    results: list[str] = []
+    seen: set[str] = set()
+    for match in matches:
+        value = str(match or "").strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(value)
+    return results
+
+
+def _artifact_ai_first_email_address(text: Any) -> str | None:
+    matches = _artifact_ai_email_addresses(text)
+    return matches[0] if matches else None
+
+
+def _artifact_ai_match_lookup_recipient_field(meta: dict | None, entity_id: str | None, raw_value: Any) -> str | None:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    fields = _artifact_ai_lookup_recipient_field_candidates(meta, entity_id)
+    if not fields:
+        return None
+    normalized = _ai_norm_token(raw_value)
+    if not normalized:
+        return None
+    request_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", normalized)
+        if token and token not in {"user", "users", "owner", "assigned", "account", "manager", "email", "emails", "the", "a", "an", "to"}
+    }
+    aliases = {
+        "owner": {"owner", "assigned", "assignee"},
+        "account manager": {"account manager", "account managers", "account management", "account", "manager"},
+        "assigned user": {"assigned user", "assigned", "assignee", "owner"},
+    }
+    ranked: list[tuple[int, int, str]] = []
+    for field in fields:
+        field_id = str(field.get("id") or "").strip()
+        if not field_id:
+            continue
+        suffix = field_id.split(".")[-1]
+        label = str(field.get("label") or "").strip()
+        field_type = str(field.get("type") or "").strip().lower()
+        candidate_values = [field_id, suffix, label, _ai_humanize_identifier(suffix) or ""]
+        best_score = 0
+        for candidate in candidate_values:
+            candidate_norm = _ai_norm_token(candidate)
+            if not candidate_norm:
+                continue
+            candidate_tokens = {
+                token
+                for token in re.split(r"[^a-z0-9]+", candidate_norm)
+                if token and token not in {"user", "users", "field", "fields", "id"}
+            }
+            score = 0
+            if normalized == candidate_norm:
+                score += 40
+            elif normalized in candidate_norm:
+                score += 22
+            elif candidate_norm in normalized:
+                score += 14
+            shared_tokens = request_tokens & candidate_tokens
+            if shared_tokens:
+                score += len(shared_tokens) * 12
+            for alias_key, alias_tokens in aliases.items():
+                if alias_key in normalized and alias_tokens & candidate_tokens:
+                    score += 18
+            if field_type in {"user", "owner"} and any(token in normalized for token in ("owner", "assigned", "assignee", "manager")):
+                score += 8
+            if score > best_score:
+                best_score = score
+        if best_score > 0:
+            ranked.append((best_score, -len(field_id), field_id))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0] and ranked[0][2] != ranked[1][2]:
+        return None
+    return ranked[0][2]
+
+
+def _artifact_ai_prompt_explicitly_mentions_lookup_field(meta: dict | None, entity_id: str | None, field_id: str | None, prompt: Any) -> bool:
+    if not isinstance(field_id, str) or not field_id.strip() or not isinstance(prompt, str) or not prompt.strip():
+        return False
+    normalized_prompt = _ai_norm_token(prompt)
+    if not normalized_prompt:
+        return False
+    target = field_id.strip()
+    for field in _artifact_ai_lookup_recipient_field_candidates(meta, entity_id):
+        if not isinstance(field, dict):
+            continue
+        candidate_id = str(field.get("id") or "").strip()
+        if candidate_id != target:
+            continue
+        suffix = candidate_id.split(".")[-1]
+        label = str(field.get("label") or "").strip()
+        candidate_values = [suffix, label, _ai_humanize_identifier(suffix) or ""]
+        tokens: set[str] = set()
+        for candidate in candidate_values:
+            candidate_norm = _ai_norm_token(candidate)
+            if not candidate_norm:
+                continue
+            for token in re.split(r"[^a-z0-9]+", candidate_norm):
+                if token and token not in {"user", "users", "owner", "assigned", "account", "manager", "email", "emails", "field", "fields"}:
+                    tokens.add(token)
+        alias_tokens: set[str] = set()
+        field_type = str(field.get("type") or "").strip().lower()
+        if field_type in {"user", "owner"} or "owner" in suffix.lower() or "owner" in label.lower():
+            alias_tokens.update({"owner", "assigned", "assignee"})
+        if "manager" in suffix.lower() or "manager" in label.lower():
+            alias_tokens.update({"manager", "account manager"})
+        combined = tokens | alias_tokens
+        return bool(combined) and any(token in normalized_prompt for token in combined)
+    return False
+
+
+def _artifact_ai_current_workspace_member_email(meta: dict | None) -> str | None:
+    if not isinstance(meta, dict):
+        return None
+    current_user_id = meta.get("current_user_id") if isinstance(meta.get("current_user_id"), str) and meta.get("current_user_id").strip() else None
+    members = meta.get("members") if isinstance(meta.get("members"), list) else []
+    if not isinstance(current_user_id, str) or not current_user_id:
+        return None
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        member_user_id = member.get("user_id") if isinstance(member.get("user_id"), str) and member.get("user_id").strip() else None
+        if member_user_id != current_user_id:
+            continue
+        email = member.get("email") if isinstance(member.get("email"), str) and member.get("email").strip() else None
+        if isinstance(email, str) and email:
+            return email.strip()
     return None
 
 
@@ -55508,6 +56681,10 @@ def _artifact_ai_normalize_send_email_inputs(inputs: dict, meta: dict | None, en
         if matched_field:
             field_ids.append(matched_field)
             continue
+        matched_lookup_field = _artifact_ai_match_lookup_recipient_field(meta, entity_id, raw_value)
+        if matched_lookup_field:
+            lookup_field_ids.append(matched_lookup_field)
+            continue
         if "{{" in raw_value or "}}" in raw_value or _artifact_ai_is_automation_ref(raw_value):
             expr_values.append(raw_value)
 
@@ -55574,6 +56751,394 @@ def _artifact_ai_normalize_send_email_inputs(inputs: dict, meta: dict | None, en
         inputs["to_expr"] = ", ".join(expr_values)
     elif not isinstance(inputs.get("to_expr"), str) or not inputs.get("to_expr").strip():
         inputs.pop("to_expr", None)
+
+
+def _artifact_ai_send_email_recipient_decision_options(
+    meta: dict | None,
+    entity_id: str | None,
+    member_options: list[dict] | None = None,
+) -> list[dict]:
+    options: list[dict] = []
+    seen_ids: set[str] = set()
+
+    for field in _artifact_ai_email_field_candidates(meta, entity_id):
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id.strip():
+            continue
+        normalized_field_id = field_id.strip()
+        if normalized_field_id in seen_ids:
+            continue
+        seen_ids.add(normalized_field_id)
+        label = (
+            field.get("label").strip()
+            if isinstance(field.get("label"), str) and field.get("label").strip()
+            else _ai_humanize_identifier(normalized_field_id.split(".")[-1]) or normalized_field_id
+        )
+        options.append(
+            {
+                "id": f"field:{normalized_field_id}",
+                "label": label,
+                "value": normalized_field_id,
+                "description": "Trigger record email field",
+                "hints": {"to_field_ids": [normalized_field_id]},
+            }
+        )
+
+    for field in _artifact_ai_lookup_recipient_field_candidates(meta, entity_id):
+        if not isinstance(field, dict):
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id.strip():
+            continue
+        normalized_field_id = field_id.strip()
+        option_id = f"lookup:{normalized_field_id}"
+        if option_id in seen_ids:
+            continue
+        seen_ids.add(option_id)
+        label = (
+            field.get("label").strip()
+            if isinstance(field.get("label"), str) and field.get("label").strip()
+            else _ai_humanize_identifier(normalized_field_id.split(".")[-1]) or normalized_field_id
+        )
+        field_type = str(field.get("type") or "").strip().lower()
+        description = "Recipient lookup field"
+        if field_type in {"user", "owner"}:
+            description = "Workspace user field"
+        options.append(
+            {
+                "id": option_id,
+                "label": label,
+                "value": normalized_field_id,
+                "description": description,
+                "hints": {"to_lookup_field_ids": [normalized_field_id]},
+            }
+        )
+
+    for option in member_options or []:
+        if not isinstance(option, dict):
+            continue
+        entry = copy.deepcopy(option)
+        hints = entry.get("hints") if isinstance(entry.get("hints"), dict) else {}
+        recipient_email = hints.get("recipient_email") if isinstance(hints.get("recipient_email"), str) and hints.get("recipient_email").strip() else None
+        if not isinstance(recipient_email, str) or not recipient_email:
+            value = entry.get("value") if isinstance(entry.get("value"), str) and entry.get("value").strip() else None
+            recipient_email = value.strip() if isinstance(value, str) and "@" in value else None
+        if not isinstance(recipient_email, str) or not recipient_email:
+            continue
+        entry["hints"] = {
+            **hints,
+            "recipient_email": recipient_email.strip(),
+            "to_internal_emails": [recipient_email.strip()],
+        }
+        options.append(entry)
+
+    return options
+
+
+def _artifact_ai_send_email_attachment_already_wired(inputs: dict | None) -> bool:
+    if not isinstance(inputs, dict):
+        return False
+    return any(
+        (
+            isinstance(inputs.get("attachment_purpose"), str) and inputs.get("attachment_purpose").strip(),
+            isinstance(inputs.get("attachment_field_id"), str) and inputs.get("attachment_field_id").strip(),
+            isinstance(inputs.get("attachment_record_id"), str) and inputs.get("attachment_record_id").strip(),
+            isinstance(inputs.get("attachment_entity_id"), str) and inputs.get("attachment_entity_id").strip(),
+            isinstance(inputs.get("attachment_ids"), list) and any(item for item in inputs.get("attachment_ids") or []),
+        )
+    )
+
+
+def _artifact_ai_send_email_expects_generated_attachment(inputs: dict | None) -> bool:
+    if not isinstance(inputs, dict):
+        return False
+    include_attachments = inputs.get("include_attachments")
+    if include_attachments is True or (
+        isinstance(include_attachments, str) and include_attachments.strip().lower() in {"1", "true", "yes", "on"}
+    ):
+        return True
+    text_parts = []
+    for key in ("subject", "body_html", "body_text"):
+        value = inputs.get(key)
+        if isinstance(value, str) and value.strip():
+            text_parts.append(value.strip())
+    if not text_parts:
+        return False
+    lowered = _ai_norm_token(" ".join(text_parts))
+    return any(
+        token in lowered
+        for token in (
+            "attached",
+            "attachment",
+            "pdf attached",
+            "pdf is attached",
+            "document is attached",
+            "quote pdf",
+            "attached to this email",
+        )
+    )
+
+
+def _artifact_ai_generate_document_attachment_purpose(inputs: dict | None) -> str | None:
+    if not isinstance(inputs, dict):
+        return None
+    explicit_purpose = inputs.get("purpose")
+    if isinstance(explicit_purpose, str) and explicit_purpose.strip() and explicit_purpose.strip().lower() != "default":
+        return explicit_purpose.strip()
+    template_id = inputs.get("template_id")
+    if isinstance(template_id, str) and template_id.strip():
+        return f"template:{template_id.strip()}"
+    return None
+
+
+def _artifact_ai_select_document_template_option_for_attachment_prompt(
+    prompt: str,
+    workspace_id: str | None,
+    entity_id: str | None,
+    meta: dict | None = None,
+) -> dict | None:
+    matched_option = _ai_match_workspace_template_option_from_message(
+        "document_template",
+        prompt,
+        workspace_id,
+        preferred_entity_id=entity_id,
+    )
+    if isinstance(matched_option, dict):
+        return matched_option
+    options: list[dict] = []
+    for item in (meta.get("doc_templates") if isinstance(meta, dict) and isinstance(meta.get("doc_templates"), list) else []):
+        if not isinstance(item, dict):
+            continue
+        template_id = item.get("id")
+        if not isinstance(template_id, str) or not template_id.strip():
+            continue
+        label = item.get("name") if isinstance(item.get("name"), str) and item.get("name").strip() else template_id.strip()
+        variables_schema = item.get("variables_schema") if isinstance(item.get("variables_schema"), dict) else {}
+        option_entity_id = (
+            variables_schema.get("entity_id")
+            if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip()
+            else item.get("entity_id")
+            if isinstance(item.get("entity_id"), str) and item.get("entity_id").strip()
+            else None
+        )
+        options.append(
+            {
+                "id": template_id.strip(),
+                "label": label.strip() if isinstance(label, str) else template_id.strip(),
+                "value": template_id.strip(),
+                "description": item.get("filename_pattern") if isinstance(item.get("filename_pattern"), str) and item.get("filename_pattern").strip() else None,
+                "hints": {
+                    "document_template_id": template_id.strip(),
+                    **({"entity_id": option_entity_id.strip()} if isinstance(option_entity_id, str) and option_entity_id.strip() else {}),
+                },
+            }
+        )
+    if not options:
+        options = _ai_workspace_template_decision_options("document_template", workspace_id)
+    if not options:
+        return None
+    matching_entity_options = [
+        option
+        for option in options
+        if isinstance(option, dict)
+        and isinstance(option.get("hints"), dict)
+        and isinstance(option.get("hints").get("entity_id"), str)
+        and isinstance(entity_id, str)
+        and entity_id.strip()
+        and _match_entity_id(entity_id, option.get("hints").get("entity_id"))
+    ]
+    if len(matching_entity_options) == 1:
+        return matching_entity_options[0]
+    if len(options) == 1:
+        return options[0]
+    return None
+
+
+def _artifact_ai_insert_generated_document_steps_for_attachment_emails(
+    steps: list[dict],
+    *,
+    prompt: str,
+    workspace_id: str | None,
+    default_entity_id: str | None = None,
+    meta: dict | None = None,
+) -> tuple[list[dict], list[str]]:
+    if not isinstance(steps, list) or not steps:
+        return steps, []
+    updated_steps = list(steps)
+    assumptions: list[str] = []
+    index = 0
+    while index < len(updated_steps):
+        step = updated_steps[index]
+        if not isinstance(step, dict) or step.get("action_id") != "system.send_email":
+            index += 1
+            continue
+        inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+        step["inputs"] = inputs
+        if (
+            _artifact_ai_send_email_attachment_already_wired(inputs)
+            or not _artifact_ai_send_email_expects_generated_attachment(inputs)
+        ):
+            index += 1
+            continue
+        send_entity_id = (
+            inputs.get("entity_id")
+            if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()
+            else default_entity_id
+        )
+        if _artifact_ai_steps_have_document_attachment_source(updated_steps, target_entity_id=send_entity_id):
+            index += 1
+            continue
+        matched_option = _artifact_ai_select_document_template_option_for_attachment_prompt(
+            prompt,
+            workspace_id,
+            send_entity_id,
+            meta=meta,
+        )
+        option_hints = matched_option.get("hints") if isinstance(matched_option, dict) and isinstance(matched_option.get("hints"), dict) else {}
+        template_id = option_hints.get("document_template_id") if isinstance(option_hints.get("document_template_id"), str) and option_hints.get("document_template_id").strip() else None
+        if not isinstance(template_id, str) or not template_id:
+            index += 1
+            continue
+        record_id = (
+            inputs.get("record_id")
+            if isinstance(inputs.get("record_id"), str) and inputs.get("record_id").strip()
+            else "{{trigger.record_id}}"
+        )
+        updated_steps.insert(
+            index,
+            {
+                "id": f"step_generate_document_for_email_{index + 1}",
+                "kind": "action",
+                "action_id": "system.generate_document",
+                "inputs": {
+                    **({"entity_id": send_entity_id.strip()} if isinstance(send_entity_id, str) and send_entity_id.strip() else {}),
+                    "record_id": record_id,
+                    "template_id": template_id.strip(),
+                },
+            },
+        )
+        label = matched_option.get("label") if isinstance(matched_option, dict) and isinstance(matched_option.get("label"), str) and matched_option.get("label").strip() else template_id.strip()
+        assumptions.append(f"Matched the requested document template '{label}' from the workspace.")
+        assumptions.append("Added a document generation step before the email so the promised attachment is produced.")
+        index += 2
+    return updated_steps, assumptions
+
+
+def _artifact_ai_wire_generated_document_attachments(steps: list[dict], default_entity_id: str | None = None) -> list[dict]:
+    if not isinstance(steps, list) or not steps:
+        return steps
+
+    def _entity_match(left: Any, right: Any) -> bool:
+        left_text = str(left or "").strip()
+        right_text = str(right or "").strip()
+        if not left_text or not right_text:
+            return True
+        return left_text == right_text
+
+    reordered = list(steps)
+    index = 0
+    while index < len(reordered):
+        step = reordered[index]
+        if not isinstance(step, dict) or step.get("action_id") != "system.send_email":
+            index += 1
+            continue
+        inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+        step["inputs"] = inputs
+        if _artifact_ai_send_email_attachment_already_wired(inputs) or not _artifact_ai_send_email_expects_generated_attachment(inputs):
+            inputs.pop("include_attachments", None)
+            index += 1
+            continue
+
+        send_entity_id = (
+            inputs.get("entity_id")
+            if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()
+            else default_entity_id
+        )
+        candidate_index = None
+        candidate_inputs = None
+        for lookback in range(index - 1, -1, -1):
+            candidate = reordered[lookback]
+            if not isinstance(candidate, dict) or candidate.get("action_id") != "system.generate_document":
+                continue
+            possible_inputs = candidate.get("inputs") if isinstance(candidate.get("inputs"), dict) else {}
+            doc_entity_id = (
+                possible_inputs.get("entity_id")
+                if isinstance(possible_inputs.get("entity_id"), str) and possible_inputs.get("entity_id").strip()
+                else default_entity_id
+            )
+            if _entity_match(send_entity_id, doc_entity_id):
+                candidate_index = lookback
+                candidate_inputs = possible_inputs
+                break
+        if candidate_index is None:
+            for lookahead in range(index + 1, len(reordered)):
+                candidate = reordered[lookahead]
+                if not isinstance(candidate, dict) or candidate.get("action_id") != "system.generate_document":
+                    continue
+                possible_inputs = candidate.get("inputs") if isinstance(candidate.get("inputs"), dict) else {}
+                doc_entity_id = (
+                    possible_inputs.get("entity_id")
+                    if isinstance(possible_inputs.get("entity_id"), str) and possible_inputs.get("entity_id").strip()
+                    else default_entity_id
+                )
+                if not _entity_match(send_entity_id, doc_entity_id):
+                    continue
+                moved = reordered.pop(lookahead)
+                reordered.insert(index, moved)
+                candidate_index = index
+                candidate_inputs = possible_inputs
+                index += 1
+                break
+        if isinstance(candidate_inputs, dict):
+            attachment_purpose = _artifact_ai_generate_document_attachment_purpose(candidate_inputs)
+            if isinstance(attachment_purpose, str) and attachment_purpose.strip():
+                inputs["attachment_purpose"] = attachment_purpose.strip()
+            attachment_entity_id = (
+                candidate_inputs.get("entity_id")
+                if isinstance(candidate_inputs.get("entity_id"), str) and candidate_inputs.get("entity_id").strip()
+                else send_entity_id
+            )
+            attachment_record_id = (
+                candidate_inputs.get("record_id")
+                if isinstance(candidate_inputs.get("record_id"), str) and candidate_inputs.get("record_id").strip()
+                else inputs.get("record_id")
+                if isinstance(inputs.get("record_id"), str) and inputs.get("record_id").strip()
+                else None
+            )
+            if isinstance(attachment_entity_id, str) and attachment_entity_id.strip():
+                inputs["attachment_entity_id"] = attachment_entity_id.strip()
+                if not (isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()):
+                    inputs["entity_id"] = attachment_entity_id.strip()
+            if isinstance(attachment_record_id, str) and attachment_record_id.strip():
+                inputs["attachment_record_id"] = attachment_record_id.strip()
+                if not (isinstance(inputs.get("record_id"), str) and inputs.get("record_id").strip()):
+                    inputs["record_id"] = attachment_record_id.strip()
+        inputs.pop("include_attachments", None)
+        index += 1
+    return reordered
+
+
+def _artifact_ai_steps_have_document_attachment_source(steps: Any, *, target_entity_id: str | None = None) -> bool:
+    for step in _artifact_ai_iter_automation_steps(steps):
+        if not isinstance(step, dict) or step.get("action_id") != "system.generate_document":
+            continue
+        inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+        if not isinstance(inputs, dict):
+            continue
+        step_entity_id = inputs.get("entity_id") if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip() else None
+        if (
+            isinstance(target_entity_id, str)
+            and target_entity_id.strip()
+            and isinstance(step_entity_id, str)
+            and step_entity_id.strip()
+            and step_entity_id.strip() != target_entity_id.strip()
+        ):
+            continue
+        if _artifact_ai_generate_document_attachment_purpose(inputs):
+            return True
+    return False
 
 
 def _artifact_ai_normalize_automation_condition_operand(value: Any, *, prefer_ref: bool = False) -> dict | None:
@@ -56422,6 +57987,10 @@ def _artifact_ai_normalize_automation_draft(current: dict | None, candidate: dic
         meta=meta,
         default_entity_id=default_condition_entity_id,
     )
+    base["steps"] = _artifact_ai_wire_generated_document_attachments(
+        base.get("steps") if isinstance(base.get("steps"), list) else [],
+        default_entity_id=default_condition_entity_id,
+    )
     status = data.get("status") if "status" in data else base.get("status")
     if isinstance(status, str) and status.strip():
         base["status"] = status.strip()
@@ -56546,6 +58115,25 @@ def _artifact_ai_automation_reference_errors(data: dict, meta: dict | None) -> l
                     trigger_entity_id=trigger_entity_id,
                 ):
                     add_error(f"{step_path}.inputs.{field_name}", message)
+                target_entity_id = (
+                    inputs.get("entity_id")
+                    if isinstance(inputs.get("entity_id"), str) and inputs.get("entity_id").strip()
+                    else trigger_entity_id
+                )
+                if (
+                    _artifact_ai_send_email_expects_generated_attachment(inputs)
+                    and not _artifact_ai_send_email_attachment_already_wired(inputs)
+                    and not _artifact_ai_steps_have_document_attachment_source(items, target_entity_id=target_entity_id if isinstance(target_entity_id, str) else None)
+                ):
+                    add_error(
+                        f"{step_path}.inputs",
+                        "Email content promises an attachment, but no attachment source is configured. Add attachment_purpose/attachment_field_id or a system.generate_document step for this record before sending the email.",
+                    )
+            elif action_id == "system.notify":
+                for field_id in inputs.get("recipient_lookup_field_ids") or []:
+                    text = str(field_id or "").strip()
+                    if text and valid_lookup_field_ids and text not in valid_lookup_field_ids:
+                        add_error(f"{step_path}.inputs.recipient_lookup_field_ids", f"Unknown lookup field id '{text}'. Use lookup/user/owner field ids from meta.entities.")
             elif action_id == "system.generate_document":
                 template_id = str(inputs.get("template_id") or "").strip()
                 if template_id and valid_doc_template_ids and template_id not in valid_doc_template_ids:
@@ -58818,8 +60406,11 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                         recipients = inputs.get("recipient_user_ids")
                         has_recipient_list = isinstance(recipients, list) and len(recipients) > 0
                         has_single_recipient = isinstance(inputs.get("recipient_user_id"), str) and inputs.get("recipient_user_id").strip()
-                        if not has_recipient_list and not has_single_recipient:
-                            errors.append(_issue("AUTOMATION_STEP_INVALID", "recipient_user_ids or recipient_user_id required for notify", f"{step_path}.inputs"))
+                        lookup_recipients = inputs.get("recipient_lookup_field_ids")
+                        has_lookup_recipients = isinstance(lookup_recipients, list) and len([item for item in lookup_recipients if isinstance(item, str) and item.strip()]) > 0
+                        has_single_lookup_recipient = isinstance(inputs.get("recipient_lookup_field_id"), str) and inputs.get("recipient_lookup_field_id").strip()
+                        if not has_recipient_list and not has_single_recipient and not has_lookup_recipients and not has_single_lookup_recipient:
+                            errors.append(_issue("AUTOMATION_STEP_INVALID", "recipient_user_ids or recipient_user_id or recipient_lookup_field_ids required for notify", f"{step_path}.inputs"))
                         if not isinstance(inputs.get("title"), str) or not inputs.get("title").strip():
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "title required for notify", f"{step_path}.inputs.title"))
                         if not isinstance(inputs.get("body"), str) or not inputs.get("body").strip():

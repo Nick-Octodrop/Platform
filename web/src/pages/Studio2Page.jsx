@@ -122,6 +122,47 @@ function summarizeChanges(calls = [], opsByModule = [], t = null) {
   return summary;
 }
 
+function deriveStudioPlanQualityErrors(draftText = "", changes = []) {
+  const issues = [];
+  const changeItems = Array.isArray(changes) ? changes.filter((item) => typeof item === "string" && item.trim()) : [];
+  if (changeItems.length === 0) {
+    issues.push({
+      code: "STUDIO_PLAN_TOO_THIN",
+      message: "This draft plan does not describe any concrete changes yet.",
+      path: "requested_change_lines",
+    });
+  }
+  let manifest = null;
+  try {
+    manifest = draftText && typeof draftText === "string" ? JSON.parse(draftText) : null;
+  } catch {
+    manifest = null;
+  }
+  if (!manifest || typeof manifest !== "object") {
+    return issues;
+  }
+  const entities = Array.isArray(manifest.entities) ? manifest.entities.filter((entity) => entity && typeof entity === "object") : [];
+  const businessFieldCount = entities.reduce((count, entity) => {
+    const fields = Array.isArray(entity.fields) ? entity.fields : [];
+    return count + fields.filter((field) => {
+      if (!field || typeof field !== "object") return false;
+      const fieldId = String(field.id || "");
+      if (!fieldId) return false;
+      if (fieldId.endsWith(".id") || fieldId.endsWith(".created_at") || fieldId.endsWith(".updated_at")) return false;
+      if (fieldId.endsWith(".status") || fieldId.endsWith(".state") || fieldId.endsWith(".stage")) return false;
+      return true;
+    }).length;
+  }, 0);
+  if (entities.length > 0 && businessFieldCount === 0) {
+    issues.push({
+      code: "STUDIO_PLAN_TOO_THIN",
+      message: "This draft still looks like scaffold-only structure and needs real business fields before apply.",
+      path: "manifest.entities",
+    });
+  }
+  return issues;
+}
+
 function stripPatchsetFromMessage(text) {
   if (!text) return "";
   const markers = ["UPDATED_MANIFEST_JSON:", "PATCHSET_JSON:"];
@@ -1719,7 +1760,9 @@ function buildPreviewManifest() {
     const completenessErrors = payload.validation?.completeness_errors || [];
     const designWarnings = payload.validation?.design_warnings || [];
     const changeSummary = summarizeChanges(payload.calls || [], payload.ops_by_module || [], t);
-    const hasErrors = errors.length + strictErrors.length + completenessErrors.length > 0;
+    const qualityErrors = deriveStudioPlanQualityErrors(nextDraftText, changeSummary);
+    const mergedCompletenessErrors = [...completenessErrors, ...qualityErrors];
+    const hasErrors = errors.length + strictErrors.length + mergedCompletenessErrors.length > 0;
     const plan = payload.plan && typeof payload.plan === "object" ? payload.plan : {};
     const requiredQuestions = Array.isArray(plan?.required_questions)
       ? plan.required_questions.filter((item) => typeof item === "string" && item.trim())
@@ -1768,7 +1811,7 @@ function buildPreviewManifest() {
             errors,
             warnings,
             strictErrors,
-            completenessErrors,
+            completenessErrors: mergedCompletenessErrors,
             designWarnings,
           }
         : null,

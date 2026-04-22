@@ -1,0 +1,738 @@
+{
+  "manifest_version": "1.3",
+  "module": {
+    "id": "te_influencers",
+    "key": "te_influencers",
+    "name": "Influencers",
+    "version": "1.0.0",
+    "description": "Influencer outreach, gifting, and stock-tracked send records for True Essentials.",
+    "category": "True Essentials",
+    "icon_key": "lucide:BadgePlus"
+  },
+  "depends_on": {
+    "required": [
+      {
+        "module": "te_catalog",
+        "version": ">=1.0.0"
+      }
+    ]
+  },
+  "app": {
+    "home": "page:te_influencer.home_page",
+    "defaults": {
+      "entity_home_page": "page:te_influencer.list_page",
+      "entity_form_page": "page:te_influencer.form_page",
+      "entities": {
+        "entity.te_influencer": {
+          "entity_home_page": "page:te_influencer.list_page",
+          "entity_form_page": "page:te_influencer.form_page"
+        },
+        "entity.te_influencer_send": {
+          "entity_home_page": "page:te_influencer_send.list_page",
+          "entity_form_page": "page:te_influencer_send.form_page"
+        },
+        "entity.te_influencer_send_line": {
+          "entity_home_page": "page:te_influencer_send_line.list_page",
+          "entity_form_page": "page:te_influencer_send_line.form_page"
+        }
+      }
+    },
+    "nav": [
+      {
+        "group": "Influencers",
+        "mode": "inline",
+        "items": [
+          { "label": "Home", "to": "page:te_influencer.home_page" },
+          { "label": "Influencers", "to": "page:te_influencer.list_page" },
+          { "label": "Product Sends", "to": "page:te_influencer_send.list_page" }
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "entity.te_influencer",
+      "label": "Influencer",
+      "display_field": "te_influencer.name",
+      "fields": [
+        { "id": "te_influencer.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_influencer.name", "type": "string", "label": "Influencer Name", "required": true },
+        {
+          "id": "te_influencer.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "active",
+          "options": [
+            { "value": "active", "label": "Active" },
+            { "value": "paused", "label": "Paused" },
+            { "value": "inactive", "label": "Inactive" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_influencer.platform",
+          "type": "enum",
+          "label": "Primary Platform",
+          "default": "instagram",
+          "options": [
+            { "value": "instagram", "label": "Instagram" },
+            { "value": "tiktok", "label": "TikTok" },
+            { "value": "youtube", "label": "YouTube" },
+            { "value": "other", "label": "Other" }
+          ]
+        },
+        { "id": "te_influencer.instagram_handle", "type": "string", "label": "Instagram Handle" },
+        { "id": "te_influencer.email", "type": "string", "label": "Email" },
+        { "id": "te_influencer.phone", "type": "string", "label": "Phone" },
+        { "id": "te_influencer.followers", "type": "number", "label": "Followers", "default": 0 },
+        { "id": "te_influencer.following_count", "type": "number", "label": "Following", "default": 0 },
+        { "id": "te_influencer.avg_views", "type": "number", "label": "Average Views", "default": 0 },
+        { "id": "te_influencer.avg_likes", "type": "number", "label": "Average Likes", "default": 0 },
+        { "id": "te_influencer.avg_comments", "type": "number", "label": "Average Comments", "default": 0 },
+        {
+          "id": "te_influencer.engagement_rate_percent",
+          "type": "number",
+          "label": "Engagement %",
+          "default": 0,
+          "format": { "kind": "percent", "precision": 2 }
+        },
+        {
+          "id": "te_influencer.rating",
+          "type": "enum",
+          "label": "Internal Rating",
+          "default": "b",
+          "options": [
+            { "value": "a", "label": "A" },
+            { "value": "b", "label": "B" },
+            { "value": "c", "label": "C" }
+          ]
+        },
+        { "id": "te_influencer.postage_name", "type": "string", "label": "Postage Name" },
+        { "id": "te_influencer.postage_address_1", "type": "string", "label": "Postage Address 1" },
+        { "id": "te_influencer.postage_address_2", "type": "string", "label": "Postage Address 2" },
+        { "id": "te_influencer.postage_suburb", "type": "string", "label": "Postage Suburb" },
+        { "id": "te_influencer.postage_city", "type": "string", "label": "Postage City" },
+        { "id": "te_influencer.postage_region", "type": "string", "label": "Postage Region/State" },
+        { "id": "te_influencer.postage_postcode", "type": "string", "label": "Postage Postcode" },
+        { "id": "te_influencer.postage_country", "type": "string", "label": "Postage Country" },
+        { "id": "te_influencer.last_contacted_at", "type": "date", "label": "Last Contacted" },
+        { "id": "te_influencer.notes", "type": "text", "label": "Notes" }
+      ]
+    },
+    {
+      "id": "entity.te_influencer_send",
+      "label": "Influencer Send",
+      "display_field": "te_influencer_send.send_number",
+      "fields": [
+        { "id": "te_influencer_send.id", "type": "uuid", "label": "ID", "readonly": true },
+        { "id": "te_influencer_send.send_number", "type": "string", "label": "Send Number" },
+        {
+          "id": "te_influencer_send.status",
+          "type": "enum",
+          "label": "Status",
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "planned", "label": "Planned" },
+            { "value": "sent", "label": "Sent" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ],
+          "ui": { "widget": "steps" }
+        },
+        {
+          "id": "te_influencer_send.influencer_id",
+          "type": "lookup",
+          "label": "Influencer",
+          "entity": "entity.te_influencer",
+          "display_field": "te_influencer.name",
+          "required": true
+        },
+        { "id": "te_influencer_send.campaign_name", "type": "string", "label": "Campaign" },
+        { "id": "te_influencer_send.send_date", "type": "date", "label": "Send Date" },
+        { "id": "te_influencer_send.sent_date", "type": "date", "label": "Marked Sent Date" },
+        { "id": "te_influencer_send.tracking_number", "type": "string", "label": "Tracking Number" },
+        { "id": "te_influencer_send.tracking_url", "type": "string", "label": "Tracking URL" },
+        { "id": "te_influencer_send.coupon_code", "type": "string", "label": "Coupon Code" },
+        { "id": "te_influencer_send.engagement_result", "type": "text", "label": "Engagement Result" },
+        { "id": "te_influencer_send.revenue_attributed_nzd", "type": "number", "label": "Revenue Attributed (NZD)", "default": 0, "format": { "kind": "currency", "currency": "NZD", "precision": 2 } },
+        {
+          "id": "te_influencer_send.product_cost_total_nzd",
+          "type": "number",
+          "label": "Product Cost Total (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.te_influencer_send_line",
+              "field": "te_influencer_send_line.line_cost_total_nzd",
+              "where": {
+                "op": "eq",
+                "field": "te_influencer_send_line.send_id",
+                "value": { "ref": "$parent.id" }
+              }
+            }
+          }
+        },
+        { "id": "te_influencer_send.notes", "type": "text", "label": "Notes" }
+      ]
+    },
+    {
+      "id": "entity.te_influencer_send_line",
+      "label": "Influencer Send Line",
+      "display_field": "te_influencer_send_line.description",
+      "fields": [
+        { "id": "te_influencer_send_line.id", "type": "uuid", "label": "ID", "readonly": true },
+        {
+          "id": "te_influencer_send_line.send_id",
+          "type": "lookup",
+          "label": "Influencer Send",
+          "entity": "entity.te_influencer_send",
+          "display_field": "te_influencer_send.send_number",
+          "required": true
+        },
+        {
+          "id": "te_influencer_send_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.te_product",
+          "display_field": "te_product.title",
+          "required": true
+        },
+        { "id": "te_influencer_send_line.description", "type": "string", "label": "Description", "required": true },
+        { "id": "te_influencer_send_line.sku_snapshot", "type": "string", "label": "SKU" },
+        { "id": "te_influencer_send_line.quantity", "type": "number", "label": "Quantity", "default": 1 },
+        { "id": "te_influencer_send_line.sent_quantity", "type": "number", "label": "Sent Quantity", "default": 0 },
+        { "id": "te_influencer_send_line.unit_cost_snapshot_nzd", "type": "number", "label": "Unit Cost Snapshot (NZD)", "default": 0, "format": { "kind": "currency", "currency": "NZD", "precision": 2 } },
+        {
+          "id": "te_influencer_send_line.line_cost_total_nzd",
+          "type": "number",
+          "label": "Line Cost Total (NZD)",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "currency", "currency": "NZD", "precision": 2 },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    { "ref": "$current.te_influencer_send_line.quantity" },
+                    { "ref": "$current.te_influencer_send_line.unit_cost_snapshot_nzd" }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.te_influencer_send",
+        "enabled": true,
+        "scope": "module_and_global",
+        "date_field": "te_influencer_send.send_date",
+        "measures": ["count", "sum:te_influencer_send.product_cost_total_nzd", "sum:te_influencer_send.revenue_attributed_nzd"],
+        "group_bys": ["te_influencer_send.status", "te_influencer_send.influencer_id"]
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "id": "workflow.te_influencer",
+      "entity": "entity.te_influencer",
+      "status_field": "te_influencer.status",
+      "states": [
+        { "id": "active", "label": "Active", "order": 1 },
+        { "id": "paused", "label": "Paused", "order": 2 },
+        { "id": "inactive", "label": "Inactive", "order": 3 }
+      ],
+      "transitions": [
+        { "from": "active", "to": "paused", "label": "Pause" },
+        { "from": "paused", "to": "active", "label": "Resume" },
+        { "from": "active", "to": "inactive", "label": "Deactivate" },
+        { "from": "paused", "to": "inactive", "label": "Deactivate" },
+        { "from": "inactive", "to": "active", "label": "Reactivate" }
+      ]
+    },
+    {
+      "id": "workflow.te_influencer_send",
+      "entity": "entity.te_influencer_send",
+      "status_field": "te_influencer_send.status",
+      "states": [
+        { "id": "draft", "label": "Draft", "order": 1 },
+        { "id": "planned", "label": "Planned", "order": 2, "required_fields": ["te_influencer_send.influencer_id", "te_influencer_send.send_date"] },
+        { "id": "sent", "label": "Sent", "order": 3, "required_fields": ["te_influencer_send.sent_date"] },
+        { "id": "cancelled", "label": "Cancelled", "order": 4 }
+      ],
+      "transitions": [
+        { "from": "draft", "to": "planned", "label": "Plan Send" },
+        { "from": "planned", "to": "sent", "label": "Mark Sent" },
+        { "from": "draft", "to": "cancelled", "label": "Cancel" },
+        { "from": "planned", "to": "cancelled", "label": "Cancel" }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "action.te_influencer_new", "kind": "open_form", "label": "New Influencer", "target": "te_influencer.form" },
+    { "id": "action.te_influencer_send_new", "kind": "open_form", "label": "New Product Send", "target": "te_influencer_send.form" },
+    {
+      "id": "action.te_influencer_send_plan",
+      "kind": "update_record",
+      "entity_id": "entity.te_influencer_send",
+      "label": "Plan Send",
+      "patch": { "te_influencer_send.status": "planned" },
+      "visible_when": { "op": "eq", "field": "te_influencer_send.status", "value": "draft" }
+    },
+    {
+      "id": "action.te_influencer_send_mark_sent",
+      "kind": "update_record",
+      "entity_id": "entity.te_influencer_send",
+      "label": "Mark Sent",
+      "patch": { "te_influencer_send.status": "sent" },
+      "visible_when": { "op": "eq", "field": "te_influencer_send.status", "value": "planned" },
+      "enabled_when": { "op": "exists", "field": "te_influencer_send.sent_date" }
+    }
+  ],
+  "views": [
+    {
+      "id": "te_influencer.list",
+      "kind": "list",
+      "entity": "entity.te_influencer",
+      "columns": [
+        { "field_id": "te_influencer.name" },
+        { "field_id": "te_influencer.status" },
+        { "field_id": "te_influencer.platform" },
+        { "field_id": "te_influencer.instagram_handle" },
+        { "field_id": "te_influencer.followers" },
+        { "field_id": "te_influencer.engagement_rate_percent" },
+        { "field_id": "te_influencer.rating" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_influencer_new" }],
+        "open_record_target": "page:te_influencer.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search influencers...",
+          "fields": ["te_influencer.name", "te_influencer.instagram_handle", "te_influencer.email"]
+        }
+      }
+    },
+    {
+      "id": "te_influencer.form",
+      "kind": "form",
+      "entity": "entity.te_influencer",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Influencer",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer.name",
+            "te_influencer.status",
+            "te_influencer.platform",
+            "te_influencer.instagram_handle",
+            "te_influencer.email",
+            "te_influencer.phone"
+          ]
+        },
+        {
+          "id": "performance",
+          "title": "Performance",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer.followers",
+            "te_influencer.following_count",
+            "te_influencer.avg_views",
+            "te_influencer.avg_likes",
+            "te_influencer.avg_comments",
+            "te_influencer.engagement_rate_percent",
+            "te_influencer.rating",
+            "te_influencer.last_contacted_at"
+          ]
+        },
+        {
+          "id": "postage",
+          "title": "Postage",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer.postage_name",
+            "te_influencer.postage_country",
+            "te_influencer.postage_address_1",
+            "te_influencer.postage_address_2",
+            "te_influencer.postage_suburb",
+            "te_influencer.postage_city",
+            "te_influencer.postage_region",
+            "te_influencer.postage_postcode"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Notes",
+          "fields": ["te_influencer.notes"]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_influencer.status" },
+        "auto_state_actions": true
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    },
+    {
+      "id": "te_influencer_send.list",
+      "kind": "list",
+      "entity": "entity.te_influencer_send",
+      "columns": [
+        { "field_id": "te_influencer_send.send_number" },
+        { "field_id": "te_influencer_send.status" },
+        { "field_id": "te_influencer_send.influencer_id" },
+        { "field_id": "te_influencer_send.campaign_name" },
+        { "field_id": "te_influencer_send.send_date" },
+        { "field_id": "te_influencer_send.sent_date" },
+        { "field_id": "te_influencer_send.product_cost_total_nzd" },
+        { "field_id": "te_influencer_send.revenue_attributed_nzd" }
+      ],
+      "header": {
+        "primary_actions": [{ "action_id": "action.te_influencer_send_new" }],
+        "open_record_target": "page:te_influencer_send.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search influencer sends...",
+          "fields": ["te_influencer_send.send_number", "te_influencer_send.campaign_name", "te_influencer_send.coupon_code"]
+        },
+        "filters": [
+          { "id": "all", "label": "All", "domain": { "op": "in", "field": "te_influencer_send.status", "value": ["draft", "planned", "sent", "cancelled"] } },
+          { "id": "open", "label": "Open", "domain": { "op": "in", "field": "te_influencer_send.status", "value": ["draft", "planned"] } },
+          { "id": "sent", "label": "Sent", "domain": { "op": "eq", "field": "te_influencer_send.status", "value": "sent" } }
+        ]
+      }
+    },
+    {
+      "id": "te_influencer_send.form",
+      "kind": "form",
+      "entity": "entity.te_influencer_send",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Send Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer_send.send_number",
+            "te_influencer_send.status",
+            "te_influencer_send.influencer_id",
+            "te_influencer_send.campaign_name",
+            "te_influencer_send.send_date",
+            "te_influencer_send.sent_date",
+            "te_influencer_send.tracking_number",
+            "te_influencer_send.tracking_url",
+            "te_influencer_send.coupon_code"
+          ]
+        },
+        {
+          "id": "line_items",
+          "title": "Products Sent",
+          "line_editor": {
+            "entity_id": "entity.te_influencer_send_line",
+            "parent_field": "te_influencer_send_line.send_id",
+            "item_lookup_field": "te_influencer_send_line.product_id",
+            "item_lookup_entity": "entity.te_product",
+            "item_lookup_display_field": "te_product.title",
+            "item_field_map": {
+              "te_influencer_send_line.sku_snapshot": "te_product.sku",
+              "te_influencer_send_line.description": "te_product.title",
+              "te_influencer_send_line.unit_cost_snapshot_nzd": "te_product.effective_cost_nzd"
+            },
+            "defaults": {
+              "te_influencer_send_line.quantity": 1,
+              "te_influencer_send_line.unit_cost_snapshot_nzd": 0
+            },
+            "custom_line_defaults": {
+              "te_influencer_send_line.quantity": 1,
+              "te_influencer_send_line.unit_cost_snapshot_nzd": 0
+            },
+            "description_field": "te_influencer_send_line.description",
+            "columns": [
+              { "field_id": "te_influencer_send_line.product_id", "label": "Product", "width": 220 },
+              { "field_id": "te_influencer_send_line.description", "label": "Description", "width": 280 },
+              { "field_id": "te_influencer_send_line.sku_snapshot", "label": "SKU", "width": 140 },
+              { "field_id": "te_influencer_send_line.quantity", "label": "Qty", "type": "number", "width": 90, "align": "right" },
+              { "field_id": "te_influencer_send_line.sent_quantity", "label": "Sent", "type": "number", "width": 100, "align": "right" },
+              { "field_id": "te_influencer_send_line.unit_cost_snapshot_nzd", "label": "Unit Cost", "type": "number", "width": 140, "align": "right", "currency": "NZD" },
+              { "field_id": "te_influencer_send_line.line_cost_total_nzd", "label": "Line Cost", "type": "number", "readonly": true, "width": 140, "align": "right", "currency": "NZD" }
+            ]
+          }
+        },
+        {
+          "id": "results",
+          "title": "Results",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer_send.product_cost_total_nzd",
+            "te_influencer_send.revenue_attributed_nzd",
+            "te_influencer_send.engagement_result",
+            "te_influencer_send.notes"
+          ]
+        }
+      ],
+      "header": {
+        "statusbar": { "field_id": "te_influencer_send.status" },
+        "auto_state_actions": false,
+        "primary_actions": [
+          { "action_id": "action.te_influencer_send_plan" },
+          { "action_id": "action.te_influencer_send_mark_sent" }
+        ]
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true
+      }
+    },
+    {
+      "id": "te_influencer_send_line.list",
+      "kind": "list",
+      "entity": "entity.te_influencer_send_line",
+      "columns": [
+        { "field_id": "te_influencer_send_line.send_id" },
+        { "field_id": "te_influencer_send_line.product_id" },
+        { "field_id": "te_influencer_send_line.description" },
+        { "field_id": "te_influencer_send_line.quantity" },
+        { "field_id": "te_influencer_send_line.sent_quantity" },
+        { "field_id": "te_influencer_send_line.line_cost_total_nzd" }
+      ],
+      "header": { "open_record_target": "page:te_influencer_send_line.form_page" }
+    },
+    {
+      "id": "te_influencer_send_line.form",
+      "kind": "form",
+      "entity": "entity.te_influencer_send_line",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Influencer Send Line",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "te_influencer_send_line.send_id",
+            "te_influencer_send_line.product_id",
+            "te_influencer_send_line.description",
+            "te_influencer_send_line.sku_snapshot",
+            "te_influencer_send_line.quantity",
+            "te_influencer_send_line.sent_quantity",
+            "te_influencer_send_line.unit_cost_snapshot_nzd",
+            "te_influencer_send_line.line_cost_total_nzd"
+          ]
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "id": "te_influencer.home_page",
+      "title": "Influencers",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          { "kind": "navigate", "label": "New Influencer", "target": "page:te_influencer.form_page" },
+          { "kind": "navigate", "label": "New Product Send", "target": "page:te_influencer_send.form_page" }
+        ]
+      },
+      "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            { "id": "active_influencers", "label": "Active Influencers", "entity_id": "entity.te_influencer", "measure": "count", "domain": { "op": "eq", "field": "te_influencer.status", "value": "active" }, "format": "number" },
+            { "id": "planned_sends", "label": "Planned Sends", "entity_id": "entity.te_influencer_send", "measure": "count", "domain": { "op": "eq", "field": "te_influencer_send.status", "value": "planned" }, "format": "number" },
+            { "id": "sent_sends", "label": "Sent", "entity_id": "entity.te_influencer_send", "measure": "count", "domain": { "op": "eq", "field": "te_influencer_send.status", "value": "sent" }, "format": "number" },
+            { "id": "gifted_cost", "label": "Gifted Cost", "entity_id": "entity.te_influencer_send", "measure": "sum:te_influencer_send.product_cost_total_nzd", "format": "currency" }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_influencer_send",
+              "default_mode": "list",
+              "default_filter_id": "all",
+              "modes": [
+                { "mode": "list", "target": "view:te_influencer_send.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer.list_page",
+      "title": "Influencers",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_influencer",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:te_influencer.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer.form_page",
+      "title": "Influencer",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_influencer",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_influencer.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_influencer", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer_send.list_page",
+      "title": "Product Sends",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_influencer_send",
+              "default_mode": "list",
+              "default_filter_id": "open",
+              "modes": [
+                { "mode": "list", "target": "view:te_influencer_send.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer_send.form_page",
+      "title": "Product Send",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_influencer_send",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_influencer_send.form" }] }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    { "kind": "container", "variant": "card", "content": [{ "kind": "chatter", "entity_id": "entity.te_influencer_send", "record_ref": "$record.id" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer_send_line.list_page",
+      "title": "Influencer Send Lines",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.te_influencer_send_line",
+              "default_mode": "list",
+              "modes": [
+                { "mode": "list", "target": "view:te_influencer_send_line.list" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "te_influencer_send_line.form_page",
+      "title": "Influencer Send Line",
+      "layout": "single",
+      "header": { "variant": "none" },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.te_influencer_send_line",
+          "record_id_query": "record",
+          "content": [
+            { "kind": "container", "variant": "card", "content": [{ "kind": "view", "target": "view:te_influencer_send_line.form" }] }
+          ]
+        }
+      ]
+    }
+  ]
+}
