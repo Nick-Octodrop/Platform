@@ -2,11 +2,11 @@
   "manifests": [
     "contacts.json",
     "products.json",
+    "documents.json",
     "purchase_orders.json",
     "invoices.json",
     "orders.json",
     "quotes.json",
-    "documents.json",
     "crm.json",
     "tasks.json",
     "calendar.json"

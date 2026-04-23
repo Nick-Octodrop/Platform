@@ -1,22 +1,24 @@
 import { FALLBACK_LOCALE } from "./options.js";
 
 let localeModules = null;
-let preloadedCoreModules = null;
+let preloadedFallbackCoreModules = null;
 try {
   localeModules = import.meta.glob("../locales/*/*.json", { import: "default" });
 } catch {
   localeModules = null;
 }
 try {
-  preloadedCoreModules = {
-    ...import.meta.glob("../locales/*/common.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/*/empty.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/*/navigation.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/*/settings.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/*/validation.json", { import: "default", eager: true }),
+  // Keep the first paint responsive by only preloading the fallback locale's
+  // core copy. Other locales still load on demand immediately after bootstrap.
+  preloadedFallbackCoreModules = {
+    ...import.meta.glob("../locales/en-NZ/common.json", { import: "default", eager: true }),
+    ...import.meta.glob("../locales/en-NZ/empty.json", { import: "default", eager: true }),
+    ...import.meta.glob("../locales/en-NZ/navigation.json", { import: "default", eager: true }),
+    ...import.meta.glob("../locales/en-NZ/settings.json", { import: "default", eager: true }),
+    ...import.meta.glob("../locales/en-NZ/validation.json", { import: "default", eager: true }),
   };
 } catch {
-  preloadedCoreModules = null;
+  preloadedFallbackCoreModules = null;
 }
 const messageCache = new Map();
 const inflight = new Map();
@@ -61,9 +63,10 @@ export function getPreloadedLocaleNamespaces(locale, namespaces = []) {
       loaded[namespace] = existing;
       continue;
     }
-    if (!preloadedCoreModules) continue;
+    if (!preloadedFallbackCoreModules) continue;
+    if (normalizedLocale !== "en-NZ" || FALLBACK_LOCALE !== "en-NZ") continue;
     const path = `../locales/${normalizedLocale}/${namespace}.json`;
-    const messages = preloadedCoreModules[path];
+    const messages = preloadedFallbackCoreModules[path];
     if (!messages || typeof messages !== "object") continue;
     const normalized = normalizeNamespaceMessages(namespace, messages);
     loaded[namespace] = normalized;

@@ -133,6 +133,30 @@
               "label_key": "documents.entities.biz_document.fields.document_type.options.invoice_pdf"
             },
             {
+              "value": "quote_script_source",
+              "label": "Quote Script Source",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.quote_script_source",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.quote_script_source"
+            },
+            {
+              "value": "quote_template_source",
+              "label": "Quote Template Source",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.quote_template_source",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.quote_template_source"
+            },
+            {
+              "value": "invoice_template_source",
+              "label": "Invoice Template Source",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.invoice_template_source",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.invoice_template_source"
+            },
+            {
+              "value": "letterhead_source",
+              "label": "Letterhead Source",
+              "status_label_key": "documents.entities.biz_document.fields.document_type.options.letterhead_source",
+              "label_key": "documents.entities.biz_document.fields.document_type.options.letterhead_source"
+            },
+            {
               "value": "supplier_document",
               "label": "Supplier Document",
               "status_label_key": "documents.entities.biz_document.fields.document_type.options.supplier_document",

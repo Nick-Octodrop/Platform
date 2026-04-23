@@ -808,6 +808,24 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       || "";
     return String(raw).trim() || "Octodrop";
   }, [activeWorkspace, workspacePrefs]);
+  const workspaceNavLogoUrl = useMemo(() => {
+    const raw = workspacePrefs?.nav_logo_url || workspacePrefs?.logo_url || "";
+    return String(raw).trim();
+  }, [workspacePrefs]);
+  const [workspaceNavLogoFailed, setWorkspaceNavLogoFailed] = useState(false);
+  useEffect(() => {
+    setWorkspaceNavLogoFailed(false);
+  }, [workspaceNavLogoUrl]);
+  const showWorkspaceNavLogo = Boolean(workspaceNavLogoUrl) && !workspaceNavLogoFailed;
+  const desktopNavLogo = showWorkspaceNavLogo ? (
+    <img
+      src={workspaceNavLogoUrl}
+      alt={`${workspaceDisplayName} logo`}
+      className="h-6 max-w-[9rem] w-auto object-contain object-left"
+      onError={() => setWorkspaceNavLogoFailed(true)}
+    />
+  ) : null;
+  const homeCrumbContent = desktopNavLogo || t("navigation.home");
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
       return mobileAppBreadcrumb || appName || t("common.app");
@@ -907,7 +925,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/studio")}>{t("navigation.studio")}</CrumbLink></li>
           {isStudioEditor && !isMobile && <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{studioModuleName}</CrumbLink></li>}
         </ul>
@@ -939,7 +957,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li>
             <CrumbLink to={appHomeRoute || appendOctoAiFrameParams(currentRoute)}>{appName || t("common.app")}</CrumbLink>
           </li>
@@ -960,7 +978,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/apps")}>{t("navigation.apps")}</CrumbLink></li>
         </ul>
       </div>
@@ -978,7 +996,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/settings")}>{t("navigation.settings")}</CrumbLink></li>
           {settingsLeafLabel && (
             <li>
@@ -1029,7 +1047,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/notifications")}>{t("navigation.notifications")}</CrumbLink></li>
         </ul>
       </div>
@@ -1047,7 +1065,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>{t("navigation.automations")}</CrumbLink></li>
           {automationIdParam ? <li><CrumbLink to={appendOctoAiFrameParams(currentRoute)}>{automationCrumbLabel || t("navigation.automations", {}, { defaultValue: "Automation" })}</CrumbLink></li> : null}
         </ul>
@@ -1066,7 +1084,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/octo-ai")}>{t("navigation.octo_ai")}</CrumbLink></li>
         </ul>
       </div>
@@ -1084,7 +1102,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/integrations")}>{t("navigation.integrations")}</CrumbLink></li>
           {integrationConnectionIdParam ? (
             <li>
@@ -1109,7 +1127,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/automations")}>{t("navigation.automations")}</CrumbLink></li>
           <li>
             <CrumbLink to={automationCrumbId ? appendOctoAiFrameParams(`/automations/${automationCrumbId}`) : appendOctoAiFrameParams(currentRoute)}>
@@ -1133,7 +1151,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className={breadcrumbClass}>
         <ul>
-          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{t("navigation.home")}</CrumbLink></li>
+          <li><CrumbLink to={appendOctoAiFrameParams("/home")}>{homeCrumbContent}</CrumbLink></li>
           <li><CrumbLink to={appendOctoAiFrameParams("/ops")}>{t("navigation.ops")}</CrumbLink></li>
         </ul>
       </div>
@@ -1149,16 +1167,36 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         >
           <Menu className="w-4 h-4" />
         </button>
-        <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+        {showWorkspaceNavLogo ? (
+          <img
+            src={workspaceNavLogoUrl}
+            alt={`${workspaceDisplayName} logo`}
+            className="h-7 max-w-[8.5rem] w-auto object-contain object-left"
+            onError={() => setWorkspaceNavLogoFailed(true)}
+          />
+        ) : (
+          <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+        )}
       </div>
     ) : (
       <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">{workspaceDisplayName}</div>
+        {showWorkspaceNavLogo ? (
+          <img
+            src={workspaceNavLogoUrl}
+            alt={`${workspaceDisplayName} logo`}
+            className="h-8 max-w-[14rem] w-auto object-contain object-left"
+            onError={() => setWorkspaceNavLogoFailed(true)}
+          />
+        ) : (
+          <div className="text-sm font-semibold truncate">{workspaceDisplayName}</div>
+        )}
       </div>
     )
   ) : (
     !isHome && (
-      <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">← {t("navigation.home")}</Link>
+      <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">
+        {desktopNavLogo || `← ${t("navigation.home")}`}
+      </Link>
     )
   );
 

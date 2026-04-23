@@ -666,6 +666,7 @@ _cache = {
     "registry_list": {"value": None, "ts": 0.0},
     "registry_list_meta": {},
     "entity_registry": {},
+    "branding_domains": {},
     "studio2_registry": {},
     "studio2_registry_summary": {},
 }
@@ -4734,6 +4735,18 @@ def _resp_cache_invalidate_module_bootstrap(module_id: str) -> None:
     for key in list(_response_cache.keys()):
         if key.startswith(prefix) and marker in key:
             _response_cache.pop(key, None)
+
+
+def _prefs_ui_cache_key(org_id: str, user_id: str | None = None) -> str:
+    return f"prefs_ui:{str(org_id or '').strip()}:{str(user_id or '').strip()}"
+
+
+def _invalidate_prefs_ui_runtime_caches(org_id: str) -> None:
+    org_key = str(org_id or "").strip()
+    if not org_key:
+        return
+    _cache_invalidate("branding_domains", org_key)
+    _resp_cache_invalidate_prefix(f"prefs_ui:{org_key}:")
 
 
 def _invalidate_module_runtime_caches(module_id: str, *, include_studio_modules: bool = False) -> None:
@@ -48874,12 +48887,17 @@ async def get_ui_prefs(request: Request) -> dict:
         return actor
     org_id = get_org_id()
     user_id = actor.get("user_id")
+    cache_key = _prefs_ui_cache_key(org_id, user_id if isinstance(user_id, str) else None)
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        return cached
     workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
     branding = _branding_domains_for_org(org_id)
     if isinstance(workspace, dict):
         workspace = {
             **workspace,
             "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
             "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
             "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
             "app_logo_asset_id": branding.get("app_branding", {}).get("app_logo_asset_id") or workspace.get("app_logo_asset_id") or "",
@@ -48889,7 +48907,7 @@ async def get_ui_prefs(request: Request) -> dict:
             "nav_logo_asset_id": branding.get("app_branding", {}).get("nav_logo_asset_id") or workspace.get("nav_logo_asset_id") or "",
             "homepage_brand_asset_id": branding.get("app_branding", {}).get("homepage_brand_asset_id") or workspace.get("homepage_brand_asset_id") or "",
         }
-    return _ok_response(
+    response = _ok_response(
         {
             "workspace": workspace or {},
             "user": user or {},
@@ -48899,6 +48917,8 @@ async def get_ui_prefs(request: Request) -> dict:
             "branding_assets": branding.get("branding_assets") or [],
         }
     )
+    _resp_cache_set(cache_key, response)
+    return response
 
 
 def _default_workspace_name_for_org(org_id: str | None) -> str:
@@ -49199,6 +49219,24 @@ def _branding_assets_payload_by_reference(assets_by_reference: dict[str, dict]) 
     return {reference_key: _branding_asset_payload(asset) for reference_key, asset in assets_by_reference.items()}
 
 
+def _branding_assets_payload_by_type(assets: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        asset_type = _branding_asset_type(asset.get("type"))
+        out.setdefault(asset_type, []).append(_branding_asset_payload(asset))
+    for bucket in out.values():
+        bucket.sort(
+            key=lambda item: (
+                0 if item.get("is_active", True) else 1,
+                int(item.get("sort_order") or 0),
+                _trimmed_text(item.get("name")),
+            )
+        )
+    return out
+
+
 def _load_workspace_branding_rows(org_id: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     workspace_row: dict[str, Any] = {}
     workspace_prefs: dict[str, Any] = {}
@@ -49256,6 +49294,10 @@ def _load_workspace_branding_rows(org_id: str) -> tuple[dict[str, Any], dict[str
 
 
 def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
+    cache_key = str(org_id or "").strip()
+    cached = _cache_get("branding_domains", cache_key) if cache_key else None
+    if isinstance(cached, dict):
+        return copy.deepcopy(cached)
     workspace_row, workspace_prefs, template_branding_row, branding_assets_rows = _load_workspace_branding_rows(org_id)
     workspace_name = _trimmed_text(workspace_row.get("workspace_name")) or _default_workspace_name_for_org(org_id)
     app_colors = _branding_colors_from_raw(workspace_prefs.get("colors"))
@@ -49267,6 +49309,27 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
     assets_by_id = _branding_assets_by_id(serialized_assets)
     assets_by_reference = _branding_assets_by_reference(serialized_assets, active_only=True)
     assets_payload = _branding_assets_payload_by_reference(assets_by_reference)
+    assets_by_type_payload = _branding_assets_payload_by_type(serialized_assets)
+    template_branding_field_groups = {
+        "identity": ["brand_name", "legal_name"],
+        "contact": ["website", "phone", "email"],
+        "address": ["address_line_1", "address_line_2", "city", "state_region", "postcode", "country"],
+        "compliance": ["tax_number", "vat_number", "company_registration_number", "default_terms_url", "default_disclaimer_text"],
+        "document_defaults": ["default_footer_text"],
+        "financial": [
+            "default_bank_name",
+            "default_bank_account_name",
+            "default_bank_account_number",
+            "default_bank_iban",
+            "default_bank_bic",
+        ],
+    }
+    template_branding_usage_guidance = [
+        "Use only the subset of branding fields that fits the artifact type, audience, and user request.",
+        "Do not place every available field, disclaimer, terms link, registration number, tax number, or payment detail into every output.",
+        "Prefer the primary logo and core brand colors by default; use decorative graphics, banners, backgrounds, and watermarks only when they materially improve the specific artifact.",
+        "Use legal, compliance, and payment details only when the artifact is commercial, contractual, billing-related, policy-like, or otherwise clearly benefits from them.",
+    ]
 
     app_branding = {
         "workspace_name": workspace_name,
@@ -49288,6 +49351,8 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "text_color": app_colors.get("text") or "",
         "colors": app_colors,
         "assets": assets_payload,
+        "asset_reference_keys": sorted(assets_payload.keys()),
+        "assets_by_type": assets_by_type_payload,
         "logo_url": app_logo_url,
     }
 
@@ -49345,6 +49410,10 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "default_email_banner_url": _branding_asset_url(template_branding_row.get("default_email_banner_asset_id"), assets_by_id),
         "default_watermark_url": _branding_asset_url(template_branding_row.get("default_watermark_asset_id"), assets_by_id),
         "assets": assets_payload,
+        "asset_reference_keys": sorted(assets_payload.keys()),
+        "assets_by_type": assets_by_type_payload,
+        "field_groups": template_branding_field_groups,
+        "usage_guidance": template_branding_usage_guidance,
         "logo_url": template_primary_logo_url,
     }
 
@@ -49365,6 +49434,8 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "accent_color": app_branding["accent_color"],
         "text_color": app_branding["text_color"],
         "assets": assets_payload,
+        "asset_reference_keys": sorted(assets_payload.keys()),
+        "assets_by_type": assets_by_type_payload,
     }
     company_compat = {
         "name": template_branding["brand_name"],
@@ -49391,6 +49462,8 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "accent_color": template_accent_color,
         "text_color": template_text_color,
         "assets": assets_payload,
+        "asset_reference_keys": sorted(assets_payload.keys()),
+        "assets_by_type": assets_by_type_payload,
     }
     branding_compat = {
         "workspace_name": workspace_name,
@@ -49403,7 +49476,7 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "text_color": template_text_color,
         "assets": assets_payload,
     }
-    return {
+    payload = {
         "workspace_name": workspace_name,
         "workspace_prefs": workspace_prefs,
         "app_branding": app_branding,
@@ -49413,6 +49486,9 @@ def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
         "company": company_compat,
         "branding": branding_compat,
     }
+    if cache_key:
+        _cache_set("branding_domains", copy.deepcopy(payload), cache_key)
+    return payload
 
 
 def _branding_context_for_org(org_id: str) -> dict:
@@ -50148,124 +50224,130 @@ async def set_ui_prefs(request: Request) -> dict:
                 query_name="workspace_ui_prefs.upsert_app_branding",
             )
         if template_branding_data is not None:
-            current_template = fetch_one(
-                conn,
-                """
-                select org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
-                       state_region, postcode, country, tax_number, vat_number, company_registration_number,
-                       default_footer_text, default_disclaimer_text, default_terms_url,
-                       default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
-                       template_primary_color, template_secondary_color, template_accent_color, template_text_color,
-                       primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
-                       default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id
-                from workspace_template_branding
-                where org_id=%s
-                """,
-                [org_id],
-                query_name="workspace_template_branding.current",
-            ) or {}
-            values: dict[str, Any] = {}
-            for field_name in _TEMPLATE_BRANDING_TEXT_FIELDS:
-                if field_name in template_branding_data:
-                    values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
-                else:
-                    values[field_name] = current_template.get(field_name)
-            for field_name in _TEMPLATE_BRANDING_ASSET_FIELDS:
-                if field_name in template_branding_data:
-                    values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
-                else:
-                    values[field_name] = current_template.get(field_name)
-            execute(
-                conn,
-                """
-                insert into workspace_template_branding (
-                    org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
-                    state_region, postcode, country, tax_number, vat_number, company_registration_number,
-                    default_footer_text, default_disclaimer_text, default_terms_url,
-                    default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
-                    template_primary_color, template_secondary_color, template_accent_color, template_text_color,
-                    primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
-                    default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id,
-                    created_at, updated_at
+            try:
+                current_template = fetch_one(
+                    conn,
+                    """
+                    select org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
+                           state_region, postcode, country, tax_number, vat_number, company_registration_number,
+                           default_footer_text, default_disclaimer_text, default_terms_url,
+                           default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
+                           template_primary_color, template_secondary_color, template_accent_color, template_text_color,
+                           primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
+                           default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id,
+                           created_at, updated_at
+                    from workspace_template_branding
+                    where org_id=%s
+                    """,
+                    [org_id],
+                    query_name="workspace_template_branding.current",
+                ) or {}
+                values: dict[str, Any] = {}
+                for field_name in _TEMPLATE_BRANDING_TEXT_FIELDS:
+                    if field_name in template_branding_data:
+                        values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
+                    else:
+                        values[field_name] = current_template.get(field_name)
+                for field_name in _TEMPLATE_BRANDING_ASSET_FIELDS:
+                    if field_name in template_branding_data:
+                        values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
+                    else:
+                        values[field_name] = current_template.get(field_name)
+                execute(
+                    conn,
+                    """
+                    insert into workspace_template_branding (
+                        org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
+                        state_region, postcode, country, tax_number, vat_number, company_registration_number,
+                        default_footer_text, default_disclaimer_text, default_terms_url,
+                        default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
+                        template_primary_color, template_secondary_color, template_accent_color, template_text_color,
+                        primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
+                        default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id,
+                        created_at, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    on conflict (org_id)
+                    do update set
+                        brand_name=excluded.brand_name,
+                        legal_name=excluded.legal_name,
+                        website=excluded.website,
+                        phone=excluded.phone,
+                        email=excluded.email,
+                        address_line_1=excluded.address_line_1,
+                        address_line_2=excluded.address_line_2,
+                        city=excluded.city,
+                        state_region=excluded.state_region,
+                        postcode=excluded.postcode,
+                        country=excluded.country,
+                        tax_number=excluded.tax_number,
+                        vat_number=excluded.vat_number,
+                        company_registration_number=excluded.company_registration_number,
+                        default_footer_text=excluded.default_footer_text,
+                        default_disclaimer_text=excluded.default_disclaimer_text,
+                        default_terms_url=excluded.default_terms_url,
+                        default_bank_name=excluded.default_bank_name,
+                        default_bank_account_name=excluded.default_bank_account_name,
+                        default_bank_account_number=excluded.default_bank_account_number,
+                        default_bank_iban=excluded.default_bank_iban,
+                        default_bank_bic=excluded.default_bank_bic,
+                        template_primary_color=excluded.template_primary_color,
+                        template_secondary_color=excluded.template_secondary_color,
+                        template_accent_color=excluded.template_accent_color,
+                        template_text_color=excluded.template_text_color,
+                        primary_logo_asset_id=excluded.primary_logo_asset_id,
+                        secondary_logo_asset_id=excluded.secondary_logo_asset_id,
+                        header_graphic_asset_id=excluded.header_graphic_asset_id,
+                        footer_graphic_asset_id=excluded.footer_graphic_asset_id,
+                        default_background_graphic_asset_id=excluded.default_background_graphic_asset_id,
+                        default_email_banner_asset_id=excluded.default_email_banner_asset_id,
+                        default_watermark_asset_id=excluded.default_watermark_asset_id,
+                        updated_at=excluded.updated_at
+                    """,
+                    [
+                        org_id,
+                        values.get("brand_name"),
+                        values.get("legal_name"),
+                        values.get("website"),
+                        values.get("phone"),
+                        values.get("email"),
+                        values.get("address_line_1"),
+                        values.get("address_line_2"),
+                        values.get("city"),
+                        values.get("state_region"),
+                        values.get("postcode"),
+                        values.get("country"),
+                        values.get("tax_number"),
+                        values.get("vat_number"),
+                        values.get("company_registration_number"),
+                        values.get("default_footer_text"),
+                        values.get("default_disclaimer_text"),
+                        values.get("default_terms_url"),
+                        values.get("default_bank_name"),
+                        values.get("default_bank_account_name"),
+                        values.get("default_bank_account_number"),
+                        values.get("default_bank_iban"),
+                        values.get("default_bank_bic"),
+                        values.get("template_primary_color"),
+                        values.get("template_secondary_color"),
+                        values.get("template_accent_color"),
+                        values.get("template_text_color"),
+                        values.get("primary_logo_asset_id"),
+                        values.get("secondary_logo_asset_id"),
+                        values.get("header_graphic_asset_id"),
+                        values.get("footer_graphic_asset_id"),
+                        values.get("default_background_graphic_asset_id"),
+                        values.get("default_email_banner_asset_id"),
+                        values.get("default_watermark_asset_id"),
+                        current_template.get("created_at") or _now(),
+                        _now(),
+                    ],
+                    query_name="workspace_template_branding.upsert",
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                on conflict (org_id)
-                do update set
-                    brand_name=excluded.brand_name,
-                    legal_name=excluded.legal_name,
-                    website=excluded.website,
-                    phone=excluded.phone,
-                    email=excluded.email,
-                    address_line_1=excluded.address_line_1,
-                    address_line_2=excluded.address_line_2,
-                    city=excluded.city,
-                    state_region=excluded.state_region,
-                    postcode=excluded.postcode,
-                    country=excluded.country,
-                    tax_number=excluded.tax_number,
-                    vat_number=excluded.vat_number,
-                    company_registration_number=excluded.company_registration_number,
-                    default_footer_text=excluded.default_footer_text,
-                    default_disclaimer_text=excluded.default_disclaimer_text,
-                    default_terms_url=excluded.default_terms_url,
-                    default_bank_name=excluded.default_bank_name,
-                    default_bank_account_name=excluded.default_bank_account_name,
-                    default_bank_account_number=excluded.default_bank_account_number,
-                    default_bank_iban=excluded.default_bank_iban,
-                    default_bank_bic=excluded.default_bank_bic,
-                    template_primary_color=excluded.template_primary_color,
-                    template_secondary_color=excluded.template_secondary_color,
-                    template_accent_color=excluded.template_accent_color,
-                    template_text_color=excluded.template_text_color,
-                    primary_logo_asset_id=excluded.primary_logo_asset_id,
-                    secondary_logo_asset_id=excluded.secondary_logo_asset_id,
-                    header_graphic_asset_id=excluded.header_graphic_asset_id,
-                    footer_graphic_asset_id=excluded.footer_graphic_asset_id,
-                    default_background_graphic_asset_id=excluded.default_background_graphic_asset_id,
-                    default_email_banner_asset_id=excluded.default_email_banner_asset_id,
-                    default_watermark_asset_id=excluded.default_watermark_asset_id,
-                    updated_at=excluded.updated_at
-                """,
-                [
-                    org_id,
-                    values.get("brand_name"),
-                    values.get("legal_name"),
-                    values.get("website"),
-                    values.get("phone"),
-                    values.get("email"),
-                    values.get("address_line_1"),
-                    values.get("address_line_2"),
-                    values.get("city"),
-                    values.get("state_region"),
-                    values.get("postcode"),
-                    values.get("country"),
-                    values.get("tax_number"),
-                    values.get("vat_number"),
-                    values.get("company_registration_number"),
-                    values.get("default_footer_text"),
-                    values.get("default_disclaimer_text"),
-                    values.get("default_terms_url"),
-                    values.get("default_bank_name"),
-                    values.get("default_bank_account_name"),
-                    values.get("default_bank_account_number"),
-                    values.get("default_bank_iban"),
-                    values.get("default_bank_bic"),
-                    values.get("template_primary_color"),
-                    values.get("template_secondary_color"),
-                    values.get("template_accent_color"),
-                    values.get("template_text_color"),
-                    values.get("primary_logo_asset_id"),
-                    values.get("secondary_logo_asset_id"),
-                    values.get("header_graphic_asset_id"),
-                    values.get("footer_graphic_asset_id"),
-                    values.get("default_background_graphic_asset_id"),
-                    values.get("default_email_banner_asset_id"),
-                    values.get("default_watermark_asset_id"),
-                    current_template.get("created_at") or _now(),
-                    _now(),
-                ],
-                query_name="workspace_template_branding.upsert",
-            )
+            except psycopg2.errors.UndefinedTable:
+                conn.rollback()
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
         if user_data is not None and user_id:
             current_user = fetch_one(
                 conn,
@@ -50309,16 +50391,24 @@ async def set_ui_prefs(request: Request) -> dict:
             )
     if workspace_name_override:
         update_workspace_name(org_id, workspace_name_override)
+    _invalidate_prefs_ui_runtime_caches(org_id)
     workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
     branding = _branding_domains_for_org(org_id)
     if isinstance(workspace, dict):
         workspace = {
             **workspace,
             "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
             "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
             "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
+            "app_logo_asset_id": branding.get("app_branding", {}).get("app_logo_asset_id") or workspace.get("app_logo_asset_id") or "",
+            "app_icon_asset_id": branding.get("app_branding", {}).get("app_icon_asset_id") or workspace.get("app_icon_asset_id") or "",
+            "favicon_asset_id": branding.get("app_branding", {}).get("favicon_asset_id") or workspace.get("favicon_asset_id") or "",
+            "pwa_icon_asset_id": branding.get("app_branding", {}).get("pwa_icon_asset_id") or workspace.get("pwa_icon_asset_id") or "",
+            "nav_logo_asset_id": branding.get("app_branding", {}).get("nav_logo_asset_id") or workspace.get("nav_logo_asset_id") or "",
+            "homepage_brand_asset_id": branding.get("app_branding", {}).get("homepage_brand_asset_id") or workspace.get("homepage_brand_asset_id") or "",
         }
-    return _ok_response(
+    response = _ok_response(
         {
             "ok": True,
             "workspace": workspace or {},
@@ -50329,6 +50419,8 @@ async def set_ui_prefs(request: Request) -> dict:
             "branding_assets": branding.get("branding_assets") or [],
         }
     )
+    _resp_cache_set(_prefs_ui_cache_key(org_id, user_id if isinstance(user_id, str) else None), response)
+    return response
 
 
 @app.post("/records/{entity_id}")
@@ -59255,8 +59347,10 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
             "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
             "For customer-facing emails, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
-            "Use context.template_branding.assets and asset reference keys before falling back to context.branding, context.company, or context.workspace. "
+            "Use context.template_branding.assets, asset_reference_keys, assets_by_type, field_groups, and usage_guidance before falling back to context.branding, context.company, or context.workspace. "
             "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing email content. "
+            "Do not automatically place every available branding field or asset into every email. Choose only the subset that suits the email type, audience, and user request. "
+            "Prefer the primary logo and core colors by default. Use banners, watermarks, backgrounds, header/footer graphics, legal copy, terms links, registration or tax numbers, and payment details only when they are explicitly requested or genuinely useful for the specific email. "
             "Use Jinja placeholders that fit the selected entity when needed. "
             "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
             "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
@@ -59293,8 +59387,10 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
         "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
         "For customer-facing documents and PDFs, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
-        "Use context.template_branding.assets and asset reference keys before falling back to context.branding, context.company, or context.workspace. "
+        "Use context.template_branding.assets, asset_reference_keys, assets_by_type, field_groups, and usage_guidance before falling back to context.branding, context.company, or context.workspace. "
         "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing document styling. "
+        "Do not automatically place every available branding field or asset into every document. Choose only the subset that serves the document type, audience, and user request. "
+        "Prefer the primary logo and core colors by default. Use banners, watermarks, backgrounds, header/footer graphics, legal copy, terms links, registration or tax numbers, and payment details only when they are explicitly requested or genuinely useful for the specific document. "
         "Use clean printable HTML and Jinja placeholders that fit the selected entity when needed. "
         "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
         "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
@@ -62586,6 +62682,7 @@ async def upload_workspace_logo(request: Request, file: UploadFile = File(...)) 
             ],
             query_name="workspace_ui_prefs.upsert_logo",
     )
+    _invalidate_prefs_ui_runtime_caches(org_id)
     return _ok_response({"logo_url": logo_url})
 
 
@@ -62674,6 +62771,7 @@ async def upload_branding_asset(
             ],
             query_name="branding_assets.insert",
         ) or {}
+    _invalidate_prefs_ui_runtime_caches(org_id)
     return _ok_response({"asset": _branding_asset_payload(row)})
 
 
@@ -62758,6 +62856,7 @@ async def update_branding_asset(request: Request, asset_id: str) -> dict:
             ],
             query_name="branding_assets.update",
         ) or {}
+    _invalidate_prefs_ui_runtime_caches(org_id)
     return _ok_response({"asset": _branding_asset_payload(row)})
 
 

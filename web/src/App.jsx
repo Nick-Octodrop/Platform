@@ -22,11 +22,11 @@ import {
 import { apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
-import AppShell from "./apps/AppShell.jsx";
 import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
 import LoadingSpinner from "./components/LoadingSpinner.jsx";
 
 const AppsPage = lazy(() => import("./pages/AppsPage.jsx"));
+const AppShellPage = lazy(() => import("./apps/AppShell.jsx"));
 const ModuleDetailPage = lazy(() => import("./pages/ModuleDetailPage.jsx"));
 const Studio2Page = lazy(() => import("./pages/Studio2Page.jsx"));
 const StudioModulePreviewFramePage = lazy(() => import("./pages/studio/StudioModulePreviewFramePage.jsx"));
@@ -633,9 +633,9 @@ export default function App() {
               <Route index element={<Navigate to="/home" replace />} />
               <Route path="home" element={<HomePage user={user} />} />
               <Route path="apps" element={lazyPage(<AppsPage user={user} />)} />
-              <Route path="apps/:moduleId" element={<AppShell />} />
-              <Route path="apps/:moduleId/page/:pageId" element={<AppShell />} />
-              <Route path="apps/:moduleId/view/:viewId" element={<AppShell />} />
+              <Route path="apps/:moduleId" element={lazyPage(<AppShellPage />)} />
+              <Route path="apps/:moduleId/page/:pageId" element={lazyPage(<AppShellPage />)} />
+              <Route path="apps/:moduleId/view/:viewId" element={lazyPage(<AppShellPage />)} />
               <Route path="apps/:moduleId/details" element={lazyPage(<ModuleDetailPage user={user} />)} />
               <Route
                 path="studio"

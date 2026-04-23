@@ -5,6 +5,7 @@ import argparse
 import base64
 import json
 import os
+import socket
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -39,6 +40,7 @@ LEGACY_REMOVED_MODULES = ["biz_dashboard", "biz_settings"]
 CONTACT_ENTITIES = ["entity.biz_contact"]
 PRODUCT_ENTITIES = ["entity.biz_product"]
 QUOTE_ENTITIES = ["entity.biz_quote", "entity.biz_quote_line"]
+QUOTE_SCRIPT_ENTITIES = ["entity.biz_quote_script"]
 ORDER_ENTITIES = ["entity.biz_order", "entity.biz_order_line"]
 PO_ENTITIES = ["entity.biz_purchase_order", "entity.biz_purchase_order_line"]
 INVOICE_ENTITIES = ["entity.biz_invoice", "entity.biz_invoice_line"]
@@ -55,7 +57,8 @@ def api_call(
     token: str | None = None,
     workspace_id: str | None = None,
     body: dict[str, Any] | None = None,
-    timeout: int = 60,
+    timeout: int = 180,
+    retries: int = 2,
 ) -> tuple[int, dict[str, Any]]:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -63,19 +66,27 @@ def api_call(
     if workspace_id:
         headers["X-Workspace-Id"] = workspace_id
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urlrequest.Request(url, method=method, headers=headers, data=data)
-    try:
-        with urlrequest.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-            return int(resp.status), payload if isinstance(payload, dict) else {}
-    except urlerror.HTTPError as exc:
-        raw = exc.read()
+    attempts = max(1, int(retries) + 1)
+    for attempt in range(1, attempts + 1):
+        req = urlrequest.Request(url, method=method, headers=headers, data=data)
         try:
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception:
-            payload = {"ok": False, "errors": [{"message": raw.decode("utf-8", errors="replace")}]}
-        return int(exc.code), payload if isinstance(payload, dict) else {}
+            with urlrequest.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
+                return int(resp.status), payload if isinstance(payload, dict) else {}
+        except urlerror.HTTPError as exc:
+            raw = exc.read()
+            try:
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
+            except Exception:
+                payload = {"ok": False, "errors": [{"message": raw.decode("utf-8", errors="replace")}]}
+            return int(exc.code), payload if isinstance(payload, dict) else {}
+        except (TimeoutError, socket.timeout, urlerror.URLError) as exc:
+            if attempt >= attempts:
+                raise RuntimeError(
+                    f"request timeout after {attempts} attempt(s): {method} {url} ({exc})"
+                ) from exc
+            time.sleep(min(5, attempt))
 
 
 def is_ok(payload: dict[str, Any]) -> bool:
@@ -354,7 +365,10 @@ def calendar_write_actions() -> list[RuleSpec]:
 
 def procurement_hidden_actions() -> list[RuleSpec]:
     return [
+        action_rule("action.quote_script_new", "hidden"),
         action_rule("action.invoice_new", "hidden"),
+        action_rule("action.invoice_create_document", "hidden"),
+        action_rule("action.invoice_send_email", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
     ] + crm_write_actions()
@@ -362,10 +376,14 @@ def procurement_hidden_actions() -> list[RuleSpec]:
 
 def operations_hidden_actions() -> list[RuleSpec]:
     return [
+        action_rule("action.quote_script_new", "hidden"),
         action_rule("action.contact_new", "hidden"),
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
+        action_rule("action.quote_create_document", "hidden"),
         action_rule("action.invoice_new", "hidden"),
+        action_rule("action.invoice_create_document", "hidden"),
+        action_rule("action.invoice_send_email", "hidden"),
         action_rule("action.quote_accept_and_create_order", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
@@ -374,15 +392,14 @@ def operations_hidden_actions() -> list[RuleSpec]:
 
 def finance_hidden_actions() -> list[RuleSpec]:
     return [
+        action_rule("action.quote_script_new", "hidden"),
         action_rule("action.contact_new", "hidden"),
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
+        action_rule("action.quote_create_document", "hidden"),
         action_rule("action.purchase_order_new", "hidden"),
+        action_rule("action.purchase_order_create_document", "hidden"),
         action_rule("action.document_new", "hidden"),
-        action_rule("action.document_approve", "hidden"),
-        action_rule("action.document_mark_sent", "hidden"),
-        action_rule("action.document_mark_signed", "hidden"),
-        action_rule("action.document_open_archive_modal", "hidden"),
         action_rule("action.customer_order_create_purchase_order", "hidden"),
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
@@ -392,14 +409,14 @@ def finance_hidden_actions() -> list[RuleSpec]:
 
 def sales_hidden_actions() -> list[RuleSpec]:
     return [
+        action_rule("action.quote_script_new", "hidden"),
         action_rule("action.product_new", "hidden"),
         action_rule("action.purchase_order_new", "hidden"),
+        action_rule("action.purchase_order_create_document", "hidden"),
         action_rule("action.invoice_new", "hidden"),
+        action_rule("action.invoice_create_document", "hidden"),
+        action_rule("action.invoice_send_email", "hidden"),
         action_rule("action.document_new", "hidden"),
-        action_rule("action.document_approve", "hidden"),
-        action_rule("action.document_mark_sent", "hidden"),
-        action_rule("action.document_mark_signed", "hidden"),
-        action_rule("action.document_open_archive_modal", "hidden"),
         action_rule("action.customer_order_create_purchase_order", "hidden"),
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
@@ -412,24 +429,26 @@ def sales_hidden_actions() -> list[RuleSpec]:
 def desired_profiles() -> dict[str, dict[str, Any]]:
     directors_rules = (
         modules_visible(include_settings=True)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
     )
     procurement_rules = (
         modules_visible(include_settings=False)
         + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
+        + entities_access(QUOTE_SCRIPT_ENTITIES, "read")
         + entities_access(CRM_ENTITIES, "read")
         + entities_access(INVOICE_ENTITIES, "read")
         + procurement_hidden_actions()
     )
     operations_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
         + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + operations_hidden_actions()
     )
     finance_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
+        + entities_access(DOCUMENT_ENTITIES, "write")
         + entities_access(ORDER_ENTITIES, "write")
         + entities_access(INVOICE_ENTITIES, "write")
         + finance_hidden_actions()
@@ -442,13 +461,14 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
         + entities_access(CRM_ENTITIES, "write")
         + entities_access(TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(PRODUCT_ENTITIES, "read")
+        + [entity_rule("entity.biz_quote_script", "read", eq_condition("biz_quote_script.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_quote", "write"), entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_quote_line", "write"), entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", "NLight BV"))]
         + [entity_rule("entity.biz_order", "write"), entity_rule("entity.biz_order", "write", eq_condition("biz_order.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_order_line", "write"), entity_rule("entity.biz_order_line", "write", eq_condition("biz_order_line.sales_entity_snapshot", "NLight BV"))]
         + [entity_rule("entity.biz_invoice", "read"), entity_rule("entity.biz_invoice", "read", eq_condition("biz_invoice.sales_entity", "NLight BV"))]
         + [entity_rule("entity.biz_invoice_line", "read"), entity_rule("entity.biz_invoice_line", "read", eq_condition("biz_invoice_line.sales_entity_snapshot", "NLight BV"))]
-        + [entity_rule("entity.biz_document", "read"), entity_rule("entity.biz_document", "read", eq_condition("biz_document.sales_entity", "NLight BV"))]
+        + [entity_rule("entity.biz_document", "write"), entity_rule("entity.biz_document", "write", eq_condition("biz_document.sales_entity", "NLight BV"))]
         + entities_access(PO_ENTITIES, "none")
         + sales_hidden_fields()
         + sales_hidden_actions()

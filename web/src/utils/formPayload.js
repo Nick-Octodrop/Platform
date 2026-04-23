@@ -2,6 +2,10 @@ export function normalizeManifestRecordPayload(fieldIndex = {}, source = {}) {
   if (!source || typeof source !== "object") return source;
   const payload = { ...source };
   for (const [fieldId, field] of Object.entries(fieldIndex || {})) {
+    if (fieldId !== "id" && (field?.readonly === true || (field?.compute && typeof field.compute === "object"))) {
+      delete payload[fieldId];
+      continue;
+    }
     if ((field?.type === "number" || field?.type === "currency") && typeof payload[fieldId] === "string") {
       const normalized = payload[fieldId].replace(/,/g, "").trim();
       if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") {

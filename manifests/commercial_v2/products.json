@@ -226,6 +226,47 @@
           "label_key": "products.entities.biz_product.fields.default_buy_price.label"
         },
         {
+          "id": "biz_product.fulfilment_mode",
+          "type": "enum",
+          "label": "Fulfilment Mode",
+          "default": "made_to_order",
+          "options": [
+            {
+              "value": "made_to_order",
+              "label": "Made To Order",
+              "status_label_key": "products.entities.biz_product.fields.fulfilment_mode.options.made_to_order",
+              "label_key": "products.entities.biz_product.fields.fulfilment_mode.options.made_to_order"
+            },
+            {
+              "value": "stocked",
+              "label": "Stocked",
+              "status_label_key": "products.entities.biz_product.fields.fulfilment_mode.options.stocked",
+              "label_key": "products.entities.biz_product.fields.fulfilment_mode.options.stocked"
+            },
+            {
+              "value": "hybrid",
+              "label": "Hybrid",
+              "status_label_key": "products.entities.biz_product.fields.fulfilment_mode.options.hybrid",
+              "label_key": "products.entities.biz_product.fields.fulfilment_mode.options.hybrid"
+            }
+          ],
+          "label_key": "products.entities.biz_product.fields.fulfilment_mode.label"
+        },
+        {
+          "id": "biz_product.lead_time_weeks",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "default": 0,
+          "label_key": "products.entities.biz_product.fields.lead_time_weeks.label"
+        },
+        {
+          "id": "biz_product.minimum_order_quantity",
+          "type": "number",
+          "label": "Minimum Order Quantity",
+          "default": 1,
+          "label_key": "products.entities.biz_product.fields.minimum_order_quantity.label"
+        },
+        {
           "id": "biz_product.preferred_supplier_id",
           "type": "lookup",
           "label": "Preferred Supplier",
@@ -426,6 +467,9 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            "biz_product.fulfilment_mode",
+            "biz_product.lead_time_weeks",
+            "biz_product.minimum_order_quantity",
             "biz_product.preferred_supplier_id",
             "biz_product.supplier_factory_reference",
             "biz_product.internal_notes"
@@ -488,6 +532,9 @@
           "biz_product.default_sales_price",
           "biz_product.default_purchase_currency",
           "biz_product.default_buy_price",
+          "biz_product.fulfilment_mode",
+          "biz_product.lead_time_weeks",
+          "biz_product.minimum_order_quantity",
           "biz_product.preferred_supplier_id",
           "biz_product.supplier_factory_reference",
           "biz_product.internal_notes",

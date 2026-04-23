@@ -30,11 +30,25 @@ const LocalizationContext = createContext(null);
 
 function buildResolvedPrefs(payload) {
   const resolved = payload?.resolved || {};
+  const workspace = payload?.workspace && typeof payload.workspace === "object" ? payload.workspace : {};
+  const appBranding = payload?.app_branding && typeof payload.app_branding === "object" ? payload.app_branding : {};
   return {
     locale: resolved.locale || DEFAULT_LOCALE,
     timezone: resolved.timezone || DEFAULT_TIMEZONE,
     defaultCurrency: resolved.default_currency || DEFAULT_CURRENCY,
-    workspace: payload?.workspace || {},
+    workspace: {
+      ...workspace,
+      workspace_name: appBranding.workspace_name || workspace.workspace_name || "",
+      logo_url: appBranding.app_logo_url || appBranding.logo_url || workspace.logo_url || "",
+      nav_logo_url: appBranding.nav_logo_url || workspace.nav_logo_url || "",
+      app_logo_asset_id: appBranding.app_logo_asset_id || workspace.app_logo_asset_id || "",
+      app_icon_asset_id: appBranding.app_icon_asset_id || workspace.app_icon_asset_id || "",
+      favicon_asset_id: appBranding.favicon_asset_id || workspace.favicon_asset_id || "",
+      pwa_icon_asset_id: appBranding.pwa_icon_asset_id || workspace.pwa_icon_asset_id || "",
+      nav_logo_asset_id: appBranding.nav_logo_asset_id || workspace.nav_logo_asset_id || "",
+      homepage_brand_asset_id: appBranding.homepage_brand_asset_id || workspace.homepage_brand_asset_id || "",
+      colors: appBranding.colors || workspace.colors || {},
+    },
     user: payload?.user || {},
   };
 }
@@ -90,6 +104,21 @@ function isI18nRelevantPrefsPayload(payload) {
       return true;
     }
   }
+  const appBranding = payload.app_branding;
+  if (appBranding && typeof appBranding === "object") {
+    if (
+      "workspace_name" in appBranding
+      || "app_logo_asset_id" in appBranding
+      || "nav_logo_asset_id" in appBranding
+      || "homepage_brand_asset_id" in appBranding
+      || "primary_color" in appBranding
+      || "secondary_color" in appBranding
+      || "accent_color" in appBranding
+      || "text_color" in appBranding
+    ) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -106,7 +135,7 @@ export function LocalizationProvider({ children, user }) {
     const bootstrapSnapshot = bootstrapRuntime({ ...nextPrefs, namespaces: CORE_NAMESPACES });
     setPrefs({
       ...nextPrefs,
-      workspace: payload?.workspace || {},
+      workspace: nextPrefs.workspace,
       user: payload?.user || {},
     });
     setVersion(bootstrapSnapshot.version);
@@ -114,7 +143,7 @@ export function LocalizationProvider({ children, user }) {
     clearCaches();
     setPrefs({
       ...nextPrefs,
-      workspace: payload?.workspace || {},
+      workspace: nextPrefs.workspace,
       user: payload?.user || {},
     });
     setVersion(getI18nRuntimeSnapshot().version);

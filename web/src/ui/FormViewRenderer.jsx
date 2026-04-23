@@ -105,6 +105,69 @@ function applyAddressMapping(record, mapping, address) {
   return next;
 }
 
+function hasMeaningfulValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  return !(value === "" || value === null || value === undefined);
+}
+
+function valuesEquivalent(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    const normalizedLeft = Array.isArray(left) ? left : [];
+    const normalizedRight = Array.isArray(right) ? right : [];
+    return JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+  }
+  return String(left ?? "") === String(right ?? "");
+}
+
+function setFieldValueIfChanged(record, fieldId, value) {
+  if (valuesEquivalent(getFieldValue(record || {}, fieldId), value)) return record || {};
+  return setFieldValue(record || {}, fieldId, value);
+}
+
+function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, lookupRecord, config) {
+  let nextRecord = setFieldValueIfChanged(baseRecord || {}, lookupFieldId, selectedValue);
+  if (!config || typeof config !== "object") return nextRecord;
+
+  const fieldMap = config.field_map;
+  const onlyWhenEmpty = new Set(
+    Array.isArray(config.only_when_empty) ? config.only_when_empty.filter((fieldId) => typeof fieldId === "string" && fieldId) : []
+  );
+  const clearFields = Array.isArray(config.clear_fields)
+    ? config.clear_fields.filter((fieldId) => typeof fieldId === "string" && fieldId)
+    : [];
+  const overwriteIfCurrentMatches =
+    config.overwrite_if_current_matches && typeof config.overwrite_if_current_matches === "object"
+      ? config.overwrite_if_current_matches
+      : {};
+
+  if (lookupRecord && fieldMap && typeof fieldMap === "object") {
+    for (const [targetFieldId, sourceFieldId] of Object.entries(fieldMap)) {
+      if (typeof targetFieldId !== "string" || !targetFieldId || typeof sourceFieldId !== "string" || !sourceFieldId) continue;
+      if (targetFieldId === lookupFieldId) continue;
+      const currentValue = getFieldValue(baseRecord || {}, targetFieldId);
+      if (onlyWhenEmpty.has(targetFieldId) && hasMeaningfulValue(currentValue)) {
+        const compareFieldId = overwriteIfCurrentMatches[targetFieldId];
+        const compareValue =
+          typeof compareFieldId === "string" && compareFieldId
+            ? getFieldValue(baseRecord || {}, compareFieldId)
+            : undefined;
+        if (!(typeof compareFieldId === "string" && compareFieldId && valuesEquivalent(currentValue, compareValue))) {
+          continue;
+        }
+      }
+      const mappedValue = getFieldValue(lookupRecord, sourceFieldId);
+      nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, mappedValue ?? "");
+    }
+    return nextRecord;
+  }
+
+  for (const targetFieldId of clearFields) {
+    if (targetFieldId === lookupFieldId) continue;
+    nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, "");
+  }
+  return nextRecord;
+}
+
 function AddressAutocompleteField({ field, value, onChange, onRecordChange, readonly, record, previewMode = false }) {
   const { hasCapability } = useAccessContext();
   const { providers, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["google_maps"]);
@@ -965,6 +1028,7 @@ export default function FormViewRenderer({
                               field={field}
                               value={value}
                               onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+                              onRecordChange={applyRecordChange}
                               readonly={readonly || isDisabled}
                               record={computedRecord}
                               previewMode={previewMode}
@@ -1138,6 +1202,8 @@ function InlineLineItemsTable({
   const [creatingCustomLine, setCreatingCustomLine] = useState(false);
   const isMobile = useMediaQuery("(max-width: 768px)");
   const lookupCacheRef = useRef({});
+  const parentRefreshInFlightRef = useRef(false);
+  const parentRefreshQueuedRef = useRef(false);
   const uomColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".uom"));
   const quantityColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".quantity"));
   const unitAmountColumn = columns.find(
@@ -1178,6 +1244,26 @@ function InlineLineItemsTable({
       // Activity logging is best-effort; line edits should not fail because the feed rejected a note.
     }
   }
+
+  const queueParentRefresh = React.useCallback(() => {
+    if (previewMode || typeof onRefreshParent !== "function") return;
+    if (parentRefreshInFlightRef.current) {
+      parentRefreshQueuedRef.current = true;
+      return;
+    }
+    parentRefreshInFlightRef.current = true;
+    Promise.resolve(onRefreshParent())
+      .catch(() => {
+        // Keep the inline editor responsive if the parent refresh fails.
+      })
+      .finally(() => {
+        parentRefreshInFlightRef.current = false;
+        if (parentRefreshQueuedRef.current) {
+          parentRefreshQueuedRef.current = false;
+          queueParentRefresh();
+        }
+      });
+  }, [onRefreshParent, previewMode]);
 
   function rowLabel(rowOrRecord) {
     const recordId = rowOrRecord?.record_id;
@@ -1329,8 +1415,8 @@ function InlineLineItemsTable({
         )
       );
       const column = columns.find((col) => col?.field_id === fieldId);
-      await addParentActivity(`Line item updated: ${rowLabel(currentRow)} (${column?.label || fieldId}).`);
-      await onRefreshParent?.();
+      void addParentActivity(`Line item updated: ${rowLabel(currentRow)} (${column?.label || fieldId}).`);
+      queueParentRefresh();
     } catch {
       fetchRows();
     }
@@ -1344,8 +1430,8 @@ function InlineLineItemsTable({
       await deleteRecord(childEntityId, recordId);
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
       setPendingDeleteRow(null);
-      await addParentActivity(`Line item removed: ${rowLabel(currentRow)}.`);
-      await onRefreshParent?.();
+      void addParentActivity(`Line item removed: ${rowLabel(currentRow)}.`);
+      queueParentRefresh();
     } catch {
       fetchRows();
     } finally {
@@ -1355,12 +1441,14 @@ function InlineLineItemsTable({
 
   async function addRowFromOption(option) {
     if (!option?.value || !parentRecordId) return;
-    let itemRecord = null;
-    try {
-      const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
-      itemRecord = itemRes?.record || itemRes || null;
-    } catch {
-      itemRecord = null;
+    let itemRecord = option?.record && typeof option.record === "object" ? option.record : null;
+    if (!itemRecord) {
+      try {
+        const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
+        itemRecord = itemRes?.record || itemRes || null;
+      } catch {
+        itemRecord = null;
+      }
     }
     const payload = {
       ...defaults,
@@ -1414,8 +1502,8 @@ function InlineLineItemsTable({
         setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
       }
       setAddLookupResetKey((prev) => prev + 1);
-      await addParentActivity(`Line item added: ${option.label || option.value}.`);
-      await onRefreshParent?.();
+      void addParentActivity(`Line item added: ${option.label || option.value}.`);
+      queueParentRefresh();
     } catch (err) {
       setError(err?.message || translateRuntime("common.failed_to_add_line_item"));
     }
@@ -1460,8 +1548,8 @@ function InlineLineItemsTable({
         });
       }
       setAddLookupResetKey((prev) => prev + 1);
-      await addParentActivity(`Custom line item added: ${description}.`);
-      await onRefreshParent?.();
+      void addParentActivity(`Custom line item added: ${description}.`);
+      queueParentRefresh();
     } catch (err) {
       setError(err?.message || translateRuntime("common.failed_to_add_custom_line"));
     } finally {
@@ -1613,8 +1701,8 @@ function InlineLineItemsTable({
                                 )
                               );
                               setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
-                              await addParentActivity(`Line item changed: ${rowLabel(row)} -> ${nextLabel || nextItemId}.`);
-                              await onRefreshParent?.();
+                              void addParentActivity(`Line item changed: ${rowLabel(row)} -> ${nextLabel || nextItemId}.`);
+                              queueParentRefresh();
                             } catch {
                               fetchRows();
                             }
@@ -2220,7 +2308,18 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
   );
 }
 
-function LookupField({ field, value, onChange, readonly, record, previewMode = false, onCreate, canCreate, extraActions = [] }) {
+function LookupField({
+  field,
+  value,
+  onChange,
+  onRecordChange,
+  readonly,
+  record,
+  previewMode = false,
+  onCreate,
+  canCreate,
+  extraActions = [],
+}) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [options, setOptions] = useState([]);
   const [search, setSearch] = useState("");
@@ -2238,6 +2337,10 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
   const visibleExtraActions = Array.isArray(extraActions)
     ? extraActions.filter((action) => action && typeof action.onClick === "function")
     : [];
+  const populateFromLookup =
+    field?.ui?.populate_from_lookup && typeof field.ui.populate_from_lookup === "object"
+      ? field.ui.populate_from_lookup
+      : null;
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 400);
@@ -2287,7 +2390,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
             record.full_name ||
             record.name ||
             safeOpaqueLabel(recordId, "Record");
-          return { value: recordId, label };
+          return { value: recordId, label, record };
         });
         if (!cancelled) {
           cacheRef.current.set(requestKey, { ts: Date.now(), options: opts });
@@ -2313,6 +2416,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
   const labelField = field.display_field;
 
   useEffect(() => {
+    const currentRecord = record && typeof record === "object" ? record : {};
     if (!value) {
       setSelectedLabel("");
       return;
@@ -2320,26 +2424,35 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     const match = options.find((opt) => opt.value === value);
     if (match) {
       setSelectedLabel(match.label || "");
+      if (populateFromLookup && typeof onRecordChange === "function" && match.record && typeof match.record === "object") {
+        const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, match.record, populateFromLookup);
+        if (nextRecord !== currentRecord) onRecordChange(nextRecord);
+      }
       return;
     }
     if (!selectedLabel && !isUuidLike(value)) {
       setSelectedLabel(value);
     }
-  }, [value, options, selectedLabel]);
+  }, [value, options, selectedLabel, populateFromLookup, onRecordChange, record, field?.id]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadSelectedLabel() {
       if (!entityId || !value) return;
       if (previewMode) return;
+      const currentRecord = record && typeof record === "object" ? record : {};
       const match = options.find((opt) => opt.value === value);
       if (match) return;
       try {
         const res = await apiFetch(`/records/${entityId}/${value}`);
-        const record = res?.record || res;
-        const label = (labelField && record && record[labelField]) || (isUuidLike(value) ? "" : value);
+        const selectedRecord = res?.record || res;
+        const label = (labelField && selectedRecord && selectedRecord[labelField]) || (isUuidLike(value) ? "" : value);
         if (!cancelled) {
           setSelectedLabel(label);
+          if (populateFromLookup && typeof onRecordChange === "function" && selectedRecord && typeof selectedRecord === "object") {
+            const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, selectedRecord, populateFromLookup);
+            if (nextRecord !== currentRecord) onRecordChange(nextRecord);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -2351,7 +2464,7 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     return () => {
       cancelled = true;
     };
-  }, [entityId, value, labelField, options, previewMode]);
+  }, [entityId, value, labelField, options, previewMode, populateFromLookup, onRecordChange, record, field?.id]);
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -2371,6 +2484,10 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
     setSelectedLabel(option.label || "");
     setSearch(option.label || "");
     setOpened(false);
+    if (populateFromLookup && typeof onRecordChange === "function") {
+      onRecordChange(applyLookupPopulateConfig(record, field?.id, option.value || null, option.record || null, populateFromLookup));
+      return;
+    }
     onChange(option.value || null);
   }
 
@@ -2409,6 +2526,10 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
           onClick={() => {
             setSearch("");
             setSelectedLabel("");
+            if (populateFromLookup && typeof onRecordChange === "function") {
+              onRecordChange(applyLookupPopulateConfig(record, field?.id, null, null, populateFromLookup));
+              return;
+            }
             onChange(null);
           }}
           aria-label={translateRuntime("common.clear_selection")}
@@ -2454,7 +2575,11 @@ function LookupField({ field, value, onChange, readonly, record, previewMode = f
                       if (result?.record_id) {
                         setSelectedLabel(result.label || "");
                         setSearch(result.label || "");
-                        onChange(result.record_id);
+                        if (populateFromLookup && typeof onRecordChange === "function") {
+                          onRecordChange(applyLookupPopulateConfig(record, field?.id, result.record_id, null, populateFromLookup));
+                        } else {
+                          onChange(result.record_id);
+                        }
                       }
                     }}
                   >

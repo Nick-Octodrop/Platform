@@ -274,6 +274,68 @@
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.expected_arrival_date.label"
         },
         {
+          "id": "biz_purchase_order.container_count",
+          "type": "number",
+          "label": "Container Count",
+          "default": 0,
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.container_count.label"
+        },
+        {
+          "id": "biz_purchase_order.freight_forwarder",
+          "type": "string",
+          "label": "Freight Forwarder",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.freight_forwarder.label"
+        },
+        {
+          "id": "biz_purchase_order.booking_reference",
+          "type": "string",
+          "label": "Booking Reference",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.booking_reference.label"
+        },
+        {
+          "id": "biz_purchase_order.port_of_loading",
+          "type": "string",
+          "label": "Port of Loading",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.port_of_loading.label"
+        },
+        {
+          "id": "biz_purchase_order.port_of_discharge",
+          "type": "string",
+          "label": "Port of Discharge",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.port_of_discharge.label"
+        },
+        {
+          "id": "biz_purchase_order.actual_ship_date",
+          "type": "date",
+          "label": "Actual Ship Date",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.actual_ship_date.label"
+        },
+        {
+          "id": "biz_purchase_order.actual_arrival_date",
+          "type": "date",
+          "label": "Actual Arrival Date",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.actual_arrival_date.label"
+        },
+        {
+          "id": "biz_purchase_order.primary_document_id",
+          "type": "lookup",
+          "label": "Primary Document",
+          "entity": "entity.biz_document",
+          "display_field": "biz_document.name",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_purchase_order.primary_document_id"
+          },
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.primary_document_id.label"
+        },
+        {
+          "id": "biz_purchase_order.generated_files",
+          "type": "attachments",
+          "label": "Generated Files",
+          "label_key": "purchase_orders.entities.biz_purchase_order.fields.generated_files.label"
+        },
+        {
           "id": "biz_purchase_order.notes",
           "type": "text",
           "label": "Notes",
@@ -878,6 +940,12 @@
       "label": "Cancel PO clicked",
       "event": "action.clicked",
       "action_id": "action.purchase_order_open_cancel_modal"
+    },
+    {
+      "id": "biz_purchase_orders.action.purchase_order_create_document.clicked",
+      "label": "Generate Document clicked",
+      "event": "action.clicked",
+      "action_id": "action.purchase_order_create_document"
     }
   ],
   "actions": [
@@ -898,7 +966,7 @@
       },
       "confirm": {
         "title": "Send purchase order?",
-        "body": "Use this when the supplier-facing PO has been issued.",
+        "body": "Send the latest generated purchase order PDF to the supplier and mark the PO as sent.",
         "title_key": "purchase_orders.actions.action_purchase_order_mark_sent.confirm.title"
       },
       "visible_when": {
@@ -917,6 +985,14 @@
             "op": "gt",
             "field": "biz_purchase_order.po_total",
             "value": 0
+          },
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.primary_document_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.generated_files"
           }
         ]
       },
@@ -1067,6 +1143,46 @@
         "value": "received"
       },
       "action_label_key": "purchase_orders.actions.action_purchase_order_close.label"
+    },
+    {
+      "id": "action.purchase_order_create_document",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_purchase_order",
+      "label": "Generate Document",
+      "transformation_key": "purchase_order_to_document",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_purchase_order.status",
+        "value": [
+          "draft",
+          "sent_to_supplier",
+          "confirmed",
+          "on_hold",
+          "in_production",
+          "shipped",
+          "received",
+          "closed"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.po_number"
+          },
+          {
+            "op": "exists",
+            "field": "biz_purchase_order.supplier_id"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Generate supplier document?",
+        "body": "This creates or refreshes the linked supplier document record, stores the generated file on this purchase order, and makes it visible in the Documents module.",
+        "title_key": "purchase_orders.actions.action_purchase_order_create_document.confirm.title"
+      },
+      "action_label_key": "purchase_orders.actions.action_purchase_order_create_document.label"
     },
     {
       "id": "action.purchase_order_open_cancel_modal",
@@ -1258,9 +1374,24 @@
             "biz_purchase_order.supplier_reference",
             "biz_purchase_order.incoterm",
             "biz_purchase_order.expected_ship_date",
-            "biz_purchase_order.expected_arrival_date"
+            "biz_purchase_order.expected_arrival_date",
+            "biz_purchase_order.container_count"
           ],
           "section_title_key": "purchase_orders.views.form.sections.summary.title"
+        },
+        {
+          "id": "logistics",
+          "title": "Logistics",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_purchase_order.freight_forwarder",
+            "biz_purchase_order.booking_reference",
+            "biz_purchase_order.port_of_loading",
+            "biz_purchase_order.port_of_discharge",
+            "biz_purchase_order.actual_ship_date",
+            "biz_purchase_order.actual_arrival_date"
+          ]
         },
         {
           "id": "financials",
@@ -1283,6 +1414,14 @@
             "biz_purchase_order.cancellation_reason"
           ],
           "section_title_key": "purchase_orders.views.form.sections.notes.title"
+        },
+        {
+          "id": "documents",
+          "title": "Documents",
+          "fields": [
+            "biz_purchase_order.primary_document_id",
+            "biz_purchase_order.generated_files"
+          ]
         },
         {
           "id": "lines",
@@ -1407,6 +1546,9 @@
         "auto_state_actions": false,
         "primary_actions": [
           {
+            "action_id": "action.purchase_order_create_document"
+          },
+          {
             "action_id": "action.purchase_order_mark_sent"
           },
           {
@@ -1457,8 +1599,15 @@
               ]
             },
             {
+              "id": "logistics",
+              "label": "Logistics",
+              "sections": [
+                "logistics"
+              ]
+            },
+            {
               "id": "financials",
-              "label": "Status / Logistics",
+              "label": "Costs",
               "tab_label_key": "common.status_logistics",
               "sections": [
                 "financials"
@@ -1470,6 +1619,13 @@
               "tab_label_key": "common.notes",
               "sections": [
                 "notes"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
               ]
             }
           ]
@@ -1491,6 +1647,15 @@
           "biz_purchase_order.supplier_reference",
           "biz_purchase_order.expected_ship_date",
           "biz_purchase_order.expected_arrival_date",
+          "biz_purchase_order.container_count",
+          "biz_purchase_order.freight_forwarder",
+          "biz_purchase_order.booking_reference",
+          "biz_purchase_order.port_of_loading",
+          "biz_purchase_order.port_of_discharge",
+          "biz_purchase_order.actual_ship_date",
+          "biz_purchase_order.actual_arrival_date",
+          "biz_purchase_order.primary_document_id",
+          "biz_purchase_order.generated_files",
           "biz_purchase_order.po_total",
           "biz_purchase_order.landed_cost_estimate",
           "biz_purchase_order.hold_reason",
@@ -2095,7 +2260,58 @@
           }
         ]
       }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_purchase_order",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_purchase_order.generated_files",
+        "title_field": "biz_purchase_order.po_number",
+        "category_field": "biz_purchase_order.status",
+        "date_field": "biz_purchase_order.po_date",
+        "record_label_field": "biz_purchase_order.po_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
+      }
     ]
   },
-  "transformations": []
+  "transformations": [
+    {
+      "key": "purchase_order_to_document",
+      "source_entity_id": "entity.biz_purchase_order",
+      "target_entity_id": "entity.biz_document",
+      "field_mappings": {
+        "biz_document.name": {
+          "from": "biz_purchase_order.po_number"
+        },
+        "biz_document.document_type": {
+          "value": "purchase_order_pdf"
+        },
+        "biz_document.status": {
+          "value": "draft"
+        },
+        "biz_document.related_contact_id": {
+          "from": "biz_purchase_order.supplier_id"
+        },
+        "biz_document.sales_entity": {
+          "from": "biz_purchase_order.purchasing_entity"
+        },
+        "biz_document.document_date": {
+          "ref": "$today"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "biz_purchase_order.primary_document_id",
+        "target_to_source": "biz_document.related_purchase_order_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_purchase_order.po_number",
+          "biz_purchase_order.supplier_id"
+        ]
+      }
+    }
+  ]
 }

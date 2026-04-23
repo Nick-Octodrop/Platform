@@ -57,6 +57,42 @@ function deriveContrast(base) {
   return base.l >= 0.7 ? { l: 0.15, c: 0, h: 0 } : { l: 0.98, c: 0, h: 0 };
 }
 
+function getCurrentThemeMode() {
+  if (typeof document === "undefined") return DEFAULT_THEME;
+  const theme = String(document.documentElement.getAttribute("data-theme") || DEFAULT_THEME)
+    .trim()
+    .toLowerCase();
+  return theme === "dark" ? "dark" : "light";
+}
+
+function deriveSurfaceColor(base, { level, mode }) {
+  const hue = base.h;
+  if (mode === "dark") {
+    const palette = {
+      b1: { l: 0.21, c: 0.012 },
+      b2: { l: 0.18, c: 0.016 },
+      b3: { l: 0.15, c: 0.02 },
+    };
+    const target = palette[level] || palette.b2;
+    return {
+      l: target.l,
+      c: Math.min(base.c, target.c),
+      h: hue,
+    };
+  }
+  const palette = {
+    b1: { l: 0.985, c: 0.004 },
+    b2: { l: 0.958, c: 0.008 },
+    b3: { l: 0.92, c: 0.012 },
+  };
+  const target = palette[level] || palette.b2;
+  return {
+    l: target.l,
+    c: Math.min(base.c, target.c),
+    h: hue,
+  };
+}
+
 export function getInitialTheme() {
   const stored = localStorage.getItem(THEME_KEY);
   if (stored) return stored;
@@ -100,6 +136,7 @@ export function applyBrandColors(colors) {
   const secondary = hexToOklch(colors?.secondary);
   const accent = hexToOklch(colors?.accent);
   const text = typeof colors?.text === "string" ? colors.text.trim() : "";
+  const themeMode = getCurrentThemeMode();
   const applyVar = (key, value) => {
     if (value) {
       rootStyle.setProperty(key, value);
@@ -113,10 +150,16 @@ export function applyBrandColors(colors) {
     applyVar("--p", formatOklch(primary));
     applyVar("--pf", formatOklch(deriveFocusColor(primary, -0.08)));
     applyVar("--pc", formatOklch(deriveContrast(primary)));
+    applyVar("--b1", formatOklch(deriveSurfaceColor(primary, { level: "b1", mode: themeMode })));
+    applyVar("--b2", formatOklch(deriveSurfaceColor(primary, { level: "b2", mode: themeMode })));
+    applyVar("--b3", formatOklch(deriveSurfaceColor(primary, { level: "b3", mode: themeMode })));
   } else {
     applyVar("--p", null);
     applyVar("--pf", null);
     applyVar("--pc", null);
+    applyVar("--b1", null);
+    applyVar("--b2", null);
+    applyVar("--b3", null);
   }
   if (secondary) {
     applyVar("--s", formatOklch(secondary));
@@ -146,6 +189,7 @@ export function setBrandColors(colors) {
 
 export function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
+  applyBrandColors(getBrandColors());
 }
 
 export function setTheme(theme) {

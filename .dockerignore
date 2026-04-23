@@ -4,6 +4,8 @@
 .venv/
 .venv-linux
 .venv-linux/
+.venv-perf
+.venv-perf/
 .pytest_cache
 __pycache__
 storage/
@@ -29,6 +31,7 @@ construction-worker-pwa/
 **/htmlcov
 **/.venv
 **/.venv-linux
+**/.venv-perf
 **/venv
 **/env
 

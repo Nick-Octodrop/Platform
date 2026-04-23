@@ -252,6 +252,12 @@
           "label_key": "orders.entities.biz_order.fields.customer_reference.label"
         },
         {
+          "id": "biz_order.site_name",
+          "type": "string",
+          "label": "Project / Site Name",
+          "label_key": "orders.entities.biz_order.fields.site_name.label"
+        },
+        {
           "id": "biz_order.delivery_terms",
           "type": "string",
           "label": "Delivery Terms",
@@ -270,10 +276,47 @@
           "label_key": "orders.entities.biz_order.fields.requested_delivery_date.label"
         },
         {
+          "id": "biz_order.deposit_received_date",
+          "type": "date",
+          "label": "Deposit Received Date",
+          "label_key": "orders.entities.biz_order.fields.deposit_received_date.label"
+        },
+        {
+          "id": "biz_order.production_release_date",
+          "type": "date",
+          "label": "Production Release Date",
+          "label_key": "orders.entities.biz_order.fields.production_release_date.label"
+        },
+        {
+          "id": "biz_order.actual_ship_date",
+          "type": "date",
+          "label": "Actual Ship Date",
+          "label_key": "orders.entities.biz_order.fields.actual_ship_date.label"
+        },
+        {
+          "id": "biz_order.delivered_date",
+          "type": "date",
+          "label": "Delivered Date",
+          "label_key": "orders.entities.biz_order.fields.delivered_date.label"
+        },
+        {
+          "id": "biz_order.container_count",
+          "type": "number",
+          "label": "Container Count",
+          "default": 0,
+          "label_key": "orders.entities.biz_order.fields.container_count.label"
+        },
+        {
           "id": "biz_order.notes",
           "type": "text",
           "label": "Notes",
           "label_key": "orders.entities.biz_order.fields.notes.label"
+        },
+        {
+          "id": "biz_order.logistics_notes",
+          "type": "text",
+          "label": "Logistics Notes",
+          "label_key": "orders.entities.biz_order.fields.logistics_notes.label"
         },
         {
           "id": "biz_order.hold_reason",
@@ -361,6 +404,25 @@
             "field": "biz_order.final_invoice_id"
           },
           "label_key": "orders.entities.biz_order.fields.final_invoice_id.label"
+        },
+        {
+          "id": "biz_order.primary_document_id",
+          "type": "lookup",
+          "label": "Primary Document",
+          "entity": "entity.biz_document",
+          "display_field": "biz_document.name",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order.primary_document_id"
+          },
+          "label_key": "orders.entities.biz_order.fields.primary_document_id.label"
+        },
+        {
+          "id": "biz_order.generated_files",
+          "type": "attachments",
+          "label": "Generated Files",
+          "label_key": "orders.entities.biz_order.fields.generated_files.label"
         },
         {
           "id": "biz_order.order_total",
@@ -1062,9 +1124,56 @@
       "label": "Raise Final Invoice clicked",
       "event": "action.clicked",
       "action_id": "action.customer_order_create_final_invoice"
+    },
+    {
+      "id": "biz_orders.action.customer_order_create_document.clicked",
+      "label": "Generate Document clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_create_document"
+    },
+    {
+      "id": "biz_orders.action.customer_order_send_confirmation.clicked",
+      "label": "Send Confirmation clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_send_confirmation"
     }
   ],
   "transformations": [
+    {
+      "key": "customer_order_to_document",
+      "source_entity_id": "entity.biz_order",
+      "target_entity_id": "entity.biz_document",
+      "field_mappings": {
+        "biz_document.name": {
+          "from": "biz_order.order_number"
+        },
+        "biz_document.document_type": {
+          "value": "order_confirmation"
+        },
+        "biz_document.status": {
+          "value": "draft"
+        },
+        "biz_document.related_contact_id": {
+          "from": "biz_order.customer_id"
+        },
+        "biz_document.sales_entity": {
+          "from": "biz_order.sales_entity"
+        },
+        "biz_document.document_date": {
+          "ref": "$today"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "biz_order.primary_document_id",
+        "target_to_source": "biz_document.related_order_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_order.order_number",
+          "biz_order.customer_id"
+        ]
+      }
+    },
     {
       "key": "customer_order_to_purchase_order",
       "source_entity_id": "entity.biz_order",
@@ -1078,6 +1187,9 @@
         },
         "biz_purchase_order.source_customer_order_number": {
           "from": "biz_order.order_number"
+        },
+        "biz_purchase_order.container_count": {
+          "from": "biz_order.container_count"
         },
         "biz_purchase_order.currency": {
           "value": "USD"
@@ -1571,6 +1683,86 @@
         ]
       },
       "action_label_key": "orders.actions.action_customer_order_create_final_invoice.label"
+    },
+    {
+      "id": "action.customer_order_create_document",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_order",
+      "label": "Generate Document",
+      "transformation_key": "customer_order_to_document",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_order.status",
+        "value": [
+          "confirmed",
+          "on_hold",
+          "in_production",
+          "shipped",
+          "completed"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_order.order_number"
+          },
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Generate order document?",
+        "body": "This creates or refreshes the linked order document record, stores the generated file on this order, and makes it visible in the Documents module.",
+        "title_key": "orders.actions.action_customer_order_create_document.confirm.title"
+      },
+      "action_label_key": "orders.actions.action_customer_order_create_document.label"
+    },
+    {
+      "id": "action.customer_order_send_confirmation",
+      "kind": "refresh",
+      "entity_id": "entity.biz_order",
+      "label": "Send Confirmation",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_order.status",
+        "value": [
+          "confirmed",
+          "on_hold",
+          "in_production",
+          "shipped",
+          "completed"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_order.order_number"
+          },
+          {
+            "op": "exists",
+            "field": "biz_order.primary_document_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_order.generated_files"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Send order confirmation?",
+        "body": "Send the latest generated order confirmation PDF to the customer.",
+        "title_key": "orders.actions.action_customer_order_send_confirmation.confirm.title"
+      }
     }
   ],
   "views": [
@@ -1743,6 +1935,7 @@
             "biz_order.sales_entity",
             "biz_order.currency",
             "biz_order.order_date",
+            "biz_order.site_name",
             "biz_order.customer_reference",
             "biz_order.delivery_terms",
             "biz_order.shipping_destination",
@@ -1765,6 +1958,19 @@
           "section_title_key": "orders.views.form.sections.commercials.title"
         },
         {
+          "id": "logistics",
+          "title": "Logistics",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_order.container_count",
+            "biz_order.deposit_received_date",
+            "biz_order.production_release_date",
+            "biz_order.actual_ship_date",
+            "biz_order.delivered_date"
+          ]
+        },
+        {
           "id": "related",
           "title": "Related Records",
           "layout": "columns",
@@ -1772,7 +1978,8 @@
           "fields": [
             "biz_order.primary_purchase_order_id",
             "biz_order.deposit_invoice_id",
-            "biz_order.final_invoice_id"
+            "biz_order.final_invoice_id",
+            "biz_order.primary_document_id"
           ],
           "section_title_key": "orders.views.form.sections.related.title"
         },
@@ -1793,10 +2000,19 @@
           "title": "Notes",
           "fields": [
             "biz_order.notes",
+            "biz_order.logistics_notes",
             "biz_order.hold_reason",
             "biz_order.cancellation_reason"
           ],
           "section_title_key": "orders.views.form.sections.notes.title"
+        },
+        {
+          "id": "documents",
+          "title": "Documents",
+          "fields": [
+            "biz_order.primary_document_id",
+            "biz_order.generated_files"
+          ]
         },
         {
           "id": "lines",
@@ -1926,6 +2142,12 @@
             "action_id": "action.customer_order_confirm"
           },
           {
+            "action_id": "action.customer_order_create_document"
+          },
+          {
+            "action_id": "action.customer_order_send_confirmation"
+          },
+          {
             "action_id": "action.customer_order_resume"
           },
           {
@@ -1984,11 +2206,25 @@
               ]
             },
             {
+              "id": "logistics",
+              "label": "Logistics",
+              "sections": [
+                "logistics"
+              ]
+            },
+            {
               "id": "related",
               "label": "Related Records",
               "tab_label_key": "common.related_records",
               "sections": [
                 "related"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
               ]
             },
             {
@@ -2023,16 +2259,25 @@
           "biz_order.sales_entity",
           "biz_order.currency",
           "biz_order.order_date",
+          "biz_order.site_name",
           "biz_order.customer_reference",
+          "biz_order.container_count",
+          "biz_order.deposit_received_date",
+          "biz_order.production_release_date",
+          "biz_order.actual_ship_date",
+          "biz_order.delivered_date",
           "biz_order.preferred_supplier_id",
           "biz_order.primary_purchase_order_id",
           "biz_order.deposit_invoice_id",
           "biz_order.final_invoice_id",
+          "biz_order.primary_document_id",
+          "biz_order.generated_files",
           "biz_order.order_total",
           "biz_order.invoiced_total",
           "biz_order.hold_reason",
           "biz_order.cancellation_reason",
-          "biz_order.notes"
+          "biz_order.notes",
+          "biz_order.logistics_notes"
         ]
       }
     },
@@ -2649,6 +2894,21 @@
             "measure": "count"
           }
         ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_order",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_order.generated_files",
+        "title_field": "biz_order.order_number",
+        "category_field": "biz_order.status",
+        "date_field": "biz_order.order_date",
+        "record_label_field": "biz_order.order_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
       }
     ]
   }

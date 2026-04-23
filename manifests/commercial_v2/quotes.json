@@ -45,6 +45,10 @@
           "entity_home_page": "page:biz_quote.list_page",
           "entity_form_page": "page:biz_quote.form_page"
         },
+        "entity.biz_quote_script": {
+          "entity_home_page": "page:biz_quote_script.list_page",
+          "entity_form_page": "page:biz_quote_script.form_page"
+        },
         "entity.biz_quote_line": {
           "entity_home_page": "page:biz_quote_line.list_page",
           "entity_form_page": "page:biz_quote_line.form_page"
@@ -60,6 +64,11 @@
             "label": "Quotes",
             "to": "page:biz_quote.list_page",
             "menu_label_key": "quotes.navigation.biz_quote_list_page"
+          },
+          {
+            "label": "Quote Scripts",
+            "to": "page:biz_quote_script.list_page",
+            "menu_label_key": "quotes.navigation.biz_quote_script_list_page"
           },
           {
             "label": "Draft",
@@ -81,6 +90,119 @@
     ]
   },
   "entities": [
+    {
+      "id": "entity.biz_quote_script",
+      "label": "Quote Script",
+      "display_field": "biz_quote_script.script_name",
+      "fields": [
+        {
+          "id": "biz_quote_script.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true,
+          "label_key": "quotes.entities.biz_quote_script.fields.id.label"
+        },
+        {
+          "id": "biz_quote_script.script_name",
+          "type": "string",
+          "label": "Script Name",
+          "required": true,
+          "label_key": "quotes.entities.biz_quote_script.fields.script_name.label"
+        },
+        {
+          "id": "biz_quote_script.language",
+          "type": "enum",
+          "label": "Language",
+          "default": "EN",
+          "options": [
+            {
+              "value": "EN",
+              "label": "English",
+              "status_label_key": "quotes.entities.biz_quote_script.fields.language.options.en",
+              "label_key": "quotes.entities.biz_quote_script.fields.language.options.en"
+            },
+            {
+              "value": "NL",
+              "label": "Dutch",
+              "status_label_key": "quotes.entities.biz_quote_script.fields.language.options.nl",
+              "label_key": "quotes.entities.biz_quote_script.fields.language.options.nl"
+            },
+            {
+              "value": "RU",
+              "label": "Russian",
+              "status_label_key": "quotes.entities.biz_quote_script.fields.language.options.ru",
+              "label_key": "quotes.entities.biz_quote_script.fields.language.options.ru"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_script.fields.language.label"
+        },
+        {
+          "id": "biz_quote_script.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "quotes.entities.biz_quote_script.fields.sales_entity.options.nlight_bv",
+              "label_key": "quotes.entities.biz_quote_script.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "quotes.entities.biz_quote_script.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "quotes.entities.biz_quote_script.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote_script.fields.sales_entity.label"
+        },
+        {
+          "id": "biz_quote_script.owner_name",
+          "type": "string",
+          "label": "Default Salesperson",
+          "label_key": "quotes.entities.biz_quote_script.fields.owner_name.label"
+        },
+        {
+          "id": "biz_quote_script.template_name",
+          "type": "string",
+          "label": "Template Variant",
+          "label_key": "quotes.entities.biz_quote_script.fields.template_name.label"
+        },
+        {
+          "id": "biz_quote_script.opening_message",
+          "type": "text",
+          "label": "Opening Message",
+          "label_key": "quotes.entities.biz_quote_script.fields.opening_message.label"
+        },
+        {
+          "id": "biz_quote_script.body_text",
+          "type": "text",
+          "label": "Script Body",
+          "label_key": "quotes.entities.biz_quote_script.fields.body_text.label"
+        },
+        {
+          "id": "biz_quote_script.transport_disclaimer",
+          "type": "text",
+          "label": "Transport Disclaimer",
+          "label_key": "quotes.entities.biz_quote_script.fields.transport_disclaimer.label"
+        },
+        {
+          "id": "biz_quote_script.closing_text",
+          "type": "text",
+          "label": "Closing Text",
+          "label_key": "quotes.entities.biz_quote_script.fields.closing_text.label"
+        },
+        {
+          "id": "biz_quote_script.is_active",
+          "type": "bool",
+          "label": "Active",
+          "default": true,
+          "label_key": "quotes.entities.biz_quote_script.fields.is_active.label"
+        }
+      ],
+      "label_key": "quotes.entities.biz_quote_script.label"
+    },
     {
       "id": "entity.biz_quote",
       "label": "Quote",
@@ -237,6 +359,161 @@
           "label_key": "quotes.entities.biz_quote.fields.sales_owner.label"
         },
         {
+          "id": "biz_quote.document_language",
+          "type": "enum",
+          "label": "Document Language",
+          "default": "EN",
+          "options": [
+            {
+              "value": "EN",
+              "label": "English",
+              "status_label_key": "quotes.entities.biz_quote.fields.document_language.options.en",
+              "label_key": "quotes.entities.biz_quote.fields.document_language.options.en"
+            },
+            {
+              "value": "NL",
+              "label": "Dutch",
+              "status_label_key": "quotes.entities.biz_quote.fields.document_language.options.nl",
+              "label_key": "quotes.entities.biz_quote.fields.document_language.options.nl"
+            },
+            {
+              "value": "RU",
+              "label": "Russian",
+              "status_label_key": "quotes.entities.biz_quote.fields.document_language.options.ru",
+              "label_key": "quotes.entities.biz_quote.fields.document_language.options.ru"
+            }
+          ],
+          "label_key": "quotes.entities.biz_quote.fields.document_language.label"
+        },
+        {
+          "id": "biz_quote.project_site_name",
+          "type": "string",
+          "label": "Project / Site Name",
+          "label_key": "quotes.entities.biz_quote.fields.project_site_name.label"
+        },
+        {
+          "id": "biz_quote.script_template_id",
+          "type": "lookup",
+          "label": "Quote Script",
+          "entity": "entity.biz_quote_script",
+          "display_field": "biz_quote_script.script_name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_quote.script_source_name": "biz_quote_script.script_name",
+                "biz_quote.script_source_owner_name": "biz_quote_script.owner_name",
+                "biz_quote.script_source_sales_entity": "biz_quote_script.sales_entity",
+                "biz_quote.script_source_language": "biz_quote_script.language",
+                "biz_quote.script_source_template_name": "biz_quote_script.template_name",
+                "biz_quote.script_source_opening_message": "biz_quote_script.opening_message",
+                "biz_quote.script_source_body": "biz_quote_script.body_text",
+                "biz_quote.script_source_transport_disclaimer": "biz_quote_script.transport_disclaimer",
+                "biz_quote.script_source_closing_text": "biz_quote_script.closing_text",
+                "biz_quote.document_language": "biz_quote_script.language",
+                "biz_quote.pdf_template_name": "biz_quote_script.template_name",
+                "biz_quote.opening_message": "biz_quote_script.opening_message",
+                "biz_quote.quote_script_body": "biz_quote_script.body_text",
+                "biz_quote.transport_disclaimer": "biz_quote_script.transport_disclaimer",
+                "biz_quote.closing_text": "biz_quote_script.closing_text"
+              },
+              "only_when_empty": [
+                "biz_quote.document_language",
+                "biz_quote.pdf_template_name",
+                "biz_quote.opening_message",
+                "biz_quote.quote_script_body",
+                "biz_quote.transport_disclaimer",
+                "biz_quote.closing_text"
+              ],
+              "overwrite_if_current_matches": {
+                "biz_quote.document_language": "biz_quote.script_source_language",
+                "biz_quote.pdf_template_name": "biz_quote.script_source_template_name",
+                "biz_quote.opening_message": "biz_quote.script_source_opening_message",
+                "biz_quote.quote_script_body": "biz_quote.script_source_body",
+                "biz_quote.transport_disclaimer": "biz_quote.script_source_transport_disclaimer",
+                "biz_quote.closing_text": "biz_quote.script_source_closing_text"
+              },
+              "clear_fields": [
+                "biz_quote.script_source_name",
+                "biz_quote.script_source_owner_name",
+                "biz_quote.script_source_sales_entity",
+                "biz_quote.script_source_language",
+                "biz_quote.script_source_template_name",
+                "biz_quote.script_source_opening_message",
+                "biz_quote.script_source_body",
+                "biz_quote.script_source_transport_disclaimer",
+                "biz_quote.script_source_closing_text"
+              ]
+            }
+          },
+          "label_key": "quotes.entities.biz_quote.fields.script_template_id.label"
+        },
+        {
+          "id": "biz_quote.script_source_name",
+          "type": "string",
+          "label": "Selected Script",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote.script_source_owner_name",
+          "type": "string",
+          "label": "Script Owner",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote.script_source_sales_entity",
+          "type": "string",
+          "label": "Script Sales Entity",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote.script_source_language",
+          "type": "string",
+          "label": "Script Language",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote.script_source_template_name",
+          "type": "string",
+          "label": "Script Template Variant",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote.script_source_opening_message",
+          "type": "text",
+          "label": "Source Opening Message",
+          "readonly": true,
+          "ui": {
+            "widget": "preview"
+          }
+        },
+        {
+          "id": "biz_quote.script_source_body",
+          "type": "text",
+          "label": "Source Script Body",
+          "readonly": true,
+          "ui": {
+            "widget": "preview"
+          }
+        },
+        {
+          "id": "biz_quote.script_source_transport_disclaimer",
+          "type": "text",
+          "label": "Source Transport Disclaimer",
+          "readonly": true,
+          "ui": {
+            "widget": "preview"
+          }
+        },
+        {
+          "id": "biz_quote.script_source_closing_text",
+          "type": "text",
+          "label": "Source Closing Text",
+          "readonly": true,
+          "ui": {
+            "widget": "preview"
+          }
+        },
+        {
           "id": "biz_quote.follow_up_date",
           "type": "date",
           "label": "Follow Up Date",
@@ -301,6 +578,29 @@
           "label_key": "quotes.entities.biz_quote.fields.customer_notes.label"
         },
         {
+          "id": "biz_quote.opening_message",
+          "type": "text",
+          "label": "Opening Message",
+          "label_key": "quotes.entities.biz_quote.fields.opening_message.label"
+        },
+        {
+          "id": "biz_quote.quote_script_body",
+          "type": "text",
+          "label": "Quote Script Body",
+          "label_key": "quotes.entities.biz_quote.fields.quote_script_body.label"
+        },
+        {
+          "id": "biz_quote.transport_disclaimer",
+          "type": "text",
+          "label": "Transport Disclaimer",
+          "label_key": "quotes.entities.biz_quote.fields.transport_disclaimer.label"
+        },
+        {
+          "id": "biz_quote.closing_text",
+          "type": "text",
+          "label": "Closing Text"
+        },
+        {
           "id": "biz_quote.pdf_template_name",
           "type": "string",
           "label": "PDF Template Name",
@@ -325,6 +625,25 @@
           "label": "Linked Order",
           "readonly": true,
           "label_key": "quotes.entities.biz_quote.fields.linked_customer_order_number.label"
+        },
+        {
+          "id": "biz_quote.primary_document_id",
+          "type": "lookup",
+          "label": "Primary Document",
+          "entity": "entity.biz_document",
+          "display_field": "biz_document.name",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_quote.primary_document_id"
+          },
+          "label_key": "quotes.entities.biz_quote.fields.primary_document_id.label"
+        },
+        {
+          "id": "biz_quote.generated_files",
+          "type": "attachments",
+          "label": "Generated Files",
+          "label_key": "quotes.entities.biz_quote.fields.generated_files.label"
         },
         {
           "id": "biz_quote.subtotal",
@@ -1048,7 +1367,7 @@
     },
     {
       "id": "biz_quotes.action.quote_mark_sent.clicked",
-      "label": "Mark Sent clicked",
+      "label": "Send Quote clicked",
       "event": "action.clicked",
       "action_id": "action.quote_mark_sent"
     },
@@ -1065,6 +1384,12 @@
       "action_id": "action.quote_convert_to_order"
     },
     {
+      "id": "biz_quotes.action.quote_create_document.clicked",
+      "label": "Generate Document clicked",
+      "event": "action.clicked",
+      "action_id": "action.quote_create_document"
+    },
+    {
       "id": "biz_quotes.action.quote_open_lost_modal.clicked",
       "label": "Mark Lost clicked",
       "event": "action.clicked",
@@ -1078,6 +1403,47 @@
     }
   ],
   "transformations": [
+    {
+      "key": "quote_to_document",
+      "source_entity_id": "entity.biz_quote",
+      "target_entity_id": "entity.biz_document",
+      "field_mappings": {
+        "biz_document.name": {
+          "from": "biz_quote.quote_number"
+        },
+        "biz_document.document_type": {
+          "value": "quote_pdf"
+        },
+        "biz_document.status": {
+          "value": "draft"
+        },
+        "biz_document.related_contact_id": {
+          "from": "biz_quote.customer_id"
+        },
+        "biz_document.sales_entity": {
+          "from": "biz_quote.sales_entity"
+        },
+        "biz_document.owner_user_id": {
+          "from": "biz_quote.sales_owner"
+        },
+        "biz_document.document_date": {
+          "ref": "$today"
+        },
+        "biz_document.expiry_date": {
+          "from": "biz_quote.expiry_date"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "biz_quote.primary_document_id",
+        "target_to_source": "biz_document.related_quote_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_quote.quote_number",
+          "biz_quote.customer_id"
+        ]
+      }
+    },
     {
       "key": "quote_to_customer_order",
       "source_entity_id": "entity.biz_quote",
@@ -1100,6 +1466,9 @@
         },
         "biz_order.customer_reference": {
           "from": "biz_quote.customer_reference"
+        },
+        "biz_order.site_name": {
+          "from": "biz_quote.project_site_name"
         },
         "biz_order.delivery_terms": {
           "from": "biz_quote.shipping_terms"
@@ -1169,6 +1538,13 @@
   ],
   "actions": [
     {
+      "id": "action.quote_script_new",
+      "kind": "open_form",
+      "label": "New Quote Script",
+      "target": "biz_quote_script.form",
+      "action_label_key": "quotes.actions.action_quote_script_new.label"
+    },
+    {
       "id": "action.quote_new",
       "kind": "open_form",
       "label": "New Quote",
@@ -1176,16 +1552,50 @@
       "action_label_key": "quotes.actions.action_quote_new.label"
     },
     {
+      "id": "action.quote_reset_copy_from_script",
+      "kind": "update_record",
+      "entity_id": "entity.biz_quote",
+      "label": "Reset Copy From Script",
+      "patch": {
+        "biz_quote.document_language": {
+          "ref": "biz_quote.script_source_language"
+        },
+        "biz_quote.pdf_template_name": {
+          "ref": "biz_quote.script_source_template_name"
+        },
+        "biz_quote.opening_message": {
+          "ref": "biz_quote.script_source_opening_message"
+        },
+        "biz_quote.quote_script_body": {
+          "ref": "biz_quote.script_source_body"
+        },
+        "biz_quote.transport_disclaimer": {
+          "ref": "biz_quote.script_source_transport_disclaimer"
+        },
+        "biz_quote.closing_text": {
+          "ref": "biz_quote.script_source_closing_text"
+        }
+      },
+      "confirm": {
+        "title": "Reset quote copy from the selected script?",
+        "body": "This replaces the quote-specific copy fields with the current selected script content."
+      },
+      "visible_when": {
+        "op": "exists",
+        "field": "biz_quote.script_template_id"
+      }
+    },
+    {
       "id": "action.quote_mark_sent",
       "kind": "update_record",
       "entity_id": "entity.biz_quote",
-      "label": "Mark Sent",
+      "label": "Send Quote",
       "patch": {
         "biz_quote.status": "sent"
       },
       "confirm": {
-        "title": "Mark quote as sent?",
-        "body": "Use this once the commercial quote has actually been shared with the customer.",
+        "title": "Send quote email?",
+        "body": "Send the latest generated quote PDF to the customer and mark the quote as sent.",
         "title_key": "quotes.actions.action_quote_mark_sent.confirm.title"
       },
       "visible_when": {
@@ -1208,6 +1618,14 @@
             "op": "gt",
             "field": "biz_quote.grand_total",
             "value": 0
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.primary_document_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.generated_files"
           }
         ]
       },
@@ -1308,6 +1726,41 @@
       "action_label_key": "quotes.actions.action_quote_convert_to_order.label"
     },
     {
+      "id": "action.quote_create_document",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_quote",
+      "label": "Generate Document",
+      "transformation_key": "quote_to_document",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_quote.status",
+        "value": [
+          "draft",
+          "sent",
+          "accepted"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_quote.quote_number"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.customer_id"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Generate quote document?",
+        "body": "This creates or refreshes the linked quote document record, stores the generated file on this quote, and makes it visible in the Documents module.",
+        "title_key": "quotes.actions.action_quote_create_document.confirm.title"
+      },
+      "action_label_key": "quotes.actions.action_quote_create_document.label"
+    },
+    {
       "id": "action.quote_open_lost_modal",
       "kind": "update_record",
       "entity_id": "entity.biz_quote",
@@ -1345,6 +1798,147 @@
     }
   ],
   "views": [
+    {
+      "id": "biz_quote_script.list",
+      "kind": "list",
+      "entity": "entity.biz_quote_script",
+      "columns": [
+        {
+          "field_id": "biz_quote_script.script_name"
+        },
+        {
+          "field_id": "biz_quote_script.language"
+        },
+        {
+          "field_id": "biz_quote_script.sales_entity"
+        },
+        {
+          "field_id": "biz_quote_script.owner_name"
+        },
+        {
+          "field_id": "biz_quote_script.template_name"
+        },
+        {
+          "field_id": "biz_quote_script.is_active"
+        }
+      ],
+      "header": {
+        "primary_actions": [
+          {
+            "action_id": "action.quote_script_new"
+          }
+        ],
+        "open_record_target": "page:biz_quote_script.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search quote scripts...",
+          "fields": [
+            "biz_quote_script.script_name",
+            "biz_quote_script.owner_name",
+            "biz_quote_script.template_name",
+            "biz_quote_script.body_text"
+          ],
+          "placeholder_key": "quotes.views.quote_script_list.search.placeholder"
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active Scripts",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote_script.is_active",
+              "value": true
+            },
+            "label_key": "quotes.views.quote_script_list.filters.active.label"
+          },
+          {
+            "id": "inactive",
+            "label": "Inactive Scripts",
+            "domain": {
+              "op": "eq",
+              "field": "biz_quote_script.is_active",
+              "value": false
+            },
+            "label_key": "quotes.views.quote_script_list.filters.inactive.label"
+          }
+        ]
+      }
+    },
+    {
+      "id": "biz_quote_script.form",
+      "kind": "form",
+      "entity": "entity.biz_quote_script",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Quote Script",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_quote_script.script_name",
+            "biz_quote_script.language",
+            "biz_quote_script.sales_entity",
+            "biz_quote_script.owner_name",
+            "biz_quote_script.template_name",
+            "biz_quote_script.is_active"
+          ],
+          "section_title_key": "quotes.views.quote_script_form.sections.summary.title"
+        },
+        {
+          "id": "content",
+          "title": "Content",
+          "fields": [
+            "biz_quote_script.opening_message",
+            "biz_quote_script.body_text",
+            "biz_quote_script.transport_disclaimer",
+            "biz_quote_script.closing_text"
+          ],
+          "section_title_key": "quotes.views.quote_script_form.sections.content.title"
+        }
+      ],
+      "header": {
+        "tabs": {
+          "style": "lifted",
+          "default_tab": "summary",
+          "tabs": [
+            {
+              "id": "summary",
+              "label": "Summary",
+              "tab_label_key": "common.summary",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "content",
+              "label": "Content",
+              "tab_label_key": "common.content",
+              "sections": [
+                "content"
+              ]
+            }
+          ]
+        }
+      },
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_quote_script.script_name",
+          "biz_quote_script.language",
+          "biz_quote_script.sales_entity",
+          "biz_quote_script.owner_name",
+          "biz_quote_script.template_name",
+          "biz_quote_script.opening_message",
+          "biz_quote_script.body_text",
+          "biz_quote_script.transport_disclaimer",
+          "biz_quote_script.closing_text",
+          "biz_quote_script.is_active"
+        ]
+      }
+    },
     {
       "id": "biz_quote.list",
       "kind": "list",
@@ -1503,6 +2097,7 @@
             "biz_quote.expiry_date",
             "biz_quote.customer_reference",
             "biz_quote.sales_owner",
+            "biz_quote.project_site_name",
             "biz_quote.follow_up_date",
             "biz_quote.payment_terms",
             "biz_quote.incoterm",
@@ -1643,6 +2238,34 @@
           "section_title_key": "quotes.views.form.sections.lines.title"
         },
         {
+          "id": "script_source",
+          "title": "Source Script",
+          "fields": [
+            "biz_quote.script_template_id",
+            "biz_quote.document_language",
+            "biz_quote.pdf_template_name",
+            "biz_quote.script_source_name",
+            "biz_quote.script_source_owner_name",
+            "biz_quote.script_source_sales_entity",
+            "biz_quote.script_source_language",
+            "biz_quote.script_source_template_name",
+            "biz_quote.script_source_opening_message",
+            "biz_quote.script_source_body",
+            "biz_quote.script_source_transport_disclaimer",
+            "biz_quote.script_source_closing_text"
+          ]
+        },
+        {
+          "id": "commercial_copy",
+          "title": "Quote Override",
+          "fields": [
+            "biz_quote.opening_message",
+            "biz_quote.quote_script_body",
+            "biz_quote.transport_disclaimer",
+            "biz_quote.closing_text"
+          ]
+        },
+        {
           "id": "totals",
           "title": "Totals",
           "layout": "columns",
@@ -1674,10 +2297,17 @@
             "biz_quote.customer_notes",
             "biz_quote.validity_notes",
             "biz_quote.loss_reason",
-            "biz_quote.internal_notes",
-            "biz_quote.pdf_template_name"
+            "biz_quote.internal_notes"
           ],
           "section_title_key": "quotes.views.form.sections.notes.title"
+        },
+        {
+          "id": "documents",
+          "title": "Documents",
+          "fields": [
+            "biz_quote.primary_document_id",
+            "biz_quote.generated_files"
+          ]
         }
       ],
       "header": {
@@ -1686,6 +2316,9 @@
         },
         "auto_state_actions": false,
         "primary_actions": [
+          {
+            "action_id": "action.quote_create_document"
+          },
           {
             "action_id": "action.quote_mark_sent"
           },
@@ -1697,6 +2330,9 @@
           }
         ],
         "secondary_actions": [
+          {
+            "action_id": "action.quote_reset_copy_from_script"
+          },
           {
             "action_id": "action.quote_open_lost_modal"
           },
@@ -1725,6 +2361,14 @@
               ]
             },
             {
+              "id": "commercial_copy",
+              "label": "Quote Copy",
+              "sections": [
+                "script_source",
+                "commercial_copy"
+              ]
+            },
+            {
               "id": "totals",
               "label": "Totals",
               "tab_label_key": "common.totals",
@@ -1747,6 +2391,13 @@
               "sections": [
                 "notes"
               ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
+              ]
             }
           ]
         }
@@ -1766,13 +2417,21 @@
           "biz_quote.expiry_date",
           "biz_quote.customer_reference",
           "biz_quote.sales_owner",
+          "biz_quote.document_language",
+          "biz_quote.project_site_name",
+          "biz_quote.script_template_id",
           "biz_quote.payment_terms",
           "biz_quote.incoterm",
           "biz_quote.shipping_terms",
           "biz_quote.grand_total",
           "biz_quote.loss_reason",
+          "biz_quote.opening_message",
+          "biz_quote.quote_script_body",
+          "biz_quote.transport_disclaimer",
           "biz_quote.internal_notes",
-          "biz_quote.linked_customer_order_id"
+          "biz_quote.linked_customer_order_id",
+          "biz_quote.primary_document_id",
+          "biz_quote.generated_files"
         ]
       }
     },
@@ -1906,6 +2565,91 @@
     }
   ],
   "pages": [
+    {
+      "id": "biz_quote_script.list_page",
+      "title": "Quote Scripts",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_quote_script",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:biz_quote_script.list"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "title_key": "quotes.pages.quote_script_list_page.title"
+    },
+    {
+      "id": "biz_quote_script.form_page",
+      "title": "Quote Script",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_quote_script",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:biz_quote_script.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_quote_script",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "title_key": "quotes.pages.quote_script_form_page.title"
+    },
     {
       "id": "biz_quote.list_page",
       "title": "Quotes",
@@ -2358,6 +3102,22 @@
             "measure": "count"
           }
         ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_quote",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_quote.generated_files",
+        "title_field": "biz_quote.quote_number",
+        "owner_field": "biz_quote.sales_owner",
+        "category_field": "biz_quote.status",
+        "date_field": "biz_quote.quote_date",
+        "record_label_field": "biz_quote.quote_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
       }
     ]
   }

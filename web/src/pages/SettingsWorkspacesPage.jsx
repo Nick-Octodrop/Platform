@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { API_URL, apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId, setUiPrefs } from "../api";
+import {
+  API_URL,
+  apiFetch,
+  getActiveWorkspaceId,
+  getUiPrefs,
+  googlePlaceDetails,
+  googlePlacesAutocomplete,
+  setActiveWorkspaceId,
+  setUiPrefs,
+} from "../api";
 import { useAccessContext } from "../access.js";
 import { useToast } from "../components/Toast.jsx";
 import PaginationControls from "../components/PaginationControls.jsx";
@@ -9,8 +18,11 @@ import { getSafeSession } from "../supabase.js";
 import TabbedPaneShell from "../ui/TabbedPaneShell.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import AppSelect from "../components/AppSelect.jsx";
+import ResponsiveDrawer from "../ui/ResponsiveDrawer.jsx";
+import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
+import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
 
-const TAB_IDS = ["workspaces", "branding", "regional"];
+const TAB_IDS = ["workspaces", "business", "branding", "regional"];
 const TEXT_COLOR_FALLBACK = "#111827";
 const BRANDING_ASSET_TYPE_OPTIONS = [
   { value: "logo", label: "Logo" },
@@ -72,6 +84,16 @@ const TEMPLATE_BRANDING_TEXTAREA_FIELDS = [
   { key: "default_footer_text", label: "Default Footer Text" },
   { key: "default_disclaimer_text", label: "Default Disclaimer Text" },
 ];
+const BUSINESS_TAB_HIDDEN_FIELD_KEYS = new Set([
+  "default_bank_name",
+  "default_bank_account_name",
+  "default_bank_account_number",
+  "default_bank_iban",
+  "default_bank_bic",
+]);
+const BUSINESS_TAB_TEXT_FIELDS = TEMPLATE_BRANDING_TEXT_FIELDS.filter(
+  (field) => !BUSINESS_TAB_HIDDEN_FIELD_KEYS.has(field.key),
+);
 const TEMPLATE_BRANDING_ASSET_FIELDS = [
   { key: "primary_logo_asset_id", label: "Primary Logo", type: "logo" },
   { key: "secondary_logo_asset_id", label: "Secondary Logo", type: "logo" },
@@ -112,6 +134,7 @@ const APP_BRANDING_DEFAULTS = {
   accent_color: DEFAULT_BRAND_COLORS.accent,
   text_color: TEXT_COLOR_FALLBACK,
   app_logo_url: "",
+  nav_logo_url: "",
 };
 const TEMPLATE_BRANDING_DEFAULTS = {
   brand_name: "",
@@ -150,15 +173,35 @@ const TEMPLATE_BRANDING_DEFAULTS = {
   primary_logo_url: "",
 };
 const BRANDING_ASSET_UPLOAD_DEFAULTS = {
+  id: "",
   name: "",
   reference_key: "",
   type: "logo",
+  file_url: "",
   alt_text: "",
   notes: "",
   sort_order: 0,
   is_active: true,
 };
-
+const BUSINESS_FIELD_HELP = {
+  workspace_name: "Used as the workspace name in the app and as the default brand name in generated content.",
+  brand_name: "Shown to customers on documents, PDFs, and emails.",
+  legal_name: "Use the registered legal entity name if it differs from the trading name.",
+  website: "Used in customer-facing templates and AI-generated communications.",
+  address_line_1: "Start typing to search with Google Maps if your workspace has Google Maps connected.",
+  tax_number: "Shown in places where templates or documents include tax details.",
+  company_registration_number: "Useful for invoices, proposals, and other official documents.",
+  default_footer_text: "Added to the footer area of generated documents and emails when templates use it.",
+  default_disclaimer_text: "Use for legal, compliance, or operational disclaimers.",
+  default_terms_url: "Link to your standard terms so templates and AI can reference the right source.",
+  default_bank_account_number: "Used in payment instructions when templates include bank details.",
+};
+const BRAND_COLOR_FIELD_HELP = {
+  primary_color: "Main brand color used in the app, documents, and AI-generated customer-facing output.",
+  secondary_color: "Supporting brand color for less prominent surfaces and accents.",
+  accent_color: "Highlight color for buttons, badges, and emphasis.",
+  text_color: "Default brand text color to keep output readable.",
+};
 function normalizeTabId(value) {
   const raw = String(value || "").trim().toLowerCase();
   return TAB_IDS.includes(raw) ? raw : "workspaces";
@@ -195,16 +238,6 @@ function assetOptionLabel(asset) {
   return parts.join(" ");
 }
 
-function countConfiguredValues(source, keys) {
-  return keys.reduce((count, key) => {
-    const value = source?.[key];
-    if (typeof value === "string") return count + (value.trim() ? 1 : 0);
-    if (typeof value === "number") return count + (Number.isFinite(value) ? 1 : 0);
-    if (typeof value === "boolean") return count + 1;
-    return count;
-  }, 0);
-}
-
 function upsertBrandingAsset(items, asset) {
   const next = (Array.isArray(items) ? items : []).filter((entry) => entry?.id !== asset?.id);
   next.push(asset);
@@ -229,6 +262,7 @@ function normalizeAppBranding(appBranding, workspace) {
     accent_color: normalizeHexColor(appBranding?.accent_color || workspace?.colors?.accent, DEFAULT_BRAND_COLORS.accent),
     text_color: normalizeHexColor(appBranding?.text_color, TEXT_COLOR_FALLBACK),
     app_logo_url: textValue(appBranding?.app_logo_url || appBranding?.logo_url || workspace?.logo_url),
+    nav_logo_url: textValue(appBranding?.nav_logo_url || workspace?.nav_logo_url),
   };
 }
 
@@ -272,57 +306,198 @@ function pickValues(source, keys) {
   }, {});
 }
 
-function Section({ title, description, children }) {
+function Section({ title, description, headerActions = null, children }) {
   return (
     <div className="rounded-box border border-base-300 bg-base-100 p-4">
-      <div className="text-sm font-semibold">{title}</div>
-      {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{title}</div>
+          {description ? <div className="mt-1 text-sm opacity-70">{description}</div> : null}
+        </div>
+        {headerActions ? <div className="shrink-0">{headerActions}</div> : null}
+      </div>
       <div className="mt-4">{children}</div>
     </div>
   );
 }
 
-function DisclosureSection({ title, summary, defaultOpen = false, children }) {
-  return (
-    <details className="rounded-box border border-base-300 bg-base-100" open={defaultOpen}>
-      <summary className="cursor-pointer list-none px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold">{title}</div>
-          {summary ? <div className="text-xs opacity-60">{summary}</div> : null}
-        </div>
-      </summary>
-      <div className="border-t border-base-300 p-4">{children}</div>
-    </details>
-  );
-}
-
-function AssetPreview({ asset, fallbackUrl = "", emptyLabel = "No asset selected." }) {
+function AssetThumbnail({ asset, fallbackUrl = "", emptyLabel = "No asset selected." }) {
   const previewUrl = asset?.file_url || fallbackUrl || "";
   const isImage =
     previewUrl &&
     (String(asset?.mime_type || "").startsWith("image/") ||
       /\.(png|jpe?g|gif|svg|webp)$/i.test(previewUrl));
+
   return (
-    <div className="rounded-box border border-base-300 bg-base-200 p-3">
-      <div className="text-xs uppercase tracking-wide opacity-60">Preview</div>
-      <div className="mt-2 flex min-h-24 items-center justify-center overflow-hidden rounded-box border border-base-300 bg-base-100 p-2">
-        {previewUrl && isImage ? (
-          <img src={previewUrl} alt={asset?.alt_text || asset?.name || "Branding asset"} className="max-h-24 max-w-full object-contain" />
-        ) : previewUrl ? (
-          <a href={previewUrl} target="_blank" rel="noreferrer" className="link text-sm break-all">
-            {asset?.name || "Open asset"}
-          </a>
-        ) : (
-          <div className="text-xs opacity-60 text-center">{emptyLabel}</div>
-        )}
-      </div>
-      {asset ? (
-        <div className="mt-2 text-xs opacity-70">
-          <div>{asset.name || "Untitled asset"}</div>
-          <div>{asset.reference_key || "No reference key"}</div>
-        </div>
-      ) : null}
+    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-box border border-base-300 bg-base-100 p-2">
+      {previewUrl && isImage ? (
+        <img
+          src={previewUrl}
+          alt={asset?.alt_text || asset?.name || "Branding asset"}
+          className="max-h-full max-w-full object-contain"
+        />
+      ) : previewUrl ? (
+        <a href={previewUrl} target="_blank" rel="noreferrer" className="text-center text-[11px] leading-tight text-primary">
+          Open
+        </a>
+      ) : (
+        <div className="text-center text-[11px] opacity-60">{emptyLabel}</div>
+      )}
     </div>
+  );
+}
+
+function BusinessAddressField({ value, disabled, canManageSettings, onChange, onApplyAddress }) {
+  const { providers, reload: reloadProviderStatus } = useWorkspaceProviderStatus(["google_maps"]);
+  const containerRef = useRef(null);
+  const sessionTokenRef = useRef(`gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const [search, setSearch] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [lookupError, setLookupError] = useState("");
+  const [mapsDrawerOpen, setMapsDrawerOpen] = useState(false);
+  const mapsConnected = Boolean(providers?.google_maps?.connected);
+
+  useEffect(() => {
+    setSearch(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointerDown(event) {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open || disabled || !mapsConnected) {
+      setSuggestions([]);
+      setLookupError("");
+      setLoading(false);
+      return undefined;
+    }
+    const query = String(search || "").trim();
+    if (query.length < 3) {
+      setSuggestions([]);
+      setLookupError("");
+      setLoading(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setLookupError("");
+      try {
+        const res = await googlePlacesAutocomplete(query, sessionTokenRef.current);
+        if (!cancelled) setSuggestions(Array.isArray(res?.suggestions) ? res.suggestions : []);
+      } catch (err) {
+        if (!cancelled) {
+          setSuggestions([]);
+          setLookupError(err?.message || "Address lookup failed.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [disabled, mapsConnected, open, search]);
+
+  async function handleSelectSuggestion(suggestion) {
+    setLoading(true);
+    try {
+      const res = await googlePlaceDetails(suggestion.place_id, sessionTokenRef.current);
+      const address = res?.address || {};
+      onApplyAddress?.(address);
+      setSearch(address?.line_1 || suggestion?.main_text || suggestion?.description || "");
+      setOpen(false);
+      sessionTokenRef.current = `gmaps-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    } catch (err) {
+      setLookupError(err?.message || "Address details lookup failed.");
+      onChange?.(suggestion?.description || search);
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <div ref={containerRef} className="relative">
+        <input
+          type="text"
+          className="input input-bordered input-sm"
+          value={search}
+          disabled={disabled}
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            const next = event.target.value;
+            setSearch(next);
+            onChange?.(next);
+            if (!open) setOpen(true);
+          }}
+        />
+        {open && !disabled ? (
+          <div className="absolute z-30 mt-1 w-full rounded-box border border-base-300 bg-base-100 shadow">
+            {mapsConnected ? (
+              <ul className="menu menu-compact menu-vertical w-full max-h-72 overflow-y-auto">
+                {loading ? <li className="menu-title"><span>Searching addresses...</span></li> : null}
+                {!loading && lookupError ? <li className="menu-title text-error"><span>{lookupError}</span></li> : null}
+                {!loading && !lookupError && String(search || "").trim().length < 3 ? (
+                  <li className="menu-title"><span>Type at least 3 characters</span></li>
+                ) : null}
+                {!loading && !lookupError && String(search || "").trim().length >= 3 && suggestions.length === 0 ? (
+                  <li className="menu-title"><span>No address matches</span></li>
+                ) : null}
+                {suggestions.map((item) => (
+                  <li key={item.place_id}>
+                    <button type="button" className="text-left" onClick={() => handleSelectSuggestion(item)}>
+                      <div className="flex flex-col items-start">
+                        <span>{item.main_text || item.description}</span>
+                        {item.secondary_text ? <span className="text-xs opacity-60">{item.secondary_text}</span> : null}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="p-3">
+                {canManageSettings ? (
+                  <button type="button" className="btn btn-sm btn-outline w-full justify-start" onClick={() => setMapsDrawerOpen(true)}>
+                    Connect Google Maps
+                  </button>
+                ) : null}
+                <div className="pt-2 text-xs opacity-60">
+                  {canManageSettings
+                    ? "Connect Google Maps to enable address autocomplete."
+                    : "Ask a workspace admin to connect Google Maps for address autocomplete."}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <ProviderSecretModal
+        open={mapsDrawerOpen}
+        providerKey="google_maps"
+        canManageSettings={canManageSettings}
+        onClose={() => setMapsDrawerOpen(false)}
+        onSaved={async () => {
+          setMapsDrawerOpen(false);
+          await reloadProviderStatus();
+          setOpen(true);
+        }}
+      />
+    </>
   );
 }
 
@@ -340,11 +515,9 @@ export default function SettingsWorkspacesPage() {
   const [brandingAssets, setBrandingAssets] = useState([]);
   const [assetUpload, setAssetUpload] = useState(BRANDING_ASSET_UPLOAD_DEFAULTS);
   const [assetUploadFile, setAssetUploadFile] = useState(null);
-  const [appBrandingSaving, setAppBrandingSaving] = useState(false);
-  const [templateBrandingSaving, setTemplateBrandingSaving] = useState(false);
-  const [regionalSaving, setRegionalSaving] = useState(false);
+  const [assetDrawerOpen, setAssetDrawerOpen] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [assetUploading, setAssetUploading] = useState(false);
-  const [assetSavingId, setAssetSavingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
@@ -363,6 +536,7 @@ export default function SettingsWorkspacesPage() {
       { id: "workspaces", label: t("settings.workspaces_tab") },
       ...(canEditWorkspaceSettings
         ? [
+            { id: "business", label: "Business" },
             { id: "branding", label: t("settings.branding_tab") },
             { id: "regional", label: t("settings.regional_tab") },
           ]
@@ -475,26 +649,16 @@ export default function SettingsWorkspacesPage() {
     }
   }, [activeTab, workspaceTabs]);
 
-  async function persistWorkspacePrefs(next) {
+  async function saveWorkspaceSettings() {
+    if (!canEditWorkspaceSettings || !appBranding.workspace_name.trim()) return;
+    setSettingsSaving(true);
     try {
-      const response = await setUiPrefs({ workspace: next });
-      if (next.colors) {
-        setBrandColors(next.colors);
-        applyBrandColors(next.colors);
-      }
-      await reloadI18n(response);
-      return response;
-    } catch (err) {
-      pushToast("error", t("settings.workspace_save_failed"));
-      throw err;
-    }
-  }
-
-  async function saveAppBranding() {
-    if (!appBranding.workspace_name.trim()) return;
-    setAppBrandingSaving(true);
-    try {
-      const payload = pickValues(appBranding, [
+      const workspacePayload = {
+        default_locale: defaultLocale,
+        default_timezone: defaultTimezone,
+        default_currency: defaultCurrency,
+      };
+      const appBrandingPayload = pickValues(appBranding, [
         "workspace_name",
         "app_logo_asset_id",
         "app_icon_asset_id",
@@ -507,10 +671,25 @@ export default function SettingsWorkspacesPage() {
         "accent_color",
         "text_color",
       ]);
-      const response = await setUiPrefs({ app_branding: payload });
+      const templateBrandingPayload = pickValues(templateBranding, [
+        ...TEMPLATE_BRANDING_TEXT_FIELDS.map((field) => field.key),
+        ...TEMPLATE_BRANDING_TEXTAREA_FIELDS.map((field) => field.key),
+        ...TEMPLATE_BRANDING_ASSET_FIELDS.map((field) => field.key),
+        ...TEMPLATE_BRANDING_COLOR_FIELDS.map((field) => field.key),
+      ]);
+      templateBrandingPayload.template_primary_color = appBranding.primary_color;
+      templateBrandingPayload.template_secondary_color = appBranding.secondary_color;
+      templateBrandingPayload.template_accent_color = appBranding.accent_color;
+      templateBrandingPayload.template_text_color = appBranding.text_color;
+      const response = await setUiPrefs({
+        workspace: workspacePayload,
+        app_branding: appBrandingPayload,
+        template_branding: templateBrandingPayload,
+      });
       const nextAppBranding = normalizeAppBranding(response?.app_branding, response?.workspace);
+      const nextTemplateBranding = normalizeTemplateBranding(response?.template_branding, nextAppBranding);
       setAppBranding(nextAppBranding);
-      setTemplateBranding(normalizeTemplateBranding(response?.template_branding, nextAppBranding));
+      setTemplateBranding(nextTemplateBranding);
       setBrandingAssets(sortBrandingAssets(response?.branding_assets || brandingAssets));
       setWorkspacePrefs((prev) => ({
         ...prev,
@@ -521,6 +700,9 @@ export default function SettingsWorkspacesPage() {
         setBrandColors(response.workspace.colors);
         applyBrandColors(response.workspace.colors);
       }
+      setDefaultLocale(String(response?.workspace?.default_locale || defaultLocale));
+      setDefaultTimezone(String(response?.workspace?.default_timezone || defaultTimezone));
+      setDefaultCurrency(String(response?.workspace?.default_currency || defaultCurrency));
       setWorkspaces((prev) =>
         prev.map((workspace) =>
           (workspace.workspace_id || workspace.id) === activeWorkspaceId
@@ -529,150 +711,137 @@ export default function SettingsWorkspacesPage() {
         ),
       );
       await reloadI18n(response);
-      pushToast("success", "App branding updated.");
+      pushToast("success", "Workspace settings updated.");
     } catch (err) {
-      pushToast("error", err?.message || "Failed to update app branding.");
+      pushToast("error", err?.message || "Failed to update workspace settings.");
     } finally {
-      setAppBrandingSaving(false);
+      setSettingsSaving(false);
     }
   }
 
-  async function saveTemplateBranding() {
-    setTemplateBrandingSaving(true);
-    try {
-      const payload = pickValues(templateBranding, [
-        ...TEMPLATE_BRANDING_TEXT_FIELDS.map((field) => field.key),
-        ...TEMPLATE_BRANDING_TEXTAREA_FIELDS.map((field) => field.key),
-        ...TEMPLATE_BRANDING_ASSET_FIELDS.map((field) => field.key),
-        ...TEMPLATE_BRANDING_COLOR_FIELDS.map((field) => field.key),
-      ]);
-      const response = await setUiPrefs({ template_branding: payload });
-      const nextAppBranding = normalizeAppBranding(response?.app_branding, response?.workspace);
-      setAppBranding(nextAppBranding);
-      setTemplateBranding(normalizeTemplateBranding(response?.template_branding, nextAppBranding));
-      setBrandingAssets(sortBrandingAssets(response?.branding_assets || brandingAssets));
-      await reloadI18n(response);
-      pushToast("success", "Template branding updated.");
-    } catch (err) {
-      pushToast("error", err?.message || "Failed to update template branding.");
-    } finally {
-      setTemplateBrandingSaving(false);
-    }
-  }
-
-  async function saveRegionalDefaults() {
-    if (!canEditWorkspaceSettings) return;
-    setRegionalSaving(true);
-    try {
-      await persistWorkspacePrefs({
-        default_locale: defaultLocale,
-        default_timezone: defaultTimezone,
-        default_currency: defaultCurrency,
+  function resetAssetUpload(nextType = BRANDING_ASSET_UPLOAD_DEFAULTS.type, asset = null) {
+    if (asset) {
+      setAssetUpload({
+        ...BRANDING_ASSET_UPLOAD_DEFAULTS,
+        id: asset.id || "",
+        name: textValue(asset.name),
+        reference_key: textValue(asset.reference_key),
+        type: textValue(asset.type || nextType || BRANDING_ASSET_UPLOAD_DEFAULTS.type),
+        file_url: textValue(asset.file_url),
+        alt_text: textValue(asset.alt_text),
+        notes: textValue(asset.notes),
+        sort_order: Number(asset.sort_order || 0),
+        is_active: asset.is_active !== false,
       });
-      pushToast("success", t("settings.workspace_regional_saved"));
-    } catch {
-      // toast already emitted in persistWorkspacePrefs
-    } finally {
-      setRegionalSaving(false);
+    } else {
+      setAssetUpload({ ...BRANDING_ASSET_UPLOAD_DEFAULTS, type: nextType });
     }
+    setAssetUploadFile(null);
+    if (assetFileRef.current) assetFileRef.current.value = "";
   }
 
-  async function uploadBrandingAsset() {
-    if (!assetUploadFile || !assetUpload.name.trim() || !assetUpload.reference_key.trim()) return;
+  function openAssetDrawer(nextType = BRANDING_ASSET_UPLOAD_DEFAULTS.type, asset = null) {
+    resetAssetUpload(nextType, asset);
+    setAssetDrawerOpen(true);
+  }
+
+  function closeAssetDrawer() {
+    if (assetUploading) return;
+    setAssetDrawerOpen(false);
+    resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
+  }
+
+  async function submitAssetDrawer() {
+    if (!assetUpload.name.trim() || !assetUpload.reference_key.trim()) return;
+    if (!assetUpload.id && !assetUploadFile) return;
     setAssetUploading(true);
     try {
-      const session = await getSafeSession();
-      const token = session?.access_token;
-      const form = new FormData();
-      form.append("file", assetUploadFile);
-      form.append("name", assetUpload.name.trim());
-      form.append("reference_key", assetUpload.reference_key.trim());
-      form.append("type", assetUpload.type);
-      form.append("alt_text", assetUpload.alt_text);
-      form.append("notes", assetUpload.notes);
-      form.append("sort_order", String(Number(assetUpload.sort_order || 0)));
-      form.append("is_active", assetUpload.is_active ? "true" : "false");
-      const response = await fetch(`${API_URL}/prefs/branding/assets/upload`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      });
-      const data = await response.json();
-      if (!response.ok || !data?.asset) {
-        throw new Error(data?.errors?.[0]?.message || "Failed to upload branding asset.");
+      if (assetUpload.id) {
+        const response = await apiFetch(`/prefs/branding/assets/${encodeURIComponent(assetUpload.id)}`, {
+          method: "PATCH",
+          body: {
+            name: assetUpload.name.trim(),
+            reference_key: assetUpload.reference_key.trim(),
+            type: assetUpload.type,
+            alt_text: textValue(assetUpload.alt_text),
+            notes: textValue(assetUpload.notes),
+            is_active: assetUpload.is_active !== false,
+            sort_order: Number(assetUpload.sort_order || 0),
+          },
+        });
+        if (!response?.asset) throw new Error("Failed to save branding asset.");
+        setBrandingAssets((prev) => upsertBrandingAsset(prev, response.asset));
+        pushToast("success", "Branding asset updated.");
+      } else {
+        const session = await getSafeSession();
+        const token = session?.access_token;
+        const activeWorkspaceId = getActiveWorkspaceId();
+        const form = new FormData();
+        form.append("file", assetUploadFile);
+        form.append("name", assetUpload.name.trim());
+        form.append("reference_key", assetUpload.reference_key.trim());
+        form.append("type", assetUpload.type);
+        form.append("alt_text", assetUpload.alt_text);
+        form.append("notes", assetUpload.notes);
+        form.append("sort_order", String(Number(assetUpload.sort_order || 0)));
+        form.append("is_active", assetUpload.is_active ? "true" : "false");
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        if (activeWorkspaceId) headers["X-Workspace-Id"] = activeWorkspaceId;
+        const response = await fetch(`${API_URL}/prefs/branding/assets/upload`, {
+          method: "POST",
+          headers,
+          body: form,
+        });
+        const data = await response.json();
+        if (!response.ok || !data?.asset) {
+          throw new Error(data?.errors?.[0]?.message || "Failed to upload branding asset.");
+        }
+        setBrandingAssets((prev) => upsertBrandingAsset(prev, data.asset));
+        pushToast("success", "Branding asset uploaded.");
       }
-      setBrandingAssets((prev) => upsertBrandingAsset(prev, data.asset));
-      setAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS);
-      setAssetUploadFile(null);
-      if (assetFileRef.current) assetFileRef.current.value = "";
-      pushToast("success", "Branding asset uploaded.");
+      setAssetDrawerOpen(false);
+      resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
     } catch (err) {
-      pushToast("error", err?.message || "Failed to upload branding asset.");
+      pushToast("error", err?.message || "Failed to save branding asset.");
     } finally {
       setAssetUploading(false);
     }
   }
 
-  async function saveBrandingAsset(asset) {
-    if (!asset?.id || !asset?.name?.trim() || !asset?.reference_key?.trim()) return;
-    setAssetSavingId(asset.id);
-    try {
-      const response = await apiFetch(`/prefs/branding/assets/${encodeURIComponent(asset.id)}`, {
-        method: "PATCH",
-        body: {
-          name: asset.name.trim(),
-          reference_key: asset.reference_key.trim(),
-          type: asset.type,
-          alt_text: textValue(asset.alt_text),
-          notes: textValue(asset.notes),
-          is_active: asset.is_active !== false,
-          sort_order: Number(asset.sort_order || 0),
+  const showSettingsActions = canEditWorkspaceSettings && activeTab !== "workspaces";
+  const headerActions = showSettingsActions ? (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="btn btn-primary btn-sm"
+        onClick={saveWorkspaceSettings}
+        disabled={settingsSaving || assetUploading || !appBranding.workspace_name.trim()}
+      >
+        {settingsSaving ? t("common.saving") : t("common.save")}
+      </button>
+    </div>
+  ) : null;
+  const mobilePrimaryActions = showSettingsActions
+    ? [
+        {
+          label: settingsSaving ? t("common.saving") : t("common.save"),
+          className: "btn btn-primary btn-sm",
+          onClick: saveWorkspaceSettings,
+          disabled: settingsSaving || assetUploading || !appBranding.workspace_name.trim(),
         },
-      });
-      if (!response?.asset) {
-        throw new Error("Failed to save branding asset.");
-      }
-      setBrandingAssets((prev) => upsertBrandingAsset(prev, response.asset));
-      pushToast("success", "Branding asset saved.");
-    } catch (err) {
-      pushToast("error", err?.message || "Failed to save branding asset.");
-    } finally {
-      setAssetSavingId("");
-    }
-  }
-
-  function renderAssetSelect(state, setState, field, { disabled = false, fallbackUrl = "" } = {}) {
-    const selectedAsset = assetMap.get(state[field.key]) || null;
-    const filteredOptions = assetOptions.filter(
-      (asset) => asset?.id === state[field.key] || !field.type || asset?.type === field.type,
-    );
-    return (
-      <div className="space-y-2">
-        <label className="form-control">
-          <span className="label-text text-sm">{field.label}</span>
-          <AppSelect
-            className="select select-bordered select-sm"
-            value={state[field.key] || ""}
-            onChange={(event) => setState((prev) => ({ ...prev, [field.key]: event.target.value }))}
-            disabled={disabled}
-            aria-label={field.label}
-            placeholder="No asset selected"
-          >
-            <option value="">No asset selected</option>
-            {filteredOptions.map((asset) => (
-              <option key={asset.id} value={asset.id}>
-                {assetOptionLabel(asset)}
-              </option>
-            ))}
-          </AppSelect>
-        </label>
-        <AssetPreview asset={selectedAsset} fallbackUrl={fallbackUrl} emptyLabel="Select an asset or upload one below." />
-      </div>
-    );
-  }
+      ]
+    : [];
 
   return (
-    <TabbedPaneShell tabs={workspaceTabs} activeTabId={activeTab} onTabChange={goTab} contentContainer={true}>
+    <TabbedPaneShell
+      tabs={workspaceTabs}
+      activeTabId={activeTab}
+      onTabChange={goTab}
+      rightActions={headerActions}
+      mobilePrimaryActions={mobilePrimaryActions}
+      contentContainer={true}
+    >
       <div className="space-y-4">
         {error && <div className="alert alert-error text-sm">{error}</div>}
 
@@ -746,6 +915,79 @@ export default function SettingsWorkspacesPage() {
           </Section>
         )}
 
+        {activeTab === "business" && (
+          <div className="space-y-4">
+            {!canEditWorkspaceSettings ? (
+              <div className="alert alert-warning text-sm">{t("settings.workspace_admin_only")}</div>
+            ) : (
+              <>
+                <Section
+                  title="Business Details"
+                  description="Customer-facing details used in templates, PDFs, emails, and generated content."
+                >
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {[ 
+                      { key: "workspace_name", label: "Workspace Name", source: "app" },
+                      ...BUSINESS_TAB_TEXT_FIELDS,
+                    ].map((field) => (
+                      <label className="form-control" key={field.key}>
+                        <span className="label-text text-sm">{field.label}</span>
+                        {field.key === "address_line_1" ? (
+                          <BusinessAddressField
+                            value={templateBranding.address_line_1 || ""}
+                            disabled={settingsSaving}
+                            canManageSettings={canEditWorkspaceSettings}
+                            onChange={(next) => setTemplateBranding((prev) => ({ ...prev, address_line_1: next }))}
+                            onApplyAddress={(address) =>
+                              setTemplateBranding((prev) => ({
+                                ...prev,
+                                address_line_1: address?.line_1 || "",
+                                address_line_2: address?.line_2 || "",
+                                city: address?.city || "",
+                                state_region: address?.region || "",
+                                postcode: address?.postcode || "",
+                                country: address?.country || "",
+                              }))
+                            }
+                          />
+                        ) : (
+                          <input
+                            type={field.type || "text"}
+                            className="input input-bordered input-sm"
+                            value={field.source === "app" ? appBranding.workspace_name : templateBranding[field.key] || ""}
+                            onChange={(event) =>
+                              field.source === "app"
+                                ? setAppBranding((prev) => ({ ...prev, workspace_name: event.target.value }))
+                                : setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
+                            }
+                            disabled={settingsSaving}
+                          />
+                        )}
+                        {BUSINESS_FIELD_HELP[field.key] ? <span className="label-text-alt mt-1 opacity-70">{BUSINESS_FIELD_HELP[field.key]}</span> : null}
+                      </label>
+                    ))}
+                    {TEMPLATE_BRANDING_TEXTAREA_FIELDS.map((field) => (
+                      <label className="form-control lg:col-span-2" key={field.key}>
+                        <span className="label-text text-sm">{field.label}</span>
+                        <textarea
+                          className="textarea textarea-bordered textarea-sm min-h-28"
+                          value={templateBranding[field.key] || ""}
+                          onChange={(event) =>
+                            setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
+                          }
+                          disabled={settingsSaving}
+                        />
+                        {BUSINESS_FIELD_HELP[field.key] ? <span className="label-text-alt mt-1 opacity-70">{BUSINESS_FIELD_HELP[field.key]}</span> : null}
+                      </label>
+                    ))}
+                  </div>
+                </Section>
+
+              </>
+            )}
+          </div>
+        )}
+
         {activeTab === "branding" && (
           <div className="space-y-4">
             {!canEditWorkspaceSettings ? (
@@ -753,283 +995,117 @@ export default function SettingsWorkspacesPage() {
             ) : (
               <>
                 <Section
-                  title="App Branding"
-                  description="Workspace name, app theme colors, and app-facing brand assets."
+                  title="Business Colors"
+                  description="One brand palette used across the app, customer-facing templates, and AI-generated content."
                 >
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                      <label className="form-control">
-                        <span className="label-text text-sm">Workspace Name</span>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    {APP_BRANDING_COLOR_FIELDS.map((field) => (
+                      <label className="form-control" key={field.key}>
+                        <span className="label-text text-sm">{field.label}</span>
                         <input
-                          type="text"
-                          className="input input-bordered input-sm w-full"
-                          value={appBranding.workspace_name}
-                          onChange={(event) => setAppBranding((prev) => ({ ...prev, workspace_name: event.target.value }))}
-                          disabled={appBrandingSaving}
+                          type="color"
+                          className="h-11 w-full cursor-pointer rounded-box border border-base-300 bg-base-100 p-1"
+                          value={appBranding[field.key] || field.fallback}
+                          onChange={(event) =>
+                            setAppBranding((prev) => ({
+                              ...prev,
+                              [field.key]: normalizeHexColor(event.target.value, field.fallback),
+                            }))
+                          }
+                          disabled={settingsSaving}
                         />
+                        {BRAND_COLOR_FIELD_HELP[field.key] ? <span className="label-text-alt mt-1 opacity-70">{BRAND_COLOR_FIELD_HELP[field.key]}</span> : null}
                       </label>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {APP_BRANDING_COLOR_FIELDS.map((field) => (
-                        <label className="form-control" key={field.key}>
-                          <span className="label-text text-sm">{field.label}</span>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              className="input input-bordered h-10 w-16 p-1"
-                              value={appBranding[field.key] || field.fallback}
-                              onChange={(event) =>
-                                setAppBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
-                              }
-                              disabled={appBrandingSaving}
-                            />
-                            <input
-                              type="text"
-                              className="input input-bordered input-sm flex-1"
-                              value={appBranding[field.key] || field.fallback}
-                              onChange={(event) =>
-                                setAppBranding((prev) => ({
-                                  ...prev,
-                                  [field.key]: normalizeHexColor(event.target.value, field.fallback),
-                                }))
-                              }
-                              disabled={appBrandingSaving}
-                            />
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                      {APP_BRANDING_PRIMARY_ASSET_FIELDS.map((field) => (
-                        <div key={field.key}>
-                          {renderAssetSelect(appBranding, setAppBranding, field, {
-                            disabled: appBrandingSaving,
-                            fallbackUrl: field.key === "app_logo_asset_id" ? appBranding.app_logo_url : "",
-                          })}
-                        </div>
-                      ))}
-                    </div>
-
-                    <DisclosureSection
-                      title="Additional App Assets"
-                      summary="Optional"
-                    >
-                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                        {APP_BRANDING_OPTIONAL_ASSET_FIELDS.map((field) => (
-                          <div key={field.key}>
-                            {renderAssetSelect(appBranding, setAppBranding, field, {
-                              disabled: appBrandingSaving,
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </DisclosureSection>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm opacity-70">
-                        These values drive the active workspace theme and app branding.
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={appBrandingSaving || !appBranding.workspace_name.trim()}
-                        onClick={saveAppBranding}
-                      >
-                        {appBrandingSaving ? t("common.saving") : t("common.save")}
-                      </button>
-                    </div>
+                    ))}
                   </div>
                 </Section>
 
                 <Section
-                  title="Template Branding"
-                  description="Customer-facing branding for emails, templates, PDFs, and generated content."
-                >
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {TEMPLATE_BRANDING_PRIMARY_TEXT_FIELDS.map((field) => (
-                        <label className="form-control" key={field.key}>
-                          <span className="label-text text-sm">{field.label}</span>
-                          <input
-                            type={field.type || "text"}
-                            className="input input-bordered input-sm"
-                            value={templateBranding[field.key] || ""}
-                            onChange={(event) =>
-                              setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
-                            }
-                            disabled={templateBrandingSaving}
-                          />
-                        </label>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {TEMPLATE_BRANDING_COLOR_FIELDS.map((field) => (
-                        <label className="form-control" key={field.key}>
-                          <span className="label-text text-sm">{field.label}</span>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="color"
-                              className="input input-bordered h-10 w-16 p-1"
-                              value={templateBranding[field.key] || appBranding[field.fallbackKey] || field.fallback}
-                              onChange={(event) =>
-                                setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
-                              }
-                              disabled={templateBrandingSaving}
-                            />
-                            <input
-                              type="text"
-                              className="input input-bordered input-sm flex-1"
-                              value={templateBranding[field.key] || appBranding[field.fallbackKey] || field.fallback}
-                              onChange={(event) =>
-                                setTemplateBranding((prev) => ({
-                                  ...prev,
-                                  [field.key]: normalizeHexColor(
-                                    event.target.value,
-                                    appBranding[field.fallbackKey] || field.fallback,
-                                  ),
-                                }))
-                              }
-                              disabled={templateBrandingSaving}
-                            />
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                      {TEMPLATE_BRANDING_PRIMARY_ASSET_FIELDS.map((field) => (
-                        <div key={field.key}>
-                          {renderAssetSelect(templateBranding, setTemplateBranding, field, {
-                            disabled: templateBrandingSaving,
-                            fallbackUrl: field.key === "primary_logo_asset_id" ? templateBranding.primary_logo_url : "",
-                          })}
-                        </div>
-                      ))}
-                    </div>
-
-                    <DisclosureSection
-                      title="Legal, Address, and Banking Details"
-                      summary="Optional"
+                  title="Assets"
+                  description="Manage the uploaded asset library used across workspace branding."
+                  headerActions={
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => openAssetDrawer()}
+                      disabled={assetUploading || settingsSaving}
                     >
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {TEMPLATE_BRANDING_OPTIONAL_TEXT_FIELDS.map((field) => (
-                          <label className="form-control" key={field.key}>
-                            <span className="label-text text-sm">{field.label}</span>
-                            <input
-                              type={field.type || "text"}
-                              className="input input-bordered input-sm"
-                              value={templateBranding[field.key] || ""}
-                              onChange={(event) =>
-                                setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
-                              }
-                              disabled={templateBrandingSaving}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    </DisclosureSection>
-
-                    <DisclosureSection
-                      title="Footer, Disclaimer, and Template Copy"
-                      summary="Optional"
-                    >
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        {TEMPLATE_BRANDING_TEXTAREA_FIELDS.map((field) => (
-                          <label className="form-control" key={field.key}>
-                            <span className="label-text text-sm">{field.label}</span>
-                            <textarea
-                              className="textarea textarea-bordered textarea-sm min-h-28"
-                              value={templateBranding[field.key] || ""}
-                              onChange={(event) =>
-                                setTemplateBranding((prev) => ({ ...prev, [field.key]: event.target.value }))
-                              }
-                              disabled={templateBrandingSaving}
-                            />
-                          </label>
-                        ))}
-                      </div>
-                    </DisclosureSection>
-
-                    <DisclosureSection
-                      title="Graphics and Template Extras"
-                      summary="Optional"
-                    >
-                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                        {TEMPLATE_BRANDING_OPTIONAL_ASSET_FIELDS.map((field) => (
-                          <div key={field.key}>
-                            {renderAssetSelect(templateBranding, setTemplateBranding, field, {
-                              disabled: templateBrandingSaving,
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </DisclosureSection>
-
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm opacity-70">
-                        Template branding falls back to app branding where sensible.
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={templateBrandingSaving}
-                        onClick={saveTemplateBranding}
-                      >
-                        {templateBrandingSaving ? t("common.saving") : t("common.save")}
-                      </button>
-                    </div>
-                  </div>
-                </Section>
-
-                <Section
-                  title="Branding Assets"
-                  description="Reusable assets shared across app branding and templates."
+                      Upload Asset
+                    </button>
+                  }
                 >
                   <div className="space-y-6">
-                    <DisclosureSection title="Upload Asset" summary="Add a reusable logo, icon, or graphic" defaultOpen={true}>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                          <label className="form-control">
-                            <span className="label-text text-sm">Name</span>
-                            <input
-                              type="text"
-                              className="input input-bordered input-sm"
-                              value={assetUpload.name}
-                              onChange={(event) => setAssetUpload((prev) => ({ ...prev, name: event.target.value }))}
-                              disabled={assetUploading}
-                            />
-                          </label>
-                          <label className="form-control">
-                            <span className="label-text text-sm">Reference Key</span>
-                            <input
-                              type="text"
-                              className="input input-bordered input-sm"
-                              value={assetUpload.reference_key}
-                              onChange={(event) =>
-                                setAssetUpload((prev) => ({ ...prev, reference_key: event.target.value }))
-                              }
-                              disabled={assetUploading}
-                            />
-                          </label>
-                          <label className="form-control">
-                            <span className="label-text text-sm">Type</span>
-                            <AppSelect
-                              className="select select-bordered select-sm"
-                              value={assetUpload.type}
-                              onChange={(event) => setAssetUpload((prev) => ({ ...prev, type: event.target.value }))}
-                              disabled={assetUploading}
-                              aria-label="Asset type"
-                            >
-                              {BRANDING_ASSET_TYPE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
+                    <div className="space-y-3">
+                      {assetOptions.length > 0 ? (
+                        <div className="overflow-x-auto">
+                          <table className="table table-sm">
+                            <thead>
+                              <tr>
+                                <th>Preview</th>
+                                <th>Name</th>
+                                <th>Reference Key</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th className="w-24">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {assetOptions.map((asset) => (
+                                <tr key={asset.id}>
+                                  <td className="w-20">
+                                    <AssetThumbnail asset={asset} emptyLabel="No preview" />
+                                  </td>
+                                  <td className="whitespace-nowrap">{asset.name || "Untitled asset"}</td>
+                                  <td className="whitespace-nowrap">{asset.reference_key || "—"}</td>
+                                  <td className="whitespace-nowrap">{asset.type || "other"}</td>
+                                  <td className="whitespace-nowrap">{asset.is_active === false ? "Inactive" : "Active"}</td>
+                                  <td className="whitespace-nowrap">
+                                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => openAssetDrawer(asset.type || BRANDING_ASSET_UPLOAD_DEFAULTS.type, asset)}>
+                                      Edit
+                                    </button>
+                                  </td>
+                                </tr>
                               ))}
-                            </AppSelect>
-                          </label>
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </Section>
+
+                <ResponsiveDrawer
+                  open={assetDrawerOpen}
+                  onClose={closeAssetDrawer}
+                  title={assetUpload.id ? "Edit Asset" : "Upload Asset"}
+                  description={
+                    assetUpload.id
+                      ? "Update the asset metadata used across workspace branding."
+                      : "Upload a reusable asset, set its type, and then assign it from the Assets section."
+                  }
+                  mobileHeightClass="h-[88dvh] max-h-[88dvh]"
+                  zIndexClass="z-[220]"
+                >
+                  <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <label className="form-control">
+                          <span className="label-text text-sm">Type</span>
+                          <AppSelect
+                            className="select select-bordered select-sm"
+                            value={assetUpload.type}
+                            onChange={(event) => setAssetUpload((prev) => ({ ...prev, type: event.target.value }))}
+                            disabled={assetUploading}
+                            aria-label="Asset type"
+                          >
+                            {BRANDING_ASSET_TYPE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </AppSelect>
+                          <span className="label-text-alt mt-1 opacity-70">Choose the asset type so brand fields can filter the right options.</span>
+                        </label>
+                        {!assetUpload.id ? (
                           <label className="form-control">
                             <span className="label-text text-sm">File</span>
                             <input
@@ -1039,237 +1115,109 @@ export default function SettingsWorkspacesPage() {
                               onChange={(event) => setAssetUploadFile(event.target.files?.[0] || null)}
                               disabled={assetUploading}
                             />
+                            <span className="label-text-alt mt-1 opacity-70">Upload the original file once, then reuse it anywhere in workspace branding.</span>
                           </label>
-                        </div>
-                        <DisclosureSection title="Optional Asset Metadata" summary="Optional">
-                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                            <label className="form-control">
-                              <span className="label-text text-sm">Alt Text</span>
-                              <input
-                                type="text"
-                                className="input input-bordered input-sm"
-                                value={assetUpload.alt_text}
-                                onChange={(event) =>
-                                  setAssetUpload((prev) => ({ ...prev, alt_text: event.target.value }))
-                                }
-                                disabled={assetUploading}
-                              />
-                            </label>
-                            <label className="form-control">
-                              <span className="label-text text-sm">Sort Order</span>
-                              <input
-                                type="number"
-                                className="input input-bordered input-sm"
-                                value={assetUpload.sort_order}
-                                onChange={(event) =>
-                                  setAssetUpload((prev) => ({ ...prev, sort_order: Number(event.target.value || 0) }))
-                                }
-                                disabled={assetUploading}
-                              />
-                            </label>
-                          </div>
-                          <label className="form-control mt-4">
-                            <span className="label-text text-sm">Notes / Intended Usage</span>
-                            <textarea
-                              className="textarea textarea-bordered textarea-sm min-h-24"
-                              value={assetUpload.notes}
-                              onChange={(event) => setAssetUpload((prev) => ({ ...prev, notes: event.target.value }))}
-                              disabled={assetUploading}
-                            />
-                          </label>
-                          <label className="label mt-3 cursor-pointer justify-start gap-3">
+                        ) : assetUpload.file_url ? (
+                          <label className="form-control">
+                            <span className="label-text text-sm">Asset URL</span>
                             <input
-                              type="checkbox"
-                              className="checkbox checkbox-sm"
-                              checked={assetUpload.is_active}
-                              onChange={(event) =>
-                                setAssetUpload((prev) => ({ ...prev, is_active: event.target.checked }))
-                              }
-                              disabled={assetUploading}
+                              type="text"
+                              className="input input-bordered input-sm"
+                              value={assetUpload.file_url}
+                              readOnly
                             />
-                            <span className="label-text">Asset is active</span>
+                            <span className="label-text-alt mt-1 opacity-70">
+                              Saved automatically from storage.
+                              {" "}
+                              <a href={assetUpload.file_url} target="_blank" rel="noreferrer" className="link link-primary">
+                                Open asset
+                              </a>
+                            </span>
                           </label>
-                        </DisclosureSection>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm opacity-70">
-                            Use stable reference keys so templates and generated content can reuse assets reliably.
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            disabled={assetUploading || !assetUploadFile || !assetUpload.name.trim() || !assetUpload.reference_key.trim()}
-                            onClick={uploadBrandingAsset}
-                          >
-                            {assetUploading ? t("common.uploading") : "Upload Asset"}
-                          </button>
-                        </div>
+                        ) : <div />}
+                        <label className="form-control">
+                          <span className="label-text text-sm">Name</span>
+                          <input
+                            type="text"
+                            className="input input-bordered input-sm"
+                            value={assetUpload.name}
+                            onChange={(event) => setAssetUpload((prev) => ({ ...prev, name: event.target.value }))}
+                            disabled={assetUploading}
+                          />
+                          <span className="label-text-alt mt-1 opacity-70">Clear internal label for admins choosing assets later.</span>
+                        </label>
+                        <label className="form-control">
+                          <span className="label-text text-sm">Reference Key</span>
+                          <input
+                            type="text"
+                            className="input input-bordered input-sm"
+                            value={assetUpload.reference_key}
+                            onChange={(event) => setAssetUpload((prev) => ({ ...prev, reference_key: event.target.value }))}
+                            disabled={assetUploading}
+                          />
+                          <span className="label-text-alt mt-1 opacity-70">Stable identifier templates and AI can reference consistently.</span>
+                        </label>
+                        <label className="form-control">
+                          <span className="label-text text-sm">Alt Text</span>
+                          <input
+                            type="text"
+                            className="input input-bordered input-sm"
+                            value={assetUpload.alt_text}
+                            onChange={(event) => setAssetUpload((prev) => ({ ...prev, alt_text: event.target.value }))}
+                            disabled={assetUploading}
+                          />
+                          <span className="label-text-alt mt-1 opacity-70">Useful for accessibility and descriptive output.</span>
+                        </label>
+                        <label className="form-control">
+                          <span className="label-text text-sm">Sort Order</span>
+                          <input
+                            type="number"
+                            className="input input-bordered input-sm"
+                            value={assetUpload.sort_order}
+                            onChange={(event) =>
+                              setAssetUpload((prev) => ({ ...prev, sort_order: Number(event.target.value || 0) }))
+                            }
+                            disabled={assetUploading}
+                          />
+                          <span className="label-text-alt mt-1 opacity-70">Lower numbers appear earlier in filtered asset lists.</span>
+                        </label>
                       </div>
-                    </DisclosureSection>
+                      <label className="form-control">
+                        <span className="label-text text-sm">Notes</span>
+                        <textarea
+                          className="textarea textarea-bordered textarea-sm min-h-24"
+                          value={assetUpload.notes}
+                          onChange={(event) => setAssetUpload((prev) => ({ ...prev, notes: event.target.value }))}
+                          disabled={assetUploading}
+                        />
+                        <span className="label-text-alt mt-1 opacity-70">Use notes to explain where this asset should be used.</span>
+                      </label>
+                      <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={assetUpload.is_active}
+                          onChange={(event) => setAssetUpload((prev) => ({ ...prev, is_active: event.target.checked }))}
+                          disabled={assetUploading}
+                        />
+                        <span className="label-text">Asset is active</span>
+                      </label>
 
-                    {assetOptions.length === 0 ? (
-                      <div className="text-sm opacity-60">No branding assets uploaded yet.</div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        {assetOptions.map((asset) => (
-                          <div key={asset.id} className="rounded-box border border-base-300 bg-base-100 p-4">
-                            <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-4">
-                              <AssetPreview asset={asset} emptyLabel="No preview available." />
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <div className="truncate text-sm font-semibold">{asset.name || "Untitled asset"}</div>
-                                  <span className="badge badge-outline badge-sm">{asset.type || "other"}</span>
-                                  <span className={`badge badge-sm ${asset.is_active === false ? "badge-ghost" : "badge-success badge-outline"}`}>
-                                    {asset.is_active === false ? "Inactive" : "Active"}
-                                  </span>
-                                </div>
-                                <div className="mt-1 text-xs opacity-70">{asset.reference_key || "No reference key"}</div>
-                                {asset.notes ? <div className="mt-2 text-sm opacity-80">{asset.notes}</div> : null}
-                              </div>
-                            </div>
-                            <DisclosureSection
-                              title="Edit Asset Details"
-                              summary={`${countConfiguredValues(asset, ["alt_text", "notes"])} metadata fields`}
-                            >
-                              <div className="space-y-3">
-                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                  <label className="form-control">
-                                    <span className="label-text text-sm">Name</span>
-                                    <input
-                                      type="text"
-                                      className="input input-bordered input-sm"
-                                      value={asset.name || ""}
-                                      onChange={(event) =>
-                                        setBrandingAssets((prev) =>
-                                          prev.map((entry) =>
-                                            entry.id === asset.id ? { ...entry, name: event.target.value } : entry,
-                                          ),
-                                        )
-                                      }
-                                      disabled={assetSavingId === asset.id}
-                                    />
-                                  </label>
-                                  <label className="form-control">
-                                    <span className="label-text text-sm">Reference Key</span>
-                                    <input
-                                      type="text"
-                                      className="input input-bordered input-sm"
-                                      value={asset.reference_key || ""}
-                                      onChange={(event) =>
-                                        setBrandingAssets((prev) =>
-                                          prev.map((entry) =>
-                                            entry.id === asset.id ? { ...entry, reference_key: event.target.value } : entry,
-                                          ),
-                                        )
-                                      }
-                                      disabled={assetSavingId === asset.id}
-                                    />
-                                  </label>
-                                  <label className="form-control">
-                                    <span className="label-text text-sm">Type</span>
-                                    <AppSelect
-                                      className="select select-bordered select-sm"
-                                      value={asset.type || "other"}
-                                      onChange={(event) =>
-                                        setBrandingAssets((prev) =>
-                                          prev.map((entry) =>
-                                            entry.id === asset.id ? { ...entry, type: event.target.value } : entry,
-                                          ),
-                                        )
-                                      }
-                                      disabled={assetSavingId === asset.id}
-                                      aria-label={`Asset type for ${asset.name || asset.reference_key || asset.id}`}
-                                    >
-                                      {BRANDING_ASSET_TYPE_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                          {option.label}
-                                        </option>
-                                      ))}
-                                    </AppSelect>
-                                  </label>
-                                  <label className="form-control">
-                                    <span className="label-text text-sm">Sort Order</span>
-                                    <input
-                                      type="number"
-                                      className="input input-bordered input-sm"
-                                      value={asset.sort_order ?? 0}
-                                      onChange={(event) =>
-                                        setBrandingAssets((prev) =>
-                                          prev.map((entry) =>
-                                            entry.id === asset.id
-                                              ? { ...entry, sort_order: Number(event.target.value || 0) }
-                                              : entry,
-                                          ),
-                                        )
-                                      }
-                                      disabled={assetSavingId === asset.id}
-                                    />
-                                  </label>
-                                </div>
-                                <label className="form-control">
-                                  <span className="label-text text-sm">Alt Text</span>
-                                  <input
-                                    type="text"
-                                    className="input input-bordered input-sm"
-                                    value={asset.alt_text || ""}
-                                    onChange={(event) =>
-                                      setBrandingAssets((prev) =>
-                                        prev.map((entry) =>
-                                          entry.id === asset.id ? { ...entry, alt_text: event.target.value } : entry,
-                                        ),
-                                      )
-                                    }
-                                    disabled={assetSavingId === asset.id}
-                                  />
-                                </label>
-                                <label className="form-control">
-                                  <span className="label-text text-sm">Notes / Intended Usage</span>
-                                  <textarea
-                                    className="textarea textarea-bordered textarea-sm min-h-24"
-                                    value={asset.notes || ""}
-                                    onChange={(event) =>
-                                      setBrandingAssets((prev) =>
-                                        prev.map((entry) =>
-                                          entry.id === asset.id ? { ...entry, notes: event.target.value } : entry,
-                                        ),
-                                      )
-                                    }
-                                    disabled={assetSavingId === asset.id}
-                                  />
-                                </label>
-                                <div className="flex items-center justify-between gap-3">
-                                  <label className="label cursor-pointer justify-start gap-3">
-                                    <input
-                                      type="checkbox"
-                                      className="checkbox checkbox-sm"
-                                      checked={asset.is_active !== false}
-                                      onChange={(event) =>
-                                        setBrandingAssets((prev) =>
-                                          prev.map((entry) =>
-                                            entry.id === asset.id ? { ...entry, is_active: event.target.checked } : entry,
-                                          ),
-                                        )
-                                      }
-                                      disabled={assetSavingId === asset.id}
-                                    />
-                                    <span className="label-text">Active</span>
-                                  </label>
-                                  <button
-                                    type="button"
-                                    className="btn btn-primary btn-sm"
-                                    disabled={assetSavingId === asset.id || !asset.name?.trim() || !asset.reference_key?.trim()}
-                                    onClick={() => saveBrandingAsset(asset)}
-                                  >
-                                    {assetSavingId === asset.id ? t("common.saving") : t("common.save")}
-                                  </button>
-                                </div>
-                              </div>
-                            </DisclosureSection>
-                          </div>
-                        ))}
+                      <div className="flex items-center justify-end gap-3">
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={closeAssetDrawer} disabled={assetUploading}>
+                          {t("common.cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={assetUploading || (!assetUpload.id && !assetUploadFile) || !assetUpload.name.trim() || !assetUpload.reference_key.trim()}
+                          onClick={submitAssetDrawer}
+                        >
+                          {assetUploading ? t("common.saving") : assetUpload.id ? "Save Asset" : "Upload Asset"}
+                        </button>
                       </div>
-                    )}
                   </div>
-                </Section>
+                </ResponsiveDrawer>
               </>
             )}
           </div>
@@ -1289,7 +1237,7 @@ export default function SettingsWorkspacesPage() {
                       value={defaultLocale}
                       onChange={(event) => setDefaultLocale(event.target.value)}
                       aria-label={t("settings.default_language_label")}
-                      disabled={regionalSaving}
+                      disabled={settingsSaving}
                     >
                       {availableLocales.map((locale) => (
                         <option key={locale.code} value={locale.code}>
@@ -1305,7 +1253,7 @@ export default function SettingsWorkspacesPage() {
                       value={defaultTimezone}
                       onChange={(event) => setDefaultTimezone(event.target.value)}
                       aria-label={t("settings.default_timezone_label")}
-                      disabled={regionalSaving}
+                      disabled={settingsSaving}
                     >
                       {availableTimezones.map((timezone) => (
                         <option key={timezone} value={timezone}>
@@ -1321,7 +1269,7 @@ export default function SettingsWorkspacesPage() {
                       value={defaultCurrency}
                       onChange={(event) => setDefaultCurrency(event.target.value)}
                       aria-label={t("settings.default_currency_label")}
-                      disabled={regionalSaving}
+                      disabled={settingsSaving}
                     >
                       {availableCurrencies.map((currency) => (
                         <option key={currency} value={currency}>
@@ -1332,11 +1280,6 @@ export default function SettingsWorkspacesPage() {
                   </label>
                 </div>
                 <div className="text-sm opacity-70">{t("settings.currency_not_from_locale")}</div>
-                <div>
-                  <button type="button" className="btn btn-primary btn-sm" disabled={regionalSaving} onClick={saveRegionalDefaults}>
-                    {regionalSaving ? t("common.saving") : t("common.save")}
-                  </button>
-                </div>
               </div>
             )}
           </Section>

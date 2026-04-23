@@ -238,6 +238,25 @@
           "label_key": "invoices.entities.biz_invoice.fields.credit_note_id.label"
         },
         {
+          "id": "biz_invoice.primary_document_id",
+          "type": "lookup",
+          "label": "Primary Document",
+          "entity": "entity.biz_document",
+          "display_field": "biz_document.name",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_invoice.primary_document_id"
+          },
+          "label_key": "invoices.entities.biz_invoice.fields.primary_document_id.label"
+        },
+        {
+          "id": "biz_invoice.generated_files",
+          "type": "attachments",
+          "label": "Generated Files",
+          "label_key": "invoices.entities.biz_invoice.fields.generated_files.label"
+        },
+        {
           "id": "biz_invoice.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
@@ -1067,9 +1086,56 @@
       "label": "Mark Credited clicked",
       "event": "action.clicked",
       "action_id": "action.invoice_mark_credited"
+    },
+    {
+      "id": "biz_invoices.action.invoice_create_document.clicked",
+      "label": "Generate Document clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_create_document"
+    },
+    {
+      "id": "biz_invoices.action.invoice_send_email.clicked",
+      "label": "Send Invoice clicked",
+      "event": "action.clicked",
+      "action_id": "action.invoice_send_email"
     }
   ],
   "transformations": [
+    {
+      "key": "invoice_to_document",
+      "source_entity_id": "entity.biz_invoice",
+      "target_entity_id": "entity.biz_document",
+      "field_mappings": {
+        "biz_document.name": {
+          "from": "biz_invoice.invoice_number"
+        },
+        "biz_document.document_type": {
+          "value": "invoice_pdf"
+        },
+        "biz_document.status": {
+          "value": "draft"
+        },
+        "biz_document.related_contact_id": {
+          "from": "biz_invoice.customer_id"
+        },
+        "biz_document.sales_entity": {
+          "from": "biz_invoice.sales_entity"
+        },
+        "biz_document.document_date": {
+          "ref": "$today"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "biz_invoice.primary_document_id",
+        "target_to_source": "biz_document.related_invoice_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_invoice.invoice_number",
+          "biz_invoice.customer_id"
+        ]
+      }
+    },
     {
       "key": "invoice_to_credit_note",
       "source_entity_id": "entity.biz_invoice",
@@ -1319,6 +1385,84 @@
       "action_label_key": "invoices.actions.action_invoice_create_credit_note.label"
     },
     {
+      "id": "action.invoice_create_document",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_invoice",
+      "label": "Generate Document",
+      "transformation_key": "invoice_to_document",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_invoice.status",
+        "value": [
+          "draft",
+          "issued",
+          "part_paid",
+          "paid",
+          "credited"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_invoice.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_invoice.invoice_number"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Generate invoice document?",
+        "body": "This creates or refreshes the linked invoice document record, stores the generated file on this invoice, and makes it visible in the Documents module.",
+        "title_key": "invoices.actions.action_invoice_create_document.confirm.title"
+      },
+      "action_label_key": "invoices.actions.action_invoice_create_document.label"
+    },
+    {
+      "id": "action.invoice_send_email",
+      "kind": "refresh",
+      "entity_id": "entity.biz_invoice",
+      "label": "Send Invoice",
+      "visible_when": {
+        "op": "in",
+        "field": "biz_invoice.status",
+        "value": [
+          "issued",
+          "part_paid",
+          "paid"
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_invoice.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_invoice.invoice_number"
+          },
+          {
+            "op": "exists",
+            "field": "biz_invoice.primary_document_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_invoice.generated_files"
+          }
+        ]
+      },
+      "confirm": {
+        "title": "Send invoice email?",
+        "body": "Send the latest generated invoice PDF to the customer.",
+        "title_key": "invoices.actions.action_invoice_send_email.confirm.title"
+      }
+    },
+    {
       "id": "action.invoice_mark_credited",
       "kind": "update_record",
       "entity_id": "entity.biz_invoice",
@@ -1526,7 +1670,8 @@
           "columns": 2,
           "fields": [
             "biz_invoice.origin_invoice_id",
-            "biz_invoice.credit_note_id"
+            "biz_invoice.credit_note_id",
+            "biz_invoice.primary_document_id"
           ],
           "section_title_key": "invoices.views.form.sections.related.title"
         },
@@ -1657,6 +1802,14 @@
             ]
           },
           "section_title_key": "invoices.views.form.sections.lines.title"
+        },
+        {
+          "id": "documents",
+          "title": "Documents",
+          "fields": [
+            "biz_invoice.primary_document_id",
+            "biz_invoice.generated_files"
+          ]
         }
       ],
       "header": {
@@ -1665,6 +1818,12 @@
         },
         "auto_state_actions": false,
         "primary_actions": [
+          {
+            "action_id": "action.invoice_create_document"
+          },
+          {
+            "action_id": "action.invoice_send_email"
+          },
           {
             "action_id": "action.invoice_issue"
           },
@@ -1731,6 +1890,13 @@
               ]
             },
             {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
+              ]
+            },
+            {
               "id": "xero",
               "label": "Xero Link",
               "sections": [
@@ -1763,6 +1929,8 @@
           "biz_invoice.xero_last_sync_at",
           "biz_invoice.xero_last_sync_error",
           "biz_invoice.credit_note_id",
+          "biz_invoice.primary_document_id",
+          "biz_invoice.generated_files",
           "biz_invoice.cancellation_reason",
           "biz_invoice.notes"
         ]
@@ -2361,6 +2529,21 @@
             "measure": "count"
           }
         ]
+      }
+    ],
+    "documentable": [
+      {
+        "entity_id": "entity.biz_invoice",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "biz_invoice.generated_files",
+        "title_field": "biz_invoice.invoice_number",
+        "category_field": "biz_invoice.status",
+        "date_field": "biz_invoice.invoice_date",
+        "record_label_field": "biz_invoice.invoice_number",
+        "preview_enabled": true,
+        "allow_delete": true,
+        "allow_download": true
       }
     ]
   }

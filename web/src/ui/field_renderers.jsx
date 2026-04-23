@@ -57,6 +57,18 @@ function AutoTextarea({ value, onChange, disabled }) {
   );
 }
 
+function PreviewText({ value, emptyLabel = "No content yet." }) {
+  const text = String(value || "").trim();
+  return (
+    <div
+      className="min-h-[7rem] w-full rounded-box border border-base-300 bg-base-200/30 px-3 py-3 text-sm"
+      style={{ ...FIELD_TEXT_STYLE, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+    >
+      {text ? text : <span className="opacity-60">{emptyLabel}</span>}
+    </div>
+  );
+}
+
 function normalizeEnumOptions(options) {
   if (!Array.isArray(options)) return [];
   return options.map((opt) => {
@@ -95,9 +107,13 @@ export function renderField(field, value, onChange, readonly, record = null) {
     disabled: readonly || field.readonly,
     style: FIELD_TEXT_STYLE,
   };
+  const previewWidget = field?.ui?.widget === "preview";
 
   switch (field.type) {
     case "string":
+      if ((readonly || field.readonly) && previewWidget) {
+        return <PreviewText value={value} emptyLabel={translateRuntime("common.no_value")} />;
+      }
       return (
         <input
           {...common}
@@ -106,6 +122,9 @@ export function renderField(field, value, onChange, readonly, record = null) {
         />
       );
     case "text":
+      if ((readonly || field.readonly) && previewWidget) {
+        return <PreviewText value={value} />;
+      }
       return (
         <AutoTextarea
           value={value || ""}
