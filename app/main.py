@@ -60,6 +60,7 @@ import copy
 import uuid
 import socket
 import difflib
+import psycopg2
 from collections import defaultdict
 from contextlib import contextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
@@ -3752,10 +3753,31 @@ def _fetch_records_for_compute(entity_id: str) -> list[dict]:
     return records
 
 
+def _fetch_record_for_compute(entity_id: str, record_id: str) -> dict | None:
+    normalized = _normalize_entity_id(entity_id)
+    if not normalized or not isinstance(record_id, str) or not record_id:
+        return None
+    row = generic_records.get(normalized, record_id)
+    if not isinstance(row, dict):
+        return None
+    record = row.get("record") if isinstance(row.get("record"), dict) else row
+    return record if isinstance(record, dict) else None
+
+
+def _fetch_entity_def_for_compute(entity_id: str) -> dict | None:
+    return _find_entity_def_global(entity_id)
+
+
 def _recompute_record_for_entity(entity_def: dict, record: dict) -> dict:
     if not has_computed_fields(entity_def):
         return dict(record or {})
-    return recompute_record(entity_def, record or {}, _fetch_records_for_compute)
+    return recompute_record(
+        entity_def,
+        record or {},
+        _fetch_records_for_compute,
+        _fetch_record_for_compute,
+        _fetch_entity_def_for_compute,
+    )
 
 
 def _recompute_store_items_for_entity(entity_def: dict, items: list[dict] | None) -> list[dict]:
@@ -48853,11 +48875,28 @@ async def get_ui_prefs(request: Request) -> dict:
     org_id = get_org_id()
     user_id = actor.get("user_id")
     workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
+    branding = _branding_domains_for_org(org_id)
+    if isinstance(workspace, dict):
+        workspace = {
+            **workspace,
+            "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
+            "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
+            "app_logo_asset_id": branding.get("app_branding", {}).get("app_logo_asset_id") or workspace.get("app_logo_asset_id") or "",
+            "app_icon_asset_id": branding.get("app_branding", {}).get("app_icon_asset_id") or workspace.get("app_icon_asset_id") or "",
+            "favicon_asset_id": branding.get("app_branding", {}).get("favicon_asset_id") or workspace.get("favicon_asset_id") or "",
+            "pwa_icon_asset_id": branding.get("app_branding", {}).get("pwa_icon_asset_id") or workspace.get("pwa_icon_asset_id") or "",
+            "nav_logo_asset_id": branding.get("app_branding", {}).get("nav_logo_asset_id") or workspace.get("nav_logo_asset_id") or "",
+            "homepage_brand_asset_id": branding.get("app_branding", {}).get("homepage_brand_asset_id") or workspace.get("homepage_brand_asset_id") or "",
+        }
     return _ok_response(
         {
             "workspace": workspace or {},
             "user": user or {},
             "resolved": build_locale_context(workspace=workspace, user=user),
+            "app_branding": branding.get("app_branding") or {},
+            "template_branding": branding.get("template_branding") or {},
+            "branding_assets": branding.get("branding_assets") or [],
         }
     )
 
@@ -48875,65 +48914,516 @@ def _default_workspace_name_for_org(org_id: str | None) -> str:
     return normalized or text
 
 
-def _branding_context_for_org(org_id: str) -> dict:
-    workspace_name = ""
-    colors: dict[str, Any] = {}
-    workspace: dict[str, Any] = {}
+_BRANDING_ASSET_TYPES = {
+    "logo",
+    "icon",
+    "header_graphic",
+    "footer_graphic",
+    "background_graphic",
+    "watermark",
+    "banner",
+    "letterhead_graphic",
+    "pwa_icon",
+    "favicon",
+    "nav_logo",
+    "other",
+}
+_APP_BRANDING_ASSET_FIELDS = (
+    "app_logo_asset_id",
+    "app_icon_asset_id",
+    "favicon_asset_id",
+    "pwa_icon_asset_id",
+    "nav_logo_asset_id",
+    "homepage_brand_asset_id",
+)
+_TEMPLATE_BRANDING_TEXT_FIELDS = (
+    "brand_name",
+    "legal_name",
+    "website",
+    "phone",
+    "email",
+    "address_line_1",
+    "address_line_2",
+    "city",
+    "state_region",
+    "postcode",
+    "country",
+    "tax_number",
+    "vat_number",
+    "company_registration_number",
+    "default_footer_text",
+    "default_disclaimer_text",
+    "default_terms_url",
+    "default_bank_name",
+    "default_bank_account_name",
+    "default_bank_account_number",
+    "default_bank_iban",
+    "default_bank_bic",
+    "template_primary_color",
+    "template_secondary_color",
+    "template_accent_color",
+    "template_text_color",
+)
+_TEMPLATE_BRANDING_ASSET_FIELDS = (
+    "primary_logo_asset_id",
+    "secondary_logo_asset_id",
+    "header_graphic_asset_id",
+    "footer_graphic_asset_id",
+    "default_background_graphic_asset_id",
+    "default_email_banner_asset_id",
+    "default_watermark_asset_id",
+)
+
+
+def _trimmed_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _branding_color_value(value: Any) -> str:
+    return _trimmed_text(value)
+
+
+def _branding_colors_from_raw(raw_colors: Any) -> dict[str, str]:
+    colors: dict[str, str] = {}
+    if not isinstance(raw_colors, dict):
+        return colors
+    for key in ("primary", "secondary", "accent", "text"):
+        value = raw_colors.get(key)
+        if isinstance(value, str) and value.strip():
+            colors[key] = value.strip()
+    return colors
+
+
+def _branding_reference_key(value: Any) -> str:
+    text = _trimmed_text(value).lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return text[:120]
+
+
+def _branding_asset_type(value: Any) -> str:
+    text = _trimmed_text(value).lower()
+    return text if text in _BRANDING_ASSET_TYPES else "other"
+
+
+def _branding_asset_select_sql() -> str:
+    return (
+        "select id, workspace_id, name, reference_key, type, storage_key, mime_type, alt_text, notes, "
+        "is_active, sort_order, created_at, updated_at "
+        "from branding_assets where workspace_id=%s "
+        "order by is_active desc, sort_order asc, created_at asc"
+    )
+
+
+def _workspace_ui_prefs_select_sql(*, include_branding_assets: bool = True) -> str:
+    base = (
+        "select org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency"
+    )
+    if include_branding_assets:
+        base += (
+            ", app_logo_asset_id, app_icon_asset_id, favicon_asset_id, pwa_icon_asset_id, nav_logo_asset_id, homepage_brand_asset_id"
+        )
+    return f"{base} from workspace_ui_prefs where org_id=%s"
+
+
+def _workspace_ui_prefs_fetch(conn, org_id: str, *, query_name: str) -> dict[str, Any]:
+    try:
+        return (
+            fetch_one(
+                conn,
+                _workspace_ui_prefs_select_sql(include_branding_assets=True),
+                [org_id],
+                query_name=query_name,
+            )
+            or {}
+        )
+    except psycopg2.errors.UndefinedColumn:
+        conn.rollback()
+        return (
+            fetch_one(
+                conn,
+                _workspace_ui_prefs_select_sql(include_branding_assets=False),
+                [org_id],
+                query_name=f"{query_name}.legacy",
+            )
+            or {}
+        )
+    except psycopg2.errors.UndefinedTable:
+        conn.rollback()
+        return {}
+
+
+def _workspace_ui_prefs_upsert(conn, org_id: str, values: dict[str, Any], *, query_name: str) -> None:
+    try:
+        execute(
+            conn,
+            """
+            insert into workspace_ui_prefs (
+                org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency,
+                app_logo_asset_id, app_icon_asset_id, favicon_asset_id, pwa_icon_asset_id, nav_logo_asset_id, homepage_brand_asset_id,
+                updated_at
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            on conflict (org_id)
+            do update set
+                theme=excluded.theme,
+                colors=excluded.colors,
+                logo_url=excluded.logo_url,
+                ui_density=excluded.ui_density,
+                layout_prefs=excluded.layout_prefs,
+                default_locale=excluded.default_locale,
+                default_timezone=excluded.default_timezone,
+                default_currency=excluded.default_currency,
+                app_logo_asset_id=excluded.app_logo_asset_id,
+                app_icon_asset_id=excluded.app_icon_asset_id,
+                favicon_asset_id=excluded.favicon_asset_id,
+                pwa_icon_asset_id=excluded.pwa_icon_asset_id,
+                nav_logo_asset_id=excluded.nav_logo_asset_id,
+                homepage_brand_asset_id=excluded.homepage_brand_asset_id,
+                updated_at=excluded.updated_at
+            """,
+            [
+                org_id,
+                values.get("theme"),
+                json.dumps(values.get("colors")) if values.get("colors") is not None else None,
+                values.get("logo_url"),
+                values.get("ui_density"),
+                json.dumps(values.get("layout_prefs")) if values.get("layout_prefs") is not None else None,
+                values.get("default_locale"),
+                values.get("default_timezone"),
+                values.get("default_currency"),
+                values.get("app_logo_asset_id"),
+                values.get("app_icon_asset_id"),
+                values.get("favicon_asset_id"),
+                values.get("pwa_icon_asset_id"),
+                values.get("nav_logo_asset_id"),
+                values.get("homepage_brand_asset_id"),
+                values.get("updated_at") or _now(),
+            ],
+            query_name=query_name,
+        )
+    except psycopg2.errors.UndefinedColumn:
+        conn.rollback()
+        execute(
+            conn,
+            """
+            insert into workspace_ui_prefs (
+                org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency, updated_at
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            on conflict (org_id)
+            do update set
+                theme=excluded.theme,
+                colors=excluded.colors,
+                logo_url=excluded.logo_url,
+                ui_density=excluded.ui_density,
+                layout_prefs=excluded.layout_prefs,
+                default_locale=excluded.default_locale,
+                default_timezone=excluded.default_timezone,
+                default_currency=excluded.default_currency,
+                updated_at=excluded.updated_at
+            """,
+            [
+                org_id,
+                values.get("theme"),
+                json.dumps(values.get("colors")) if values.get("colors") is not None else None,
+                values.get("logo_url"),
+                values.get("ui_density"),
+                json.dumps(values.get("layout_prefs")) if values.get("layout_prefs") is not None else None,
+                values.get("default_locale"),
+                values.get("default_timezone"),
+                values.get("default_currency"),
+                values.get("updated_at") or _now(),
+            ],
+            query_name=f"{query_name}.legacy",
+        )
+
+
+def _branding_asset_file_url(asset: dict | None) -> str:
+    if not isinstance(asset, dict):
+        return ""
+    storage_key = _trimmed_text(asset.get("storage_key"))
+    if not storage_key:
+        return ""
+    return public_url(branding_bucket(), storage_key)
+
+
+def _branding_asset_payload(asset: dict | None) -> dict:
+    row = asset if isinstance(asset, dict) else {}
+    return {
+        "id": str(row.get("id") or "").strip(),
+        "workspace_id": _trimmed_text(row.get("workspace_id")),
+        "name": _trimmed_text(row.get("name")),
+        "reference_key": _trimmed_text(row.get("reference_key")),
+        "type": _branding_asset_type(row.get("type")),
+        "storage_key": _trimmed_text(row.get("storage_key")),
+        "file_url": _branding_asset_file_url(row),
+        "mime_type": _trimmed_text(row.get("mime_type")),
+        "alt_text": _trimmed_text(row.get("alt_text")),
+        "notes": _trimmed_text(row.get("notes")),
+        "is_active": bool(row.get("is_active", True)),
+        "sort_order": int(row.get("sort_order") or 0),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
+def _branding_assets_by_id(assets: list[dict]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for asset in assets:
+        asset_id = _trimmed_text(asset.get("id"))
+        if asset_id:
+            out[asset_id] = asset
+    return out
+
+
+def _branding_assets_by_reference(assets: list[dict], *, active_only: bool = True) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for asset in assets:
+        if active_only and not bool(asset.get("is_active", True)):
+            continue
+        reference_key = _trimmed_text(asset.get("reference_key"))
+        if reference_key and reference_key not in out:
+            out[reference_key] = asset
+    return out
+
+
+def _branding_asset_url(asset_id: Any, assets_by_id: dict[str, dict]) -> str:
+    key = _trimmed_text(asset_id)
+    if not key:
+        return ""
+    asset = assets_by_id.get(key)
+    return _branding_asset_file_url(asset)
+
+
+def _branding_assets_payload_by_reference(assets_by_reference: dict[str, dict]) -> dict[str, dict]:
+    return {reference_key: _branding_asset_payload(asset) for reference_key, asset in assets_by_reference.items()}
+
+
+def _load_workspace_branding_rows(org_id: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     workspace_row: dict[str, Any] = {}
+    workspace_prefs: dict[str, Any] = {}
+    template_branding_row: dict[str, Any] = {}
+    branding_assets_rows: list[dict[str, Any]] = []
     if USE_DB:
         with get_conn() as conn:
-            workspace = fetch_one(
-                conn,
-                "select colors, logo_url from workspace_ui_prefs where org_id=%s",
-                [org_id],
-                query_name="workspace_ui_prefs.branding",
-            ) or {}
             workspace_row = fetch_one(
                 conn,
                 "select name as workspace_name from workspaces where id=%s",
                 [org_id],
                 query_name="workspaces.get_name_for_branding",
             ) or {}
+            workspace_prefs = _workspace_ui_prefs_fetch(conn, org_id, query_name="workspace_ui_prefs.branding_domains")
+            try:
+                template_branding_row = fetch_one(
+                    conn,
+                    """
+                    select org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
+                           state_region, postcode, country, tax_number, vat_number, company_registration_number,
+                           default_footer_text, default_disclaimer_text, default_terms_url,
+                           default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
+                           template_primary_color, template_secondary_color, template_accent_color, template_text_color,
+                           primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
+                           default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id,
+                           created_at, updated_at
+                    from workspace_template_branding
+                    where org_id=%s
+                    """,
+                    [org_id],
+                    query_name="workspace_template_branding.get",
+                ) or {}
+            except psycopg2.errors.UndefinedTable:
+                conn.rollback()
+                template_branding_row = {}
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
+                template_branding_row = {}
+            try:
+                branding_assets_rows = fetch_all(
+                    conn,
+                    _branding_asset_select_sql(),
+                    [org_id],
+                    query_name="branding_assets.list",
+                ) or []
+            except psycopg2.errors.UndefinedTable:
+                conn.rollback()
+                branding_assets_rows = []
+            except psycopg2.errors.UndefinedColumn:
+                conn.rollback()
+                branding_assets_rows = []
     else:
         workspace_row = {"workspace_name": _default_workspace_name_for_org(org_id)}
-    raw_colors = workspace.get("colors")
-    if isinstance(raw_colors, dict):
-        colors = {
-            key: value.strip()
-            for key, value in raw_colors.items()
-            if isinstance(key, str) and isinstance(value, str) and value.strip()
-        }
-    workspace_name = str(workspace_row.get("workspace_name") or "").strip()
-    logo_url = workspace.get("logo_url")
-    primary = colors.get("primary") or ""
-    secondary = colors.get("secondary") or ""
-    accent = colors.get("accent") or ""
+    return workspace_row, workspace_prefs, template_branding_row, branding_assets_rows
+
+
+def _branding_domains_for_org(org_id: str) -> dict[str, Any]:
+    workspace_row, workspace_prefs, template_branding_row, branding_assets_rows = _load_workspace_branding_rows(org_id)
+    workspace_name = _trimmed_text(workspace_row.get("workspace_name")) or _default_workspace_name_for_org(org_id)
+    app_colors = _branding_colors_from_raw(workspace_prefs.get("colors"))
+    app_logo_url = (
+        _branding_asset_url(workspace_prefs.get("app_logo_asset_id"), _branding_assets_by_id(branding_assets_rows))
+        or _trimmed_text(workspace_prefs.get("logo_url"))
+    )
+    serialized_assets = [_branding_asset_payload(asset) for asset in branding_assets_rows if isinstance(asset, dict)]
+    assets_by_id = _branding_assets_by_id(serialized_assets)
+    assets_by_reference = _branding_assets_by_reference(serialized_assets, active_only=True)
+    assets_payload = _branding_assets_payload_by_reference(assets_by_reference)
+
+    app_branding = {
+        "workspace_name": workspace_name,
+        "app_logo_asset_id": _trimmed_text(workspace_prefs.get("app_logo_asset_id")),
+        "app_icon_asset_id": _trimmed_text(workspace_prefs.get("app_icon_asset_id")),
+        "favicon_asset_id": _trimmed_text(workspace_prefs.get("favicon_asset_id")),
+        "pwa_icon_asset_id": _trimmed_text(workspace_prefs.get("pwa_icon_asset_id")),
+        "nav_logo_asset_id": _trimmed_text(workspace_prefs.get("nav_logo_asset_id")),
+        "homepage_brand_asset_id": _trimmed_text(workspace_prefs.get("homepage_brand_asset_id")),
+        "app_logo_url": app_logo_url,
+        "app_icon_url": _branding_asset_url(workspace_prefs.get("app_icon_asset_id"), assets_by_id),
+        "favicon_url": _branding_asset_url(workspace_prefs.get("favicon_asset_id"), assets_by_id),
+        "pwa_icon_url": _branding_asset_url(workspace_prefs.get("pwa_icon_asset_id"), assets_by_id),
+        "nav_logo_url": _branding_asset_url(workspace_prefs.get("nav_logo_asset_id"), assets_by_id) or app_logo_url,
+        "homepage_brand_asset_url": _branding_asset_url(workspace_prefs.get("homepage_brand_asset_id"), assets_by_id),
+        "primary_color": app_colors.get("primary") or "",
+        "secondary_color": app_colors.get("secondary") or "",
+        "accent_color": app_colors.get("accent") or "",
+        "text_color": app_colors.get("text") or "",
+        "colors": app_colors,
+        "assets": assets_payload,
+        "logo_url": app_logo_url,
+    }
+
+    template_primary_color = _branding_color_value(template_branding_row.get("template_primary_color")) or app_branding["primary_color"]
+    template_secondary_color = _branding_color_value(template_branding_row.get("template_secondary_color")) or app_branding["secondary_color"]
+    template_accent_color = _branding_color_value(template_branding_row.get("template_accent_color")) or app_branding["accent_color"]
+    template_text_color = _branding_color_value(template_branding_row.get("template_text_color")) or app_branding["text_color"]
+    template_primary_logo_url = _branding_asset_url(template_branding_row.get("primary_logo_asset_id"), assets_by_id) or app_logo_url
+    template_secondary_logo_url = _branding_asset_url(template_branding_row.get("secondary_logo_asset_id"), assets_by_id)
+    template_branding = {
+        "brand_name": _trimmed_text(template_branding_row.get("brand_name")) or workspace_name,
+        "legal_name": _trimmed_text(template_branding_row.get("legal_name")),
+        "website": _trimmed_text(template_branding_row.get("website")),
+        "phone": _trimmed_text(template_branding_row.get("phone")),
+        "email": _trimmed_text(template_branding_row.get("email")),
+        "address_line_1": _trimmed_text(template_branding_row.get("address_line_1")),
+        "address_line_2": _trimmed_text(template_branding_row.get("address_line_2")),
+        "city": _trimmed_text(template_branding_row.get("city")),
+        "state_region": _trimmed_text(template_branding_row.get("state_region")),
+        "postcode": _trimmed_text(template_branding_row.get("postcode")),
+        "country": _trimmed_text(template_branding_row.get("country")),
+        "tax_number": _trimmed_text(template_branding_row.get("tax_number")),
+        "vat_number": _trimmed_text(template_branding_row.get("vat_number")),
+        "company_registration_number": _trimmed_text(template_branding_row.get("company_registration_number")),
+        "default_footer_text": _trimmed_text(template_branding_row.get("default_footer_text")),
+        "default_disclaimer_text": _trimmed_text(template_branding_row.get("default_disclaimer_text")),
+        "default_terms_url": _trimmed_text(template_branding_row.get("default_terms_url")),
+        "default_bank_name": _trimmed_text(template_branding_row.get("default_bank_name")),
+        "default_bank_account_name": _trimmed_text(template_branding_row.get("default_bank_account_name")),
+        "default_bank_account_number": _trimmed_text(template_branding_row.get("default_bank_account_number")),
+        "default_bank_iban": _trimmed_text(template_branding_row.get("default_bank_iban")),
+        "default_bank_bic": _trimmed_text(template_branding_row.get("default_bank_bic")),
+        "template_primary_color": template_primary_color,
+        "template_secondary_color": template_secondary_color,
+        "template_accent_color": template_accent_color,
+        "template_text_color": template_text_color,
+        "colors": {
+            "primary": template_primary_color,
+            "secondary": template_secondary_color,
+            "accent": template_accent_color,
+            "text": template_text_color,
+        },
+        "primary_logo_asset_id": _trimmed_text(template_branding_row.get("primary_logo_asset_id")),
+        "secondary_logo_asset_id": _trimmed_text(template_branding_row.get("secondary_logo_asset_id")),
+        "header_graphic_asset_id": _trimmed_text(template_branding_row.get("header_graphic_asset_id")),
+        "footer_graphic_asset_id": _trimmed_text(template_branding_row.get("footer_graphic_asset_id")),
+        "default_background_graphic_asset_id": _trimmed_text(template_branding_row.get("default_background_graphic_asset_id")),
+        "default_email_banner_asset_id": _trimmed_text(template_branding_row.get("default_email_banner_asset_id")),
+        "default_watermark_asset_id": _trimmed_text(template_branding_row.get("default_watermark_asset_id")),
+        "primary_logo_url": template_primary_logo_url,
+        "secondary_logo_url": template_secondary_logo_url,
+        "header_graphic_url": _branding_asset_url(template_branding_row.get("header_graphic_asset_id"), assets_by_id),
+        "footer_graphic_url": _branding_asset_url(template_branding_row.get("footer_graphic_asset_id"), assets_by_id),
+        "default_background_graphic_url": _branding_asset_url(template_branding_row.get("default_background_graphic_asset_id"), assets_by_id),
+        "default_email_banner_url": _branding_asset_url(template_branding_row.get("default_email_banner_asset_id"), assets_by_id),
+        "default_watermark_url": _branding_asset_url(template_branding_row.get("default_watermark_asset_id"), assets_by_id),
+        "assets": assets_payload,
+        "logo_url": template_primary_logo_url,
+    }
+
+    legacy_colors = {
+        "primary": template_primary_color,
+        "secondary": template_secondary_color,
+        "accent": template_accent_color,
+        "text": template_text_color,
+    }
+    workspace_compat = {
+        "id": org_id,
+        "name": workspace_name,
+        "workspace_name": workspace_name,
+        "logo_url": app_logo_url,
+        "colors": app_colors,
+        "primary_color": app_branding["primary_color"],
+        "secondary_color": app_branding["secondary_color"],
+        "accent_color": app_branding["accent_color"],
+        "text_color": app_branding["text_color"],
+        "assets": assets_payload,
+    }
+    company_compat = {
+        "name": template_branding["brand_name"],
+        "legal_name": template_branding["legal_name"],
+        "logo_url": template_primary_logo_url,
+        "website": template_branding["website"],
+        "phone": template_branding["phone"],
+        "email": template_branding["email"],
+        "address_line_1": template_branding["address_line_1"],
+        "address_line_2": template_branding["address_line_2"],
+        "city": template_branding["city"],
+        "state_region": template_branding["state_region"],
+        "postcode": template_branding["postcode"],
+        "country": template_branding["country"],
+        "tax_number": template_branding["tax_number"],
+        "vat_number": template_branding["vat_number"],
+        "company_registration_number": template_branding["company_registration_number"],
+        "default_footer_text": template_branding["default_footer_text"],
+        "default_disclaimer_text": template_branding["default_disclaimer_text"],
+        "default_terms_url": template_branding["default_terms_url"],
+        "colors": legacy_colors,
+        "primary_color": template_primary_color,
+        "secondary_color": template_secondary_color,
+        "accent_color": template_accent_color,
+        "text_color": template_text_color,
+        "assets": assets_payload,
+    }
+    branding_compat = {
+        "workspace_name": workspace_name,
+        "brand_name": template_branding["brand_name"],
+        "logo_url": template_primary_logo_url,
+        "colors": legacy_colors,
+        "primary_color": template_primary_color,
+        "secondary_color": template_secondary_color,
+        "accent_color": template_accent_color,
+        "text_color": template_text_color,
+        "assets": assets_payload,
+    }
     return {
-        "branding": {
-            "logo_url": logo_url,
-            "colors": colors,
-            "primary_color": primary,
-            "secondary_color": secondary,
-            "accent_color": accent,
-            "workspace_name": workspace_name,
-        },
-        "workspace": {
-            "id": org_id,
-            "name": workspace_name,
-            "logo_url": logo_url,
-            "colors": colors,
-            "primary_color": primary,
-            "secondary_color": secondary,
-            "accent_color": accent,
-        },
-        "company": {
-            "name": workspace_name,
-            "logo_url": logo_url,
-            "colors": colors,
-            "primary_color": primary,
-            "secondary_color": secondary,
-            "accent_color": accent,
-        },
+        "workspace_name": workspace_name,
+        "workspace_prefs": workspace_prefs,
+        "app_branding": app_branding,
+        "template_branding": template_branding,
+        "branding_assets": serialized_assets,
+        "workspace": workspace_compat,
+        "company": company_compat,
+        "branding": branding_compat,
+    }
+
+
+def _branding_context_for_org(org_id: str) -> dict:
+    branding = _branding_domains_for_org(org_id)
+    return {
+        "branding": copy.deepcopy(branding.get("branding") or {}),
+        "workspace": copy.deepcopy(branding.get("workspace") or {}),
+        "company": copy.deepcopy(branding.get("company") or {}),
+        "app_branding": copy.deepcopy(branding.get("app_branding") or {}),
+        "template_branding": copy.deepcopy(branding.get("template_branding") or {}),
+        "branding_assets": copy.deepcopy(branding.get("branding_assets") or []),
     }
 
 
@@ -49236,16 +49726,7 @@ def _load_ui_pref_settings(org_id: str, user_id: str | None = None) -> tuple[dic
     if not USE_DB:
         return {}, {}
     with get_conn() as conn:
-        workspace = fetch_one(
-            conn,
-            """
-            select org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency
-            from workspace_ui_prefs
-            where org_id=%s
-            """,
-            [org_id],
-            query_name="workspace_ui_prefs.localization_get",
-        ) or {}
+        workspace = _workspace_ui_prefs_fetch(conn, org_id, query_name="workspace_ui_prefs.localization_get")
         user = {}
         if user_id:
             user = fetch_one(
@@ -49376,24 +49857,130 @@ def _artifact_ai_template_validation_context(
     localization = _localization_context_for_actor(actor)
     entity_def = _find_entity_def_global(entity_id)
     if not isinstance(entity_def, dict):
+        app_branding = copy.deepcopy(branding.get("app_branding") or {}) if isinstance(branding.get("app_branding"), dict) else {}
+        template_branding = (
+            copy.deepcopy(branding.get("template_branding") or {})
+            if isinstance(branding.get("template_branding"), dict)
+            else {}
+        )
+        branding_assets = (
+            copy.deepcopy(branding.get("branding_assets") or [])
+            if isinstance(branding.get("branding_assets"), list)
+            else []
+        )
         workspace = copy.deepcopy(branding.get("workspace") or {}) if isinstance(branding.get("workspace"), dict) else {}
         company = copy.deepcopy(branding.get("company") or {}) if isinstance(branding.get("company"), dict) else {}
         branding_values = copy.deepcopy(branding.get("branding") or {}) if isinstance(branding.get("branding"), dict) else {}
-        workspace.setdefault("logo_url", "")
-        workspace.setdefault("name", "")
-        workspace.setdefault("colors", {})
-        workspace.setdefault("primary_color", "")
-        workspace.setdefault("secondary_color", "")
-        workspace.setdefault("accent_color", "")
-        company.setdefault("logo_url", workspace.get("logo_url") or "")
-        company.setdefault("name", workspace.get("name") or "")
-        company.setdefault("colors", workspace.get("colors") if isinstance(workspace.get("colors"), dict) else {})
-        branding_values.setdefault("logo_url", workspace.get("logo_url") or "")
+        workspace_name = (
+            _trimmed_text(app_branding.get("workspace_name"))
+            or _trimmed_text(branding.get("workspace_name"))
+            or _trimmed_text(workspace.get("name"))
+        )
+        app_colors = app_branding.get("colors") if isinstance(app_branding.get("colors"), dict) else {}
+        workspace_colors = workspace.get("colors") if isinstance(workspace.get("colors"), dict) else {}
+        effective_app_colors = app_colors or workspace_colors or {}
+        app_logo_url = (
+            _trimmed_text(app_branding.get("app_logo_url"))
+            or _trimmed_text(app_branding.get("logo_url"))
+            or _trimmed_text(workspace.get("logo_url"))
+        )
+        workspace.setdefault("logo_url", app_logo_url or "")
+        workspace.setdefault("name", workspace_name or "")
+        workspace.setdefault("colors", effective_app_colors)
+        workspace.setdefault("primary_color", _trimmed_text(app_branding.get("primary_color")) or _trimmed_text(workspace.get("primary_color")) or "")
+        workspace.setdefault("secondary_color", _trimmed_text(app_branding.get("secondary_color")) or _trimmed_text(workspace.get("secondary_color")) or "")
+        workspace.setdefault("accent_color", _trimmed_text(app_branding.get("accent_color")) or _trimmed_text(workspace.get("accent_color")) or "")
+        workspace.setdefault("text_color", _trimmed_text(app_branding.get("text_color")) or _trimmed_text(workspace.get("text_color")) or "")
+        app_branding.setdefault("workspace_name", workspace.get("name") or "")
+        app_branding.setdefault("app_logo_url", workspace.get("logo_url") or "")
+        app_branding.setdefault("logo_url", app_branding.get("app_logo_url") or workspace.get("logo_url") or "")
+        app_branding.setdefault("colors", effective_app_colors)
+        app_branding.setdefault("primary_color", workspace.get("primary_color") or "")
+        app_branding.setdefault("secondary_color", workspace.get("secondary_color") or "")
+        app_branding.setdefault("accent_color", workspace.get("accent_color") or "")
+        app_branding.setdefault("text_color", workspace.get("text_color") or "")
+        template_logo_url = (
+            _trimmed_text(template_branding.get("primary_logo_url"))
+            or _trimmed_text(template_branding.get("logo_url"))
+            or _trimmed_text(company.get("logo_url"))
+            or _trimmed_text(branding_values.get("logo_url"))
+            or app_branding.get("app_logo_url")
+            or workspace.get("logo_url")
+            or ""
+        )
+        template_branding.setdefault(
+            "brand_name",
+            _trimmed_text(company.get("name")) or app_branding.get("workspace_name") or workspace.get("name") or "",
+        )
+        template_branding.setdefault("legal_name", _trimmed_text(company.get("name")) or "")
+        template_branding.setdefault("primary_logo_url", template_logo_url)
+        template_branding.setdefault("logo_url", template_logo_url)
+        template_branding.setdefault(
+            "template_primary_color",
+            _trimmed_text(template_branding.get("template_primary_color"))
+            or _trimmed_text(branding_values.get("primary_color"))
+            or app_branding.get("primary_color")
+            or "",
+        )
+        template_branding.setdefault(
+            "template_secondary_color",
+            _trimmed_text(template_branding.get("template_secondary_color"))
+            or _trimmed_text(branding_values.get("secondary_color"))
+            or app_branding.get("secondary_color")
+            or "",
+        )
+        template_branding.setdefault(
+            "template_accent_color",
+            _trimmed_text(template_branding.get("template_accent_color"))
+            or _trimmed_text(branding_values.get("accent_color"))
+            or app_branding.get("accent_color")
+            or "",
+        )
+        template_branding.setdefault(
+            "template_text_color",
+            _trimmed_text(template_branding.get("template_text_color"))
+            or _trimmed_text(branding_values.get("text_color"))
+            or app_branding.get("text_color")
+            or "",
+        )
+        template_branding.setdefault(
+            "colors",
+            template_branding.get("colors")
+            if isinstance(template_branding.get("colors"), dict)
+            else {
+                "primary": template_branding.get("template_primary_color") or app_branding.get("primary_color") or "",
+                "secondary": template_branding.get("template_secondary_color") or app_branding.get("secondary_color") or "",
+                "accent": template_branding.get("template_accent_color") or app_branding.get("accent_color") or "",
+                "text": template_branding.get("template_text_color") or app_branding.get("text_color") or "",
+            },
+        )
+        template_branding.setdefault(
+            "assets",
+            template_branding.get("assets")
+            if isinstance(template_branding.get("assets"), dict)
+            else (branding_values.get("assets") if isinstance(branding_values.get("assets"), dict) else {}),
+        )
+        company.setdefault("logo_url", template_branding.get("primary_logo_url") or workspace.get("logo_url") or "")
+        company.setdefault("name", template_branding.get("brand_name") or workspace.get("name") or "")
+        company.setdefault(
+            "colors",
+            template_branding.get("colors") if isinstance(template_branding.get("colors"), dict) else effective_app_colors,
+        )
+        branding_values.setdefault("logo_url", template_branding.get("primary_logo_url") or workspace.get("logo_url") or "")
         branding_values.setdefault("workspace_name", workspace.get("name") or "")
-        branding_values.setdefault("colors", workspace.get("colors") if isinstance(workspace.get("colors"), dict) else {})
-        branding_values.setdefault("primary_color", workspace.get("primary_color") or "")
-        branding_values.setdefault("secondary_color", workspace.get("secondary_color") or "")
-        branding_values.setdefault("accent_color", workspace.get("accent_color") or "")
+        branding_values.setdefault("brand_name", template_branding.get("brand_name") or workspace.get("name") or "")
+        branding_values.setdefault(
+            "colors",
+            template_branding.get("colors") if isinstance(template_branding.get("colors"), dict) else effective_app_colors,
+        )
+        branding_values.setdefault("primary_color", template_branding.get("template_primary_color") or app_branding.get("primary_color") or "")
+        branding_values.setdefault("secondary_color", template_branding.get("template_secondary_color") or app_branding.get("secondary_color") or "")
+        branding_values.setdefault("accent_color", template_branding.get("template_accent_color") or app_branding.get("accent_color") or "")
+        branding_values.setdefault("text_color", template_branding.get("template_text_color") or app_branding.get("text_color") or "")
+        branding_values.setdefault(
+            "assets",
+            template_branding.get("assets") if isinstance(template_branding.get("assets"), dict) else {},
+        )
         return {
             "record": defaultdict(str),
             "formatted": defaultdict(str),
@@ -49406,6 +49993,9 @@ def _artifact_ai_template_validation_context(
             "workspace": workspace,
             "company": company,
             "branding": branding_values,
+            "app_branding": app_branding,
+            "template_branding": template_branding,
+            "branding_assets": branding_assets,
         }
     return _build_template_render_context(
         _template_placeholder_record(entity_def),
@@ -49462,19 +50052,13 @@ async def set_ui_prefs(request: Request) -> dict:
     if not isinstance(body, dict):
         return _error_response("PREFS_INVALID", "prefs body required", "body", status=400)
     workspace_data = body.get("workspace") if isinstance(body.get("workspace"), dict) else None
+    app_branding_data = body.get("app_branding") if isinstance(body.get("app_branding"), dict) else None
+    template_branding_data = body.get("template_branding") if isinstance(body.get("template_branding"), dict) else None
     user_data = body.get("user") if isinstance(body.get("user"), dict) else None
+    workspace_name_override = _trimmed_text((app_branding_data or {}).get("workspace_name"))
     with get_conn() as conn:
         if workspace_data is not None:
-            current = fetch_one(
-                conn,
-                """
-                select theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency
-                from workspace_ui_prefs
-                where org_id=%s
-                """,
-                [org_id],
-                query_name="workspace_ui_prefs.current",
-            ) or {}
+            current = _workspace_ui_prefs_fetch(conn, org_id, query_name="workspace_ui_prefs.current")
             theme = workspace_data.get("theme") if "theme" in workspace_data else current.get("theme")
             colors = workspace_data.get("colors") if "colors" in workspace_data else current.get("colors")
             logo_url = workspace_data.get("logo_url") if "logo_url" in workspace_data else current.get("logo_url")
@@ -49495,38 +50079,192 @@ async def set_ui_prefs(request: Request) -> dict:
                 if "default_currency" in workspace_data
                 else normalize_currency_code(current.get("default_currency"))
             ) or DEFAULT_CURRENCY
+            _workspace_ui_prefs_upsert(
+                conn,
+                org_id,
+                {
+                    "theme": theme,
+                    "colors": colors,
+                    "logo_url": logo_url,
+                    "ui_density": ui_density,
+                    "layout_prefs": layout_prefs,
+                    "default_locale": default_locale,
+                    "default_timezone": default_timezone,
+                    "default_currency": default_currency,
+                    "app_logo_asset_id": current.get("app_logo_asset_id"),
+                    "app_icon_asset_id": current.get("app_icon_asset_id"),
+                    "favicon_asset_id": current.get("favicon_asset_id"),
+                    "pwa_icon_asset_id": current.get("pwa_icon_asset_id"),
+                    "nav_logo_asset_id": current.get("nav_logo_asset_id"),
+                    "homepage_brand_asset_id": current.get("homepage_brand_asset_id"),
+                    "updated_at": _now(),
+                },
+                query_name="workspace_ui_prefs.upsert",
+            )
+        if app_branding_data is not None:
+            current_branding = _workspace_ui_prefs_fetch(conn, org_id, query_name="workspace_ui_prefs.current_app_branding")
+            colors = _branding_colors_from_raw(current_branding.get("colors"))
+            color_mappings = {
+                "primary_color": "primary",
+                "secondary_color": "secondary",
+                "accent_color": "accent",
+                "text_color": "text",
+            }
+            for source_key, color_key in color_mappings.items():
+                if source_key in app_branding_data:
+                    value = _branding_color_value(app_branding_data.get(source_key))
+                    if value:
+                        colors[color_key] = value
+                    else:
+                        colors.pop(color_key, None)
+            for field_name in _APP_BRANDING_ASSET_FIELDS:
+                if field_name not in app_branding_data:
+                    app_branding_data[field_name] = current_branding.get(field_name)
+            logo_url = (
+                _trimmed_text(app_branding_data.get("logo_url"))
+                if "logo_url" in app_branding_data
+                else _trimmed_text(current_branding.get("logo_url"))
+            )
+            _workspace_ui_prefs_upsert(
+                conn,
+                org_id,
+                {
+                    "theme": current_branding.get("theme"),
+                    "colors": colors if colors else None,
+                    "logo_url": logo_url or None,
+                    "ui_density": current_branding.get("ui_density"),
+                    "layout_prefs": current_branding.get("layout_prefs"),
+                    "default_locale": normalize_locale(current_branding.get("default_locale")) or DEFAULT_LOCALE,
+                    "default_timezone": normalize_timezone(current_branding.get("default_timezone")) or DEFAULT_TIMEZONE,
+                    "default_currency": normalize_currency_code(current_branding.get("default_currency")) or DEFAULT_CURRENCY,
+                    "app_logo_asset_id": _trimmed_text(app_branding_data.get("app_logo_asset_id")) or None,
+                    "app_icon_asset_id": _trimmed_text(app_branding_data.get("app_icon_asset_id")) or None,
+                    "favicon_asset_id": _trimmed_text(app_branding_data.get("favicon_asset_id")) or None,
+                    "pwa_icon_asset_id": _trimmed_text(app_branding_data.get("pwa_icon_asset_id")) or None,
+                    "nav_logo_asset_id": _trimmed_text(app_branding_data.get("nav_logo_asset_id")) or None,
+                    "homepage_brand_asset_id": _trimmed_text(app_branding_data.get("homepage_brand_asset_id")) or None,
+                    "updated_at": _now(),
+                },
+                query_name="workspace_ui_prefs.upsert_app_branding",
+            )
+        if template_branding_data is not None:
+            current_template = fetch_one(
+                conn,
+                """
+                select org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
+                       state_region, postcode, country, tax_number, vat_number, company_registration_number,
+                       default_footer_text, default_disclaimer_text, default_terms_url,
+                       default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
+                       template_primary_color, template_secondary_color, template_accent_color, template_text_color,
+                       primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
+                       default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id
+                from workspace_template_branding
+                where org_id=%s
+                """,
+                [org_id],
+                query_name="workspace_template_branding.current",
+            ) or {}
+            values: dict[str, Any] = {}
+            for field_name in _TEMPLATE_BRANDING_TEXT_FIELDS:
+                if field_name in template_branding_data:
+                    values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
+                else:
+                    values[field_name] = current_template.get(field_name)
+            for field_name in _TEMPLATE_BRANDING_ASSET_FIELDS:
+                if field_name in template_branding_data:
+                    values[field_name] = _trimmed_text(template_branding_data.get(field_name)) or None
+                else:
+                    values[field_name] = current_template.get(field_name)
             execute(
                 conn,
                 """
-                insert into workspace_ui_prefs (
-                    org_id, theme, colors, logo_url, ui_density, layout_prefs, default_locale, default_timezone, default_currency, updated_at
+                insert into workspace_template_branding (
+                    org_id, brand_name, legal_name, website, phone, email, address_line_1, address_line_2, city,
+                    state_region, postcode, country, tax_number, vat_number, company_registration_number,
+                    default_footer_text, default_disclaimer_text, default_terms_url,
+                    default_bank_name, default_bank_account_name, default_bank_account_number, default_bank_iban, default_bank_bic,
+                    template_primary_color, template_secondary_color, template_accent_color, template_text_color,
+                    primary_logo_asset_id, secondary_logo_asset_id, header_graphic_asset_id, footer_graphic_asset_id,
+                    default_background_graphic_asset_id, default_email_banner_asset_id, default_watermark_asset_id,
+                    created_at, updated_at
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 on conflict (org_id)
                 do update set
-                    theme=excluded.theme,
-                    colors=excluded.colors,
-                    logo_url=excluded.logo_url,
-                    ui_density=excluded.ui_density,
-                    layout_prefs=excluded.layout_prefs,
-                    default_locale=excluded.default_locale,
-                    default_timezone=excluded.default_timezone,
-                    default_currency=excluded.default_currency,
+                    brand_name=excluded.brand_name,
+                    legal_name=excluded.legal_name,
+                    website=excluded.website,
+                    phone=excluded.phone,
+                    email=excluded.email,
+                    address_line_1=excluded.address_line_1,
+                    address_line_2=excluded.address_line_2,
+                    city=excluded.city,
+                    state_region=excluded.state_region,
+                    postcode=excluded.postcode,
+                    country=excluded.country,
+                    tax_number=excluded.tax_number,
+                    vat_number=excluded.vat_number,
+                    company_registration_number=excluded.company_registration_number,
+                    default_footer_text=excluded.default_footer_text,
+                    default_disclaimer_text=excluded.default_disclaimer_text,
+                    default_terms_url=excluded.default_terms_url,
+                    default_bank_name=excluded.default_bank_name,
+                    default_bank_account_name=excluded.default_bank_account_name,
+                    default_bank_account_number=excluded.default_bank_account_number,
+                    default_bank_iban=excluded.default_bank_iban,
+                    default_bank_bic=excluded.default_bank_bic,
+                    template_primary_color=excluded.template_primary_color,
+                    template_secondary_color=excluded.template_secondary_color,
+                    template_accent_color=excluded.template_accent_color,
+                    template_text_color=excluded.template_text_color,
+                    primary_logo_asset_id=excluded.primary_logo_asset_id,
+                    secondary_logo_asset_id=excluded.secondary_logo_asset_id,
+                    header_graphic_asset_id=excluded.header_graphic_asset_id,
+                    footer_graphic_asset_id=excluded.footer_graphic_asset_id,
+                    default_background_graphic_asset_id=excluded.default_background_graphic_asset_id,
+                    default_email_banner_asset_id=excluded.default_email_banner_asset_id,
+                    default_watermark_asset_id=excluded.default_watermark_asset_id,
                     updated_at=excluded.updated_at
                 """,
                 [
                     org_id,
-                    theme,
-                    json.dumps(colors) if colors is not None else None,
-                    logo_url,
-                    ui_density,
-                    json.dumps(layout_prefs) if layout_prefs is not None else None,
-                    default_locale,
-                    default_timezone,
-                    default_currency,
+                    values.get("brand_name"),
+                    values.get("legal_name"),
+                    values.get("website"),
+                    values.get("phone"),
+                    values.get("email"),
+                    values.get("address_line_1"),
+                    values.get("address_line_2"),
+                    values.get("city"),
+                    values.get("state_region"),
+                    values.get("postcode"),
+                    values.get("country"),
+                    values.get("tax_number"),
+                    values.get("vat_number"),
+                    values.get("company_registration_number"),
+                    values.get("default_footer_text"),
+                    values.get("default_disclaimer_text"),
+                    values.get("default_terms_url"),
+                    values.get("default_bank_name"),
+                    values.get("default_bank_account_name"),
+                    values.get("default_bank_account_number"),
+                    values.get("default_bank_iban"),
+                    values.get("default_bank_bic"),
+                    values.get("template_primary_color"),
+                    values.get("template_secondary_color"),
+                    values.get("template_accent_color"),
+                    values.get("template_text_color"),
+                    values.get("primary_logo_asset_id"),
+                    values.get("secondary_logo_asset_id"),
+                    values.get("header_graphic_asset_id"),
+                    values.get("footer_graphic_asset_id"),
+                    values.get("default_background_graphic_asset_id"),
+                    values.get("default_email_banner_asset_id"),
+                    values.get("default_watermark_asset_id"),
+                    current_template.get("created_at") or _now(),
                     _now(),
                 ],
-                query_name="workspace_ui_prefs.upsert",
+                query_name="workspace_template_branding.upsert",
             )
         if user_data is not None and user_id:
             current_user = fetch_one(
@@ -49569,13 +50307,26 @@ async def set_ui_prefs(request: Request) -> dict:
                 [org_id, user_id, theme, ui_density, first_name, last_name, phone, locale, timezone_name, _now()],
                 query_name="user_ui_prefs.upsert",
             )
+    if workspace_name_override:
+        update_workspace_name(org_id, workspace_name_override)
     workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
+    branding = _branding_domains_for_org(org_id)
+    if isinstance(workspace, dict):
+        workspace = {
+            **workspace,
+            "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
+            "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
+        }
     return _ok_response(
         {
             "ok": True,
             "workspace": workspace or {},
             "user": user or {},
             "resolved": build_locale_context(workspace=workspace, user=user),
+            "app_branding": branding.get("app_branding") or {},
+            "template_branding": branding.get("template_branding") or {},
+            "branding_assets": branding.get("branding_assets") or [],
         }
     )
 
@@ -53648,10 +54399,13 @@ def _artifact_ai_document_prompt_requests_logo(prompt: str | None, requested_foc
 def _artifact_ai_branding_context_has_logo(context: dict | None) -> bool:
     if not isinstance(context, dict):
         return False
-    for key in ("workspace", "branding", "company"):
+    for key in ("template_branding", "branding", "company", "workspace", "app_branding"):
         value = context.get(key)
-        if isinstance(value, dict) and isinstance(value.get("logo_url"), str) and value.get("logo_url").strip():
-            return True
+        if not isinstance(value, dict):
+            continue
+        for field_name in ("primary_logo_url", "logo_url", "app_logo_url"):
+            if isinstance(value.get(field_name), str) and value.get(field_name).strip():
+                return True
     return False
 
 
@@ -53659,16 +54413,20 @@ def _artifact_ai_document_logo_masthead_html() -> str:
     return (
         "<div style=\"display:flex;justify-content:flex-start;align-items:flex-start;"
         "margin-bottom:24px;\">"
-        "{% set logo_url = workspace.logo_url if workspace is defined and workspace and "
-        "workspace.logo_url is defined and workspace.logo_url else "
+        "{% set logo_url = template_branding.primary_logo_url if template_branding is defined and template_branding and "
+        "template_branding.primary_logo_url is defined and template_branding.primary_logo_url else "
         "(branding.logo_url if branding is defined and branding and branding.logo_url is defined "
         "and branding.logo_url else (company.logo_url if company is defined and company and "
-        "company.logo_url is defined and company.logo_url else '')) %}"
+        "company.logo_url is defined and company.logo_url else (workspace.logo_url if workspace is defined and workspace and "
+        "workspace.logo_url is defined and workspace.logo_url else ''))) %}"
         "{% if logo_url %}"
-        "<img src=\"{{ logo_url }}\" alt=\"{{ company.name if company is defined and company and "
+        "<img src=\"{{ logo_url }}\" alt=\"{{ template_branding.brand_name if template_branding is defined and template_branding and "
+        "template_branding.brand_name is defined and template_branding.brand_name else (company.name if company is defined and company and "
         "company.name is defined and company.name else (workspace.name if workspace is defined and "
-        "workspace and workspace.name is defined and workspace.name else 'Logo') }}\" "
+        "workspace and workspace.name is defined and workspace.name else 'Logo')) }}\" "
         "style=\"max-width:180px;max-height:72px;display:block;\" />"
+        "{% elif template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name %}"
+        "<div style=\"font-size:24px;font-weight:700;color:#111827;\">{{ template_branding.brand_name }}</div>"
         "{% elif workspace is defined and workspace and workspace.name is defined and workspace.name %}"
         "<div style=\"font-size:24px;font-weight:700;color:#111827;\">{{ workspace.name }}</div>"
         "{% endif %}"
@@ -53693,13 +54451,14 @@ def _artifact_ai_ensure_document_logo_masthead(draft: dict | None) -> tuple[dict
 def _artifact_ai_branding_primary_color(context: dict | None) -> str:
     if not isinstance(context, dict):
         return ""
-    for key in ("branding", "workspace", "company"):
+    for key in ("template_branding", "branding", "company", "workspace", "app_branding"):
         value = context.get(key)
         if not isinstance(value, dict):
             continue
-        direct = value.get("primary_color")
-        if isinstance(direct, str) and direct.strip():
-            return direct.strip()
+        for field_name in ("template_primary_color", "primary_color"):
+            direct = value.get(field_name)
+            if isinstance(direct, str) and direct.strip():
+                return direct.strip()
         colors = value.get("colors")
         if isinstance(colors, dict):
             nested = colors.get("primary")
@@ -53743,18 +54502,22 @@ def _artifact_ai_email_logo_header_html(primary_color: str | None = None) -> str
     border_color = primary_color.strip() if isinstance(primary_color, str) and primary_color.strip() else "#1f2937"
     return (
         "<div style=\"padding-bottom:16px;margin-bottom:24px;border-bottom:1px solid %s;\">"
-        "{%% set logo_url = workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else "
+        "{%% set logo_url = template_branding.primary_logo_url if template_branding is defined and template_branding and template_branding.primary_logo_url is defined and template_branding.primary_logo_url else "
         "(branding.logo_url if branding is defined and branding and branding.logo_url is defined and branding.logo_url else "
-        "(company.logo_url if company is defined and company and company.logo_url is defined and company.logo_url else '')) %%}"
+        "(company.logo_url if company is defined and company and company.logo_url is defined and company.logo_url else "
+        "(workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else ''))) %%}"
         "{%% if logo_url %%}"
-        "<img src=\"{{ logo_url }}\" alt=\"{{ company.name if company is defined and company and company.name is defined and company.name else "
-        "(workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'Logo') }}\" "
+        "<img src=\"{{ logo_url }}\" alt=\"{{ template_branding.brand_name if template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name else "
+        "(company.name if company is defined and company and company.name is defined and company.name else "
+        "(workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'Logo')) }}\" "
         "style=\"max-width:180px;max-height:56px;display:block;\" />"
+        "{%% elif template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name %%}"
+        "<div style=\"font-size:28px;font-weight:700;color:%s;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;\">{{ template_branding.brand_name }}</div>"
         "{%% elif workspace is defined and workspace and workspace.name is defined and workspace.name %%}"
         "<div style=\"font-size:28px;font-weight:700;color:%s;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;\">{{ workspace.name }}</div>"
         "{%% endif %%}"
         "</div>"
-    ) % (border_color, border_color)
+    ) % (border_color, border_color, border_color)
 
 
 def _artifact_ai_email_apply_brand_palette(body_html: str, primary_color: str | None) -> str:
@@ -58491,7 +59254,9 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "Never invent related-record dotted keys such as record['contact.name'] unless that exact key exists in context.selected_entity_summary.accessible_record_keys. "
             "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
             "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
-            "Use branding from context.branding, context.workspace, and context.company whenever available, especially logo_url and colors.primary/secondary/accent. "
+            "For customer-facing emails, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
+            "Use context.template_branding.assets and asset reference keys before falling back to context.branding, context.company, or context.workspace. "
+            "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing email content. "
             "Use Jinja placeholders that fit the selected entity when needed. "
             "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
             "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
@@ -58508,7 +59273,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "Avoid default browser serif fonts, thin black box borders, and cramped layouts unless the user explicitly asks for that look. "
             f"{focus_guidance_text} "
             "Prefer polished professional HTML that renders well in email clients, using inline styles and table-safe structure where helpful. "
-            "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos. "
+            "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos, and prefer named template assets over raw URL guessing. "
             f"{shared_heuristics_text} "
             "Write body_text as a real readable plain-text counterpart, not an empty or token-only fallback. "
             "Do not return placeholder notes like 'add logo here' or incomplete scaffolding. "
@@ -58527,7 +59292,9 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         "Never invent related-record dotted keys such as record['contact.name'] unless that exact key exists in context.selected_entity_summary.accessible_record_keys. "
         "For lookup-derived values, prefer the flattened alias keys listed in context.selected_entity_summary.lookup_alias_keys and context.selected_entity_summary.lookup_aliases_by_field. "
         "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
-        "Use branding from context.branding, context.workspace, and context.company whenever available, especially logo_url and colors.primary/secondary/accent. "
+        "For customer-facing documents and PDFs, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
+        "Use context.template_branding.assets and asset reference keys before falling back to context.branding, context.company, or context.workspace. "
+        "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing document styling. "
         "Use clean printable HTML and Jinja placeholders that fit the selected entity when needed. "
         "For record fields, prefer bracket access with full ids like record['module.field_id'] and follow context.safe_jinja_examples.record_field_example. "
         "If you need a lookup label or related lookup field, use context.safe_jinja_examples.lookup_alias_example when available instead of guessing a new key. "
@@ -58548,7 +59315,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         f"{focus_guidance_text} "
         "Prefer polished PDF-ready structure with strong spacing, typography hierarchy, useful header/footer sections, and inline styles only. "
         f"{shared_heuristics_text} "
-        "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos. "
+        "If branding data exists, incorporate it thoughtfully instead of inventing unrelated colors or logos, and prefer named template assets over raw URL guessing. "
         "Do not return placeholder notes like 'insert branding' or incomplete scaffolding. "
         "summary must describe the change in plain English."
     )
@@ -61818,8 +62585,180 @@ async def upload_workspace_logo(request: Request, file: UploadFile = File(...)) 
                 _now(),
             ],
             query_name="workspace_ui_prefs.upsert_logo",
-        )
+    )
     return _ok_response({"logo_url": logo_url})
+
+
+@app.post("/prefs/branding/assets/upload")
+async def upload_branding_asset(
+    request: Request,
+    file: UploadFile = File(...),
+    name: str = Form(""),
+    reference_key: str = Form(""),
+    type: str = Form("other"),
+    alt_text: str = Form(""),
+    notes: str = Form(""),
+    sort_order: int = Form(0),
+    is_active: bool = Form(True),
+) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    if not using_supabase_storage():
+        return _error_response(
+            "SUPABASE_STORAGE_NOT_CONFIGURED",
+            "Supabase storage is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+            None,
+            status=400,
+        )
+    org_id = get_org_id()
+    data = await file.read()
+    if _uploaded_file_too_large(data):
+        return _error_response(
+            "ATTACHMENT_TOO_LARGE",
+            f"Asset exceeds the configured {int(_MAX_UPLOAD_BYTES / (1024 * 1024))}MB limit",
+            "file",
+            status=413,
+        )
+    asset_name = _trimmed_text(name) or Path(str(file.filename or "asset")).stem or "Branding asset"
+    asset_reference_key = _branding_reference_key(reference_key or asset_name or file.filename or "asset")
+    if not asset_reference_key:
+        return _error_response("BRANDING_ASSET_REFERENCE_KEY_REQUIRED", "reference_key is required", "reference_key", status=400)
+    asset_type = _branding_asset_type(type)
+    with get_conn() as conn:
+        duplicate = fetch_one(
+            conn,
+            "select id from branding_assets where workspace_id=%s and lower(reference_key)=lower(%s)",
+            [org_id, asset_reference_key],
+            query_name="branding_assets.duplicate_check",
+        )
+        if duplicate:
+            return _error_response(
+                "BRANDING_ASSET_REFERENCE_KEY_TAKEN",
+                "reference_key must be unique within the workspace",
+                "reference_key",
+                status=409,
+            )
+        stored = store_bytes(
+            org_id,
+            file.filename or f"{asset_reference_key}.bin",
+            data,
+            mime_type=file.content_type or "application/octet-stream",
+            bucket=branding_bucket(),
+        )
+        row = fetch_one(
+            conn,
+            """
+            insert into branding_assets (
+                workspace_id, name, reference_key, type, storage_key, mime_type, alt_text, notes, is_active, sort_order, created_at, updated_at
+            )
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            returning id, workspace_id, name, reference_key, type, storage_key, mime_type, alt_text, notes, is_active, sort_order, created_at, updated_at
+            """,
+            [
+                org_id,
+                asset_name,
+                asset_reference_key,
+                asset_type,
+                stored["storage_key"],
+                file.content_type or "application/octet-stream",
+                _trimmed_text(alt_text) or None,
+                _trimmed_text(notes) or None,
+                bool(is_active),
+                int(sort_order or 0),
+                _now(),
+                _now(),
+            ],
+            query_name="branding_assets.insert",
+        ) or {}
+    return _ok_response({"asset": _branding_asset_payload(row)})
+
+
+@app.patch("/prefs/branding/assets/{asset_id}")
+async def update_branding_asset(request: Request, asset_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("BRANDING_ASSET_INVALID", "asset body required", "body", status=400)
+    org_id = get_org_id()
+    with get_conn() as conn:
+        current = fetch_one(
+            conn,
+            """
+            select id, workspace_id, name, reference_key, type, storage_key, mime_type, alt_text, notes, is_active, sort_order, created_at, updated_at
+            from branding_assets
+            where id=%s and workspace_id=%s
+            """,
+            [asset_id, org_id],
+            query_name="branding_assets.current",
+        ) or {}
+        if not current:
+            return _error_response("BRANDING_ASSET_NOT_FOUND", "branding asset not found", "asset_id", status=404)
+        next_name = _trimmed_text(body.get("name")) if "name" in body else _trimmed_text(current.get("name"))
+        next_name = next_name or _trimmed_text(current.get("name")) or "Branding asset"
+        next_reference_key = (
+            _branding_reference_key(body.get("reference_key"))
+            if "reference_key" in body
+            else _trimmed_text(current.get("reference_key"))
+        )
+        if not next_reference_key:
+            return _error_response("BRANDING_ASSET_REFERENCE_KEY_REQUIRED", "reference_key is required", "reference_key", status=400)
+        duplicate = fetch_one(
+            conn,
+            "select id from branding_assets where workspace_id=%s and lower(reference_key)=lower(%s) and id<>%s",
+            [org_id, next_reference_key, asset_id],
+            query_name="branding_assets.duplicate_update_check",
+        )
+        if duplicate:
+            return _error_response(
+                "BRANDING_ASSET_REFERENCE_KEY_TAKEN",
+                "reference_key must be unique within the workspace",
+                "reference_key",
+                status=409,
+            )
+        next_type = _branding_asset_type(body.get("type")) if "type" in body else _branding_asset_type(current.get("type"))
+        next_alt_text = _trimmed_text(body.get("alt_text")) if "alt_text" in body else _trimmed_text(current.get("alt_text"))
+        next_notes = _trimmed_text(body.get("notes")) if "notes" in body else _trimmed_text(current.get("notes"))
+        next_is_active = bool(body.get("is_active")) if "is_active" in body else bool(current.get("is_active", True))
+        next_sort_order = int(body.get("sort_order") or 0) if "sort_order" in body else int(current.get("sort_order") or 0)
+        row = fetch_one(
+            conn,
+            """
+            update branding_assets
+            set name=%s,
+                reference_key=%s,
+                type=%s,
+                alt_text=%s,
+                notes=%s,
+                is_active=%s,
+                sort_order=%s,
+                updated_at=%s
+            where id=%s and workspace_id=%s
+            returning id, workspace_id, name, reference_key, type, storage_key, mime_type, alt_text, notes, is_active, sort_order, created_at, updated_at
+            """,
+            [
+                next_name,
+                next_reference_key,
+                next_type,
+                next_alt_text or None,
+                next_notes or None,
+                next_is_active,
+                next_sort_order,
+                _now(),
+                asset_id,
+                org_id,
+            ],
+            query_name="branding_assets.update",
+        ) or {}
+    return _ok_response({"asset": _branding_asset_payload(row)})
 
 
 @app.post("/ops/attachments/cleanup")

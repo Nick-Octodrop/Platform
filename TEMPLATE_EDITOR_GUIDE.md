@@ -33,11 +33,25 @@ Common helper objects:
 - `formatted_line_items`
 
 Branding objects commonly available:
+- `app_branding`
+- `template_branding`
+- `branding_assets`
 - `workspace`
 - `company`
 - `branding`
 
 Common branding fields:
+- `app_branding.workspace_name`
+- `app_branding.primary_color`
+- `app_branding.app_logo_url`
+- `app_branding.assets.main_logo.file_url`
+- `template_branding.brand_name`
+- `template_branding.legal_name`
+- `template_branding.website`
+- `template_branding.default_footer_text`
+- `template_branding.template_primary_color`
+- `template_branding.primary_logo_url`
+- `template_branding.assets.main_logo.file_url`
 - `workspace.name`
 - `workspace.logo_url`
 - `workspace.colors.primary`
@@ -98,7 +112,10 @@ Optional:
 
 ## 5) Style/Branding Requirements
 
-- Prefer workspace branding from render context when available
+- For customer-facing documents, emails, and PDFs, prefer `template_branding` first
+- Fall back to `branding`, `company`, or `workspace` only when `template_branding` is missing
+- Use `app_branding` for app/workspace UI identity, not as the first choice for customer-facing template styling
+- Prefer named assets by `reference_key` when they are available instead of guessing from raw URLs
 - Keep output professional, clean, readable in print/PDF
 - Use inline styles only (email/PDF-safe)
 - Avoid external CSS/JS
@@ -107,14 +124,24 @@ Optional:
 ### Logo usage
 
 Preferred:
-- `workspace.logo_url` (if available in render context)
+- `template_branding.primary_logo_url`
+- `template_branding.assets.main_logo.file_url`
+- fallback: `branding.logo_url` or `workspace.logo_url`
 
 Safe logo snippet:
 
 ```jinja
-{% set logo_url = workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else '' %}
+{% set logo_url =
+  (template_branding.primary_logo_url if template_branding is defined and template_branding and template_branding.primary_logo_url is defined and template_branding.primary_logo_url else
+  (branding.logo_url if branding is defined and branding and branding.logo_url is defined and branding.logo_url else
+  (workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else '')))
+%}
+{% set logo_alt =
+  (template_branding.brand_name if template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name else
+  (workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'Company'))
+%}
 {% if logo_url %}
-  <img src="{{ logo_url }}" alt="{{ workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'Company' }}" style="height:34px; width:auto;" />
+  <img src="{{ logo_url }}" alt="{{ logo_alt }}" style="height:34px; width:auto;" />
 {% endif %}
 ```
 
@@ -122,8 +149,9 @@ Safe primary color snippet:
 
 ```jinja
 {% set brand_primary =
+  (template_branding.template_primary_color if template_branding is defined and template_branding and template_branding.template_primary_color is defined and template_branding.template_primary_color else
   (branding.primary_color if branding is defined and branding and branding.primary_color is defined and branding.primary_color else
-  (workspace.colors.primary if workspace is defined and workspace and workspace.colors is defined and workspace.colors and workspace.colors.primary is defined and workspace.colors.primary else '#1f2937'))
+  (workspace.colors.primary if workspace is defined and workspace and workspace.colors is defined and workspace.colors and workspace.colors.primary is defined and workspace.colors.primary else '#1f2937')))
 %}
 ```
 
@@ -170,7 +198,9 @@ Constraints:
   2) header_html
   3) footer_html
   4) body_html
-- Use workspace branding from `workspace`, `company`, and `branding` when available.
+- For customer-facing templates, prefer branding from `template_branding` first.
+- Fall back to `branding`, `company`, and `workspace` only where `template_branding` is missing.
+- Use named assets from `template_branding.assets` or `app_branding.assets` by `reference_key` when available.
 - Keep layout professional and print-friendly.
 - Use only inline styles.
 

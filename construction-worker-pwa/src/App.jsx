@@ -9,6 +9,7 @@ import {
   findWorkerForUser,
   getActiveWorkspaceId,
   getCatalogMaterials,
+  getProjectSections,
   getConstructionSites,
   getProjectMaterialLogs,
   getProjects,
@@ -59,6 +60,8 @@ const PWA_COPY = {
     take_photo_clock_out: "Take photo and clock out",
     edit_material: "Edit material",
     add_material_title: "Add a material",
+    project_section: "Project Section",
+    choose_project_section: "Choose a project section",
     choose_material: "Choose a material",
     quantity: "Quantity",
     update: "Update",
@@ -115,6 +118,7 @@ const PWA_COPY = {
     clock_in_saved: "Clock-in recorded.",
     clock_out_saved: "Clock-out recorded.",
     quantity_required: "Enter a quantity.",
+    project_section_required: "Choose the project section first.",
     choose_catalog_material: "Choose a material from the catalog.",
     material_missing: "The selected material no longer exists.",
     material_type_required: "Add a material type on the catalog item.",
@@ -146,6 +150,8 @@ const PWA_COPY = {
     take_photo_clock_out: "Prendre une photo et pointer la sortie",
     edit_material: "Modifier le materiau",
     add_material_title: "Ajouter un materiau",
+    project_section: "Section du projet",
+    choose_project_section: "Choisir une section du projet",
     choose_material: "Choisir un materiau",
     quantity: "Quantite",
     update: "Mettre a jour",
@@ -202,6 +208,7 @@ const PWA_COPY = {
     clock_in_saved: "Entree enregistree.",
     clock_out_saved: "Sortie enregistree.",
     quantity_required: "Saisissez une quantite.",
+    project_section_required: "Choisissez d'abord la section du projet.",
     choose_catalog_material: "Choisissez un materiau du catalogue.",
     material_missing: "Le materiau selectionne n'existe plus.",
     material_type_required: "Ajoutez un type de materiau sur l'article du catalogue.",
@@ -233,6 +240,8 @@ const PWA_COPY = {
     take_photo_clock_out: "Foto nemen en uitklokken",
     edit_material: "Materiaal bewerken",
     add_material_title: "Materiaal toevoegen",
+    project_section: "Projectsectie",
+    choose_project_section: "Kies een projectsectie",
     choose_material: "Kies een materiaal",
     quantity: "Hoeveelheid",
     update: "Bijwerken",
@@ -289,6 +298,7 @@ const PWA_COPY = {
     clock_in_saved: "Inklokken opgeslagen.",
     clock_out_saved: "Uitklokken opgeslagen.",
     quantity_required: "Voer een hoeveelheid in.",
+    project_section_required: "Kies eerst de projectsectie.",
     choose_catalog_material: "Kies een materiaal uit de catalogus.",
     material_missing: "Het geselecteerde materiaal bestaat niet meer.",
     material_type_required: "Voeg een materiaaltype toe op het catalogusitem.",
@@ -343,6 +353,14 @@ function materialDisplayLabel(item) {
   const code = item.record?.["item.code"];
   const name = item.record?.["item.name"] || "";
   return code ? `${name} (${code})` : name;
+}
+
+function workItemDisplayLabel(item) {
+  if (!item) return "";
+  const code = String(item.record?.["construction_work_item.sequence_code"] || "").trim();
+  const title = String(item.record?.["construction_work_item.title"] || "").trim();
+  if (code && title) return `${code} - ${title}`;
+  return title || code;
 }
 
 function buildSiteLabel(site) {
@@ -495,6 +513,7 @@ export default function App() {
   const [assignments, setAssignments] = useState([]);
   const [openEntry, setOpenEntry] = useState(null);
   const [materialItems, setMaterialItems] = useState([]);
+  const [projectSections, setProjectSections] = useState([]);
   const [materialLogs, setMaterialLogs] = useState([]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -502,6 +521,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const [selectedWorkItemId, setSelectedWorkItemId] = useState("");
   const [selectedMaterialItemId, setSelectedMaterialItemId] = useState("");
   const [materialQty, setMaterialQty] = useState("");
   const [materialUnit, setMaterialUnit] = useState("");
@@ -806,6 +826,7 @@ export default function App() {
       setAssignments([]);
       setOpenEntry(null);
       setMaterialItems([]);
+      setProjectSections([]);
       setMaterialLogs([]);
       setExpandedMaterialId("");
       setEditingMaterialId("");
@@ -828,6 +849,7 @@ export default function App() {
         setAssignments([]);
         setOpenEntry(null);
         setMaterialItems(nextMaterialItems);
+        setProjectSections([]);
         setMaterialLogs([]);
         setExpandedMaterialId("");
         setEditingMaterialId("");
@@ -944,6 +966,7 @@ export default function App() {
     projects[0] ||
     null;
   const materialItemById = Object.fromEntries(materialItems.map((item) => [item.record_id, item]));
+  const projectSectionById = Object.fromEntries(projectSections.map((item) => [item.record_id, item]));
   const activeProjectId = currentProject?.record_id || "";
   const selectedAssignment =
     assignments.find((item) => item.record?.["construction_worker_assignment.project_id"] === activeProjectId) || null;
@@ -966,6 +989,49 @@ export default function App() {
     materialModalOpen ||
     checkInPromptOpen ||
     checkOutPromptOpen;
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!activeProjectId) {
+        setProjectSections([]);
+        return;
+      }
+      try {
+        const sections = await getProjectSections(activeProjectId);
+        if (active) {
+          setProjectSections(sections);
+        }
+      } catch {
+        if (active) {
+          setProjectSections([]);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (!projectSections.length) {
+      setSelectedWorkItemId("");
+      return;
+    }
+    if (selectedWorkItemId && projectSections.some((item) => item.record_id === selectedWorkItemId)) {
+      return;
+    }
+    const activeTimeEntryWorkItemId = String(openEntry?.record?.["time_entry.work_item_id"] || "").trim();
+    if (activeTimeEntryWorkItemId && projectSections.some((item) => item.record_id === activeTimeEntryWorkItemId)) {
+      setSelectedWorkItemId(activeTimeEntryWorkItemId);
+      return;
+    }
+    if (projectSections.length === 1) {
+      setSelectedWorkItemId(projectSections[0].record_id);
+      return;
+    }
+    setSelectedWorkItemId("");
+  }, [openEntry?.record?.["time_entry.work_item_id"], projectSections, selectedWorkItemId]);
 
   useEffect(() => {
     let active = true;
@@ -1018,9 +1084,11 @@ export default function App() {
       setAssignments([]);
       setOpenEntry(null);
       setMaterialItems([]);
+      setProjectSections([]);
       setMaterialLogs([]);
       setExpandedMaterialId("");
       setEditingMaterialId("");
+      setSelectedWorkItemId("");
       setSelectedMaterialItemId("");
       setSelectedProjectId("");
       setProjectSelectionComplete(false);
@@ -1358,6 +1426,9 @@ export default function App() {
       if (!Number.isFinite(quantity) || quantity <= 0) {
         throw new Error(t(locale, "quantity_required"));
       }
+      if (!selectedWorkItemId) {
+        throw new Error(t(locale, "project_section_required"));
+      }
       if (!selectedMaterialItemId) {
         throw new Error(t(locale, "choose_catalog_material"));
       }
@@ -1373,6 +1444,7 @@ export default function App() {
       const record = {
         "material_log.project_id": activeProjectId,
         "material_log.site_id": activeSiteId,
+        "material_log.work_item_id": selectedWorkItemId,
         "material_log.log_date": todayDate(),
         "material_log.item_id": selectedMaterialItemId,
         "material_log.material_type": nextMaterialType,
@@ -1395,6 +1467,7 @@ export default function App() {
         setSuccess(t(locale, "material_added_success"));
       }
       setMaterialQty("");
+      setSelectedWorkItemId("");
       setSelectedMaterialItemId("");
       setMaterialUnit("");
       setEditingMaterialId("");
@@ -1430,8 +1503,10 @@ export default function App() {
 
   function openMaterialEditor(log) {
     const nextItemId = log.record?.["material_log.item_id"] || "";
+    const nextWorkItemId = log.record?.["material_log.work_item_id"] || "";
     setExpandedMaterialId("");
     setEditingMaterialId(log.record_id);
+    setSelectedWorkItemId(nextWorkItemId);
     setSelectedMaterialItemId(nextItemId);
     setMaterialQty(String(log.record?.["material_log.quantity"] ?? ""));
     setMaterialUnit(log.record?.["material_log.unit"] || defaultUnitForMaterial(materialItemById[nextItemId]));
@@ -1621,6 +1696,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 setEditingMaterialId("");
+                setSelectedWorkItemId(String(openEntry?.record?.["time_entry.work_item_id"] || "").trim());
                 setSelectedMaterialItemId("");
                 setMaterialQty("");
                 setMaterialUnit("");
@@ -1665,6 +1741,13 @@ export default function App() {
                             </button>
                             {expanded ? (
                               <div className="mt-3 pt-1">
+                                {log.record?.["material_log.work_item_id"] ? (
+                                  <div className="mb-2 text-xs text-base-content/60">
+                                    {t(locale, "project_section")}:{" "}
+                                    {workItemDisplayLabel(projectSectionById[log.record?.["material_log.work_item_id"]]) ||
+                                      log.record?.["material_log.work_item_id"]}
+                                  </div>
+                                ) : null}
                                 <div className="flex items-center gap-2 text-xs text-base-content/55">
                                   <span>{timestamp?.date || ""}</span>
                                   {timestamp?.time ? <span>{timestamp.time}</span> : null}
@@ -1813,20 +1896,41 @@ export default function App() {
             </div>
 
             <form className="space-y-3" onSubmit={handleMaterialSubmit}>
-              <select
-                className="select select-bordered h-12 min-h-12 w-full bg-base-100 text-base"
-                value={selectedMaterialItemId}
-                onChange={(event) => setSelectedMaterialItemId(event.target.value)}
-                disabled={loading}
-                required
-              >
-                <option value="">{t(locale, "choose_material")}</option>
-                {materialItems.map((item) => (
-                  <option key={item.record_id} value={item.record_id}>
-                    {materialDisplayLabel(item)}
-                  </option>
-                ))}
-              </select>
+              <div className="form-control w-full">
+                <select
+                  className="select select-bordered h-12 min-h-12 w-full bg-base-100 text-base"
+                  value={selectedWorkItemId}
+                  onChange={(event) => setSelectedWorkItemId(event.target.value)}
+                  disabled={loading || !activeProjectId}
+                  aria-label={t(locale, "project_section")}
+                  required
+                >
+                  <option value="">{t(locale, "choose_project_section")}</option>
+                  {projectSections.map((item) => (
+                    <option key={item.record_id} value={item.record_id}>
+                      {workItemDisplayLabel(item)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-control w-full">
+                <select
+                  className="select select-bordered h-12 min-h-12 w-full bg-base-100 text-base"
+                  value={selectedMaterialItemId}
+                  onChange={(event) => setSelectedMaterialItemId(event.target.value)}
+                  disabled={loading}
+                  aria-label={t(locale, "choose_material")}
+                  required
+                >
+                  <option value="">{t(locale, "choose_material")}</option>
+                  {materialItems.map((item) => (
+                    <option key={item.record_id} value={item.record_id}>
+                      {materialDisplayLabel(item)}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="join w-full">
                 <input
@@ -1862,7 +1966,12 @@ export default function App() {
                 ))}
               </div>
 
-              <button className="btn h-12 min-h-12 w-full" style={primarySurfaceStyle} disabled={loading} type="submit">
+              <button
+                className="btn h-12 min-h-12 w-full"
+                style={primarySurfaceStyle}
+                disabled={loading || !selectedWorkItemId || !selectedMaterialItemId}
+                type="submit"
+              >
                 {loading ? <span className="loading loading-spinner" /> : editingMaterialId ? t(locale, "update") : t(locale, "add")}
               </button>
             </form>

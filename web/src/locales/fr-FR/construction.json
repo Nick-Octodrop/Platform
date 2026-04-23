@@ -413,7 +413,7 @@
             "label": "Équipage"
           },
           "work_item_id": {
-            "label": "Élément de travail"
+            "label": "Project Section"
           },
           "entry_date": {
             "label": "Date d'entrée"
@@ -551,7 +551,7 @@
             "label": "Site"
           },
           "work_item_id": {
-            "label": "Élément de travail"
+            "label": "Project Section"
           },
           "title": {
             "label": "Titre"
@@ -741,7 +741,7 @@
             "label": "Site"
           },
           "work_item_id": {
-            "label": "Élément de travail"
+            "label": "Project Section"
           },
           "log_date": {
             "label": "Date du journal"

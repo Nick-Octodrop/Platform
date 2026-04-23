@@ -2141,6 +2141,9 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             ).json()
             template_id = created["template"]["id"]
             with patch.object(main, "_branding_context_for_org", lambda _org_id: {
+                "app_branding": {"workspace_name": "Octodrop", "app_logo_url": "https://example.com/app-logo.png"},
+                "template_branding": {"brand_name": "Octodrop Docs", "primary_logo_url": "https://example.com/logo.png"},
+                "branding_assets": [{"reference_key": "main_logo", "file_url": "https://example.com/logo.png"}],
                 "workspace": {"logo_url": "https://example.com/logo.png", "name": "Octodrop"},
                 "company": {"name": "Octodrop"},
                 "branding": {"logo_url": "https://example.com/logo.png", "colors": {"primary": "#ff6a00"}},
@@ -2151,6 +2154,8 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(body.get("errors"), [], body)
         undefined = set(body.get("undefined") or [])
         self.assertFalse({"branding", "workspace", "record"} & undefined, body)
+        self.assertNotIn("template_branding", undefined, body)
+        self.assertNotIn("app_branding", undefined, body)
 
     def test_document_template_validate_without_sample_uses_placeholder_branding_and_lines(self) -> None:
         client = TestClient(main.app)
@@ -2176,6 +2181,9 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             ).json()
             template_id = created["template"]["id"]
             with patch.object(main, "_branding_context_for_org", lambda _org_id: {
+                "app_branding": {"workspace_name": "Octodrop", "app_logo_url": "https://example.com/app-logo.png"},
+                "template_branding": {"brand_name": "Octodrop Docs", "primary_logo_url": "https://example.com/logo.png"},
+                "branding_assets": [{"reference_key": "main_logo", "file_url": "https://example.com/logo.png"}],
                 "workspace": {"logo_url": "https://example.com/logo.png", "name": "Octodrop"},
                 "company": {"name": "Octodrop"},
                 "branding": {"logo_url": "https://example.com/logo.png", "colors": {"primary": "#ff6a00"}},
@@ -2186,9 +2194,14 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(body.get("errors"), [], body)
         undefined = set(body.get("undefined") or [])
         self.assertFalse({"branding", "workspace", "record", "lines"} & undefined, body)
+        self.assertNotIn("template_branding", undefined, body)
+        self.assertNotIn("app_branding", undefined, body)
 
     def test_document_template_draft_validation_supports_branding_and_lines_without_sample(self) -> None:
         with patch.object(main, "_branding_context_for_org", lambda _org_id: {
+            "app_branding": {"workspace_name": "Octodrop", "app_logo_url": "https://example.com/app-logo.png"},
+            "template_branding": {"brand_name": "Octodrop Docs", "primary_logo_url": "https://example.com/logo.png"},
+            "branding_assets": [{"reference_key": "main_logo", "file_url": "https://example.com/logo.png"}],
             "workspace": {"logo_url": "https://example.com/logo.png", "name": "Octodrop"},
             "company": {"name": "Octodrop"},
             "branding": {"logo_url": "https://example.com/logo.png", "colors": {"primary": "#ff6a00"}},
@@ -2211,6 +2224,8 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(validation.get("errors"), [], validation)
         undefined = set(validation.get("undefined") or [])
         self.assertFalse({"branding", "workspace", "record", "lines"} & undefined, validation)
+        self.assertNotIn("template_branding", undefined, validation)
+        self.assertNotIn("app_branding", undefined, validation)
 
     def test_document_template_draft_validation_supports_lookup_label_alias_without_sample(self) -> None:
         fake_invoice_entity = {

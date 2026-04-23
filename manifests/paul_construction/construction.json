@@ -281,6 +281,383 @@
           "type": "datetime",
           "label": "Created At",
           "label_key": "construction.entities.construction_site.fields.created_at.label"
+        },
+        {
+          "id": "construction_site.total_hours",
+          "type": "number",
+          "label": "Total Hours",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "duration",
+            "unit": "hrs",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.time_entry",
+              "field": "time_entry.hours_worked",
+              "where": {
+                "op": "eq",
+                "field": "time_entry.site_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_hours.label"
+        },
+        {
+          "id": "construction_site.labour_cost_from_time_entries",
+          "type": "number",
+          "label": "Labour Cost From Time Entries",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.time_entry",
+              "field": "time_entry.labour_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "time_entry.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.labour_cost_from_time_entries.label"
+        },
+        {
+          "id": "construction_site.labour_cost_from_expenses",
+          "type": "number",
+          "label": "Labour Cost From Expenses",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.construction_expense",
+              "field": "construction_expense.amount",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.status",
+                    "value": "posted"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.expense_type",
+                    "value": "labor"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.labour_cost_from_expenses.label"
+        },
+        {
+          "id": "construction_site.total_labour_cost",
+          "type": "number",
+          "label": "Labour Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "if",
+                  "condition": {
+                    "op": "gt",
+                    "left": {
+                      "ref": "construction_site.labour_cost_from_time_entries"
+                    },
+                    "right": 0
+                  },
+                  "then": {
+                    "ref": "construction_site.labour_cost_from_time_entries"
+                  },
+                  "else": {
+                    "ref": "construction_site.labour_cost_from_expenses"
+                  }
+                },
+                2
+              ]
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_labour_cost.label"
+        },
+        {
+          "id": "construction_site.material_cost_from_receipts",
+          "type": "number",
+          "label": "Material Cost From Receipts",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_receipt",
+              "field": "material_receipt.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.status",
+                    "value": "posted"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.material_cost_from_receipts.label"
+        },
+        {
+          "id": "construction_site.material_cost_from_expenses",
+          "type": "number",
+          "label": "Material Cost From Expenses",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.construction_expense",
+              "field": "construction_expense.amount",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.status",
+                    "value": "posted"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.expense_type",
+                    "value": "materials"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.material_cost_from_expenses.label"
+        },
+        {
+          "id": "construction_site.total_material_cost",
+          "type": "number",
+          "label": "Material Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "if",
+                  "condition": {
+                    "op": "gt",
+                    "left": {
+                      "ref": "construction_site.material_cost_from_receipts"
+                    },
+                    "right": 0
+                  },
+                  "then": {
+                    "ref": "construction_site.material_cost_from_receipts"
+                  },
+                  "else": {
+                    "ref": "construction_site.material_cost_from_expenses"
+                  }
+                },
+                2
+              ]
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_material_cost.label"
+        },
+        {
+          "id": "construction_site.total_material_usage_cost",
+          "type": "number",
+          "label": "Material Usage Value",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_log",
+              "field": "material_log.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "material_log.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_log.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_material_usage_cost.label"
+        },
+        {
+          "id": "construction_site.total_other_cost",
+          "type": "number",
+          "label": "Other Costs",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.construction_expense",
+              "field": "construction_expense.amount",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.site_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.status",
+                    "value": "posted"
+                  },
+                  {
+                    "op": "in",
+                    "field": "construction_expense.expense_type",
+                    "value": [
+                      "subcontract",
+                      "equipment",
+                      "other"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_other_cost.label"
+        },
+        {
+          "id": "construction_site.total_cost",
+          "type": "number",
+          "label": "Total Cost To Date",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "add",
+                  "args": [
+                    {
+                      "ref": "construction_site.total_labour_cost"
+                    },
+                    {
+                      "ref": "construction_site.total_material_cost"
+                    },
+                    {
+                      "ref": "construction_site.total_other_cost"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          "label_key": "construction.entities.construction_site.fields.total_cost.label"
         }
       ]
     },
@@ -735,9 +1112,46 @@
           "label_key": "construction.entities.construction_project.fields.total_hours.label"
         },
         {
-          "id": "construction_project.total_labour_cost",
+          "id": "construction_project.labour_cost_from_time_entries",
           "type": "number",
-          "label": "Labour Cost",
+          "label": "Labour Cost From Time Entries",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.time_entry",
+              "field": "time_entry.labour_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "time_entry.project_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_project.fields.labour_cost_from_time_entries.label"
+        },
+        {
+          "id": "construction_project.labour_cost_from_expenses",
+          "type": "number",
+          "label": "Labour Cost From Expenses",
           "readonly": true,
           "default": 0,
           "format": {
@@ -774,12 +1188,86 @@
               }
             }
           },
+          "label_key": "construction.entities.construction_project.fields.labour_cost_from_expenses.label"
+        },
+        {
+          "id": "construction_project.total_labour_cost",
+          "type": "number",
+          "label": "Labour Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "if",
+                  "condition": {
+                    "op": "gt",
+                    "left": {
+                      "ref": "construction_project.labour_cost_from_time_entries"
+                    },
+                    "right": 0
+                  },
+                  "then": {
+                    "ref": "construction_project.labour_cost_from_time_entries"
+                  },
+                  "else": {
+                    "ref": "construction_project.labour_cost_from_expenses"
+                  }
+                },
+                2
+              ]
+            }
+          },
           "label_key": "construction.entities.construction_project.fields.total_labour_cost.label"
         },
         {
-          "id": "construction_project.total_material_cost",
+          "id": "construction_project.material_cost_from_receipts",
           "type": "number",
-          "label": "Material Cost",
+          "label": "Material Cost From Receipts",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_receipt",
+              "field": "material_receipt.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.project_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.status",
+                    "value": "posted"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_project.fields.material_cost_from_receipts.label"
+        },
+        {
+          "id": "construction_project.material_cost_from_expenses",
+          "type": "number",
+          "label": "Material Cost From Expenses",
           "readonly": true,
           "default": 0,
           "format": {
@@ -816,7 +1304,81 @@
               }
             }
           },
+          "label_key": "construction.entities.construction_project.fields.material_cost_from_expenses.label"
+        },
+        {
+          "id": "construction_project.total_material_cost",
+          "type": "number",
+          "label": "Material Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "if",
+                  "condition": {
+                    "op": "gt",
+                    "left": {
+                      "ref": "construction_project.material_cost_from_receipts"
+                    },
+                    "right": 0
+                  },
+                  "then": {
+                    "ref": "construction_project.material_cost_from_receipts"
+                  },
+                  "else": {
+                    "ref": "construction_project.material_cost_from_expenses"
+                  }
+                },
+                2
+              ]
+            }
+          },
           "label_key": "construction.entities.construction_project.fields.total_material_cost.label"
+        },
+        {
+          "id": "construction_project.total_material_usage_cost",
+          "type": "number",
+          "label": "Material Usage Value",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_log",
+              "field": "material_log.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "material_log.project_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_log.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_project.fields.total_material_usage_cost.label"
         },
         {
           "id": "construction_project.total_other_cost",
@@ -1405,9 +1967,17 @@
         {
           "id": "time_entry.work_item_id",
           "type": "lookup",
-          "label": "Work Item",
+          "label": "Project Section",
           "entity": "entity.construction_work_item",
           "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.time_entry.project_id"
+            }
+          },
+          "help_text": "Only project sections for the selected project are available here.",
           "label_key": "construction.entities.time_entry.fields.work_item_id.label"
         },
         {
@@ -1524,6 +2094,62 @@
             ]
           },
           "label_key": "construction.entities.time_entry.fields.hours_worked.label"
+        },
+        {
+          "id": "time_entry.hourly_cost_rate",
+          "type": "number",
+          "label": "Hourly Cost Rate",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "ref": "time_entry.worker_hourly_cost_rate"
+                },
+                2
+              ]
+            }
+          },
+          "label_key": "construction.entities.time_entry.fields.hourly_cost_rate.label"
+        },
+        {
+          "id": "time_entry.labour_cost",
+          "type": "number",
+          "label": "Labour Cost",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "time_entry.hours_worked"
+                    },
+                    {
+                      "ref": "time_entry.hourly_cost_rate"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          },
+          "label_key": "construction.entities.time_entry.fields.labour_cost.label"
         },
         {
           "id": "time_entry.status",
@@ -2012,6 +2638,22 @@
           "label_key": "construction.entities.material_request.fields.site_id.label"
         },
         {
+          "id": "material_request.work_item_id",
+          "type": "lookup",
+          "label": "Project Section",
+          "entity": "entity.construction_work_item",
+          "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.material_request.project_id"
+            }
+          },
+          "help_text": "Only project sections for the selected project are available here.",
+          "label_key": "construction.entities.material_request.fields.work_item_id.label"
+        },
+        {
           "id": "material_request.request_date",
           "type": "date",
           "label": "Request Date",
@@ -2217,6 +2859,22 @@
           "entity": "entity.construction_site",
           "display_field": "construction_site.name",
           "label_key": "construction.entities.material_receipt.fields.site_id.label"
+        },
+        {
+          "id": "material_receipt.work_item_id",
+          "type": "lookup",
+          "label": "Project Section",
+          "entity": "entity.construction_work_item",
+          "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.material_receipt.project_id"
+            }
+          },
+          "help_text": "Only project sections for the selected project are available here.",
+          "label_key": "construction.entities.material_receipt.fields.work_item_id.label"
         },
         {
           "id": "material_receipt.receipt_date",
@@ -2455,9 +3113,17 @@
         {
           "id": "material_log.work_item_id",
           "type": "lookup",
-          "label": "Work Item",
+          "label": "Project Section",
           "entity": "entity.construction_work_item",
           "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.material_log.project_id"
+            }
+          },
+          "help_text": "Only project sections for the selected project are available here.",
           "label_key": "construction.entities.material_log.fields.work_item_id.label"
         },
         {
@@ -2648,6 +3314,22 @@
           "label_key": "construction.entities.construction_budget_line.fields.cost_code_id.label"
         },
         {
+          "id": "construction_budget_line.work_item_id",
+          "type": "lookup",
+          "label": "Project Section",
+          "entity": "entity.construction_work_item",
+          "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.construction_budget_line.project_id"
+            }
+          },
+          "help_text": "Use the matching project section so planned and actual costs roll up against the same construction line.",
+          "label_key": "construction.entities.construction_budget_line.fields.work_item_id.label"
+        },
+        {
           "id": "construction_budget_line.category",
           "type": "enum",
           "label": "Category",
@@ -2718,14 +3400,273 @@
           "label_key": "construction.entities.construction_budget_line.fields.committed_amount.label"
         },
         {
-          "id": "construction_budget_line.actual_amount",
+          "id": "construction_budget_line.actual_expense_amount",
           "type": "number",
-          "label": "Actual Amount",
+          "label": "Actual Expense Amount",
+          "readonly": true,
           "default": 0,
           "format": {
             "kind": "currency",
             "currency": "NZD",
             "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.construction_expense",
+              "field": "construction_expense.amount",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.project_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.project_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.work_item_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.work_item_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.cost_code_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.cost_code_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.status",
+                    "value": "posted"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "construction_expense.expense_type",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.category"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.actual_expense_amount.label"
+        },
+        {
+          "id": "construction_budget_line.actual_labour_amount",
+          "type": "number",
+          "label": "Actual Labour Amount",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.time_entry",
+              "field": "time_entry.labour_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "$parent.construction_budget_line.category",
+                    "value": "labor"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.project_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.project_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.work_item_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.work_item_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.work_item_cost_code_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.cost_code_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "time_entry.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.actual_labour_amount.label"
+        },
+        {
+          "id": "construction_budget_line.actual_receipt_amount",
+          "type": "number",
+          "label": "Actual Receipt Amount",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_receipt",
+              "field": "material_receipt.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "$parent.construction_budget_line.category",
+                    "value": "materials"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.project_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.project_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.work_item_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.work_item_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_receipt.status",
+                    "value": "posted"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.actual_receipt_amount.label"
+        },
+        {
+          "id": "construction_budget_line.actual_material_usage_amount",
+          "type": "number",
+          "label": "Actual Material Usage Amount",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.material_log",
+              "field": "material_log.total_cost",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "$parent.construction_budget_line.category",
+                    "value": "materials"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_log.project_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.project_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_log.work_item_id",
+                    "value": {
+                      "ref": "$parent.construction_budget_line.work_item_id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "material_log.status",
+                    "value": "approved"
+                  }
+                ]
+              }
+            }
+          },
+          "label_key": "construction.entities.construction_budget_line.fields.actual_material_usage_amount.label"
+        },
+        {
+          "id": "construction_budget_line.actual_amount",
+          "type": "number",
+          "label": "Actual Amount",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency": "NZD",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "if",
+                  "condition": {
+                    "op": "eq",
+                    "field": "construction_budget_line.category",
+                    "value": "labor"
+                  },
+                  "then": {
+                    "ref": "construction_budget_line.actual_labour_amount"
+                  },
+                  "else": {
+                    "op": "if",
+                    "condition": {
+                      "op": "eq",
+                      "field": "construction_budget_line.category",
+                      "value": "materials"
+                    },
+                    "then": {
+                      "op": "if",
+                      "condition": {
+                        "op": "gt",
+                        "left": {
+                          "ref": "construction_budget_line.actual_receipt_amount"
+                        },
+                        "right": 0
+                      },
+                      "then": {
+                        "ref": "construction_budget_line.actual_receipt_amount"
+                      },
+                      "else": {
+                        "ref": "construction_budget_line.actual_expense_amount"
+                      }
+                    },
+                    "else": {
+                      "ref": "construction_budget_line.actual_expense_amount"
+                    }
+                  }
+                },
+                2
+              ]
+            }
           },
           "label_key": "construction.entities.construction_budget_line.fields.actual_amount.label"
         },
@@ -2811,6 +3752,22 @@
           "display_field": "construction_cost_code.name",
           "required": true,
           "label_key": "construction.entities.construction_expense.fields.cost_code_id.label"
+        },
+        {
+          "id": "construction_expense.work_item_id",
+          "type": "lookup",
+          "label": "Project Section",
+          "entity": "entity.construction_work_item",
+          "display_field": "construction_work_item.title",
+          "domain": {
+            "op": "eq",
+            "field": "construction_work_item.project_id",
+            "value": {
+              "ref": "$record.construction_expense.project_id"
+            }
+          },
+          "help_text": "Only project sections for the selected project are available here.",
+          "label_key": "construction.entities.construction_expense.fields.work_item_id.label"
         },
         {
           "id": "construction_expense.title",
@@ -4004,6 +4961,12 @@
           "field_id": "construction_site.supervisor_id"
         },
         {
+          "field_id": "construction_site.total_hours"
+        },
+        {
+          "field_id": "construction_site.total_cost"
+        },
+        {
           "field_id": "construction_site.status"
         }
       ],
@@ -4102,6 +5065,41 @@
           "section_title_key": "construction.views.form.sections.geofence.title"
         },
         {
+          "id": "summary",
+          "title": "Site Summary",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "construction_site.total_hours",
+            "construction_site.total_labour_cost",
+            "construction_site.total_material_cost",
+            "construction_site.total_material_usage_cost",
+            "construction_site.total_other_cost",
+            "construction_site.total_cost"
+          ],
+          "section_title_key": "construction.views.form.sections.summary.title"
+        },
+        {
+          "id": "projects_related",
+          "title": "Projects",
+          "fields": []
+        },
+        {
+          "id": "time_entries_related",
+          "title": "Time Entries",
+          "fields": []
+        },
+        {
+          "id": "materials_related",
+          "title": "Materials",
+          "fields": []
+        },
+        {
+          "id": "daily_reports_related",
+          "title": "Daily Reports",
+          "fields": []
+        },
+        {
           "id": "notes",
           "title": "Notes",
           "fields": [
@@ -4140,6 +5138,147 @@
               "tab_label_key": "construction.views.form.sections.geofence.title",
               "sections": [
                 "geofence"
+              ]
+            },
+            {
+              "id": "summary_tab",
+              "label": "Summary",
+              "tab_label_key": "construction.views.form.sections.summary.title",
+              "sections": [
+                "summary"
+              ]
+            },
+            {
+              "id": "projects_tab",
+              "label": "Projects",
+              "sections": [
+                "projects_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.construction_project",
+                  "target": "view:construction_project.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "construction_project.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "construction_project.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "construction_project.status": "planned",
+                    "construction_project.priority": "medium"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "time_entries_tab",
+              "label": "Time Entries",
+              "sections": [
+                "time_entries_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.time_entry",
+                  "target": "view:time_entry.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "time_entry.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "time_entry.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "time_entry.status": "open",
+                    "time_entry.source": "manual"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "materials_tab",
+              "label": "Materials",
+              "sections": [
+                "materials_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.material_receipt",
+                  "target": "view:material_receipt.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "material_receipt.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "material_receipt.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "material_receipt.status": "draft"
+                  }
+                },
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.material_log",
+                  "target": "view:material_log.report",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "material_log.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "material_log.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "material_log.status": "draft"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "daily_reports_tab",
+              "label": "Daily Reports",
+              "sections": [
+                "daily_reports_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.construction_daily_report",
+                  "target": "view:construction_daily_report.summary_list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "construction_daily_report.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "construction_daily_report.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "construction_daily_report.status": "draft"
+                  }
+                }
               ]
             },
             {
@@ -4444,6 +5583,12 @@
           "field_id": "construction_project.status"
         },
         {
+          "field_id": "construction_project.total_hours"
+        },
+        {
+          "field_id": "construction_project.total_cost"
+        },
+        {
           "field_id": "construction_project.priority"
         },
         {
@@ -4579,6 +5724,7 @@
             "construction_project.total_hours",
             "construction_project.total_labour_cost",
             "construction_project.total_material_cost",
+            "construction_project.total_material_usage_cost",
             "construction_project.total_other_cost",
             "construction_project.total_cost",
             "construction_project.contract_value"
@@ -4597,19 +5743,20 @@
           "section_title_key": "construction.views.form.sections.crew.title"
         },
         {
+          "id": "project_sections_related",
+          "title": "Project Sections",
+          "fields": []
+        },
+        {
           "id": "time_entries",
           "title": "Time Entries",
-          "fields": [
-            "construction_project.labor_budget"
-          ],
+          "fields": [],
           "section_title_key": "construction.views.form.sections.time_entries.title"
         },
         {
           "id": "materials",
           "title": "Materials",
-          "fields": [
-            "construction_project.material_budget"
-          ],
+          "fields": [],
           "section_title_key": "construction.views.form.sections.materials.title"
         },
         {
@@ -4624,6 +5771,7 @@
             "construction_project.other_budget",
             "construction_project.total_labour_cost",
             "construction_project.total_material_cost",
+            "construction_project.total_material_usage_cost",
             "construction_project.total_other_cost",
             "construction_project.total_cost"
           ],
@@ -4689,11 +5837,68 @@
               ]
             },
             {
+              "id": "project_sections_tab",
+              "label": "Project Sections",
+              "sections": [
+                "project_sections_related"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.construction_work_item",
+                  "target": "view:construction_work_item.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "construction_work_item.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "construction_work_item.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "construction_work_item.site_id": {
+                      "ref": "$record.construction_project.site_id"
+                    },
+                    "construction_work_item.status": "pending",
+                    "construction_work_item.progress_percent": 0
+                  }
+                }
+              ]
+            },
+            {
               "id": "time_entries_tab",
               "label": "Time Entries",
               "tab_label_key": "construction.views.form.sections.time_entries.title",
               "sections": [
                 "time_entries"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.time_entry",
+                  "target": "view:time_entry.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "time_entry.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "time_entry.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "time_entry.site_id": {
+                      "ref": "$record.construction_project.site_id"
+                    },
+                    "time_entry.status": "open",
+                    "time_entry.source": "manual"
+                  }
+                }
               ]
             },
             {
@@ -4702,6 +5907,52 @@
               "tab_label_key": "construction.views.form.sections.materials.title",
               "sections": [
                 "materials"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.material_receipt",
+                  "target": "view:material_receipt.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "material_receipt.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "material_receipt.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "material_receipt.site_id": {
+                      "ref": "$record.construction_project.site_id"
+                    },
+                    "material_receipt.status": "draft"
+                  }
+                },
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.material_log",
+                  "target": "view:material_log.report",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "material_log.project_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "material_log.project_id": {
+                      "ref": "$record.id"
+                    },
+                    "material_log.site_id": {
+                      "ref": "$record.construction_project.site_id"
+                    },
+                    "material_log.status": "draft"
+                  }
+                }
               ]
             },
             {
@@ -4736,6 +5987,7 @@
           "construction_project.total_hours",
           "construction_project.total_labour_cost",
           "construction_project.total_material_cost",
+          "construction_project.total_material_usage_cost",
           "construction_project.total_other_cost",
           "construction_project.total_cost"
         ],
@@ -5380,6 +6632,12 @@
           "field_id": "time_entry.hours_worked"
         },
         {
+          "field_id": "time_entry.hourly_cost_rate"
+        },
+        {
+          "field_id": "time_entry.labour_cost"
+        },
+        {
           "field_id": "time_entry.status"
         }
       ],
@@ -5468,6 +6726,8 @@
             "time_entry.check_out_at",
             "time_entry.break_minutes",
             "time_entry.hours_worked",
+            "time_entry.hourly_cost_rate",
+            "time_entry.labour_cost",
             "time_entry.source",
             "time_entry.approved_by"
           ],
@@ -5928,6 +7188,9 @@
           "field_id": "material_request.project_id"
         },
         {
+          "field_id": "material_request.work_item_id"
+        },
+        {
           "field_id": "material_request.item_id"
         },
         {
@@ -5951,6 +7214,8 @@
           "enabled": true,
           "placeholder": "Search material requests...",
           "fields": [
+            "material_request.project_id",
+            "material_request.work_item_id",
             "material_request.description",
             "material_request.notes"
           ],
@@ -6003,6 +7268,7 @@
           "fields": [
             "material_request.project_id",
             "material_request.site_id",
+            "material_request.work_item_id",
             "material_request.request_date",
             "material_request.item_id",
             "material_request.description",
@@ -6084,6 +7350,9 @@
           "field_id": "material_receipt.project_id"
         },
         {
+          "field_id": "material_receipt.work_item_id"
+        },
+        {
           "field_id": "material_receipt.item_id"
         },
         {
@@ -6110,6 +7379,9 @@
           "enabled": true,
           "placeholder": "Search material receipts...",
           "fields": [
+            "material_receipt.project_id",
+            "material_receipt.work_item_id",
+            "material_receipt.item_id",
             "material_receipt.invoice_ref",
             "material_receipt.notes"
           ],
@@ -6130,6 +7402,7 @@
           "fields": [
             "material_receipt.project_id",
             "material_receipt.site_id",
+            "material_receipt.work_item_id",
             "material_receipt.receipt_date",
             "material_receipt.item_id",
             "material_receipt.supplier_contact_id",
@@ -6210,6 +7483,9 @@
           "field_id": "material_log.project_id"
         },
         {
+          "field_id": "material_log.work_item_id"
+        },
+        {
           "field_id": "material_log.site_id"
         },
         {
@@ -6220,6 +7496,9 @@
         },
         {
           "field_id": "material_log.unit"
+        },
+        {
+          "field_id": "material_log.unit_cost"
         },
         {
           "field_id": "material_log.total_cost"
@@ -6239,6 +7518,9 @@
           "enabled": true,
           "placeholder": "Search material usage...",
           "fields": [
+            "material_log.project_id",
+            "material_log.work_item_id",
+            "material_log.material_type",
             "material_log.notes"
           ],
           "placeholder_key": "construction.views.list.search.placeholder"
@@ -6379,7 +7661,13 @@
           "field_id": "construction_budget_line.project_id"
         },
         {
+          "field_id": "construction_budget_line.work_item_id"
+        },
+        {
           "field_id": "construction_budget_line.cost_code_id"
+        },
+        {
+          "field_id": "construction_budget_line.description"
         },
         {
           "field_id": "construction_budget_line.category"
@@ -6389,6 +7677,18 @@
         },
         {
           "field_id": "construction_budget_line.committed_amount"
+        },
+        {
+          "field_id": "construction_budget_line.actual_labour_amount"
+        },
+        {
+          "field_id": "construction_budget_line.actual_receipt_amount"
+        },
+        {
+          "field_id": "construction_budget_line.actual_material_usage_amount"
+        },
+        {
+          "field_id": "construction_budget_line.actual_expense_amount"
         },
         {
           "field_id": "construction_budget_line.actual_amount"
@@ -6408,6 +7708,8 @@
           "enabled": true,
           "placeholder": "Search budget lines...",
           "fields": [
+            "construction_budget_line.project_id",
+            "construction_budget_line.work_item_id",
             "construction_budget_line.description",
             "construction_budget_line.notes"
           ],
@@ -6427,11 +7729,16 @@
           "columns": 2,
           "fields": [
             "construction_budget_line.project_id",
+            "construction_budget_line.work_item_id",
             "construction_budget_line.cost_code_id",
             "construction_budget_line.category",
             "construction_budget_line.description",
             "construction_budget_line.planned_amount",
             "construction_budget_line.committed_amount",
+            "construction_budget_line.actual_receipt_amount",
+            "construction_budget_line.actual_material_usage_amount",
+            "construction_budget_line.actual_labour_amount",
+            "construction_budget_line.actual_expense_amount",
             "construction_budget_line.actual_amount",
             "construction_budget_line.variance_amount"
           ],
@@ -6488,6 +7795,16 @@
       }
     },
     {
+      "id": "construction_budget_line.variance_graph",
+      "kind": "graph",
+      "entity": "entity.construction_budget_line",
+      "default": {
+        "type": "bar",
+        "group_by": "construction_budget_line.work_item_id",
+        "measure": "sum:construction_budget_line.variance_amount"
+      }
+    },
+    {
       "id": "construction_expense.list",
       "kind": "list",
       "entity": "entity.construction_expense",
@@ -6500,6 +7817,9 @@
         },
         {
           "field_id": "construction_expense.project_id"
+        },
+        {
+          "field_id": "construction_expense.work_item_id"
         },
         {
           "field_id": "construction_expense.expense_type"
@@ -6529,6 +7849,8 @@
           "placeholder": "Search expenses...",
           "fields": [
             "construction_expense.title",
+            "construction_expense.project_id",
+            "construction_expense.work_item_id",
             "construction_expense.reference",
             "construction_expense.notes"
           ],
@@ -6573,6 +7895,7 @@
             "construction_expense.project_id",
             "construction_expense.site_id",
             "construction_expense.cost_code_id",
+            "construction_expense.work_item_id",
             "construction_expense.expense_date",
             "construction_expense.expense_type",
             "construction_expense.supplier_contact_id",
@@ -6661,10 +7984,19 @@
           "field_id": "time_entry.worker_id"
         },
         {
+          "field_id": "time_entry.work_item_id"
+        },
+        {
           "field_id": "time_entry.crew_id"
         },
         {
           "field_id": "time_entry.hours_worked"
+        },
+        {
+          "field_id": "time_entry.hourly_cost_rate"
+        },
+        {
+          "field_id": "time_entry.labour_cost"
         },
         {
           "field_id": "time_entry.status"
@@ -6676,6 +8008,7 @@
           "placeholder": "Search labour entries...",
           "fields": [
             "time_entry.project_id",
+            "time_entry.work_item_id",
             "time_entry.site_id",
             "time_entry.worker_id",
             "time_entry.notes"
@@ -6728,6 +8061,9 @@
           "field_id": "material_log.project_id"
         },
         {
+          "field_id": "material_log.work_item_id"
+        },
+        {
           "field_id": "material_log.site_id"
         },
         {
@@ -6738,6 +8074,9 @@
         },
         {
           "field_id": "material_log.quantity"
+        },
+        {
+          "field_id": "material_log.unit_cost"
         },
         {
           "field_id": "material_log.total_cost"
@@ -6752,6 +8091,7 @@
           "placeholder": "Search material usage...",
           "fields": [
             "material_log.project_id",
+            "material_log.work_item_id",
             "material_log.site_id",
             "material_log.item_id",
             "material_log.notes"
@@ -6804,6 +8144,9 @@
           "field_id": "construction_expense.project_id"
         },
         {
+          "field_id": "construction_expense.work_item_id"
+        },
+        {
           "field_id": "construction_expense.site_id"
         },
         {
@@ -6825,6 +8168,7 @@
           "placeholder": "Search project costs...",
           "fields": [
             "construction_expense.project_id",
+            "construction_expense.work_item_id",
             "construction_expense.site_id",
             "construction_expense.reference",
             "construction_expense.notes"
@@ -6977,92 +8321,73 @@
           "columns": 4,
           "cards": [
             {
-              "id": "workers_on_site_today",
-              "label": "Workers On Site Today",
-              "subtitle": "Today only",
-              "entity_id": "entity.time_entry",
-              "measure": "count_distinct:time_entry.worker_id",
-              "date_field": "time_entry.entry_date",
+              "id": "open_projects",
+              "label": "Open Projects",
+              "subtitle": "Planned, active, and on hold",
+              "entity_id": "entity.construction_project",
+              "measure": "count",
               "domain": {
-                "op": "eq",
-                "field": "time_entry.entry_date",
-                "value": {
-                  "ref": "$today"
-                }
+                "op": "in",
+                "field": "construction_project.status",
+                "value": [
+                  "planned",
+                  "active",
+                  "on_hold"
+                ]
               },
               "icon": "lucide:HardHat",
               "tone": "primary",
               "format": "number",
-              "target": "page:construction.time_report_page",
+              "target": "page:construction_project.list_page",
               "label_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.label",
               "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.workers_on_site_today.subtitle"
             },
             {
-              "id": "labour_hours_today",
-              "label": "Total Labour Hours Today",
-              "subtitle": "Today only",
+              "id": "open_work_items",
+              "label": "Open Work Items",
+              "subtitle": "Pending, blocked, and in progress",
+              "entity_id": "entity.construction_work_item",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "construction_work_item.status",
+                "value": [
+                  "pending",
+                  "in_progress",
+                  "blocked"
+                ]
+              },
+              "icon": "lucide:Wrench",
+              "tone": "warning",
+              "format": "number",
+              "target": "page:construction_work_item.list_page",
+              "label_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.label",
+              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.subtitle"
+            },
+            {
+              "id": "approved_labour_hours",
+              "label": "Approved Labour Hours",
+              "subtitle": "Live approved entries",
               "entity_id": "entity.time_entry",
               "measure": "sum:time_entry.hours_worked",
-              "date_field": "time_entry.entry_date",
               "domain": {
                 "op": "eq",
-                "field": "time_entry.entry_date",
-                "value": {
-                  "ref": "$today"
-                }
+                "field": "time_entry.status",
+                "value": "approved"
               },
               "icon": "lucide:Clock3",
               "tone": "success",
               "format": "hours",
               "target": "page:construction.time_report_page",
-              "label_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.label",
-              "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.labour_hours_today.subtitle"
-            },
-            {
-              "id": "materials_logged_today",
-              "label": "Materials Logged Today",
-              "subtitle": "Today only",
-              "entity_id": "entity.material_log",
-              "measure": "count",
-              "date_field": "material_log.log_date",
-              "domain": {
-                "op": "eq",
-                "field": "material_log.log_date",
-                "value": {
-                  "ref": "$today"
-                }
-              },
-              "icon": "lucide:Package",
-              "tone": "warning",
-              "format": "number",
-              "target": "page:construction.material_report_page",
               "label_key": "construction.pages.dashboard_page.blocks.1.cards.materials_logged_today.label",
               "subtitle_key": "construction.pages.dashboard_page.blocks.1.cards.materials_logged_today.subtitle"
             },
             {
-              "id": "cost_today",
-              "label": "Total Cost Today",
-              "subtitle": "Today only",
-              "entity_id": "entity.construction_expense",
-              "measure": "sum:construction_expense.amount",
-              "date_field": "construction_expense.expense_date",
-              "domain": {
-                "op": "and",
-                "conditions": [
-                  {
-                    "op": "eq",
-                    "field": "construction_expense.expense_date",
-                    "value": {
-                      "ref": "$today"
-                    }
-                  },
-                  {
-                    "op": "eq",
-                    "field": "construction_expense.status",
-                    "value": "posted"
-                  }
-                ]
-              },
+              "id": "cost_to_date",
+              "label": "Project Cost To Date",
+              "subtitle": "Live project rollup",
+              "entity_id": "entity.construction_project",
+              "measure": "sum:construction_project.total_cost",
               "icon": "lucide:BadgeDollarSign",
               "tone": "error",
               "format": "currency",
@@ -7075,7 +8400,7 @@
         {
           "kind": "container",
           "variant": "card",
-          "title": "Cost Breakdown",
+          "title": "Posted Expense Breakdown",
           "title_key": "construction.pages.dashboard_page.blocks.2.title",
           "content": [
             {
@@ -7109,7 +8434,7 @@
                 {
                   "kind": "container",
                   "variant": "card",
-                  "title": "Recent Time Entries",
+                  "title": "Latest Time Entries",
                   "title_key": "construction.pages.dashboard_page.blocks.3.items.1.content.1.title",
                   "content": [
                     {
@@ -7119,13 +8444,6 @@
                       "param_scope": "local",
                       "page_size": 5,
                       "default_mode": "list",
-                      "record_domain": {
-                        "op": "eq",
-                        "field": "time_entry.entry_date",
-                        "value": {
-                          "ref": "$today"
-                        }
-                      },
                       "modes": [
                         {
                           "mode": "list",
@@ -7143,7 +8461,7 @@
                 {
                   "kind": "container",
                   "variant": "card",
-                  "title": "Materials Logged Today",
+                  "title": "Latest Material Logs",
                   "title_key": "construction.pages.dashboard_page.blocks.3.items.2.content.1.title",
                   "content": [
                     {
@@ -7153,13 +8471,6 @@
                       "param_scope": "local",
                       "page_size": 5,
                       "default_mode": "list",
-                      "record_domain": {
-                        "op": "eq",
-                        "field": "material_log.log_date",
-                        "value": {
-                          "ref": "$today"
-                        }
-                      },
                       "modes": [
                         {
                           "mode": "list",
@@ -8898,19 +10209,51 @@
                 {
                   "kind": "container",
                   "variant": "card",
-                  "title": "Costs by Project",
+                  "title": "Budget Variance by Section",
                   "title_key": "construction.pages.cost_report_page.blocks.1.items.2.content.1.title",
                   "content": [
                     {
                       "kind": "view_modes",
-                      "entity_id": "entity.construction_expense",
+                      "entity_id": "entity.construction_budget_line",
                       "compact": true,
                       "param_scope": "local",
                       "default_mode": "graph",
                       "modes": [
                         {
                           "mode": "graph",
-                          "target": "view:construction_expense.graph"
+                          "target": "view:construction_budget_line.variance_graph"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "span": 12,
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "card",
+                  "title": "Budget vs Actual by Section",
+                  "content": [
+                    {
+                      "kind": "view_modes",
+                      "entity_id": "entity.construction_budget_line",
+                      "default_mode": "list",
+                      "modes": [
+                        {
+                          "mode": "list",
+                          "target": "view:construction_budget_line.list"
+                        },
+                        {
+                          "mode": "graph",
+                          "target": "view:construction_budget_line.variance_graph"
+                        },
+                        {
+                          "mode": "pivot",
+                          "target": "view:construction_budget_line.list",
+                          "default_group_by": "construction_budget_line.work_item_id"
                         }
                       ]
                     }

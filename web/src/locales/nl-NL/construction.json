@@ -413,7 +413,7 @@
             "label": "Bemanning"
           },
           "work_item_id": {
-            "label": "Werkitem"
+            "label": "Project Section"
           },
           "entry_date": {
             "label": "Invoerdatum"
@@ -551,7 +551,7 @@
             "label": "Locatie"
           },
           "work_item_id": {
-            "label": "Werkitem"
+            "label": "Project Section"
           },
           "title": {
             "label": "Titel"
@@ -741,7 +741,7 @@
             "label": "Locatie"
           },
           "work_item_id": {
-            "label": "Werkitem"
+            "label": "Project Section"
           },
           "log_date": {
             "label": "Logdatum"

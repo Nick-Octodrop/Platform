@@ -7,6 +7,7 @@ export const DEFAULT_BRAND_COLORS = {
   primary: "#206aff",
   secondary: "",
   accent: "",
+  text: "",
 };
 
 function hexToOklch(hex) {
@@ -83,6 +84,7 @@ export function getBrandColors() {
         primary: parsed.primary || DEFAULT_BRAND_COLORS.primary,
         secondary: parsed.secondary || DEFAULT_BRAND_COLORS.secondary,
         accent: parsed.accent || DEFAULT_BRAND_COLORS.accent,
+        text: parsed.text || DEFAULT_BRAND_COLORS.text,
       };
     }
   } catch {
@@ -97,6 +99,7 @@ export function applyBrandColors(colors) {
   const primary = hexToOklch(colors?.primary || DEFAULT_BRAND_COLORS.primary);
   const secondary = hexToOklch(colors?.secondary);
   const accent = hexToOklch(colors?.accent);
+  const text = typeof colors?.text === "string" ? colors.text.trim() : "";
   const applyVar = (key, value) => {
     if (value) {
       rootStyle.setProperty(key, value);
@@ -133,6 +136,7 @@ export function applyBrandColors(colors) {
     applyVar("--af", null);
     applyVar("--ac", null);
   }
+  applyVar("--octo-brand-text", text || null);
 }
 
 export function setBrandColors(colors) {

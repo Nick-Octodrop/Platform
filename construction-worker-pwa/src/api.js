@@ -158,6 +158,40 @@ export async function getCatalogMaterials() {
   return Array.isArray(data?.records) ? data.records : [];
 }
 
+export async function getProjectSections(projectId) {
+  if (!projectId) return [];
+  const domain = encodeURIComponent(
+    JSON.stringify({
+      op: "and",
+      conditions: [
+        {
+          op: "eq",
+          field: "construction_work_item.project_id",
+          value: projectId,
+        },
+        {
+          op: "in",
+          field: "construction_work_item.status",
+          value: ["pending", "in_progress", "blocked", "done"],
+        },
+      ],
+    }),
+  );
+  const fields = encodeURIComponent(
+    [
+      "construction_work_item.title",
+      "construction_work_item.sequence_code",
+      "construction_work_item.phase",
+      "construction_work_item.status",
+    ].join(","),
+  );
+  const sort = encodeURIComponent("construction_work_item.sequence_code,construction_work_item.title");
+  const data = await apiFetch(
+    `/records/entity.construction_work_item?limit=200&fields=${fields}&domain=${domain}&sort=${sort}`,
+  );
+  return Array.isArray(data?.records) ? data.records : [];
+}
+
 export async function getWorkerAssignments(workerRecordId) {
   if (!workerRecordId) return [];
   const domain = encodeURIComponent(
