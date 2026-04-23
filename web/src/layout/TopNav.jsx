@@ -817,15 +817,16 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     setWorkspaceNavLogoFailed(false);
   }, [workspaceNavLogoUrl]);
   const showWorkspaceNavLogo = Boolean(workspaceNavLogoUrl) && !workspaceNavLogoFailed;
+  const workspaceNavLogoClass = "h-6 max-h-6 max-w-[8.5rem] w-auto object-contain object-left shrink-0";
   const desktopNavLogo = showWorkspaceNavLogo ? (
     <img
       src={workspaceNavLogoUrl}
       alt={`${workspaceDisplayName} logo`}
-      className="h-6 max-w-[9rem] w-auto object-contain object-left"
+      className={workspaceNavLogoClass}
       onError={() => setWorkspaceNavLogoFailed(true)}
     />
   ) : null;
-  const homeCrumbContent = desktopNavLogo || t("navigation.home");
+  const homeCrumbContent = t("navigation.home");
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
       return mobileAppBreadcrumb || appName || t("common.app");
@@ -1171,7 +1172,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <img
             src={workspaceNavLogoUrl}
             alt={`${workspaceDisplayName} logo`}
-            className="h-7 max-w-[8.5rem] w-auto object-contain object-left"
+            className={workspaceNavLogoClass}
             onError={() => setWorkspaceNavLogoFailed(true)}
           />
         ) : (
@@ -1184,7 +1185,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <img
             src={workspaceNavLogoUrl}
             alt={`${workspaceDisplayName} logo`}
-            className="h-8 max-w-[14rem] w-auto object-contain object-left"
+            className={workspaceNavLogoClass}
             onError={() => setWorkspaceNavLogoFailed(true)}
           />
         ) : (
@@ -1195,7 +1196,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
   ) : (
     !isHome && (
       <Link to={appendOctoAiFrameParams("/home")} className="btn btn-ghost btn-sm">
-        {desktopNavLogo || `← ${t("navigation.home")}`}
+        {`← ${t("navigation.home")}`}
       </Link>
     )
   );
