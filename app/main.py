@@ -3779,11 +3779,47 @@ def _fetch_entity_def_for_compute(entity_id: str) -> dict | None:
 def _recompute_record_for_entity(entity_def: dict, record: dict) -> dict:
     if not has_computed_fields(entity_def):
         return dict(record or {})
+    records_cache: dict[tuple[str, str | None, str | None], list[dict]] = {}
+    record_cache: dict[tuple[str, str], dict | None] = {}
+
+    def fetch_records_cached(entity_id: str, field_id: str | None = None, value: Any = None) -> list[dict]:
+        normalized = _normalize_entity_id(entity_id)
+        cache_key = (
+            normalized or "",
+            field_id.strip() if isinstance(field_id, str) and field_id.strip() else None,
+            None if value is None else str(value),
+        )
+        if cache_key in records_cache:
+            return records_cache[cache_key]
+        if normalized and cache_key[1] is not None:
+            try:
+                rows = generic_records.list_by_field_value(normalized, cache_key[1], value, limit=1000)
+            except TypeError:
+                rows = generic_records.list_by_field_value(normalized, cache_key[1], value)
+            records = []
+            for row in rows if isinstance(rows, list) else []:
+                if isinstance(row, dict):
+                    item = row.get("record") if isinstance(row.get("record"), dict) else row
+                    if isinstance(item, dict):
+                        records.append(item)
+            records_cache[cache_key] = records
+            return records
+        records = _fetch_records_for_compute(entity_id)
+        records_cache[cache_key] = records
+        return records
+
+    def fetch_record_cached(entity_id: str, record_id: str) -> dict | None:
+        normalized = _normalize_entity_id(entity_id)
+        key = (normalized or "", str(record_id))
+        if key not in record_cache:
+            record_cache[key] = _fetch_record_for_compute(entity_id, record_id)
+        return record_cache[key]
+
     return recompute_record(
         entity_def,
         record or {},
-        _fetch_records_for_compute,
-        _fetch_record_for_compute,
+        fetch_records_cached,
+        fetch_record_cached,
         _fetch_entity_def_for_compute,
     )
 

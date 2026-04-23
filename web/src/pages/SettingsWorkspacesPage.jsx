@@ -40,15 +40,6 @@ const BRANDING_ASSET_TYPE_OPTIONS = [
 ];
 const APP_BRANDING_COLOR_FIELDS = [
   { key: "primary_color", label: "Primary Color", fallback: DEFAULT_BRAND_COLORS.primary },
-  { key: "secondary_color", label: "Secondary Color", fallback: DEFAULT_BRAND_COLORS.secondary },
-  { key: "accent_color", label: "Accent Color", fallback: DEFAULT_BRAND_COLORS.accent },
-  { key: "text_color", label: "Text Color", fallback: TEXT_COLOR_FALLBACK },
-];
-const TEMPLATE_BRANDING_COLOR_FIELDS = [
-  { key: "template_primary_color", label: "Primary Color", fallbackKey: "primary_color", fallback: DEFAULT_BRAND_COLORS.primary },
-  { key: "template_secondary_color", label: "Secondary Color", fallbackKey: "secondary_color", fallback: DEFAULT_BRAND_COLORS.secondary },
-  { key: "template_accent_color", label: "Accent Color", fallbackKey: "accent_color", fallback: DEFAULT_BRAND_COLORS.accent },
-  { key: "template_text_color", label: "Text Color", fallbackKey: "text_color", fallback: TEXT_COLOR_FALLBACK },
 ];
 const APP_BRANDING_ASSET_FIELDS = [
   { key: "app_logo_asset_id", label: "App Logo", type: "logo" },
@@ -681,20 +672,19 @@ export default function SettingsWorkspacesPage() {
         "nav_logo_asset_id",
         "homepage_brand_asset_id",
         "primary_color",
-        "secondary_color",
-        "accent_color",
-        "text_color",
       ]);
+      appBrandingPayload.secondary_color = "";
+      appBrandingPayload.accent_color = "";
+      appBrandingPayload.text_color = "";
       const templateBrandingPayload = pickValues(templateBranding, [
         ...TEMPLATE_BRANDING_TEXT_FIELDS.map((field) => field.key),
         ...TEMPLATE_BRANDING_TEXTAREA_FIELDS.map((field) => field.key),
         ...TEMPLATE_BRANDING_ASSET_FIELDS.map((field) => field.key),
-        ...TEMPLATE_BRANDING_COLOR_FIELDS.map((field) => field.key),
       ]);
       templateBrandingPayload.template_primary_color = appBranding.primary_color;
-      templateBrandingPayload.template_secondary_color = appBranding.secondary_color;
-      templateBrandingPayload.template_accent_color = appBranding.accent_color;
-      templateBrandingPayload.template_text_color = appBranding.text_color;
+      templateBrandingPayload.template_secondary_color = "";
+      templateBrandingPayload.template_accent_color = "";
+      templateBrandingPayload.template_text_color = "";
       const response = await setUiPrefs({
         workspace: workspacePayload,
         app_branding: appBrandingPayload,
@@ -1088,8 +1078,8 @@ export default function SettingsWorkspacesPage() {
             ) : (
               <>
                 <Section
-                  title="Business Colors"
-                  description="One brand palette used across the app, customer-facing templates, and AI-generated content."
+                  title="Business Color"
+                  description="One primary brand color used across the app, customer-facing templates, and AI-generated content."
                 >
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     {APP_BRANDING_COLOR_FIELDS.map((field) => (

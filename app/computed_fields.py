@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from app.conditions import eval_condition
 
-FetchRecords = Callable[[str], list[dict]]
+FetchRecords = Callable[..., list[dict]]
 FetchRecord = Callable[[str, str], dict | None]
 FetchEntityDef = Callable[[str], dict | None]
 
@@ -196,6 +196,20 @@ def _resolve_ref(ref: str, context: dict) -> Any:
     return None
 
 
+def _simple_parent_eq_field(where: Any) -> str | None:
+    if not isinstance(where, dict):
+        return None
+    if str(where.get("op") or "").strip().lower() != "eq":
+        return None
+    field_id = where.get("field")
+    value = where.get("value")
+    if not isinstance(field_id, str) or not field_id.strip():
+        return None
+    if not isinstance(value, dict) or str(value.get("ref") or "").strip() != "$parent.id":
+        return None
+    return field_id.strip()
+
+
 def _as_number(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -321,11 +335,37 @@ def _compute_aggregate(
     if not isinstance(op, str):
         op = "sum"
     op = op.lower()
-    rows = fetch_records(target_entity) or []
     target_entity_def = fetch_entity_def(target_entity) if callable(fetch_entity_def) else None
     parent_record = _enrich_record_for_compute(record, entity_def, fetch_record, fetch_entity_def)
     where = spec.get("where")
     field_id = spec.get("field")
+    simple_parent_field = _simple_parent_eq_field(where)
+    if simple_parent_field:
+        parent_id = parent_record.get("id")
+        if parent_id not in (None, ""):
+            try:
+                rows = fetch_records(target_entity, simple_parent_field, parent_id) or []
+            except TypeError:
+                rows = fetch_records(target_entity) or []
+            else:
+                if op == "count":
+                    return len([row for row in rows if isinstance(row, dict)])
+                fast_values = []
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    if isinstance(field_id, str) and field_id:
+                        fast_values.append(_get_by_path(row, field_id))
+                numeric = [_as_number(value) for value in fast_values]
+                if op == "sum":
+                    return sum(numeric)
+                if op == "avg":
+                    return (sum(numeric) / len(numeric)) if numeric else 0
+                if op == "min":
+                    return min(numeric) if numeric else 0
+                if op == "max":
+                    return max(numeric) if numeric else 0
+    rows = fetch_records(target_entity) or []
     values: list[Any] = []
     for row in rows:
         if not isinstance(row, dict):
