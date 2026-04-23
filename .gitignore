@@ -17,6 +17,8 @@ htmlcov/
 .venv/
 .venv-perf/
 .venv-perf
+.venve-perf/
+.venve-perf
 venv/
 env/
 

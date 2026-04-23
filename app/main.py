@@ -47873,8 +47873,6 @@ async def aggregate_records(
         )
     if results is None:
         items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
-        if entity_has_computed:
-            items = _recompute_store_items_for_entity(found[1], items)
         if parsed_domain:
             items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         items = _filter_record_items_for_actor(actor, found[0], found[1], items)
@@ -47971,8 +47969,6 @@ async def pivot_records(
         grand_total = sql_result["grand_total"]
     else:
         items = generic_records.list(entity_id, limit=limit_cap, q=q, search_fields=fields_list)
-        if entity_has_computed:
-            items = _recompute_store_items_for_entity(found[1], items)
         if parsed_domain:
             items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
         items = _filter_record_items_for_actor(actor, found[0], found[1], items)
@@ -48418,8 +48414,6 @@ async def system_dashboard_query(request: Request) -> dict:
         q=q,
         cap=limit_cap,
     )
-    if entity_has_computed:
-        items = _recompute_store_items_for_entity(found[1], items)
     items = _filter_record_items_for_actor(actor, module_id if isinstance(module_id, str) else found[0], found[1], items)
     start_dt = _to_datetime(start) if isinstance(start, str) and start else None
     end_dt = _to_datetime(end) if isinstance(end, str) and end else None
@@ -48608,8 +48602,6 @@ async def list_generic_records(
     else:
         items = generic_records.list(entity_id, limit=limit_cap, offset=offset_val, q=q, search_fields=fields_list)
         next_cursor = None
-    if entity_has_computed:
-        items = _recompute_store_items_for_entity(found[1], items)
     if parsed_domain and fast_page is None:
         items = _filter_records_by_domain(items, parsed_domain, {}, actor_ctx)
     if isinstance(limit_cap, int) and limit_cap > 0:
@@ -50533,7 +50525,6 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     resolved_id, resolved_record = _unwrap_store_record(record if isinstance(record, dict) else None)
     if not isinstance(resolved_id, str) or not isinstance(resolved_record, dict):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
-    resolved_record = _recompute_record_for_entity(found[1], resolved_record)
     if not _record_visible_for_actor(actor, found[0], entity_id, resolved_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})
@@ -51114,12 +51105,21 @@ async def access_context(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
+    workspace_id = str(actor.get("workspace_id") or "").strip()
+    user_id = str(actor.get("user_id") or "").strip()
+    workspace_role = str(actor.get("workspace_role") or actor.get("role") or "").strip()
+    platform_role = str(actor.get("platform_role") or "").strip()
+    cache_key = f"access_context:{workspace_id}:{user_id}:{workspace_role}:{platform_role}"
+    cached = _resp_cache_get(cache_key)
+    if cached is not None:
+        logger.info("cache_hit=access_context key=%s", cache_key)
+        return cached
     workspaces = actor.get("workspaces") or []
     if actor.get("platform_role") == "superadmin":
         workspaces = list_all_workspaces()
     workspaces = _annotate_access_workspaces(workspaces, actor)
     policy = _access_policy_for_actor(actor)
-    return _ok_response(
+    response = _ok_response(
         {
             "actor": {
                 "user_id": actor.get("user_id"),
@@ -51141,6 +51141,9 @@ async def access_context(request: Request) -> dict:
             },
         }
     )
+    _resp_cache_set(cache_key, response)
+    logger.info("cache_miss=access_context key=%s", cache_key)
+    return response
 
 
 @app.delete("/access/workspaces/{workspace_id}")

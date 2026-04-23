@@ -1,5 +1,5 @@
 import { createContext, createElement, useContext, useEffect, useMemo, useState } from "react";
-import { apiFetch, getActiveWorkspaceId } from "./api";
+import { apiFetch, getActiveWorkspaceId, setActiveWorkspaceId } from "./api";
 import { translateRuntime } from "./i18n/runtime.js";
 
 const CAPABILITIES_BY_ROLE = {
@@ -58,19 +58,11 @@ function buildAccessValue(context, loading, error) {
   };
 }
 
-export function AccessContextProvider({ children, seedContext = null }) {
+export function AccessContextProvider({ children }) {
   const [context, setContext] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
-
-  useEffect(() => {
-    if (seedContext) {
-      setContext(seedContext);
-      setLoading(false);
-      setError("");
-    }
-  }, [seedContext]);
 
   useEffect(() => {
     function handleWorkspaceChanged() {
@@ -90,6 +82,16 @@ export function AccessContextProvider({ children, seedContext = null }) {
         const res = await getAccessContext();
         if (!alive) return;
         setContext(res || null);
+        if (!getActiveWorkspaceId()) {
+          const defaultWorkspaceId =
+            res?.actor?.workspace_id ||
+            res?.workspaces?.[0]?.workspace_id ||
+            res?.workspaces?.[0]?.id ||
+            "";
+          if (defaultWorkspaceId) {
+            setActiveWorkspaceId(defaultWorkspaceId);
+          }
+        }
       } catch (err) {
         if (!alive) return;
         setError(err?.message || translateRuntime("common.errors.access_context_load_failed"));

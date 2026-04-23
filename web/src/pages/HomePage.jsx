@@ -154,16 +154,16 @@ export default function HomePage({ user }) {
         return;
       }
       const cachedPrefs = peekUiPrefsCache();
-      const cachedOrder = Array.isArray(cachedPrefs?.workspace?.layout_prefs?.home_app_order)
-        ? cachedPrefs.workspace.layout_prefs.home_app_order.filter((id) => typeof id === "string" && id.trim())
-        : null;
-      if (cachedOrder) {
+      if (cachedPrefs) {
+        const cachedOrder = Array.isArray(cachedPrefs?.workspace?.layout_prefs?.home_app_order)
+          ? cachedPrefs.workspace.layout_prefs.home_app_order.filter((id) => typeof id === "string" && id.trim())
+          : [];
         setSavedHomeOrderIds(cachedOrder);
         setHomeOrderIds(cachedOrder);
         setLayoutLoading(false);
-      } else {
-        setLayoutLoading(true);
+        return;
       }
+      setLayoutLoading(true);
       try {
         const prefs = await getUiPrefs();
         if (!active) return;

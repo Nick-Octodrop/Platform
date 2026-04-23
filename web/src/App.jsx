@@ -8,7 +8,7 @@ import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
-import { AccessContextProvider, getAccessContext } from "./access.js";
+import { AccessContextProvider } from "./access.js";
 import { LocalizationProvider, useI18n } from "./i18n/LocalizationProvider.jsx";
 import {
   applyBrandColors,
@@ -19,7 +19,7 @@ import {
   setBrandColors,
   setTheme,
 } from "./theme/theme.js";
-import { apiFetch, getActiveWorkspaceId, getUiPrefs, setActiveWorkspaceId } from "./api.js";
+import { apiFetch, getActiveWorkspaceId, getUiPrefs, peekUiPrefsCache } from "./api.js";
 import LoginPage from "./pages/LoginPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import AuthSetPasswordPage from "./pages/AuthSetPasswordPage.jsx";
@@ -154,7 +154,6 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
-  const [accessContextSeed, setAccessContextSeed] = useState(null);
   const [updatePromptVisible, setUpdatePromptVisible] = useState(false);
   const [installPromptVisible, setInstallPromptVisible] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
@@ -254,7 +253,8 @@ export default function App() {
     (async () => {
       if (!session?.user) return;
       try {
-        const res = await getUiPrefs();
+        const cachedPrefs = peekUiPrefsCache();
+        const res = cachedPrefs || await getUiPrefs();
         if (!mounted) return;
         const workspace = res?.workspace || {};
         const userPrefs = res?.user || {};
@@ -283,33 +283,6 @@ export default function App() {
     window.addEventListener("octo:workspace-changed", handleWorkspaceChanged);
     return () => window.removeEventListener("octo:workspace-changed", handleWorkspaceChanged);
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    if (!session?.user) return undefined;
-    (async () => {
-      try {
-        const res = await getAccessContext();
-        if (!alive) return;
-        setAccessContextSeed(res || null);
-        if (!getActiveWorkspaceId()) {
-          const defaultWorkspaceId =
-            res?.actor?.workspace_id ||
-            res?.workspaces?.[0]?.workspace_id ||
-            res?.workspaces?.[0]?.id ||
-            "";
-          if (defaultWorkspaceId) {
-            setActiveWorkspaceId(defaultWorkspaceId);
-          }
-        }
-      } catch {
-        // ignore; workspace can still be selected manually
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [session?.user, workspaceKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -622,7 +595,7 @@ export default function App() {
               path="/*"
               element={
                 <ProtectedRoute user={user} loading={loading}>
-                  <AccessContextProvider seedContext={accessContextSeed}>
+                  <AccessContextProvider>
                     <ModuleStoreProvider user={user}>
                       <ShellLayout user={user} onSignOut={handleSignOut} />
                     </ModuleStoreProvider>
