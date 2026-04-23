@@ -1204,6 +1204,7 @@ function InlineLineItemsTable({
   const lookupCacheRef = useRef({});
   const parentRefreshInFlightRef = useRef(false);
   const parentRefreshQueuedRef = useRef(false);
+  const parentRefreshTimerRef = useRef(null);
   const uomColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".uom"));
   const quantityColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".quantity"));
   const unitAmountColumn = columns.find(
@@ -1245,7 +1246,7 @@ function InlineLineItemsTable({
     }
   }
 
-  const queueParentRefresh = React.useCallback(() => {
+  const flushParentRefresh = React.useCallback(() => {
     if (previewMode || typeof onRefreshParent !== "function") return;
     if (parentRefreshInFlightRef.current) {
       parentRefreshQueuedRef.current = true;
@@ -1260,10 +1261,33 @@ function InlineLineItemsTable({
         parentRefreshInFlightRef.current = false;
         if (parentRefreshQueuedRef.current) {
           parentRefreshQueuedRef.current = false;
-          queueParentRefresh();
+          flushParentRefresh();
         }
       });
   }, [onRefreshParent, previewMode]);
+
+  const queueParentRefresh = React.useCallback(() => {
+    if (previewMode || typeof onRefreshParent !== "function") return;
+    if (typeof window === "undefined") {
+      flushParentRefresh();
+      return;
+    }
+    if (parentRefreshTimerRef.current) {
+      window.clearTimeout(parentRefreshTimerRef.current);
+    }
+    parentRefreshTimerRef.current = window.setTimeout(() => {
+      parentRefreshTimerRef.current = null;
+      flushParentRefresh();
+    }, 1000);
+  }, [flushParentRefresh, onRefreshParent, previewMode]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && parentRefreshTimerRef.current) {
+        window.clearTimeout(parentRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   function rowLabel(rowOrRecord) {
     const recordId = rowOrRecord?.record_id;

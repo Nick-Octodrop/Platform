@@ -1554,7 +1554,14 @@ def _apply_document_numbering_after_write(
             assigned = True
     if not assigned:
         return after_record
-    persisted = _update_record_with_computed_fields(request, entity_id, entity_def, record_id, next_record)
+    persisted = _update_record_with_computed_fields(
+        request,
+        entity_id,
+        entity_def,
+        record_id,
+        next_record,
+        before_record=before_record,
+    )
     return persisted.get("record") if isinstance(persisted, dict) and isinstance(persisted.get("record"), dict) else next_record
 
 
@@ -3812,6 +3819,67 @@ def _persist_computed_record(entity_id: str, entity_def: dict, record_id: str, r
         return None
 
 
+def _aggregate_parent_link_fields(where: Any, source_entity_id: str) -> set[str]:
+    out: set[str] = set()
+    if not isinstance(where, dict):
+        return out
+    op = str(where.get("op") or "").strip().lower()
+    if op == "and":
+        for condition in where.get("conditions") or []:
+            out.update(_aggregate_parent_link_fields(condition, source_entity_id))
+        return out
+    if op != "eq":
+        return out
+    field_id = where.get("field")
+    value = where.get("value")
+    if not isinstance(field_id, str) or not isinstance(value, dict):
+        return out
+    if _trimmed_text(value.get("ref")) != "$parent.id":
+        return out
+    source_slug = _trimmed_text(source_entity_id).split(".")[-1]
+    if not source_slug:
+        return out
+    normalized_field_id = _trimmed_text(field_id)
+    if normalized_field_id.startswith(f"{source_slug}."):
+        out.add(normalized_field_id)
+    return out
+
+
+def _dependent_parent_ids_for_source_records(entity_def: dict, source_entity_id: str, source_records: list[dict] | None) -> set[str]:
+    rows = source_records if isinstance(source_records, list) else []
+    if not rows:
+        return set()
+    normalized_source = _normalize_entity_id(source_entity_id)
+    if not normalized_source:
+        return set()
+    link_fields: set[str] = set()
+    for field in _field_list(entity_def):
+        compute = field.get("compute") if isinstance(field, dict) else None
+        aggregate = compute.get("aggregate") if isinstance(compute, dict) else None
+        if not isinstance(aggregate, dict):
+            continue
+        if _normalize_entity_id(aggregate.get("entity")) != normalized_source:
+            continue
+        link_fields.update(_aggregate_parent_link_fields(aggregate.get("where"), normalized_source))
+    if not link_fields:
+        return set()
+    parent_ids: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for field_id in link_fields:
+            value = row.get(field_id)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if trimmed:
+                    parent_ids.add(trimmed)
+            elif value is not None:
+                trimmed = str(value).strip()
+                if trimmed:
+                    parent_ids.add(trimmed)
+    return parent_ids
+
+
 def _iter_installed_entities(request: Request) -> list[tuple[str, dict, dict]]:
     items: list[tuple[str, dict, dict]] = []
     modules = _get_registry_list(request)
@@ -3832,16 +3900,27 @@ def _iter_installed_entities(request: Request) -> list[tuple[str, dict, dict]]:
     return items
 
 
-def _recompute_aggregate_dependents(request: Request, source_entity_id: str) -> None:
+def _recompute_aggregate_dependents(request: Request, source_entity_id: str, source_records: list[dict] | None = None) -> None:
     normalized_source = _normalize_entity_id(source_entity_id)
     for _, _, entity_def in _iter_installed_entities(request):
         entity_id = entity_def.get("id")
         if not isinstance(entity_id, str) or not depends_on_aggregate_entity(entity_def, normalized_source):
             continue
+        targeted_parent_ids = _dependent_parent_ids_for_source_records(entity_def, normalized_source, source_records)
         try:
-            rows = generic_records.list(entity_id, limit=1000)
-        except TypeError:
-            rows = generic_records.list(entity_id)
+            if targeted_parent_ids:
+                rows = []
+                for parent_id in sorted(targeted_parent_ids):
+                    row = generic_records.get(entity_id, parent_id)
+                    if isinstance(row, dict):
+                        rows.append(row)
+            else:
+                try:
+                    rows = generic_records.list(entity_id, limit=1000)
+                except TypeError:
+                    rows = generic_records.list(entity_id)
+        except Exception:
+            continue
         changed_any = False
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, dict):
@@ -3861,14 +3940,25 @@ def _recompute_aggregate_dependents(request: Request, source_entity_id: str) -> 
 def _create_record_with_computed_fields(request: Request, entity_id: str, entity_def: dict, clean: dict) -> dict:
     payload = _recompute_record_for_entity(entity_def, clean)
     record = generic_records.create(entity_id, payload)
-    _recompute_aggregate_dependents(request, entity_id)
+    created_record = record.get("record") if isinstance(record, dict) and isinstance(record.get("record"), dict) else payload
+    _recompute_aggregate_dependents(request, entity_id, source_records=[created_record])
     return record
 
 
-def _update_record_with_computed_fields(request: Request, entity_id: str, entity_def: dict, record_id: str, clean: dict) -> dict:
+def _update_record_with_computed_fields(
+    request: Request,
+    entity_id: str,
+    entity_def: dict,
+    record_id: str,
+    clean: dict,
+    *,
+    before_record: dict | None = None,
+) -> dict:
     payload = _recompute_record_for_entity(entity_def, clean)
     record = generic_records.update(entity_id, record_id, payload)
-    _recompute_aggregate_dependents(request, entity_id)
+    updated_record = record.get("record") if isinstance(record, dict) and isinstance(record.get("record"), dict) else payload
+    source_records = [row for row in [before_record, updated_record] if isinstance(row, dict)]
+    _recompute_aggregate_dependents(request, entity_id, source_records=source_records)
     return record
 
 
@@ -50577,7 +50667,14 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
         _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, assignment_errors, workflow)
         return _validation_response(assignment_errors, [])
     try:
-        record = _update_record_with_computed_fields(request, entity_id, found[1], record_id, clean)
+        record = _update_record_with_computed_fields(
+            request,
+            entity_id,
+            found[1],
+            record_id,
+            clean,
+            before_record=before_record,
+        )
     except Exception as exc:
         constraint = _wrap_db_constraint_error(exc)
         if constraint:
@@ -50698,7 +50795,7 @@ async def delete_generic_record(request: Request, entity_id: str, record_id: str
     if not _record_write_allowed_for_actor(actor, found[0], entity_id, before_record):
         return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
     generic_records.delete(entity_id, record_id)
-    _recompute_aggregate_dependents(request, entity_id)
+    _recompute_aggregate_dependents(request, entity_id, source_records=[before_record] if isinstance(before_record, dict) else None)
     _resp_cache_invalidate_record(entity_id, record_id)
     _resp_cache_invalidate_entity(entity_id)
     return _ok_response({"deleted": True})
@@ -62323,7 +62420,14 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
         _log_record_validation_errors(entity_id, merged, errors, workflow)
         return _validation_response(errors, [])
     try:
-        record = _update_record_with_computed_fields(request, entity_id, found[1], record_id, clean)
+        record = _update_record_with_computed_fields(
+            request,
+            entity_id,
+            found[1],
+            record_id,
+            clean,
+            before_record=before_record,
+        )
     except Exception as exc:
         constraint = _wrap_db_constraint_error(exc)
         if constraint:

@@ -118,9 +118,17 @@ const TEMPLATE_BRANDING_OPTIONAL_TEXT_FIELDS = TEMPLATE_BRANDING_TEXT_FIELDS.fil
 const TEMPLATE_BRANDING_PRIMARY_ASSET_FIELDS = TEMPLATE_BRANDING_ASSET_FIELDS.filter((field) =>
   ["primary_logo_asset_id", "secondary_logo_asset_id"].includes(field.key),
 );
-const TEMPLATE_BRANDING_OPTIONAL_ASSET_FIELDS = TEMPLATE_BRANDING_ASSET_FIELDS.filter(
-  (field) => !TEMPLATE_BRANDING_PRIMARY_ASSET_FIELDS.some((entry) => entry.key === field.key),
-);
+const UNIQUE_BRANDING_SLOT_BY_TYPE = {
+  icon: { scope: "app", field: "app_icon_asset_id", label: "App Icon" },
+  favicon: { scope: "app", field: "favicon_asset_id", label: "Favicon" },
+  pwa_icon: { scope: "app", field: "pwa_icon_asset_id", label: "PWA Icon" },
+  nav_logo: { scope: "app", field: "nav_logo_asset_id", label: "Nav Logo" },
+  header_graphic: { scope: "template", field: "header_graphic_asset_id", label: "Header Graphic" },
+  footer_graphic: { scope: "template", field: "footer_graphic_asset_id", label: "Footer Graphic" },
+  background_graphic: { scope: "template", field: "default_background_graphic_asset_id", label: "Background Graphic" },
+  banner: { scope: "template", field: "default_email_banner_asset_id", label: "Email Banner" },
+  watermark: { scope: "template", field: "default_watermark_asset_id", label: "Watermark" },
+};
 const APP_BRANDING_DEFAULTS = {
   workspace_name: "",
   app_logo_asset_id: "",
@@ -242,6 +250,11 @@ function upsertBrandingAsset(items, asset) {
   const next = (Array.isArray(items) ? items : []).filter((entry) => entry?.id !== asset?.id);
   next.push(asset);
   return sortBrandingAssets(next);
+}
+
+function uniqueBrandingSlotForAssetType(assetType) {
+  const type = textValue(assetType);
+  return UNIQUE_BRANDING_SLOT_BY_TYPE[type] || null;
 }
 
 function normalizeAppBranding(appBranding, workspace) {
@@ -575,6 +588,7 @@ export default function SettingsWorkspacesPage() {
       setWorkspaces(context?.workspaces || []);
       setWorkspacePrefs({
         logo_url: prefsRes?.workspace?.logo_url || "",
+        nav_logo_url: prefsRes?.workspace?.nav_logo_url || "",
         colors: {
           primary: prefsRes?.workspace?.colors?.primary || DEFAULT_BRAND_COLORS.primary,
           secondary: prefsRes?.workspace?.colors?.secondary || DEFAULT_BRAND_COLORS.secondary,
@@ -694,6 +708,7 @@ export default function SettingsWorkspacesPage() {
       setWorkspacePrefs((prev) => ({
         ...prev,
         logo_url: response?.workspace?.logo_url || prev.logo_url,
+        nav_logo_url: response?.workspace?.nav_logo_url || prev.nav_logo_url,
         colors: response?.workspace?.colors || prev.colors,
       }));
       if (response?.workspace?.colors) {
@@ -751,11 +766,83 @@ export default function SettingsWorkspacesPage() {
     resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
   }
 
+  async function persistAutoAssignedAsset(savedAsset, previousAsset = null) {
+    const nextAssignment = uniqueBrandingSlotForAssetType(savedAsset?.type);
+    const previousAssignment = uniqueBrandingSlotForAssetType(previousAsset?.type);
+    const appBrandingPatch = {};
+    const templateBrandingPatch = {};
+
+    if (
+      previousAssignment &&
+      previousAsset?.id &&
+      (!nextAssignment || nextAssignment.field !== previousAssignment.field || savedAsset?.id !== previousAsset.id)
+    ) {
+      if (
+        previousAssignment.scope === "app" &&
+        textValue(appBranding?.[previousAssignment.field]) === textValue(previousAsset.id)
+      ) {
+        appBrandingPatch[previousAssignment.field] = "";
+      }
+      if (
+        previousAssignment.scope === "template" &&
+        textValue(templateBranding?.[previousAssignment.field]) === textValue(previousAsset.id)
+      ) {
+        templateBrandingPatch[previousAssignment.field] = "";
+      }
+    }
+
+    if (nextAssignment && savedAsset?.id) {
+      if (nextAssignment.scope === "app") appBrandingPatch[nextAssignment.field] = savedAsset.id;
+      if (nextAssignment.scope === "template") templateBrandingPatch[nextAssignment.field] = savedAsset.id;
+    }
+
+    if (!Object.keys(appBrandingPatch).length && !Object.keys(templateBrandingPatch).length) return null;
+
+    const payload = {};
+    if (Object.keys(appBrandingPatch).length) payload.app_branding = appBrandingPatch;
+    if (Object.keys(templateBrandingPatch).length) payload.template_branding = templateBrandingPatch;
+    const response = await setUiPrefs(payload);
+
+    if (Object.keys(appBrandingPatch).length) {
+      setAppBranding((prev) => ({
+        ...prev,
+        ...appBrandingPatch,
+        ...(response?.app_branding && typeof response.app_branding === "object" ? response.app_branding : {}),
+      }));
+    }
+    if (Object.keys(templateBrandingPatch).length) {
+      setTemplateBranding((prev) => ({
+        ...prev,
+        ...templateBrandingPatch,
+        ...(response?.template_branding && typeof response.template_branding === "object" ? response.template_branding : {}),
+      }));
+    }
+    setWorkspacePrefs((prev) => ({
+      ...prev,
+      logo_url: response?.workspace?.logo_url || prev.logo_url,
+      nav_logo_url: response?.workspace?.nav_logo_url || response?.app_branding?.nav_logo_url || prev.nav_logo_url,
+      colors: response?.workspace?.colors || prev.colors,
+      nav_logo_asset_id:
+        response?.workspace?.nav_logo_asset_id ||
+        response?.app_branding?.nav_logo_asset_id ||
+        appBrandingPatch.nav_logo_asset_id ||
+        prev.nav_logo_asset_id,
+    }));
+    if (response?.workspace?.colors) {
+      setBrandColors(response.workspace.colors);
+      applyBrandColors(response.workspace.colors);
+    }
+    await reloadI18n(response);
+    return nextAssignment?.label || previousAssignment?.label || null;
+  }
+
   async function submitAssetDrawer() {
     if (!assetUpload.name.trim() || !assetUpload.reference_key.trim()) return;
     if (!assetUpload.id && !assetUploadFile) return;
     setAssetUploading(true);
     try {
+      const previousAsset = assetUpload.id ? assetMap.get(assetUpload.id) || null : null;
+      let savedAsset = null;
       if (assetUpload.id) {
         const response = await apiFetch(`/prefs/branding/assets/${encodeURIComponent(assetUpload.id)}`, {
           method: "PATCH",
@@ -770,8 +857,8 @@ export default function SettingsWorkspacesPage() {
           },
         });
         if (!response?.asset) throw new Error("Failed to save branding asset.");
-        setBrandingAssets((prev) => upsertBrandingAsset(prev, response.asset));
-        pushToast("success", "Branding asset updated.");
+        savedAsset = response.asset;
+        setBrandingAssets((prev) => upsertBrandingAsset(prev, savedAsset));
       } else {
         const session = await getSafeSession();
         const token = session?.access_token;
@@ -797,8 +884,14 @@ export default function SettingsWorkspacesPage() {
         if (!response.ok || !data?.asset) {
           throw new Error(data?.errors?.[0]?.message || "Failed to upload branding asset.");
         }
-        setBrandingAssets((prev) => upsertBrandingAsset(prev, data.asset));
-        pushToast("success", "Branding asset uploaded.");
+        savedAsset = data.asset;
+        setBrandingAssets((prev) => upsertBrandingAsset(prev, savedAsset));
+      }
+      const autoAssignedLabel = savedAsset ? await persistAutoAssignedAsset(savedAsset, previousAsset) : null;
+      if (autoAssignedLabel) {
+        pushToast("success", `Branding asset saved and applied as the active ${autoAssignedLabel}.`);
+      } else {
+        pushToast("success", assetUpload.id ? "Branding asset updated." : "Branding asset uploaded.");
       }
       setAssetDrawerOpen(false);
       resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
@@ -1081,7 +1174,7 @@ export default function SettingsWorkspacesPage() {
                   description={
                     assetUpload.id
                       ? "Update the asset metadata used across workspace branding."
-                      : "Upload a reusable asset, set its type, and then assign it from the Assets section."
+                      : "Upload a reusable asset. Unique asset types are applied automatically when saved."
                   }
                   mobileHeightClass="h-[88dvh] max-h-[88dvh]"
                   zIndexClass="z-[220]"
@@ -1103,7 +1196,9 @@ export default function SettingsWorkspacesPage() {
                               </option>
                             ))}
                           </AppSelect>
-                          <span className="label-text-alt mt-1 opacity-70">Choose the asset type so brand fields can filter the right options.</span>
+                          <span className="label-text-alt mt-1 opacity-70">
+                            Unique asset types such as nav logo, favicon, PWA icon, header graphic, footer graphic, banner, and watermark are applied automatically when saved.
+                          </span>
                         </label>
                         {!assetUpload.id ? (
                           <label className="form-control">
