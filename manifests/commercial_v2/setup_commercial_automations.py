@@ -2,143 +2,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import sys
+from pathlib import Path
 from typing import Any
-from urllib import error as urlerror
-from urllib import request as urlrequest
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "_shared"))
 
-
-def api_call(
-    method: str,
-    url: str,
-    *,
-    token: str | None = None,
-    workspace_id: str | None = None,
-    body: dict[str, Any] | None = None,
-    timeout: int = 60,
-) -> tuple[int, dict[str, Any]]:
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    if workspace_id:
-        headers["X-Workspace-Id"] = workspace_id
-    data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urlrequest.Request(url, method=method, headers=headers, data=data)
-    try:
-        with urlrequest.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-            return int(resp.status), payload if isinstance(payload, dict) else {}
-    except urlerror.HTTPError as exc:
-        raw = exc.read()
-        try:
-            payload = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception:
-            payload = {"ok": False, "errors": [{"message": raw.decode("utf-8", errors="replace")}]}
-        return int(exc.code), payload if isinstance(payload, dict) else {}
-
-
-def is_ok(payload: dict[str, Any]) -> bool:
-    return bool(payload.get("ok") is True)
-
-
-def collect_error_text(payload: dict[str, Any]) -> str:
-    errors = payload.get("errors")
-    if not isinstance(errors, list) or not errors:
-        return "Unknown error"
-    parts: list[str] = []
-    for entry in errors[:8]:
-        if isinstance(entry, dict):
-            code = entry.get("code")
-            message = entry.get("message")
-            path = entry.get("path")
-            prefix = f"[{code}] " if isinstance(code, str) and code else ""
-            suffix = f" ({path})" if isinstance(path, str) and path else ""
-            parts.append(f"{prefix}{message or 'Error'}{suffix}")
-        else:
-            parts.append(str(entry))
-    return "; ".join(parts)
-
-
-def list_automations(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
-    status, payload = api_call(
-        "GET",
-        f"{base_url}/automations",
-        token=token,
-        workspace_id=workspace_id,
-    )
-    if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"list automations failed: {collect_error_text(payload)}")
-    rows = payload.get("automations")
-    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-
-
-def create_automation(
-    base_url: str,
-    definition: dict[str, Any],
-    *,
-    token: str,
-    workspace_id: str,
-) -> dict[str, Any]:
-    status, payload = api_call(
-        "POST",
-        f"{base_url}/automations",
-        token=token,
-        workspace_id=workspace_id,
-        body=definition,
-    )
-    if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"create automation '{definition.get('name')}' failed: {collect_error_text(payload)}")
-    item = payload.get("automation")
-    if not isinstance(item, dict):
-        raise RuntimeError(f"create automation '{definition.get('name')}' failed: missing automation payload")
-    return item
-
-
-def update_automation(
-    base_url: str,
-    automation_id: str,
-    definition: dict[str, Any],
-    *,
-    token: str,
-    workspace_id: str,
-) -> dict[str, Any]:
-    status, payload = api_call(
-        "PUT",
-        f"{base_url}/automations/{automation_id}",
-        token=token,
-        workspace_id=workspace_id,
-        body=definition,
-    )
-    if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"update automation '{definition.get('name')}' failed: {collect_error_text(payload)}")
-    item = payload.get("automation")
-    if not isinstance(item, dict):
-        raise RuntimeError(f"update automation '{definition.get('name')}' failed: missing automation payload")
-    return item
-
-
-def publish_automation(
-    base_url: str,
-    automation_id: str,
-    *,
-    token: str,
-    workspace_id: str,
-) -> dict[str, Any]:
-    status, payload = api_call(
-        "POST",
-        f"{base_url}/automations/{automation_id}/publish",
-        token=token,
-        workspace_id=workspace_id,
-        body={},
-    )
-    if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"publish automation '{automation_id}' failed: {collect_error_text(payload)}")
-    item = payload.get("automation")
-    if not isinstance(item, dict):
-        raise RuntimeError(f"publish automation '{automation_id}' failed: missing automation payload")
-    return item
+from automation_tooling import upsert_automation_by_name
 
 
 def eq_var(var_name: str, value: Any) -> dict[str, Any]:
@@ -153,47 +24,27 @@ def and_(*conditions: dict[str, Any]) -> dict[str, Any]:
     return {"op": "and", "children": list(conditions)}
 
 
-def upsert_automation_by_name(
-    base_url: str,
-    definition: dict[str, Any],
+def update_record_step(
+    step_id: str,
     *,
-    token: str,
-    workspace_id: str,
-    publish: bool,
-    dry_run: bool,
+    entity_id: str,
+    record_id: str,
+    patch: dict[str, Any],
+    store_as: str | None = None,
 ) -> dict[str, Any]:
-    existing = next(
-        (
-            row
-            for row in list_automations(base_url, token=token, workspace_id=workspace_id)
-            if str(row.get("name") or "").strip() == definition["name"]
-        ),
-        None,
-    )
-    if dry_run:
-        action = "update" if existing else "create"
-        publish_suffix = " + publish" if publish else ""
-        print(f"[automation] {action:6} {definition['name']}{publish_suffix}")
-        return existing or {"id": "dry-run-automation", **definition}
-    if existing and isinstance(existing.get("id"), str) and existing["id"]:
-        next_status = definition["status"]
-        if not publish and str(existing.get("status") or "").strip() in {"draft", "published", "disabled"}:
-            next_status = str(existing.get("status")).strip()
-        saved = update_automation(
-            base_url,
-            existing["id"],
-            {**definition, "status": next_status},
-            token=token,
-            workspace_id=workspace_id,
-        )
-        print(f"[automation] updated {definition['name']} -> {saved.get('id')}")
-    else:
-        saved = create_automation(base_url, definition, token=token, workspace_id=workspace_id)
-        print(f"[automation] created {definition['name']} -> {saved.get('id')}")
-    if publish and isinstance(saved.get("id"), str) and saved["id"]:
-        saved = publish_automation(base_url, saved["id"], token=token, workspace_id=workspace_id)
-        print(f"[automation] published {definition['name']} -> {saved.get('id')}")
-    return saved
+    step = {
+        "id": step_id,
+        "kind": "action",
+        "action_id": "system.update_record",
+        "inputs": {
+            "entity_id": entity_id,
+            "record_id": record_id,
+            "patch": patch,
+        },
+    }
+    if store_as:
+        step["store_as"] = store_as
+    return step
 
 
 def build_generate_document_automation(
@@ -300,6 +151,42 @@ def build_send_record_email_automation(
     }
 
 
+def build_sync_primary_product_supplier_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Sync Primary Product Supplier Defaults",
+        "description": "When an active primary supplier row changes, sync the parent product purchasing defaults used by quotes and purchasing.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "event_types": ["record.created", "record.updated"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.biz_product_supplier"},
+            ],
+            "expr": and_(
+                exists("trigger.record.fields.product_id"),
+                exists("trigger.record.fields.supplier_id"),
+                eq_var("trigger.record.fields.is_primary", True),
+                eq_var("trigger.record.fields.is_active", True),
+            ),
+        },
+        "steps": [
+            update_record_step(
+                "sync_product_defaults",
+                entity_id="entity.biz_product",
+                record_id="{{ trigger.record.fields.product_id }}",
+                patch={
+                    "biz_product.preferred_supplier_id": "{{ trigger.record.fields.supplier_id }}",
+                    "biz_product.default_purchase_currency": "{{ trigger.record.fields.purchase_currency }}",
+                    "biz_product.default_buy_price": "{{ trigger.record.fields.unit_cost }}",
+                    "biz_product.minimum_order_quantity": "{{ trigger.record.fields.minimum_order_quantity }}",
+                    "biz_product.lead_time_weeks": "{{ trigger.record.fields.lead_time_weeks }}",
+                    "biz_product.supplier_factory_reference": "{{ trigger.record.fields.supplier_sku | default('') }}",
+                },
+            )
+        ],
+    }
+
+
 def desired_automations(
     *,
     status: str,
@@ -312,7 +199,7 @@ def desired_automations(
     purchase_order_email_template_id: str | None,
     invoice_email_template_id: str | None,
 ) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = [build_sync_primary_product_supplier_automation(status=status)]
     if isinstance(quote_document_template_id, str) and quote_document_template_id.strip():
         items.append(
             build_generate_document_automation(

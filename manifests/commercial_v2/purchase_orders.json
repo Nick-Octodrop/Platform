@@ -167,7 +167,60 @@
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_purchase_order.currency": "biz_contact.currency_preference",
+                "biz_purchase_order.supplier_reference": "biz_contact.supplier_reference",
+                "biz_purchase_order.incoterm": "biz_contact.supplier_incoterm_default"
+              },
+              "clear_fields": [
+                "biz_purchase_order.supplier_contact_person_id",
+                "biz_purchase_order.supplier_contact_name",
+                "biz_purchase_order.supplier_contact_email",
+                "biz_purchase_order.supplier_contact_phone"
+              ]
+            }
+          },
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.supplier_id.label"
+        },
+        {
+          "id": "biz_purchase_order.supplier_contact_person_id",
+          "type": "lookup",
+          "label": "Supplier Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.biz_purchase_order.supplier_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_purchase_order.supplier_contact_name": "biz_contact_person.display_name",
+                "biz_purchase_order.supplier_contact_email": "biz_contact_person.email",
+                "biz_purchase_order.supplier_contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order.supplier_contact_name",
+          "type": "string",
+          "label": "Supplier Contact"
+        },
+        {
+          "id": "biz_purchase_order.supplier_contact_email",
+          "type": "string",
+          "label": "Supplier Contact Email"
+        },
+        {
+          "id": "biz_purchase_order.supplier_contact_phone",
+          "type": "string",
+          "label": "Supplier Contact Phone"
         },
         {
           "id": "biz_purchase_order.purchasing_entity",
@@ -336,6 +389,89 @@
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.generated_files.label"
         },
         {
+          "id": "biz_purchase_order.line_count",
+          "type": "number",
+          "label": "Line Count",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_purchase_order_line",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.purchase_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order.ordered_quantity_total",
+          "type": "number",
+          "label": "Ordered Qty",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_purchase_order_line",
+              "field": "biz_purchase_order_line.quantity",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.purchase_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order.received_quantity_total",
+          "type": "number",
+          "label": "Received Qty",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_purchase_order_line",
+              "field": "biz_purchase_order_line.quantity_received",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.purchase_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order.outstanding_quantity_total",
+          "type": "number",
+          "label": "Outstanding Qty",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_purchase_order_line",
+              "field": "biz_purchase_order_line.quantity_outstanding",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.purchase_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
           "id": "biz_purchase_order.notes",
           "type": "text",
           "label": "Notes",
@@ -474,6 +610,13 @@
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.product_id.label"
         },
         {
+          "id": "biz_purchase_order_line.product_supplier_id",
+          "type": "lookup",
+          "label": "Supplier Source",
+          "entity": "entity.biz_product_supplier",
+          "display_field": "biz_product_supplier.product_name_snapshot"
+        },
+        {
           "id": "biz_purchase_order_line.description",
           "type": "string",
           "label": "Description",
@@ -593,11 +736,37 @@
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.quantity.label"
         },
         {
+          "id": "biz_purchase_order_line.quantity_received",
+          "type": "number",
+          "label": "Qty Received",
+          "default": 0
+        },
+        {
           "id": "biz_purchase_order_line.unit_cost",
           "type": "number",
           "label": "Unit Cost",
           "default": 0,
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.unit_cost.label"
+        },
+        {
+          "id": "biz_purchase_order_line.supplier_sku_snapshot",
+          "type": "string",
+          "label": "Supplier SKU",
+          "readonly": true
+        },
+        {
+          "id": "biz_purchase_order_line.minimum_order_quantity_snapshot",
+          "type": "number",
+          "label": "MOQ",
+          "readonly": true,
+          "default": 1
+        },
+        {
+          "id": "biz_purchase_order_line.lead_time_weeks_snapshot",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "readonly": true,
+          "default": 0
         },
         {
           "id": "biz_purchase_order_line.line_total",
@@ -625,6 +794,63 @@
             }
           },
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.line_total.label"
+        },
+        {
+          "id": "biz_purchase_order_line.quantity_outstanding",
+          "type": "number",
+          "label": "Qty Outstanding",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "biz_purchase_order_line.quantity",
+                "value": {
+                  "ref": "$current.biz_purchase_order_line.quantity_received"
+                }
+              },
+              "then": {
+                "op": "sub",
+                "args": [
+                  {
+                    "ref": "$current.biz_purchase_order_line.quantity"
+                  },
+                  {
+                    "ref": "$current.biz_purchase_order_line.quantity_received"
+                  }
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order_line.is_fully_received",
+          "type": "bool",
+          "label": "Fully Received",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "lte",
+              "field": "biz_purchase_order_line.quantity_outstanding",
+              "value": 0
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order_line.source_order_line_id",
+          "type": "lookup",
+          "label": "Source Order Line",
+          "entity": "entity.biz_order_line",
+          "display_field": "biz_order_line.description",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_purchase_order_line.source_order_line_id"
+          }
         },
         {
           "id": "biz_purchase_order_line.source_order_line_ref",
@@ -1092,7 +1318,10 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Shipped",
       "patch": {
-        "biz_purchase_order.status": "shipped"
+        "biz_purchase_order.status": "shipped",
+        "biz_purchase_order.actual_ship_date": {
+          "ref": "$today"
+        }
       },
       "visible_when": {
         "op": "eq",
@@ -1100,8 +1329,9 @@
         "value": "in_production"
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "biz_purchase_order.expected_ship_date"
+        "op": "gt",
+        "field": "biz_purchase_order.ordered_quantity_total",
+        "value": 0
       },
       "action_label_key": "purchase_orders.actions.action_purchase_order_mark_shipped.label"
     },
@@ -1111,7 +1341,10 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Mark Received",
       "patch": {
-        "biz_purchase_order.status": "received"
+        "biz_purchase_order.status": "received",
+        "biz_purchase_order.actual_arrival_date": {
+          "ref": "$today"
+        }
       },
       "visible_when": {
         "op": "eq",
@@ -1119,8 +1352,19 @@
         "value": "shipped"
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "biz_purchase_order.expected_arrival_date"
+        "op": "and",
+        "conditions": [
+          {
+            "op": "gt",
+            "field": "biz_purchase_order.ordered_quantity_total",
+            "value": 0
+          },
+          {
+            "op": "lte",
+            "field": "biz_purchase_order.outstanding_quantity_total",
+            "value": 0
+          }
+        ]
       },
       "action_label_key": "purchase_orders.actions.action_purchase_order_mark_received.label"
     },
@@ -1239,7 +1483,7 @@
           "field_id": "biz_purchase_order.supplier_id"
         },
         {
-          "field_id": "biz_purchase_order.source_customer_order_number"
+          "field_id": "biz_purchase_order.source_customer_order_id"
         },
         {
           "field_id": "biz_purchase_order.purchasing_entity"
@@ -1267,7 +1511,7 @@
           "fields": [
             "biz_purchase_order.po_number",
             "biz_purchase_order.supplier_reference",
-            "biz_purchase_order.source_customer_order_number"
+            "biz_purchase_order.source_customer_order_id"
           ],
           "placeholder_key": "purchase_orders.views.list.search.placeholder"
         },
@@ -1367,6 +1611,10 @@
             "biz_purchase_order.po_number",
             "biz_purchase_order.status",
             "biz_purchase_order.supplier_id",
+            "biz_purchase_order.supplier_contact_person_id",
+            "biz_purchase_order.supplier_contact_name",
+            "biz_purchase_order.supplier_contact_email",
+            "biz_purchase_order.supplier_contact_phone",
             "biz_purchase_order.purchasing_entity",
             "biz_purchase_order.source_customer_order_id",
             "biz_purchase_order.currency",
@@ -1399,6 +1647,10 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            "biz_purchase_order.line_count",
+            "biz_purchase_order.ordered_quantity_total",
+            "biz_purchase_order.received_quantity_total",
+            "biz_purchase_order.outstanding_quantity_total",
             "biz_purchase_order.po_total",
             "biz_purchase_order.freight_estimate",
             "biz_purchase_order.landed_cost_estimate"
@@ -1429,13 +1681,35 @@
           "line_editor": {
             "entity_id": "entity.biz_purchase_order_line",
             "parent_field": "biz_purchase_order_line.purchase_order_id",
-            "item_lookup_field": "biz_purchase_order_line.product_id",
-            "item_lookup_entity": "entity.biz_product",
-            "item_lookup_display_field": "biz_product.name",
+            "item_lookup_field": "biz_purchase_order_line.product_supplier_id",
+            "item_lookup_entity": "entity.biz_product_supplier",
+            "item_lookup_display_field": "biz_product_supplier.product_name_snapshot",
+            "item_lookup_domain": {
+              "op": "and",
+              "conditions": [
+                {
+                  "op": "eq",
+                  "field": "biz_product_supplier.supplier_id",
+                  "value": {
+                    "ref": "$record.biz_purchase_order.supplier_id"
+                  }
+                },
+                {
+                  "op": "eq",
+                  "field": "biz_product_supplier.is_active",
+                  "value": true
+                }
+              ]
+            },
             "item_field_map": {
-              "biz_purchase_order_line.description": "biz_product.description",
-              "biz_purchase_order_line.uom": "biz_product.uom",
-              "biz_purchase_order_line.unit_cost": "biz_product.default_buy_price"
+              "biz_purchase_order_line.product_id": "biz_product_supplier.product_id",
+              "biz_purchase_order_line.description": "biz_product_supplier.purchase_description",
+              "biz_purchase_order_line.uom": "biz_product_supplier.uom_snapshot",
+              "biz_purchase_order_line.unit_cost": "biz_product_supplier.unit_cost",
+              "biz_purchase_order_line.currency_snapshot": "biz_product_supplier.purchase_currency",
+              "biz_purchase_order_line.supplier_sku_snapshot": "biz_product_supplier.supplier_sku",
+              "biz_purchase_order_line.minimum_order_quantity_snapshot": "biz_product_supplier.minimum_order_quantity",
+              "biz_purchase_order_line.lead_time_weeks_snapshot": "biz_product_supplier.lead_time_weeks"
             },
             "parent_field_map": {
               "biz_purchase_order_line.purchasing_entity_snapshot": "biz_purchase_order.purchasing_entity",
@@ -1446,7 +1720,9 @@
               "biz_purchase_order_line.currency_snapshot": "USD",
               "biz_purchase_order_line.uom": "EA",
               "biz_purchase_order_line.quantity": 1,
-              "biz_purchase_order_line.unit_cost": 0
+              "biz_purchase_order_line.unit_cost": 0,
+              "biz_purchase_order_line.minimum_order_quantity_snapshot": 1,
+              "biz_purchase_order_line.lead_time_weeks_snapshot": 0
             },
             "description_field": "biz_purchase_order_line.description",
             "columns": [
@@ -1461,7 +1737,13 @@
                 "field_id": "biz_purchase_order_line.description",
                 "label": "Description",
                 "label_key": "common.description",
-                "width": 500
+                "width": 420
+              },
+              {
+                "field_id": "biz_purchase_order_line.supplier_sku_snapshot",
+                "label": "Supplier SKU",
+                "readonly": true,
+                "width": 140
               },
               {
                 "field_id": "biz_purchase_order_line.uom",
@@ -1513,6 +1795,29 @@
                 "label_key": "common.qty",
                 "type": "number",
                 "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_purchase_order_line.quantity_received",
+                "label": "Qty Received",
+                "type": "number",
+                "width": 110,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_purchase_order_line.quantity_outstanding",
+                "label": "Qty Outstanding",
+                "type": "number",
+                "readonly": true,
+                "width": 120,
+                "align": "right"
+              },
+              {
+                "field_id": "biz_purchase_order_line.minimum_order_quantity_snapshot",
+                "label": "MOQ",
+                "type": "number",
+                "readonly": true,
+                "width": 85,
                 "align": "right"
               },
               {
@@ -1640,6 +1945,10 @@
           "biz_purchase_order.po_number",
           "biz_purchase_order.status",
           "biz_purchase_order.supplier_id",
+          "biz_purchase_order.supplier_contact_person_id",
+          "biz_purchase_order.supplier_contact_name",
+          "biz_purchase_order.supplier_contact_email",
+          "biz_purchase_order.supplier_contact_phone",
           "biz_purchase_order.purchasing_entity",
           "biz_purchase_order.source_customer_order_id",
           "biz_purchase_order.currency",
@@ -1654,6 +1963,9 @@
           "biz_purchase_order.port_of_discharge",
           "biz_purchase_order.actual_ship_date",
           "biz_purchase_order.actual_arrival_date",
+          "biz_purchase_order.ordered_quantity_total",
+          "biz_purchase_order.received_quantity_total",
+          "biz_purchase_order.outstanding_quantity_total",
           "biz_purchase_order.primary_document_id",
           "biz_purchase_order.generated_files",
           "biz_purchase_order.po_total",
@@ -1714,6 +2026,9 @@
           "field_id": "biz_purchase_order_line.product_id"
         },
         {
+          "field_id": "biz_purchase_order_line.supplier_sku_snapshot"
+        },
+        {
           "field_id": "biz_purchase_order_line.description"
         },
         {
@@ -1755,9 +2070,13 @@
           "fields": [
             "biz_purchase_order_line.purchase_order_id",
             "biz_purchase_order_line.product_id",
+            "biz_purchase_order_line.product_supplier_id",
+            "biz_purchase_order_line.supplier_sku_snapshot",
             "biz_purchase_order_line.description",
             "biz_purchase_order_line.uom",
             "biz_purchase_order_line.quantity",
+            "biz_purchase_order_line.minimum_order_quantity_snapshot",
+            "biz_purchase_order_line.lead_time_weeks_snapshot",
             "biz_purchase_order_line.unit_cost",
             "biz_purchase_order_line.line_total",
             "biz_purchase_order_line.source_order_line_ref"
@@ -1773,9 +2092,13 @@
         "tracked_fields": [
           "biz_purchase_order_line.purchase_order_id",
           "biz_purchase_order_line.product_id",
+          "biz_purchase_order_line.product_supplier_id",
+          "biz_purchase_order_line.supplier_sku_snapshot",
           "biz_purchase_order_line.description",
           "biz_purchase_order_line.uom",
           "biz_purchase_order_line.quantity",
+          "biz_purchase_order_line.minimum_order_quantity_snapshot",
+          "biz_purchase_order_line.lead_time_weeks_snapshot",
           "biz_purchase_order_line.unit_cost",
           "biz_purchase_order_line.line_total"
         ]

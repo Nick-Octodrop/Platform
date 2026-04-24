@@ -37,8 +37,9 @@ BUSINESS_MODULES = [
 ]
 LEGACY_REMOVED_MODULES = ["biz_dashboard", "biz_settings"]
 
-CONTACT_ENTITIES = ["entity.biz_contact"]
+CONTACT_ENTITIES = ["entity.biz_contact", "entity.biz_contact_person"]
 PRODUCT_ENTITIES = ["entity.biz_product"]
+PRODUCT_SOURCE_ENTITIES = ["entity.biz_product_supplier"]
 QUOTE_ENTITIES = ["entity.biz_quote", "entity.biz_quote_line"]
 QUOTE_SCRIPT_ENTITIES = ["entity.biz_quote_script"]
 ORDER_ENTITIES = ["entity.biz_order", "entity.biz_order_line"]
@@ -299,6 +300,14 @@ def entities_access(entity_ids: list[str], access_level: str) -> list[RuleSpec]:
 
 def sales_hidden_fields() -> list[RuleSpec]:
     hidden = [
+        "biz_contact.supplier_reference",
+        "biz_contact.production_country",
+        "biz_contact.supplier_payment_terms",
+        "biz_contact.supplier_incoterm_default",
+        "biz_contact.xero_contact_id",
+        "biz_contact.xero_last_sync_status",
+        "biz_contact.xero_last_sync_at",
+        "biz_contact.xero_last_sync_error",
         "biz_product.default_purchase_currency",
         "biz_product.default_buy_price",
         "biz_product.preferred_supplier_id",
@@ -378,6 +387,11 @@ def operations_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.quote_script_new", "hidden"),
         action_rule("action.contact_new", "hidden"),
+        action_rule("action.contact_activate", "hidden"),
+        action_rule("action.contact_deactivate", "hidden"),
+        action_rule("action.contact_person_new", "hidden"),
+        action_rule("action.contact_person_activate", "hidden"),
+        action_rule("action.contact_person_deactivate", "hidden"),
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
         action_rule("action.quote_create_document", "hidden"),
@@ -394,6 +408,11 @@ def finance_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.quote_script_new", "hidden"),
         action_rule("action.contact_new", "hidden"),
+        action_rule("action.contact_activate", "hidden"),
+        action_rule("action.contact_deactivate", "hidden"),
+        action_rule("action.contact_person_new", "hidden"),
+        action_rule("action.contact_person_activate", "hidden"),
+        action_rule("action.contact_person_deactivate", "hidden"),
         action_rule("action.product_new", "hidden"),
         action_rule("action.quote_new", "hidden"),
         action_rule("action.quote_create_document", "hidden"),
@@ -429,11 +448,11 @@ def sales_hidden_actions() -> list[RuleSpec]:
 def desired_profiles() -> dict[str, dict[str, Any]]:
     directors_rules = (
         modules_visible(include_settings=True)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
     )
     procurement_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(QUOTE_SCRIPT_ENTITIES, "read")
         + entities_access(CRM_ENTITIES, "read")
         + entities_access(INVOICE_ENTITIES, "read")
@@ -441,13 +460,13 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
     )
     operations_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
         + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + operations_hidden_actions()
     )
     finance_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
         + entities_access(DOCUMENT_ENTITIES, "write")
         + entities_access(ORDER_ENTITIES, "write")
         + entities_access(INVOICE_ENTITIES, "write")
@@ -458,6 +477,7 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
         + [module_rule("biz_purchase_orders", "hidden")]
         + [module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES]
         + [entity_rule("entity.biz_contact", "write"), entity_rule("entity.biz_contact", "write", eq_condition("biz_contact.contact_type", "customer"))]
+        + [entity_rule("entity.biz_contact_person", "write"), entity_rule("entity.biz_contact_person", "write", eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"))]
         + entities_access(CRM_ENTITIES, "write")
         + entities_access(TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(PRODUCT_ENTITIES, "read")

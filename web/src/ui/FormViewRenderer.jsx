@@ -124,6 +124,11 @@ function setFieldValueIfChanged(record, fieldId, value) {
   return setFieldValue(record || {}, fieldId, value);
 }
 
+function recordHasField(record, fieldId) {
+  if (!record || typeof record !== "object" || typeof fieldId !== "string" || !fieldId) return false;
+  return Object.prototype.hasOwnProperty.call(record, fieldId);
+}
+
 function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, lookupRecord, config) {
   let nextRecord = setFieldValueIfChanged(baseRecord || {}, lookupFieldId, selectedValue);
   if (!config || typeof config !== "object") return nextRecord;
@@ -155,6 +160,7 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
           continue;
         }
       }
+      if (!recordHasField(lookupRecord, sourceFieldId)) continue;
       const mappedValue = getFieldValue(lookupRecord, sourceFieldId);
       nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, mappedValue ?? "");
     }
@@ -2354,6 +2360,7 @@ function LookupField({
   const containerRef = useRef(null);
   const cacheRef = useRef(new Map());
   const lastKeyRef = useRef(null);
+  const latestRecordRef = useRef(record && typeof record === "object" ? record : {});
   const entityId = field?.entity || null;
   const placeholder = field?.search_placeholder || field?.placeholder || translateRuntime("common.search");
   const recordContext = useMemo(() => buildRecordContext(field?.domain || null, record), [field?.domain, record]);
@@ -2365,6 +2372,10 @@ function LookupField({
     field?.ui?.populate_from_lookup && typeof field.ui.populate_from_lookup === "object"
       ? field.ui.populate_from_lookup
       : null;
+
+  useEffect(() => {
+    latestRecordRef.current = record && typeof record === "object" ? record : {};
+  }, [record]);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 400);
@@ -2440,7 +2451,6 @@ function LookupField({
   const labelField = field.display_field;
 
   useEffect(() => {
-    const currentRecord = record && typeof record === "object" ? record : {};
     if (!value) {
       setSelectedLabel("");
       return;
@@ -2449,6 +2459,7 @@ function LookupField({
     if (match) {
       setSelectedLabel(match.label || "");
       if (populateFromLookup && typeof onRecordChange === "function" && match.record && typeof match.record === "object") {
+        const currentRecord = latestRecordRef.current || {};
         const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, match.record, populateFromLookup);
         if (nextRecord !== currentRecord) onRecordChange(nextRecord);
       }
@@ -2457,14 +2468,13 @@ function LookupField({
     if (!selectedLabel && !isUuidLike(value)) {
       setSelectedLabel(value);
     }
-  }, [value, options, selectedLabel, populateFromLookup, onRecordChange, record, field?.id]);
+  }, [value, options, selectedLabel, populateFromLookup, onRecordChange, field?.id]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadSelectedLabel() {
       if (!entityId || !value) return;
       if (previewMode) return;
-      const currentRecord = record && typeof record === "object" ? record : {};
       const match = options.find((opt) => opt.value === value);
       if (match) return;
       try {
@@ -2474,6 +2484,7 @@ function LookupField({
         if (!cancelled) {
           setSelectedLabel(label);
           if (populateFromLookup && typeof onRecordChange === "function" && selectedRecord && typeof selectedRecord === "object") {
+            const currentRecord = latestRecordRef.current || {};
             const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, selectedRecord, populateFromLookup);
             if (nextRecord !== currentRecord) onRecordChange(nextRecord);
           }
@@ -2488,7 +2499,7 @@ function LookupField({
     return () => {
       cancelled = true;
     };
-  }, [entityId, value, labelField, options, previewMode, populateFromLookup, onRecordChange, record, field?.id]);
+  }, [entityId, value, labelField, options, previewMode, populateFromLookup, onRecordChange, field?.id]);
 
   useEffect(() => {
     function handleOutsideClick(event) {

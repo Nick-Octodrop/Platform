@@ -21,7 +21,9 @@ class CreatedRecord:
 
 REQUIRED_ENTITY_MODULES = {
     "entity.biz_contact": "biz_contacts",
+    "entity.biz_contact_person": "biz_contacts",
     "entity.biz_product": "biz_products",
+    "entity.biz_product_supplier": "biz_products",
     "entity.biz_quote": "biz_quotes",
     "entity.biz_quote_line": "biz_quotes",
     "entity.biz_order": "biz_orders",
@@ -337,13 +339,19 @@ CONTACTS = [
         "match": {"biz_contact.name": "GreenGrow BV"},
         "record": {
             "biz_contact.name": "GreenGrow BV",
+            "biz_contact.legal_name": "GreenGrow BV",
+            "biz_contact.contact_code": "CUST-GREENGROW",
             "biz_contact.contact_type": "customer",
             "biz_contact.company_entity_scope": ["NLight BV"],
             "biz_contact.email": "procurement@greengrow.example",
             "biz_contact.phone": "+31 20 555 0101",
             "biz_contact.website": "https://greengrow.example",
             "biz_contact.country": "Netherlands",
+            "biz_contact.tax_registration_type": "vat",
+            "biz_contact.default_sales_tax_percent": 21,
             "biz_contact.currency_preference": "EUR",
+            "biz_contact.default_payment_terms": "50% deposit, balance before shipment",
+            "biz_contact.default_incoterm": "DAP Amsterdam",
             "biz_contact.billing_street": "Keizersgracht 100",
             "biz_contact.billing_city": "Amsterdam",
             "biz_contact.billing_country": "Netherlands",
@@ -360,13 +368,19 @@ CONTACTS = [
         "match": {"biz_contact.name": "Desert Bloom Trading"},
         "record": {
             "biz_contact.name": "Desert Bloom Trading",
+            "biz_contact.legal_name": "Desert Bloom Trading LLC",
+            "biz_contact.contact_code": "CUST-DESERTBLOOM",
             "biz_contact.contact_type": "customer",
             "biz_contact.company_entity_scope": ["NLight BV"],
             "biz_contact.email": "sales@desertbloom.example",
             "biz_contact.phone": "+971 4 555 0110",
             "biz_contact.website": "https://desertbloom.example",
             "biz_contact.country": "United Arab Emirates",
+            "biz_contact.tax_registration_type": "vat",
+            "biz_contact.default_sales_tax_percent": 0,
             "biz_contact.currency_preference": "USD",
+            "biz_contact.default_payment_terms": "50% deposit, 50% before dispatch",
+            "biz_contact.default_incoterm": "DAP Dubai",
             "biz_contact.billing_street": "Dubai Investment Park",
             "biz_contact.billing_city": "Dubai",
             "biz_contact.billing_country": "United Arab Emirates",
@@ -383,13 +397,19 @@ CONTACTS = [
         "match": {"biz_contact.name": "Volga Horticulture Group"},
         "record": {
             "biz_contact.name": "Volga Horticulture Group",
+            "biz_contact.legal_name": "Volga Horticulture Group LLP",
+            "biz_contact.contact_code": "CUST-VOLGA",
             "biz_contact.contact_type": "customer",
             "biz_contact.company_entity_scope": ["NLight BV"],
             "biz_contact.email": "projects@volga.example",
             "biz_contact.phone": "+7 495 555 0199",
             "biz_contact.website": "https://volga.example",
             "biz_contact.country": "Kazakhstan",
+            "biz_contact.tax_registration_type": "vat",
+            "biz_contact.default_sales_tax_percent": 0,
             "biz_contact.currency_preference": "EUR",
+            "biz_contact.default_payment_terms": "40% deposit, balance before shipment",
+            "biz_contact.default_incoterm": "DAP Karaganda",
             "biz_contact.billing_street": "Astana Business Centre",
             "biz_contact.billing_city": "Astana",
             "biz_contact.billing_country": "Kazakhstan",
@@ -406,13 +426,20 @@ CONTACTS = [
         "match": {"biz_contact.name": "Shenzhen Lumatek Manufacturing"},
         "record": {
             "biz_contact.name": "Shenzhen Lumatek Manufacturing",
+            "biz_contact.legal_name": "Shenzhen Lumatek Manufacturing Co Ltd",
+            "biz_contact.contact_code": "SUP-LUMATEK",
             "biz_contact.contact_type": "supplier",
             "biz_contact.company_entity_scope": ["EcoTech FZCO"],
             "biz_contact.email": "export@lumatek.example",
             "biz_contact.phone": "+86 755 5550 1880",
             "biz_contact.website": "https://lumatek.example",
             "biz_contact.country": "China",
+            "biz_contact.tax_registration_type": "vat",
             "biz_contact.currency_preference": "USD",
+            "biz_contact.supplier_reference": "LUMATEK-NLIGHT",
+            "biz_contact.production_country": "China",
+            "biz_contact.supplier_payment_terms": "30% deposit, 70% before dispatch",
+            "biz_contact.supplier_incoterm_default": "FOB Shenzhen",
             "biz_contact.billing_street": "Bao'an District",
             "biz_contact.billing_city": "Shenzhen",
             "biz_contact.billing_country": "China",
@@ -429,13 +456,20 @@ CONTACTS = [
         "match": {"biz_contact.name": "Guangzhou LED Systems Co"},
         "record": {
             "biz_contact.name": "Guangzhou LED Systems Co",
+            "biz_contact.legal_name": "Guangzhou LED Systems Co Ltd",
+            "biz_contact.contact_code": "FAC-GZLED",
             "biz_contact.contact_type": "factory_partner",
             "biz_contact.company_entity_scope": ["EcoTech FZCO"],
             "biz_contact.email": "factory@guangzhouled.example",
             "biz_contact.phone": "+86 20 5550 6600",
             "biz_contact.website": "https://guangzhouled.example",
             "biz_contact.country": "China",
+            "biz_contact.tax_registration_type": "vat",
             "biz_contact.currency_preference": "USD",
+            "biz_contact.supplier_reference": "GZLED-NLIGHT",
+            "biz_contact.production_country": "China",
+            "biz_contact.supplier_payment_terms": "20% deposit, 80% before dispatch",
+            "biz_contact.supplier_incoterm_default": "FOB Guangzhou",
             "biz_contact.billing_street": "Panyu District",
             "biz_contact.billing_city": "Guangzhou",
             "biz_contact.billing_country": "China",
@@ -446,6 +480,124 @@ CONTACTS = [
             "biz_contact.is_active": True
         }
     }
+]
+
+CONTACT_PEOPLE = [
+    {
+        "alias": "contact_person.greengrow.eva",
+        "entity_id": "entity.biz_contact_person",
+        "match": {"biz_contact_person.email": "eva@greengrow.example"},
+        "record": {
+            "biz_contact_person.company_id": {"$ref": "contact.greengrow"},
+            "biz_contact_person.company_contact_type_snapshot": "customer",
+            "biz_contact_person.display_name": "Eva van Dijk",
+            "biz_contact_person.first_name": "Eva",
+            "biz_contact_person.last_name": "van Dijk",
+            "biz_contact_person.role_type": "procurement",
+            "biz_contact_person.job_title": "Procurement Manager",
+            "biz_contact_person.department": "Procurement",
+            "biz_contact_person.email": "eva@greengrow.example",
+            "biz_contact_person.phone": "+31 20 555 0102",
+            "biz_contact_person.preferred_language": "Dutch",
+            "biz_contact_person.is_primary": True,
+            "biz_contact_person.receives_quotes": True,
+            "biz_contact_person.receives_invoices": True,
+            "biz_contact_person.receives_logistics_updates": True,
+            "biz_contact_person.is_active": True,
+        },
+    },
+    {
+        "alias": "contact_person.desert_bloom.omar",
+        "entity_id": "entity.biz_contact_person",
+        "match": {"biz_contact_person.email": "omar@desertbloom.example"},
+        "record": {
+            "biz_contact_person.company_id": {"$ref": "contact.desert_bloom"},
+            "biz_contact_person.company_contact_type_snapshot": "customer",
+            "biz_contact_person.display_name": "Omar Al Hadi",
+            "biz_contact_person.first_name": "Omar",
+            "biz_contact_person.last_name": "Al Hadi",
+            "biz_contact_person.role_type": "sales",
+            "biz_contact_person.job_title": "Commercial Director",
+            "biz_contact_person.department": "Commercial",
+            "biz_contact_person.email": "omar@desertbloom.example",
+            "biz_contact_person.phone": "+971 50 555 0121",
+            "biz_contact_person.preferred_language": "English",
+            "biz_contact_person.is_primary": True,
+            "biz_contact_person.receives_quotes": True,
+            "biz_contact_person.receives_invoices": False,
+            "biz_contact_person.receives_logistics_updates": True,
+            "biz_contact_person.is_active": True,
+        },
+    },
+    {
+        "alias": "contact_person.volga.irina",
+        "entity_id": "entity.biz_contact_person",
+        "match": {"biz_contact_person.email": "irina@volga.example"},
+        "record": {
+            "biz_contact_person.company_id": {"$ref": "contact.volga"},
+            "biz_contact_person.company_contact_type_snapshot": "customer",
+            "biz_contact_person.display_name": "Irina Sokolova",
+            "biz_contact_person.first_name": "Irina",
+            "biz_contact_person.last_name": "Sokolova",
+            "biz_contact_person.role_type": "operations",
+            "biz_contact_person.job_title": "Projects Coordinator",
+            "biz_contact_person.department": "Projects",
+            "biz_contact_person.email": "irina@volga.example",
+            "biz_contact_person.phone": "+7 495 555 0202",
+            "biz_contact_person.preferred_language": "Russian",
+            "biz_contact_person.is_primary": True,
+            "biz_contact_person.receives_quotes": True,
+            "biz_contact_person.receives_invoices": True,
+            "biz_contact_person.receives_logistics_updates": True,
+            "biz_contact_person.is_active": True,
+        },
+    },
+    {
+        "alias": "contact_person.shenzhen.li_wei",
+        "entity_id": "entity.biz_contact_person",
+        "match": {"biz_contact_person.email": "li.wei@lumatek.example"},
+        "record": {
+            "biz_contact_person.company_id": {"$ref": "contact.shenzhen"},
+            "biz_contact_person.company_contact_type_snapshot": "supplier",
+            "biz_contact_person.display_name": "Li Wei",
+            "biz_contact_person.first_name": "Li",
+            "biz_contact_person.last_name": "Wei",
+            "biz_contact_person.role_type": "logistics",
+            "biz_contact_person.job_title": "Export Coordinator",
+            "biz_contact_person.department": "Exports",
+            "biz_contact_person.email": "li.wei@lumatek.example",
+            "biz_contact_person.phone": "+86 755 5550 1881",
+            "biz_contact_person.preferred_language": "English",
+            "biz_contact_person.is_primary": True,
+            "biz_contact_person.receives_quotes": False,
+            "biz_contact_person.receives_invoices": True,
+            "biz_contact_person.receives_logistics_updates": True,
+            "biz_contact_person.is_active": True,
+        },
+    },
+    {
+        "alias": "contact_person.guangzhou.chen",
+        "entity_id": "entity.biz_contact_person",
+        "match": {"biz_contact_person.email": "chen.hao@guangzhouled.example"},
+        "record": {
+            "biz_contact_person.company_id": {"$ref": "contact.guangzhou"},
+            "biz_contact_person.company_contact_type_snapshot": "factory_partner",
+            "biz_contact_person.display_name": "Chen Hao",
+            "biz_contact_person.first_name": "Chen",
+            "biz_contact_person.last_name": "Hao",
+            "biz_contact_person.role_type": "operations",
+            "biz_contact_person.job_title": "Factory Operations Lead",
+            "biz_contact_person.department": "Operations",
+            "biz_contact_person.email": "chen.hao@guangzhouled.example",
+            "biz_contact_person.phone": "+86 20 5550 6602",
+            "biz_contact_person.preferred_language": "English",
+            "biz_contact_person.is_primary": True,
+            "biz_contact_person.receives_quotes": False,
+            "biz_contact_person.receives_invoices": True,
+            "biz_contact_person.receives_logistics_updates": True,
+            "biz_contact_person.is_active": True,
+        },
+    },
 ]
 
 PRODUCTS = [
@@ -461,8 +613,19 @@ PRODUCTS = [
 
 
 def product_specs() -> list[dict[str, Any]]:
+    stock_meta = {
+        "product.led600": {"fulfilment_mode": "hybrid", "on_hand": 48, "reserved": 12, "reorder_point": 24, "lead_time_weeks": 6, "moq": 20},
+        "product.led720": {"fulfilment_mode": "stocked", "on_hand": 160, "reserved": 40, "reorder_point": 60, "lead_time_weeks": 5, "moq": 24},
+        "product.driver240": {"fulfilment_mode": "stocked", "on_hand": 220, "reserved": 55, "reorder_point": 80, "lead_time_weeks": 4, "moq": 40},
+        "product.hanger": {"fulfilment_mode": "stocked", "on_hand": 360, "reserved": 90, "reorder_point": 120, "lead_time_weeks": 3, "moq": 50},
+        "product.control": {"fulfilment_mode": "hybrid", "on_hand": 18, "reserved": 6, "reorder_point": 10, "lead_time_weeks": 6, "moq": 8},
+        "product.cabling": {"fulfilment_mode": "stocked", "on_hand": 500, "reserved": 140, "reorder_point": 180, "lead_time_weeks": 4, "moq": 100},
+        "product.mount": {"fulfilment_mode": "made_to_order", "on_hand": 0, "reserved": 0, "reorder_point": 0, "lead_time_weeks": 8, "moq": 30},
+        "product.custom": {"fulfilment_mode": "made_to_order", "on_hand": 0, "reserved": 0, "reorder_point": 0, "lead_time_weeks": 8, "moq": 1},
+    }
     out: list[dict[str, Any]] = []
     for alias, code, name, uom, sell, buy, supplier_ref in PRODUCTS:
+        meta = stock_meta.get(alias, {"fulfilment_mode": "made_to_order", "on_hand": 0, "reserved": 0, "reorder_point": 0, "lead_time_weeks": 0, "moq": 1})
         out.append(
             {
                 "alias": alias,
@@ -478,11 +641,77 @@ def product_specs() -> list[dict[str, Any]]:
                     "biz_product.default_sales_price": sell,
                     "biz_product.default_purchase_currency": "USD",
                     "biz_product.default_buy_price": buy,
+                    "biz_product.fulfilment_mode": meta["fulfilment_mode"],
+                    "biz_product.on_hand_qty": meta["on_hand"],
+                    "biz_product.reserved_qty": meta["reserved"],
+                    "biz_product.reorder_point_qty": meta["reorder_point"],
+                    "biz_product.lead_time_weeks": meta["lead_time_weeks"],
+                    "biz_product.minimum_order_quantity": meta["moq"],
                     "biz_product.preferred_supplier_id": {"$ref": supplier_ref},
                     "biz_product.supplier_factory_reference": f"{code}-FACTORY",
                     "biz_product.internal_notes": "Demo catalogue item.",
                     "biz_product.is_active": True
                 }
+            }
+        )
+    return out
+
+
+def product_supplier_specs() -> list[dict[str, Any]]:
+    primary_specs = [
+        ("product_supplier.led600.lumatek", "product.led600", "N-Light LED 600W", "NL-LED-600W", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-600W", "EA", "USD", 275, 20, 6, "FOB Shenzhen", True),
+        ("product_supplier.led720.lumatek", "product.led720", "N-Light LED 720W", "NL-LED-720W", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-720W", "EA", "USD", 335, 24, 5, "FOB Shenzhen", True),
+        ("product_supplier.driver240.gzled", "product.driver240", "Driver 240", "NL-DRIVER-240", "contact.guangzhou", "Guangzhou LED Systems Co", "GZ-DRV-240", "EA", "USD", 42, 40, 4, "FOB Guangzhou", True),
+        ("product_supplier.hanger.lumatek", "product.hanger", "Hanger Kit", "NL-HANGER-KIT", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-HANGER", "KIT", "USD", 8, 50, 3, "FOB Shenzhen", True),
+        ("product_supplier.control.gzled", "product.control", "Control Unit", "NL-CONTROL-UNIT", "contact.guangzhou", "Guangzhou LED Systems Co", "GZ-CONTROL", "EA", "USD", 96, 8, 6, "FOB Guangzhou", True),
+        ("product_supplier.cabling.lumatek", "product.cabling", "Cabling Set", "NL-CABLING-SET", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-CABLE", "SET", "USD", 6, 100, 4, "FOB Shenzhen", True),
+        ("product_supplier.mount.lumatek", "product.mount", "Mount Bar", "NL-MOUNT-BAR", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-MOUNT", "EA", "USD", 13, 30, 8, "FOB Shenzhen", True),
+        ("product_supplier.custom.gzled", "product.custom", "Custom Accessory", "NL-CUSTOM-ACCESSORY", "contact.guangzhou", "Guangzhou LED Systems Co", "GZ-CUSTOM", "LOT", "USD", 44, 1, 8, "FOB Guangzhou", True),
+        ("product_supplier.led720.gzled_alt", "product.led720", "N-Light LED 720W", "NL-LED-720W", "contact.guangzhou", "Guangzhou LED Systems Co", "GZ-720-ALT", "EA", "USD", 342, 24, 6, "FOB Guangzhou", False),
+        ("product_supplier.control.lumatek_alt", "product.control", "Control Unit", "NL-CONTROL-UNIT", "contact.shenzhen", "Shenzhen Lumatek Manufacturing", "LUM-CONTROL-ALT", "EA", "USD", 101, 10, 7, "FOB Shenzhen", False),
+    ]
+    out: list[dict[str, Any]] = []
+    for (
+        alias,
+        product_alias,
+        product_name,
+        product_code,
+        supplier_alias,
+        supplier_name,
+        supplier_sku,
+        uom,
+        currency,
+        unit_cost,
+        moq,
+        lead_time_weeks,
+        incoterm,
+        is_primary,
+    ) in primary_specs:
+        out.append(
+            {
+                "alias": alias,
+                "entity_id": "entity.biz_product_supplier",
+                "match": {
+                    "biz_product_supplier.product_id": {"$ref": product_alias},
+                    "biz_product_supplier.supplier_id": {"$ref": supplier_alias},
+                },
+                "record": {
+                    "biz_product_supplier.product_id": {"$ref": product_alias},
+                    "biz_product_supplier.product_name_snapshot": product_name,
+                    "biz_product_supplier.product_code_snapshot": product_code,
+                    "biz_product_supplier.supplier_id": {"$ref": supplier_alias},
+                    "biz_product_supplier.supplier_name_snapshot": supplier_name,
+                    "biz_product_supplier.supplier_sku": supplier_sku,
+                    "biz_product_supplier.purchase_description": f"{product_name} for supplier purchasing.",
+                    "biz_product_supplier.uom_snapshot": uom,
+                    "biz_product_supplier.purchase_currency": currency,
+                    "biz_product_supplier.unit_cost": unit_cost,
+                    "biz_product_supplier.minimum_order_quantity": moq,
+                    "biz_product_supplier.lead_time_weeks": lead_time_weeks,
+                    "biz_product_supplier.supplier_incoterm": incoterm,
+                    "biz_product_supplier.is_primary": is_primary,
+                    "biz_product_supplier.is_active": True,
+                },
             }
         )
     return out
@@ -499,10 +728,14 @@ SEED_SPECS = [
             "biz_quote.expiry_date": "2026-04-10",
             "biz_quote.sales_entity": "NLight BV",
             "biz_quote.customer_id": {"$ref": "contact.greengrow"},
+            "biz_quote.customer_contact_person_id": {"$ref": "contact_person.greengrow.eva"},
             "biz_quote.customer_contact_name": "Eva van Dijk",
+            "biz_quote.customer_contact_email": "eva@greengrow.example",
+            "biz_quote.customer_contact_phone": "+31 20 555 0102",
             "biz_quote.customer_reference": "GG-POC-2026-01",
             "biz_quote.currency": "EUR",
-            "biz_quote.sales_owner": "Account Team",
+            "biz_quote.owner_user_id": "Joost",
+            "biz_quote.tax_percent": 21,
             "biz_quote.payment_terms": "30% deposit, balance before shipment",
             "biz_quote.incoterm": "FCA",
             "biz_quote.shipping_terms": "Sea freight coordinated by seller",
@@ -521,10 +754,14 @@ SEED_SPECS = [
             "biz_quote.expiry_date": "2026-04-15",
             "biz_quote.sales_entity": "NLight BV",
             "biz_quote.customer_id": {"$ref": "contact.desert_bloom"},
+            "biz_quote.customer_contact_person_id": {"$ref": "contact_person.desert_bloom.omar"},
             "biz_quote.customer_contact_name": "Omar Al Hadi",
+            "biz_quote.customer_contact_email": "omar@desertbloom.example",
+            "biz_quote.customer_contact_phone": "+971 50 555 0121",
             "biz_quote.customer_reference": "DBT-RFQ-44",
             "biz_quote.currency": "USD",
-            "biz_quote.sales_owner": "Account Team",
+            "biz_quote.owner_user_id": "Shelly",
+            "biz_quote.tax_percent": 0,
             "biz_quote.payment_terms": "50% deposit, 50% before dispatch",
             "biz_quote.incoterm": "EXW",
             "biz_quote.shipping_terms": "Customer freight forwarder",
@@ -542,10 +779,14 @@ SEED_SPECS = [
             "biz_quote.expiry_date": "2026-03-31",
             "biz_quote.sales_entity": "NLight BV",
             "biz_quote.customer_id": {"$ref": "contact.volga"},
+            "biz_quote.customer_contact_person_id": {"$ref": "contact_person.volga.irina"},
             "biz_quote.customer_contact_name": "Irina Sokolova",
+            "biz_quote.customer_contact_email": "irina@volga.example",
+            "biz_quote.customer_contact_phone": "+7 495 555 0202",
             "biz_quote.customer_reference": "VOLGA-GROW-09",
             "biz_quote.currency": "EUR",
-            "biz_quote.sales_owner": "Account Team",
+            "biz_quote.owner_user_id": "Joram",
+            "biz_quote.tax_percent": 0,
             "biz_quote.payment_terms": "30% deposit, 70% final invoice",
             "biz_quote.incoterm": "DAP",
             "biz_quote.shipping_terms": "Project delivery to Karaganda hub",
@@ -563,10 +804,14 @@ SEED_SPECS = [
             "biz_quote.expiry_date": "2026-04-20",
             "biz_quote.sales_entity": "NLight BV",
             "biz_quote.customer_id": {"$ref": "contact.greengrow"},
+            "biz_quote.customer_contact_person_id": {"$ref": "contact_person.greengrow.eva"},
             "biz_quote.customer_contact_name": "Eva van Dijk",
+            "biz_quote.customer_contact_email": "eva@greengrow.example",
+            "biz_quote.customer_contact_phone": "+31 20 555 0102",
             "biz_quote.customer_reference": "GG-UPGRADE-2026-02",
             "biz_quote.currency": "EUR",
-            "biz_quote.sales_owner": "Account Team",
+            "biz_quote.owner_user_id": "Joost",
+            "biz_quote.tax_percent": 21,
             "biz_quote.payment_terms": "30% deposit, balance before shipment",
             "biz_quote.incoterm": "DAP",
             "biz_quote.shipping_terms": "Pending delivery planning",
@@ -587,12 +832,15 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-LED-720W",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.fulfilment_mode_snapshot": "stocked",
+            "biz_quote_line.available_stock_snapshot": 120,
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 120,
             "biz_quote_line.unit_price": 520,
             "biz_quote_line.line_discount_percent": 0,
             "biz_quote_line.default_buy_price_snapshot": 335,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 0.92
         }
     },
     {
@@ -606,12 +854,15 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-HANGER-KIT",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.fulfilment_mode_snapshot": "stocked",
+            "biz_quote_line.available_stock_snapshot": 270,
             "biz_quote_line.uom": "KIT",
             "biz_quote_line.quantity": 120,
             "biz_quote_line.unit_price": 24,
             "biz_quote_line.line_discount_percent": 0,
             "biz_quote_line.default_buy_price_snapshot": 8,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 0.92
         }
     },
     {
@@ -629,7 +880,8 @@ SEED_SPECS = [
             "biz_quote_line.unit_price": 1450,
             "biz_quote_line.line_discount_percent": 0,
             "biz_quote_line.default_buy_price_snapshot": 700,
-            "biz_quote_line.buy_currency_snapshot": "EUR"
+            "biz_quote_line.buy_currency_snapshot": "EUR",
+            "biz_quote_line.buy_fx_to_quote_rate": 1
         }
     },
     {
@@ -643,11 +895,14 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-LED-600W",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "USD",
+            "biz_quote_line.fulfilment_mode_snapshot": "hybrid",
+            "biz_quote_line.available_stock_snapshot": 36,
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 200,
             "biz_quote_line.unit_price": 420,
             "biz_quote_line.default_buy_price_snapshot": 275,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 1
         }
     },
     {
@@ -661,11 +916,14 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-CABLING-SET",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "USD",
+            "biz_quote_line.fulfilment_mode_snapshot": "stocked",
+            "biz_quote_line.available_stock_snapshot": 360,
             "biz_quote_line.uom": "SET",
             "biz_quote_line.quantity": 200,
             "biz_quote_line.unit_price": 18,
             "biz_quote_line.default_buy_price_snapshot": 6,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 1
         }
     },
     {
@@ -679,11 +937,14 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-LED-720W",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.fulfilment_mode_snapshot": "stocked",
+            "biz_quote_line.available_stock_snapshot": 120,
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 80,
             "biz_quote_line.unit_price": 515,
             "biz_quote_line.default_buy_price_snapshot": 335,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 0.92
         }
     },
     {
@@ -697,11 +958,14 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-CONTROL-UNIT",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.fulfilment_mode_snapshot": "hybrid",
+            "biz_quote_line.available_stock_snapshot": 12,
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 8,
             "biz_quote_line.unit_price": 165,
             "biz_quote_line.default_buy_price_snapshot": 96,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 0.92
         }
     },
     {
@@ -715,12 +979,15 @@ SEED_SPECS = [
             "biz_quote_line.description": "NL-CONTROL-UNIT",
             "biz_quote_line.sales_entity_snapshot": "NLight BV",
             "biz_quote_line.currency_snapshot": "EUR",
+            "biz_quote_line.fulfilment_mode_snapshot": "hybrid",
+            "biz_quote_line.available_stock_snapshot": 12,
             "biz_quote_line.uom": "EA",
             "biz_quote_line.quantity": 12,
             "biz_quote_line.unit_price": 165,
             "biz_quote_line.line_discount_percent": 5,
             "biz_quote_line.default_buy_price_snapshot": 96,
-            "biz_quote_line.buy_currency_snapshot": "USD"
+            "biz_quote_line.buy_currency_snapshot": "USD",
+            "biz_quote_line.buy_fx_to_quote_rate": 0.92
         }
     },
     {
@@ -1651,6 +1918,7 @@ def generated_demo_specs(count: int) -> list[dict[str, Any]]:
                     "biz_contact.phone": f"+31 20 555 {1000 + index:04d}",
                     "biz_contact.website": f"https://{prefix.lower()}-{suffix.lower()}.example",
                     "biz_contact.country": country,
+                    "biz_contact.tax_registration_type": "vat",
                     "biz_contact.currency_preference": currency,
                     "biz_contact.billing_street": f"{city} Commercial Park {index}",
                     "biz_contact.billing_city": city,
@@ -1971,7 +2239,11 @@ def main() -> None:
 
     for spec in CONTACTS:
         create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
+    for spec in CONTACT_PEOPLE:
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     for spec in product_specs():
+        create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
+    for spec in product_supplier_specs():
         create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)
     for spec in SEED_SPECS:
         create_or_get(base_url, spec, aliases, token=token, workspace_id=workspace_id, dry_run=args.dry_run, record_cache=record_cache)

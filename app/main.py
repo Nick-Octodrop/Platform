@@ -54409,7 +54409,7 @@ def _artifact_ai_infer_template_prompt_entity(
             invalid_prefixes.append(_ai_norm_token(prefix[: -len("_line")]))
     invalid_prefixes = [item for item in invalid_prefixes if item]
 
-    scored: list[tuple[int, str]] = []
+    scored: list[tuple[int, int, str]] = []
     for entity in entities:
         if not isinstance(entity, dict):
             continue
@@ -54420,25 +54420,30 @@ def _artifact_ai_infer_template_prompt_entity(
         if not aliases:
             continue
         short_norm = _ai_norm_token(entity_id.split(".")[-1])
-        score = 0
+        alias_score = 0
+        prefix_score = 0
         for prefix in invalid_prefixes:
             if prefix == short_norm:
-                score += 10
+                prefix_score += 10
             elif short_norm and prefix.startswith(f"{short_norm} "):
-                score += 6
+                prefix_score += 6
         for alias in aliases:
             if not alias or len(alias) < 4:
                 continue
             pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
-            score += len(re.findall(pattern, normalized_prompt))
-        if score > 0:
-            scored.append((score, entity_id.strip()))
+            alias_score += len(re.findall(pattern, normalized_prompt))
+        total_score = alias_score + prefix_score
+        if total_score > 0:
+            scored.append((alias_score, prefix_score, entity_id.strip()))
     if not scored:
         return None
-    scored.sort(key=lambda item: item[0], reverse=True)
-    top_score, top_entity_id = scored[0]
-    second_score = scored[1][0] if len(scored) > 1 else -1
-    if top_score <= 0 or top_score == second_score:
+    alias_scored = [item for item in scored if item[0] > 0]
+    if alias_scored:
+        scored = alias_scored
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    top_alias_score, top_prefix_score, top_entity_id = scored[0]
+    second_scores = (scored[1][0], scored[1][1]) if len(scored) > 1 else (-1, -1)
+    if (top_alias_score + top_prefix_score) <= 0 or (top_alias_score, top_prefix_score) == second_scores:
         return None
     return top_entity_id
 
@@ -59702,8 +59707,7 @@ def _artifact_ai_generate_plan(
         draft = _artifact_ai_normalize_email_template_draft(current, candidate_draft)
         if isinstance(context_payload.get("selected_entity_id"), str) and context_payload.get("selected_entity_id").strip():
             variables_schema = draft.get("variables_schema") if isinstance(draft.get("variables_schema"), dict) else {}
-            if not isinstance(variables_schema.get("entity_id"), str) or not variables_schema.get("entity_id").strip():
-                draft["variables_schema"] = {**variables_schema, "entity_id": context_payload.get("selected_entity_id").strip()}
+            draft["variables_schema"] = {**variables_schema, "entity_id": context_payload.get("selected_entity_id").strip()}
         if _artifact_ai_email_prompt_implies_branded_transactional_layout(prompt, requested_focus):
             updated_body_html, branding_changed = _artifact_ai_email_ensure_branding(
                 draft.get("body_html"),
@@ -59723,8 +59727,7 @@ def _artifact_ai_generate_plan(
         draft = _artifact_ai_normalize_doc_template_draft(current, candidate_draft)
         if isinstance(context_payload.get("selected_entity_id"), str) and context_payload.get("selected_entity_id").strip():
             variables_schema = draft.get("variables_schema") if isinstance(draft.get("variables_schema"), dict) else {}
-            if not isinstance(variables_schema.get("entity_id"), str) or not variables_schema.get("entity_id").strip():
-                draft["variables_schema"] = {**variables_schema, "entity_id": context_payload.get("selected_entity_id").strip()}
+            draft["variables_schema"] = {**variables_schema, "entity_id": context_payload.get("selected_entity_id").strip()}
         if _artifact_ai_document_prompt_requests_logo(prompt, requested_focus) and _artifact_ai_branding_context_has_logo(context_payload):
             draft, logo_injected = _artifact_ai_ensure_document_logo_masthead(draft)
             if logo_injected:

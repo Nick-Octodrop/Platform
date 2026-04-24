@@ -778,9 +778,6 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
       style={isMobile && mobileBoardHeight ? { height: `${mobileBoardHeight}px` } : undefined}
     >
       <div className="flex h-full min-h-0 flex-col">
-        {moveError ? (
-          <div className="alert alert-warning mb-3 py-2 text-sm">{moveError}</div>
-        ) : null}
         <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden pb-2">
           <div className="flex h-full min-h-0 gap-4 min-w-max">
             {groupKeys.map((groupKey) => (
@@ -863,6 +860,22 @@ function KanbanView({ view, entityDef, records, groupBy, onSelectRow, canDragCar
           </div>
         </div>
       </div>
+      {moveError ? (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-lg">
+            <h3 className="font-semibold text-lg">Move blocked</h3>
+            <p className="py-3 text-sm text-base-content/75">{moveError}</p>
+            <div className="modal-action">
+              <button className="btn btn-primary" onClick={() => setMoveError("")}>OK</button>
+            </div>
+          </div>
+          <button
+            className="modal-backdrop"
+            aria-label="Close move blocked dialog"
+            onClick={() => setMoveError("")}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1867,6 +1880,20 @@ export default function ViewModesBlock({
     return { matches, visible, action: visible[0] || null };
   }
 
+  function formatKanbanMoveError(err, targetValue) {
+    const targetLabel =
+      groupBy && targetValue !== null && targetValue !== undefined && targetValue !== ""
+        ? (formatCardValue(groupBy, targetValue) || humanize(targetValue))
+        : "this column";
+    if (err?.code === "ACTION_DISABLED" && err?.path === "action_id") {
+      return `Complete the required validation before moving this card to ${targetLabel}.`;
+    }
+    if (typeof err?.message === "string" && err.message.trim()) {
+      return err.message.trim();
+    }
+    return `Move to ${targetLabel} failed.`;
+  }
+
   async function handleKanbanMove(row, targetGroupKey) {
     const record = row?.record || {};
     const rowId = row?.record_id || record?.id;
@@ -1897,7 +1924,7 @@ export default function ViewModesBlock({
       }
       const result = await onRunAction(transitionAction, {
         recordId: rowId,
-        recordDraft: { ...(record || {}), [effectiveGroupByParam]: targetValue },
+        recordDraft: { ...(record || {}) },
       });
       if (!result) return { ok: false, message: "Transition failed." };
       const patch = transitionAction?.patch && typeof transitionAction.patch === "object" ? transitionAction.patch : null;
@@ -1917,7 +1944,7 @@ export default function ViewModesBlock({
       setRefreshTick((v) => v + 1);
       return { ok: true };
     } catch (err) {
-      return { ok: false, message: err?.message || "Move failed." };
+      return { ok: false, message: formatKanbanMoveError(err, targetValue) };
     }
   }
 

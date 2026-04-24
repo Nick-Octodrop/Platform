@@ -57,8 +57,7 @@
     },
     "nav": [
       {
-        "group": "Commercial",
-        "mode": "inline",
+        "group": "Quotes",
         "items": [
           {
             "label": "Quotes",
@@ -305,13 +304,64 @@
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_quote.currency": "biz_contact.currency_preference",
+                "biz_quote.payment_terms": "biz_contact.default_payment_terms",
+                "biz_quote.incoterm": "biz_contact.default_incoterm",
+                "biz_quote.tax_percent": "biz_contact.default_sales_tax_percent",
+                "biz_quote.customer_contact_email": "biz_contact.email",
+                "biz_quote.customer_contact_phone": "biz_contact.phone"
+              },
+              "clear_fields": [
+                "biz_quote.customer_contact_person_id",
+                "biz_quote.customer_contact_name",
+                "biz_quote.customer_contact_email",
+                "biz_quote.customer_contact_phone"
+              ]
+            }
+          },
           "label_key": "quotes.entities.biz_quote.fields.customer_id.label"
+        },
+        {
+          "id": "biz_quote.customer_contact_person_id",
+          "type": "lookup",
+          "label": "Customer Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.biz_quote.customer_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_quote.customer_contact_name": "biz_contact_person.display_name",
+                "biz_quote.customer_contact_email": "biz_contact_person.email",
+                "biz_quote.customer_contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
         },
         {
           "id": "biz_quote.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
           "label_key": "quotes.entities.biz_quote.fields.customer_contact_name.label"
+        },
+        {
+          "id": "biz_quote.customer_contact_email",
+          "type": "string",
+          "label": "Customer Contact Email"
+        },
+        {
+          "id": "biz_quote.customer_contact_phone",
+          "type": "string",
+          "label": "Customer Contact Phone"
         },
         {
           "id": "biz_quote.customer_reference",
@@ -324,6 +374,24 @@
           "type": "enum",
           "label": "Currency",
           "default": "EUR",
+          "help_text": "Defaults from the customer. You can override it before line items are added.",
+          "disabled_when": {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "not",
+                "condition": {
+                  "op": "exists",
+                  "field": "biz_quote.customer_id"
+                }
+              },
+              {
+                "op": "gt",
+                "field": "biz_quote.line_count",
+                "value": 0
+              }
+            ]
+          },
           "options": [
             {
               "value": "EUR",
@@ -351,6 +419,12 @@
             }
           ],
           "label_key": "quotes.entities.biz_quote.fields.currency.label"
+        },
+        {
+          "id": "biz_quote.owner_user_id",
+          "type": "user",
+          "label": "Quote Owner",
+          "help_text": "Internal owner for pipeline, activity, automations, and generated documents."
         },
         {
           "id": "biz_quote.sales_owner",
@@ -646,6 +720,26 @@
           "label_key": "quotes.entities.biz_quote.fields.generated_files.label"
         },
         {
+          "id": "biz_quote.line_count",
+          "type": "number",
+          "label": "Line Count",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_quote_line",
+              "where": {
+                "op": "eq",
+                "field": "biz_quote_line.quote_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
           "id": "biz_quote.subtotal",
           "type": "number",
           "label": "Subtotal",
@@ -685,14 +779,59 @@
           "label_key": "quotes.entities.biz_quote.fields.discount_total.label"
         },
         {
+          "id": "biz_quote.tax_percent",
+          "type": "number",
+          "label": "Tax %",
+          "default": 0,
+          "format": {
+            "kind": "percent",
+            "precision": 2
+          },
+          "help_text": "Default VAT / sales tax rate for this quote. Usually inherited from the customer account and adjustable per quote."
+        },
+        {
           "id": "biz_quote.tax_total",
           "type": "number",
           "label": "Tax Total",
+          "readonly": true,
           "default": 0,
           "format": {
             "kind": "currency",
             "currency_field": "biz_quote.currency",
             "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "op": "sub",
+                      "args": [
+                        {
+                          "ref": "$current.biz_quote.subtotal"
+                        },
+                        {
+                          "ref": "$current.biz_quote.discount_total"
+                        }
+                      ]
+                    },
+                    {
+                      "op": "div",
+                      "args": [
+                        {
+                          "ref": "$current.biz_quote.tax_percent"
+                        },
+                        100
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
           },
           "label_key": "quotes.entities.biz_quote.fields.tax_total.label"
         },
@@ -742,11 +881,16 @@
           "label": "Estimated Buy Total",
           "readonly": true,
           "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
           "compute": {
             "aggregate": {
               "op": "sum",
               "entity": "entity.biz_quote_line",
-              "field": "biz_quote_line.buy_total",
+              "field": "biz_quote_line.buy_total_quote_currency",
               "where": {
                 "op": "eq",
                 "field": "biz_quote_line.quote_id",
@@ -913,6 +1057,26 @@
           "label_key": "quotes.entities.biz_quote_line.fields.sales_entity_snapshot.label"
         },
         {
+          "id": "biz_quote_line.fulfilment_mode_snapshot",
+          "type": "enum",
+          "label": "Fulfilment Mode Snapshot",
+          "default": "made_to_order",
+          "options": [
+            {
+              "value": "made_to_order",
+              "label": "Made To Order"
+            },
+            {
+              "value": "stocked",
+              "label": "Stocked"
+            },
+            {
+              "value": "hybrid",
+              "label": "Hybrid"
+            }
+          ]
+        },
+        {
           "id": "biz_quote_line.currency_snapshot",
           "type": "enum",
           "label": "Currency Snapshot",
@@ -944,6 +1108,13 @@
             }
           ],
           "label_key": "quotes.entities.biz_quote_line.fields.currency_snapshot.label"
+        },
+        {
+          "id": "biz_quote_line.available_stock_snapshot",
+          "type": "number",
+          "label": "Available Stock Snapshot",
+          "readonly": true,
+          "default": 0
         },
         {
           "id": "biz_quote_line.uom",
@@ -1105,6 +1276,47 @@
           "label_key": "quotes.entities.biz_quote_line.fields.buy_currency_snapshot.label"
         },
         {
+          "id": "biz_quote_line.procurement_supplier_id",
+          "type": "lookup",
+          "label": "Procurement Supplier",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "domain": {
+            "op": "in",
+            "field": "biz_contact.contact_type",
+            "value": [
+              "supplier",
+              "factory_partner"
+            ]
+          }
+        },
+        {
+          "id": "biz_quote_line.supplier_sku_snapshot",
+          "type": "string",
+          "label": "Supplier SKU Snapshot",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.minimum_order_quantity_snapshot",
+          "type": "number",
+          "label": "MOQ",
+          "readonly": true,
+          "default": 1
+        },
+        {
+          "id": "biz_quote_line.lead_time_weeks_snapshot",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "readonly": true,
+          "default": 0
+        },
+        {
+          "id": "biz_quote_line.buy_fx_to_quote_rate",
+          "type": "number",
+          "label": "Buy FX To Quote",
+          "default": 1
+        },
+        {
           "id": "biz_quote_line.buy_total",
           "type": "number",
           "label": "Buy Total",
@@ -1132,6 +1344,32 @@
           "label_key": "quotes.entities.biz_quote_line.fields.buy_total.label"
         },
         {
+          "id": "biz_quote_line.buy_total_quote_currency",
+          "type": "number",
+          "label": "Buy Total (Quote Currency)",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.biz_quote_line.buy_total"
+                    },
+                    {
+                      "ref": "$current.biz_quote_line.buy_fx_to_quote_rate"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
           "id": "biz_quote_line.estimated_margin_amount",
           "type": "number",
           "label": "Estimated Margin Amount",
@@ -1148,7 +1386,7 @@
                       "ref": "$current.biz_quote_line.line_total"
                     },
                     {
-                      "ref": "$current.biz_quote_line.buy_total"
+                      "ref": "$current.biz_quote_line.buy_total_quote_currency"
                     }
                   ]
                 },
@@ -1211,12 +1449,20 @@
           "biz_quote_line.line_type",
           "biz_quote_line.product_id",
           "biz_quote_line.description",
+          "biz_quote_line.fulfilment_mode_snapshot",
           "biz_quote_line.uom",
+          "biz_quote_line.available_stock_snapshot",
           "biz_quote_line.quantity",
           "biz_quote_line.unit_price",
           "biz_quote_line.line_discount_percent",
           "biz_quote_line.line_total",
           "biz_quote_line.default_buy_price_snapshot",
+          "biz_quote_line.buy_currency_snapshot",
+          "biz_quote_line.procurement_supplier_id",
+          "biz_quote_line.supplier_sku_snapshot",
+          "biz_quote_line.minimum_order_quantity_snapshot",
+          "biz_quote_line.lead_time_weeks_snapshot",
+          "biz_quote_line.buy_fx_to_quote_rate",
           "biz_quote_line.buy_total"
         ]
       },
@@ -1424,7 +1670,7 @@
           "from": "biz_quote.sales_entity"
         },
         "biz_document.owner_user_id": {
-          "from": "biz_quote.sales_owner"
+          "from": "biz_quote.owner_user_id"
         },
         "biz_document.document_date": {
           "ref": "$today"
@@ -1440,7 +1686,10 @@
       "validation": {
         "require_source_fields": [
           "biz_quote.quote_number",
-          "biz_quote.customer_id"
+          "biz_quote.customer_id",
+          "biz_quote.expiry_date",
+          "biz_quote.script_template_id",
+          "biz_quote.quote_script_body"
         ]
       }
     },
@@ -1451,6 +1700,18 @@
       "field_mappings": {
         "biz_order.customer_id": {
           "from": "biz_quote.customer_id"
+        },
+        "biz_order.customer_contact_person_id": {
+          "from": "biz_quote.customer_contact_person_id"
+        },
+        "biz_order.customer_contact_name": {
+          "from": "biz_quote.customer_contact_name"
+        },
+        "biz_order.customer_contact_email": {
+          "from": "biz_quote.customer_contact_email"
+        },
+        "biz_order.customer_contact_phone": {
+          "from": "biz_quote.customer_contact_phone"
         },
         "biz_order.source_quote_number": {
           "from": "biz_quote.quote_number"
@@ -1466,6 +1727,9 @@
         },
         "biz_order.customer_reference": {
           "from": "biz_quote.customer_reference"
+        },
+        "biz_order.payment_terms": {
+          "from": "biz_quote.payment_terms"
         },
         "biz_order.site_name": {
           "from": "biz_quote.project_site_name"
@@ -1496,6 +1760,9 @@
             "biz_order_line.sales_entity_snapshot": {
               "from": "biz_quote_line.sales_entity_snapshot"
             },
+            "biz_order_line.fulfilment_mode_snapshot": {
+              "from": "biz_quote_line.fulfilment_mode_snapshot"
+            },
             "biz_order_line.currency_snapshot": {
               "from": "biz_quote_line.currency_snapshot"
             },
@@ -1510,6 +1777,24 @@
             },
             "biz_order_line.unit_cost_snapshot": {
               "from": "biz_quote_line.default_buy_price_snapshot"
+            },
+            "biz_order_line.available_stock_snapshot": {
+              "from": "biz_quote_line.available_stock_snapshot"
+            },
+            "biz_order_line.buy_currency_snapshot": {
+              "from": "biz_quote_line.buy_currency_snapshot"
+            },
+            "biz_order_line.procurement_supplier_id": {
+              "from": "biz_quote_line.procurement_supplier_id"
+            },
+            "biz_order_line.supplier_sku_snapshot": {
+              "from": "biz_quote_line.supplier_sku_snapshot"
+            },
+            "biz_order_line.minimum_order_quantity_snapshot": {
+              "from": "biz_quote_line.minimum_order_quantity_snapshot"
+            },
+            "biz_order_line.lead_time_weeks_snapshot": {
+              "from": "biz_quote_line.lead_time_weeks_snapshot"
             },
             "biz_order_line.source_quote_line_ref": {
               "ref": "$source.id"
@@ -1615,8 +1900,16 @@
             "field": "biz_quote.expiry_date"
           },
           {
+            "op": "exists",
+            "field": "biz_quote.script_template_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.quote_script_body"
+          },
+          {
             "op": "gt",
-            "field": "biz_quote.grand_total",
+            "field": "biz_quote.line_count",
             "value": 0
           },
           {
@@ -1674,7 +1967,7 @@
           },
           {
             "op": "gt",
-            "field": "biz_quote.grand_total",
+            "field": "biz_quote.line_count",
             "value": 0
           }
         ]
@@ -1750,6 +2043,23 @@
           {
             "op": "exists",
             "field": "biz_quote.customer_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.expiry_date"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.script_template_id"
+          },
+          {
+            "op": "exists",
+            "field": "biz_quote.quote_script_body"
+          },
+          {
+            "op": "gt",
+            "field": "biz_quote.line_count",
+            "value": 0
           }
         ]
       },
@@ -1966,7 +2276,7 @@
           "field_id": "biz_quote.status"
         },
         {
-          "field_id": "biz_quote.sales_owner"
+          "field_id": "biz_quote.owner_user_id"
         }
       ],
       "header": {
@@ -1982,7 +2292,8 @@
           "fields": [
             "biz_quote.quote_number",
             "biz_quote.customer_reference",
-            "biz_quote.sales_owner"
+            "biz_quote.customer_contact_name",
+            "biz_quote.project_site_name"
           ],
           "placeholder_key": "quotes.views.list.search.placeholder"
         },
@@ -2090,13 +2401,17 @@
             "biz_quote.quote_number",
             "biz_quote.status",
             "biz_quote.customer_id",
+            "biz_quote.customer_contact_person_id",
             "biz_quote.customer_contact_name",
+            "biz_quote.customer_contact_email",
+            "biz_quote.customer_contact_phone",
+            "biz_quote.script_template_id",
             "biz_quote.sales_entity",
             "biz_quote.currency",
             "biz_quote.quote_date",
             "biz_quote.expiry_date",
             "biz_quote.customer_reference",
-            "biz_quote.sales_owner",
+            "biz_quote.owner_user_id",
             "biz_quote.project_site_name",
             "biz_quote.follow_up_date",
             "biz_quote.payment_terms",
@@ -2117,10 +2432,16 @@
             "item_lookup_display_field": "biz_product.name",
             "item_field_map": {
               "biz_quote_line.description": "biz_product.description",
+              "biz_quote_line.fulfilment_mode_snapshot": "biz_product.fulfilment_mode",
+              "biz_quote_line.available_stock_snapshot": "biz_product.available_qty",
               "biz_quote_line.uom": "biz_product.uom",
               "biz_quote_line.unit_price": "biz_product.default_sales_price",
               "biz_quote_line.default_buy_price_snapshot": "biz_product.default_buy_price",
-              "biz_quote_line.buy_currency_snapshot": "biz_product.default_purchase_currency"
+              "biz_quote_line.buy_currency_snapshot": "biz_product.default_purchase_currency",
+              "biz_quote_line.procurement_supplier_id": "biz_product.preferred_supplier_id",
+              "biz_quote_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
+              "biz_quote_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
+              "biz_quote_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks"
             },
             "parent_field_map": {
               "biz_quote_line.sales_entity_snapshot": "biz_quote.sales_entity",
@@ -2135,7 +2456,9 @@
               "biz_quote_line.quantity": 1,
               "biz_quote_line.unit_price": 0,
               "biz_quote_line.default_buy_price_snapshot": 0,
-              "biz_quote_line.buy_currency_snapshot": "USD"
+              "biz_quote_line.buy_currency_snapshot": "USD",
+              "biz_quote_line.minimum_order_quantity_snapshot": 1,
+              "biz_quote_line.lead_time_weeks_snapshot": 0
             },
             "custom_line_defaults": {
               "biz_quote_line.line_type": "custom"
@@ -2207,6 +2530,14 @@
                 "align": "right"
               },
               {
+                "field_id": "biz_quote_line.available_stock_snapshot",
+                "label": "Avail.",
+                "type": "number",
+                "readonly": true,
+                "width": 85,
+                "align": "right"
+              },
+              {
                 "field_id": "biz_quote_line.unit_price",
                 "label": "Unit Price",
                 "label_key": "common.unit_price",
@@ -2232,6 +2563,19 @@
                 "width": 155,
                 "align": "right",
                 "currency_field": "biz_quote_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_quote_line.buy_currency_snapshot",
+                "label": "Cost Cur",
+                "readonly": true,
+                "width": 88
+              },
+              {
+                "field_id": "biz_quote_line.buy_fx_to_quote_rate",
+                "label": "Cost FX",
+                "type": "number",
+                "width": 95,
+                "align": "right"
               }
             ]
           },
@@ -2241,7 +2585,6 @@
           "id": "script_source",
           "title": "Source Script",
           "fields": [
-            "biz_quote.script_template_id",
             "biz_quote.document_language",
             "biz_quote.pdf_template_name",
             "biz_quote.script_source_name",
@@ -2273,6 +2616,7 @@
           "fields": [
             "biz_quote.subtotal",
             "biz_quote.discount_total",
+            "biz_quote.tax_percent",
             "biz_quote.tax_total",
             "biz_quote.grand_total"
           ],
@@ -2411,18 +2755,23 @@
           "biz_quote.quote_number",
           "biz_quote.status",
           "biz_quote.customer_id",
+          "biz_quote.customer_contact_person_id",
+          "biz_quote.customer_contact_name",
+          "biz_quote.customer_contact_email",
+          "biz_quote.customer_contact_phone",
           "biz_quote.sales_entity",
           "biz_quote.currency",
           "biz_quote.quote_date",
           "biz_quote.expiry_date",
           "biz_quote.customer_reference",
-          "biz_quote.sales_owner",
+          "biz_quote.owner_user_id",
           "biz_quote.document_language",
           "biz_quote.project_site_name",
           "biz_quote.script_template_id",
           "biz_quote.payment_terms",
           "biz_quote.incoterm",
           "biz_quote.shipping_terms",
+          "biz_quote.tax_percent",
           "biz_quote.grand_total",
           "biz_quote.loss_reason",
           "biz_quote.opening_message",
@@ -3111,7 +3460,7 @@
         "scope": "module_and_global",
         "attachment_field": "biz_quote.generated_files",
         "title_field": "biz_quote.quote_number",
-        "owner_field": "biz_quote.sales_owner",
+        "owner_field": "biz_quote.owner_user_id",
         "category_field": "biz_quote.status",
         "date_field": "biz_quote.quote_date",
         "record_label_field": "biz_quote.quote_number",

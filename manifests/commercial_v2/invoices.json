@@ -60,6 +60,10 @@
             "menu_label_key": "invoices.navigation.biz_invoice_issued_page"
           },
           {
+            "label": "Overdue",
+            "to": "page:biz_invoice.overdue_page"
+          },
+          {
             "label": "Part Paid",
             "to": "page:biz_invoice.part_paid_page",
             "menu_label_key": "invoices.navigation.biz_invoice_part_paid_page"
@@ -188,7 +192,59 @@
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_invoice.currency": "biz_contact.currency_preference",
+                "biz_invoice.payment_terms": "biz_contact.default_payment_terms"
+              },
+              "clear_fields": [
+                "biz_invoice.customer_contact_person_id",
+                "biz_invoice.customer_contact_name",
+                "biz_invoice.customer_contact_email",
+                "biz_invoice.customer_contact_phone"
+              ]
+            }
+          },
           "label_key": "invoices.entities.biz_invoice.fields.customer_id.label"
+        },
+        {
+          "id": "biz_invoice.customer_contact_person_id",
+          "type": "lookup",
+          "label": "Customer Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.biz_invoice.customer_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_invoice.customer_contact_name": "biz_contact_person.display_name",
+                "biz_invoice.customer_contact_email": "biz_contact_person.email",
+                "biz_invoice.customer_contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_invoice.customer_contact_name",
+          "type": "string",
+          "label": "Customer Contact"
+        },
+        {
+          "id": "biz_invoice.customer_contact_email",
+          "type": "string",
+          "label": "Customer Contact Email"
+        },
+        {
+          "id": "biz_invoice.customer_contact_phone",
+          "type": "string",
+          "label": "Customer Contact Phone"
         },
         {
           "id": "biz_invoice.source_order_id",
@@ -327,6 +383,11 @@
           "type": "string",
           "label": "Customer Reference",
           "label_key": "invoices.entities.biz_invoice.fields.customer_reference.label"
+        },
+        {
+          "id": "biz_invoice.payment_terms",
+          "type": "string",
+          "label": "Payment Terms"
         },
         {
           "id": "biz_invoice.notes",
@@ -1147,6 +1208,18 @@
         "biz_invoice.customer_id": {
           "from": "biz_invoice.customer_id"
         },
+        "biz_invoice.customer_contact_person_id": {
+          "from": "biz_invoice.customer_contact_person_id"
+        },
+        "biz_invoice.customer_contact_name": {
+          "from": "biz_invoice.customer_contact_name"
+        },
+        "biz_invoice.customer_contact_email": {
+          "from": "biz_invoice.customer_contact_email"
+        },
+        "biz_invoice.customer_contact_phone": {
+          "from": "biz_invoice.customer_contact_phone"
+        },
         "biz_invoice.source_order_id": {
           "from": "biz_invoice.source_order_id"
         },
@@ -1167,6 +1240,9 @@
         },
         "biz_invoice.customer_reference": {
           "from": "biz_invoice.customer_reference"
+        },
+        "biz_invoice.payment_terms": {
+          "from": "biz_invoice.payment_terms"
         },
         "biz_invoice.notes": {
           "from": "biz_invoice.notes"
@@ -1256,6 +1332,14 @@
             "field": "biz_invoice.customer_id"
           },
           {
+            "op": "exists",
+            "field": "biz_invoice.invoice_date"
+          },
+          {
+            "op": "exists",
+            "field": "biz_invoice.due_date"
+          },
+          {
             "op": "gt",
             "field": "biz_invoice.invoice_total",
             "value": 0
@@ -1278,9 +1362,19 @@
         "value": "issued"
       },
       "enabled_when": {
-        "op": "gt",
-        "field": "biz_invoice.amount_paid",
-        "value": 0
+        "op": "and",
+        "conditions": [
+          {
+            "op": "gt",
+            "field": "biz_invoice.amount_paid",
+            "value": 0
+          },
+          {
+            "op": "gt",
+            "field": "biz_invoice.balance_due",
+            "value": 0
+          }
+        ]
       },
       "action_label_key": "invoices.actions.action_invoice_mark_part_paid.label"
     },
@@ -1308,9 +1402,19 @@
         ]
       },
       "enabled_when": {
-        "op": "gt",
-        "field": "biz_invoice.amount_paid",
-        "value": 0
+        "op": "and",
+        "conditions": [
+          {
+            "op": "gt",
+            "field": "biz_invoice.invoice_total",
+            "value": 0
+          },
+          {
+            "op": "lte",
+            "field": "biz_invoice.balance_due",
+            "value": 0
+          }
+        ]
       },
       "action_label_key": "invoices.actions.action_invoice_mark_paid.label"
     },
@@ -1509,6 +1613,9 @@
           "field_id": "biz_invoice.invoice_date"
         },
         {
+          "field_id": "biz_invoice.due_date"
+        },
+        {
           "field_id": "biz_invoice.customer_id"
         },
         {
@@ -1525,6 +1632,9 @@
         },
         {
           "field_id": "biz_invoice.amount_paid"
+        },
+        {
+          "field_id": "biz_invoice.balance_due"
         },
         {
           "field_id": "biz_invoice.status"
@@ -1593,6 +1703,35 @@
             "label_key": "invoices.views.list.filters.part_paid.label"
           },
           {
+            "id": "overdue",
+            "label": "Overdue",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                {
+                  "op": "in",
+                  "field": "biz_invoice.status",
+                  "value": [
+                    "issued",
+                    "part_paid"
+                  ]
+                },
+                {
+                  "op": "lte",
+                  "field": "biz_invoice.due_date",
+                  "value": {
+                    "ref": "$today"
+                  }
+                },
+                {
+                  "op": "gt",
+                  "field": "biz_invoice.balance_due",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          {
             "id": "paid",
             "label": "Paid",
             "domain": {
@@ -1629,11 +1768,16 @@
             "biz_invoice.invoice_number",
             "biz_invoice.status",
             "biz_invoice.customer_id",
+            "biz_invoice.customer_contact_person_id",
+            "biz_invoice.customer_contact_name",
+            "biz_invoice.customer_contact_email",
+            "biz_invoice.customer_contact_phone",
             "biz_invoice.invoice_type",
             "biz_invoice.source_order_id",
             "biz_invoice.sales_entity",
             "biz_invoice.currency",
             "biz_invoice.customer_reference",
+            "biz_invoice.payment_terms",
             "biz_invoice.invoice_date",
             "biz_invoice.due_date"
           ],
@@ -1914,10 +2058,15 @@
         "tracked_fields": [
           "biz_invoice.status",
           "biz_invoice.customer_id",
+          "biz_invoice.customer_contact_person_id",
+          "biz_invoice.customer_contact_name",
+          "biz_invoice.customer_contact_email",
+          "biz_invoice.customer_contact_phone",
           "biz_invoice.source_order_id",
           "biz_invoice.invoice_type",
           "biz_invoice.sales_entity",
           "biz_invoice.currency",
+          "biz_invoice.payment_terms",
           "biz_invoice.invoice_date",
           "biz_invoice.due_date",
           "biz_invoice.invoice_total",
@@ -2070,7 +2219,7 @@
       "content": [
         {
           "kind": "stat_cards",
-          "columns": 4,
+          "columns": 5,
           "cards": [
             {
               "id": "invoice_open_receivables_count",
@@ -2109,6 +2258,41 @@
               "format": "number",
               "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.label",
               "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.subtitle"
+            },
+            {
+              "id": "invoice_overdue_count",
+              "label": "Overdue",
+              "subtitle": "Past due and still outstanding",
+              "entity_id": "entity.biz_invoice",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "in",
+                    "field": "biz_invoice.status",
+                    "value": [
+                      "issued",
+                      "part_paid"
+                    ]
+                  },
+                  {
+                    "op": "lte",
+                    "field": "biz_invoice.due_date",
+                    "value": {
+                      "ref": "$today"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_invoice.balance_due",
+                    "value": 0
+                  }
+                ]
+              },
+              "icon": "lucide:CircleAlert",
+              "tone": "danger",
+              "format": "number"
             },
             {
               "id": "invoice_paid_count",
@@ -2252,6 +2436,39 @@
         }
       ],
       "title_key": "invoices.pages.issued_page.title"
+    },
+    {
+      "id": "biz_invoice.overdue_page",
+      "title": "Overdue Invoices",
+      "layout": "single",
+      "header": {
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.invoice_new"
+          }
+        ]
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_invoice",
+              "default_mode": "list",
+              "default_filter_id": "overdue",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:biz_invoice.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "biz_invoice.part_paid_page",

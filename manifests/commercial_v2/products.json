@@ -28,6 +28,10 @@
         "entity.biz_product": {
           "entity_home_page": "page:biz_product.list_page",
           "entity_form_page": "page:biz_product.form_page"
+        },
+        "entity.biz_product_supplier": {
+          "entity_home_page": "page:biz_product_supplier.list_page",
+          "entity_form_page": "page:biz_product_supplier.form_page"
         }
       }
     },
@@ -253,6 +257,87 @@
           "label_key": "products.entities.biz_product.fields.fulfilment_mode.label"
         },
         {
+          "id": "biz_product.on_hand_qty",
+          "type": "number",
+          "label": "On Hand Qty",
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_product.fulfilment_mode",
+            "value": [
+              "stocked",
+              "hybrid"
+            ]
+          }
+        },
+        {
+          "id": "biz_product.reserved_qty",
+          "type": "number",
+          "label": "Reserved Qty",
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_product.fulfilment_mode",
+            "value": [
+              "stocked",
+              "hybrid"
+            ]
+          }
+        },
+        {
+          "id": "biz_product.available_qty",
+          "type": "number",
+          "label": "Available Qty",
+          "readonly": true,
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_product.fulfilment_mode",
+            "value": [
+              "stocked",
+              "hybrid"
+            ]
+          },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "biz_product.on_hand_qty",
+                "value": {
+                  "ref": "$current.biz_product.reserved_qty"
+                }
+              },
+              "then": {
+                "op": "sub",
+                "args": [
+                  {
+                    "ref": "$current.biz_product.on_hand_qty"
+                  },
+                  {
+                    "ref": "$current.biz_product.reserved_qty"
+                  }
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
+          "id": "biz_product.reorder_point_qty",
+          "type": "number",
+          "label": "Reorder Point Qty",
+          "default": 0,
+          "visible_when": {
+            "op": "in",
+            "field": "biz_product.fulfilment_mode",
+            "value": [
+              "stocked",
+              "hybrid"
+            ]
+          }
+        },
+        {
           "id": "biz_product.lead_time_weeks",
           "type": "number",
           "label": "Lead Time (Weeks)",
@@ -265,6 +350,56 @@
           "label": "Minimum Order Quantity",
           "default": 1,
           "label_key": "products.entities.biz_product.fields.minimum_order_quantity.label"
+        },
+        {
+          "id": "biz_product.supplier_source_count",
+          "type": "number",
+          "label": "Supplier Sources",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_product_supplier",
+              "where": {
+                "op": "eq",
+                "field": "biz_product_supplier.product_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_product.active_supplier_source_count",
+          "type": "number",
+          "label": "Active Supplier Sources",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_product_supplier",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_product_supplier.product_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "biz_product_supplier.is_active",
+                    "value": true
+                  }
+                ]
+              }
+            }
+          }
         },
         {
           "id": "biz_product.preferred_supplier_id",
@@ -281,6 +416,19 @@
           "label_key": "products.entities.biz_product.fields.supplier_factory_reference.label"
         },
         {
+          "id": "biz_product.stock_notes",
+          "type": "text",
+          "label": "Stock Notes",
+          "visible_when": {
+            "op": "in",
+            "field": "biz_product.fulfilment_mode",
+            "value": [
+              "stocked",
+              "hybrid"
+            ]
+          }
+        },
+        {
           "id": "biz_product.internal_notes",
           "type": "text",
           "label": "Internal Notes",
@@ -295,6 +443,166 @@
         }
       ],
       "label_key": "products.entities.biz_product.label"
+    },
+    {
+      "id": "entity.biz_product_supplier",
+      "label": "Product Supplier",
+      "display_field": "biz_product_supplier.product_name_snapshot",
+      "fields": [
+        {
+          "id": "biz_product_supplier.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_product_supplier.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.biz_product",
+          "display_field": "biz_product.name",
+          "required": true,
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_product_supplier.product_name_snapshot": "biz_product.name",
+                "biz_product_supplier.product_code_snapshot": "biz_product.code",
+                "biz_product_supplier.purchase_description": "biz_product.description",
+                "biz_product_supplier.uom_snapshot": "biz_product.uom",
+                "biz_product_supplier.purchase_currency": "biz_product.default_purchase_currency",
+                "biz_product_supplier.unit_cost": "biz_product.default_buy_price",
+                "biz_product_supplier.minimum_order_quantity": "biz_product.minimum_order_quantity",
+                "biz_product_supplier.lead_time_weeks": "biz_product.lead_time_weeks"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_product_supplier.product_name_snapshot",
+          "type": "string",
+          "label": "Product Name",
+          "readonly": true
+        },
+        {
+          "id": "biz_product_supplier.product_code_snapshot",
+          "type": "string",
+          "label": "Product Code",
+          "readonly": true
+        },
+        {
+          "id": "biz_product_supplier.supplier_id",
+          "type": "lookup",
+          "label": "Supplier",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "required": true,
+          "domain": {
+            "op": "in",
+            "field": "biz_contact.contact_type",
+            "value": [
+              "supplier",
+              "factory_partner"
+            ]
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_product_supplier.supplier_name_snapshot": "biz_contact.name",
+                "biz_product_supplier.purchase_currency": "biz_contact.currency_preference",
+                "biz_product_supplier.supplier_incoterm": "biz_contact.supplier_incoterm_default"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_product_supplier.supplier_name_snapshot",
+          "type": "string",
+          "label": "Supplier Name",
+          "readonly": true
+        },
+        {
+          "id": "biz_product_supplier.supplier_sku",
+          "type": "string",
+          "label": "Supplier SKU / Factory Ref"
+        },
+        {
+          "id": "biz_product_supplier.purchase_description",
+          "type": "text",
+          "label": "Purchase Description"
+        },
+        {
+          "id": "biz_product_supplier.uom_snapshot",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            { "value": "EA", "label": "Each" },
+            { "value": "SET", "label": "Set" },
+            { "value": "KIT", "label": "Kit" },
+            { "value": "LOT", "label": "Lot" },
+            { "value": "PALLET", "label": "Pallet" },
+            { "value": "CONTAINER", "label": "Container" },
+            { "value": "M", "label": "Meter" }
+          ]
+        },
+        {
+          "id": "biz_product_supplier.purchase_currency",
+          "type": "enum",
+          "label": "Purchase Currency",
+          "default": "USD",
+          "options": [
+            { "value": "EUR", "label": "EUR" },
+            { "value": "USD", "label": "USD" },
+            { "value": "GBP", "label": "GBP" },
+            { "value": "AED", "label": "AED" }
+          ]
+        },
+        {
+          "id": "biz_product_supplier.unit_cost",
+          "type": "number",
+          "label": "Unit Cost",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_product_supplier.purchase_currency",
+            "precision": 2
+          }
+        },
+        {
+          "id": "biz_product_supplier.minimum_order_quantity",
+          "type": "number",
+          "label": "MOQ",
+          "default": 1
+        },
+        {
+          "id": "biz_product_supplier.lead_time_weeks",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "default": 0
+        },
+        {
+          "id": "biz_product_supplier.supplier_incoterm",
+          "type": "string",
+          "label": "Supplier Incoterm"
+        },
+        {
+          "id": "biz_product_supplier.is_primary",
+          "type": "bool",
+          "label": "Primary Supplier",
+          "default": false
+        },
+        {
+          "id": "biz_product_supplier.is_active",
+          "type": "bool",
+          "label": "Active",
+          "default": true
+        },
+        {
+          "id": "biz_product_supplier.notes",
+          "type": "text",
+          "label": "Notes"
+        }
+      ]
     }
   ],
   "actions": [
@@ -361,6 +669,12 @@
           "field_id": "biz_product.default_purchase_currency"
         },
         {
+          "field_id": "biz_product.fulfilment_mode"
+        },
+        {
+          "field_id": "biz_product.available_qty"
+        },
+        {
           "field_id": "biz_product.preferred_supplier_id"
         },
         {
@@ -424,6 +738,69 @@
               "value": "USD"
             },
             "label_key": "products.views.list.filters.usd_sales.label"
+          },
+          {
+            "id": "stocked",
+            "label": "Stocked Items",
+            "domain": {
+              "op": "in",
+              "field": "biz_product.fulfilment_mode",
+              "value": [
+                "stocked",
+                "hybrid"
+              ]
+            }
+          },
+          {
+            "id": "unsourced",
+            "label": "Unsourced Buy Items",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                {
+                  "op": "in",
+                  "field": "biz_product.fulfilment_mode",
+                  "value": [
+                    "made_to_order",
+                    "hybrid"
+                  ]
+                },
+                {
+                  "op": "eq",
+                  "field": "biz_product.active_supplier_source_count",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          {
+            "id": "low_stock",
+            "label": "Low Stock",
+            "domain": {
+              "op": "and",
+              "conditions": [
+                {
+                  "op": "in",
+                  "field": "biz_product.fulfilment_mode",
+                  "value": [
+                    "stocked",
+                    "hybrid"
+                  ]
+                },
+                {
+                  "op": "gt",
+                  "field": "biz_product.reorder_point_qty",
+                  "value": 0
+                },
+                {
+                  "op": "lte",
+                  "field": "biz_product.available_qty",
+                  "value": {
+                    "ref": "$current.biz_product.reorder_point_qty"
+                  }
+                }
+              ]
+            }
           }
         ]
       }
@@ -463,18 +840,33 @@
         },
         {
           "id": "purchasing",
-          "title": "Purchasing Notes",
+          "title": "Purchasing",
           "layout": "columns",
           "columns": 2,
           "fields": [
             "biz_product.fulfilment_mode",
+            "biz_product.active_supplier_source_count",
             "biz_product.lead_time_weeks",
             "biz_product.minimum_order_quantity",
             "biz_product.preferred_supplier_id",
+            "biz_product.supplier_source_count",
             "biz_product.supplier_factory_reference",
             "biz_product.internal_notes"
           ],
           "section_title_key": "products.views.form.sections.purchasing.title"
+        },
+        {
+          "id": "inventory",
+          "title": "Inventory",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_product.on_hand_qty",
+            "biz_product.reserved_qty",
+            "biz_product.available_qty",
+            "biz_product.reorder_point_qty",
+            "biz_product.stock_notes"
+          ]
         }
       ],
       "header": {
@@ -513,6 +905,63 @@
               "sections": [
                 "purchasing"
               ]
+            },
+            {
+              "id": "inventory",
+              "label": "Inventory",
+              "sections": [
+                "inventory"
+              ]
+            },
+            {
+              "id": "suppliers",
+              "label": "Suppliers",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.biz_product_supplier",
+                  "target": "view:biz_product_supplier.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "biz_product_supplier.product_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "biz_product_supplier.product_id": {
+                      "ref": "$record.id"
+                    },
+                    "biz_product_supplier.product_name_snapshot": {
+                      "ref": "$record.biz_product.name"
+                    },
+                    "biz_product_supplier.product_code_snapshot": {
+                      "ref": "$record.biz_product.code"
+                    },
+                    "biz_product_supplier.purchase_description": {
+                      "ref": "$record.biz_product.description"
+                    },
+                    "biz_product_supplier.uom_snapshot": {
+                      "ref": "$record.biz_product.uom"
+                    },
+                    "biz_product_supplier.purchase_currency": {
+                      "ref": "$record.biz_product.default_purchase_currency"
+                    },
+                    "biz_product_supplier.unit_cost": {
+                      "ref": "$record.biz_product.default_buy_price"
+                    },
+                    "biz_product_supplier.minimum_order_quantity": {
+                      "ref": "$record.biz_product.minimum_order_quantity"
+                    },
+                    "biz_product_supplier.lead_time_weeks": {
+                      "ref": "$record.biz_product.lead_time_weeks"
+                    },
+                    "biz_product_supplier.is_active": true
+                  }
+                }
+              ]
             }
           ]
         }
@@ -533,10 +982,15 @@
           "biz_product.default_purchase_currency",
           "biz_product.default_buy_price",
           "biz_product.fulfilment_mode",
+          "biz_product.on_hand_qty",
+          "biz_product.reserved_qty",
+          "biz_product.available_qty",
+          "biz_product.reorder_point_qty",
           "biz_product.lead_time_weeks",
           "biz_product.minimum_order_quantity",
           "biz_product.preferred_supplier_id",
           "biz_product.supplier_factory_reference",
+          "biz_product.stock_notes",
           "biz_product.internal_notes",
           "biz_product.is_active"
         ]
@@ -567,6 +1021,133 @@
         "group_by": "biz_product.category",
         "measure": "count"
       }
+    },
+    {
+      "id": "biz_product_supplier.list",
+      "kind": "list",
+      "entity": "entity.biz_product_supplier",
+      "columns": [
+        {
+          "field_id": "biz_product_supplier.product_code_snapshot"
+        },
+        {
+          "field_id": "biz_product_supplier.product_name_snapshot"
+        },
+        {
+          "field_id": "biz_product_supplier.supplier_id"
+        },
+        {
+          "field_id": "biz_product_supplier.supplier_sku"
+        },
+        {
+          "field_id": "biz_product_supplier.purchase_currency"
+        },
+        {
+          "field_id": "biz_product_supplier.unit_cost"
+        },
+        {
+          "field_id": "biz_product_supplier.minimum_order_quantity"
+        },
+        {
+          "field_id": "biz_product_supplier.lead_time_weeks"
+        },
+        {
+          "field_id": "biz_product_supplier.is_primary"
+        },
+        {
+          "field_id": "biz_product_supplier.is_active"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:biz_product_supplier.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search supplier sources...",
+          "fields": [
+            "biz_product_supplier.product_code_snapshot",
+            "biz_product_supplier.product_name_snapshot",
+            "biz_product_supplier.supplier_name_snapshot",
+            "biz_product_supplier.supplier_sku"
+          ]
+        },
+        "filters": [
+          {
+            "id": "active",
+            "label": "Active",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product_supplier.is_active",
+              "value": true
+            }
+          },
+          {
+            "id": "primary",
+            "label": "Primary",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product_supplier.is_primary",
+              "value": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "biz_product_supplier.form",
+      "kind": "form",
+      "entity": "entity.biz_product_supplier",
+      "sections": [
+        {
+          "id": "summary",
+          "title": "Supplier Source",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_product_supplier.product_id",
+            "biz_product_supplier.supplier_id",
+            "biz_product_supplier.product_code_snapshot",
+            "biz_product_supplier.product_name_snapshot",
+            "biz_product_supplier.supplier_sku",
+            "biz_product_supplier.uom_snapshot",
+            "biz_product_supplier.purchase_currency",
+            "biz_product_supplier.unit_cost",
+            "biz_product_supplier.minimum_order_quantity",
+            "biz_product_supplier.lead_time_weeks",
+            "biz_product_supplier.supplier_incoterm",
+            "biz_product_supplier.is_primary",
+            "biz_product_supplier.is_active"
+          ]
+        },
+        {
+          "id": "notes",
+          "title": "Description & Notes",
+          "fields": [
+            "biz_product_supplier.purchase_description",
+            "biz_product_supplier.notes"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": true,
+        "tracked_fields": [
+          "biz_product_supplier.product_id",
+          "biz_product_supplier.supplier_id",
+          "biz_product_supplier.supplier_sku",
+          "biz_product_supplier.purchase_description",
+          "biz_product_supplier.uom_snapshot",
+          "biz_product_supplier.purchase_currency",
+          "biz_product_supplier.unit_cost",
+          "biz_product_supplier.minimum_order_quantity",
+          "biz_product_supplier.lead_time_weeks",
+          "biz_product_supplier.supplier_incoterm",
+          "biz_product_supplier.is_primary",
+          "biz_product_supplier.is_active",
+          "biz_product_supplier.notes"
+        ]
+      }
     }
   ],
   "pages": [
@@ -578,6 +1159,123 @@
         "variant": "none"
       },
       "content": [
+        {
+          "kind": "stat_cards",
+          "columns": 4,
+          "cards": [
+            {
+              "id": "active_products",
+              "label": "Active Products",
+              "subtitle": "Sellable catalogue items",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "biz_product.is_active",
+                "value": true
+              },
+              "icon": "lucide:Package2",
+              "tone": "primary",
+              "format": "number"
+            },
+          {
+            "id": "stocked_products",
+            "label": "Stocked SKUs",
+            "subtitle": "Stocked and hybrid items",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "biz_product.fulfilment_mode",
+                "value": [
+                  "stocked",
+                  "hybrid"
+                ]
+              },
+              "icon": "lucide:Boxes",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "unsourced_products",
+              "label": "Unsourced Products",
+              "subtitle": "Buy-side items without active supplier rows",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "in",
+                    "field": "biz_product.fulfilment_mode",
+                    "value": [
+                      "made_to_order",
+                      "hybrid"
+                    ]
+                  },
+                  {
+                    "op": "eq",
+                    "field": "biz_product.active_supplier_source_count",
+                    "value": 0
+                  }
+                ]
+              },
+              "icon": "lucide:Link2Off",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "low_stock_products",
+              "label": "Low Stock",
+              "subtitle": "At or below reorder point",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "in",
+                    "field": "biz_product.fulfilment_mode",
+                    "value": [
+                      "stocked",
+                      "hybrid"
+                    ]
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_product.reorder_point_qty",
+                    "value": 0
+                  },
+                  {
+                    "op": "lte",
+                    "field": "biz_product.available_qty",
+                    "value": {
+                      "ref": "$current.biz_product.reorder_point_qty"
+                    }
+                  }
+                ]
+              },
+              "icon": "lucide:TriangleAlert",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "inactive_products",
+              "label": "Inactive",
+              "subtitle": "Removed from new quoting",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "biz_product.is_active",
+                "value": false
+              },
+              "icon": "lucide:Archive",
+              "tone": "accent",
+              "format": "number"
+            }
+          ]
+        },
         {
           "kind": "container",
           "variant": "card",
@@ -668,6 +1366,89 @@
         }
       ],
       "title_key": "products.pages.form_page.title"
+    },
+    {
+      "id": "biz_product_supplier.list_page",
+      "title": "Product Suppliers",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.biz_product_supplier",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:biz_product_supplier.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biz_product_supplier.form_page",
+      "title": "Product Supplier",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.biz_product_supplier",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "grid",
+              "columns": 12,
+              "gap": "md",
+              "items": [
+                {
+                  "span": 8,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "view",
+                          "target": "view:biz_product_supplier.form"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "span": 4,
+                  "content": [
+                    {
+                      "kind": "container",
+                      "variant": "card",
+                      "content": [
+                        {
+                          "kind": "chatter",
+                          "entity_id": "entity.biz_product_supplier",
+                          "record_ref": "$record.id"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "triggers": [
@@ -682,6 +1463,18 @@
       "label": "Product updated",
       "event": "record.updated",
       "entity_id": "entity.biz_product"
+    },
+    {
+      "id": "biz_products.record.biz_product_supplier.created",
+      "label": "Product supplier created",
+      "event": "record.created",
+      "entity_id": "entity.biz_product_supplier"
+    },
+    {
+      "id": "biz_products.record.biz_product_supplier.updated",
+      "label": "Product supplier updated",
+      "event": "record.updated",
+      "entity_id": "entity.biz_product_supplier"
     },
     {
       "id": "biz_products.action.product_new.clicked",

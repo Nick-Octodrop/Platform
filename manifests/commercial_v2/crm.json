@@ -115,6 +115,13 @@
           "label": "Company",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_site.country": "biz_contact.shipping_country"
+              }
+            }
+          },
           "required": true,
           "label_key": "crm.entities.crm_site.fields.company_id.label"
         },
@@ -176,7 +183,11 @@
         "tracked_fields": [
           "crm_site.name",
           "crm_site.company_id",
+          "crm_site.address_line_1",
+          "crm_site.address_line_2",
           "crm_site.city",
+          "crm_site.region",
+          "crm_site.postcode",
           "crm_site.country",
           "crm_site.site_notes",
           "crm_site.is_active"
@@ -290,7 +301,46 @@
           "label": "Company",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_lead.contact_email": "biz_contact.email",
+                "crm_lead.contact_phone": "biz_contact.phone",
+                "crm_lead.currency": "biz_contact.currency_preference",
+                "crm_lead.quote_tax_percent": "biz_contact.default_sales_tax_percent"
+              },
+              "clear_fields": [
+                "crm_lead.contact_person_id",
+                "crm_lead.contact_name",
+                "crm_lead.contact_email",
+                "crm_lead.contact_phone"
+              ]
+            }
+          },
           "label_key": "crm.entities.crm_lead.fields.company_id.label"
+        },
+        {
+          "id": "crm_lead.contact_person_id",
+          "type": "lookup",
+          "label": "Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.crm_lead.company_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_lead.contact_name": "biz_contact_person.display_name",
+                "crm_lead.contact_email": "biz_contact_person.email",
+                "crm_lead.contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
         },
         {
           "id": "crm_lead.contact_name",
@@ -348,6 +398,12 @@
             }
           ],
           "label_key": "crm.entities.crm_lead.fields.currency.label"
+        },
+        {
+          "id": "crm_lead.quote_tax_percent",
+          "type": "number",
+          "label": "Quote Tax %",
+          "default": 0
         },
         {
           "id": "crm_lead.estimated_value",
@@ -410,8 +466,12 @@
           "crm_lead.status",
           "crm_lead.source",
           "crm_lead.company_id",
+          "crm_lead.contact_person_id",
           "crm_lead.contact_name",
+          "crm_lead.contact_email",
+          "crm_lead.contact_phone",
           "crm_lead.owner_user_id",
+          "crm_lead.currency",
           "crm_lead.estimated_value",
           "crm_lead.next_action",
           "crm_lead.next_activity_date",
@@ -447,8 +507,48 @@
           "label": "Company",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_opportunity.primary_contact_email": "biz_contact.email",
+                "crm_opportunity.primary_contact_phone": "biz_contact.phone",
+                "crm_opportunity.currency": "biz_contact.currency_preference",
+                "crm_opportunity.quote_tax_percent": "biz_contact.default_sales_tax_percent"
+              },
+              "clear_fields": [
+                "crm_opportunity.primary_contact_person_id",
+                "crm_opportunity.primary_contact_name",
+                "crm_opportunity.primary_contact_email",
+                "crm_opportunity.primary_contact_phone",
+                "crm_opportunity.site_id"
+              ]
+            }
+          },
           "required": true,
           "label_key": "crm.entities.crm_opportunity.fields.company_id.label"
+        },
+        {
+          "id": "crm_opportunity.primary_contact_person_id",
+          "type": "lookup",
+          "label": "Primary Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.crm_opportunity.company_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_opportunity.primary_contact_name": "biz_contact_person.display_name",
+                "crm_opportunity.primary_contact_email": "biz_contact_person.email",
+                "crm_opportunity.primary_contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
         },
         {
           "id": "crm_opportunity.primary_contact_name",
@@ -463,11 +563,30 @@
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_email.label"
         },
         {
+          "id": "crm_opportunity.primary_contact_phone",
+          "type": "string",
+          "label": "Contact Phone"
+        },
+        {
           "id": "crm_opportunity.site_id",
           "type": "lookup",
           "label": "Site",
           "entity": "entity.crm_site",
           "display_field": "crm_site.name",
+          "domain": {
+            "op": "eq",
+            "field": "crm_site.company_id",
+            "value": {
+              "ref": "$record.crm_opportunity.company_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_opportunity.company_id": "crm_site.company_id"
+              }
+            }
+          },
           "label_key": "crm.entities.crm_opportunity.fields.site_id.label"
         },
         {
@@ -616,6 +735,12 @@
             }
           ],
           "label_key": "crm.entities.crm_opportunity.fields.currency.label"
+        },
+        {
+          "id": "crm_opportunity.quote_tax_percent",
+          "type": "number",
+          "label": "Quote Tax %",
+          "default": 0
         },
         {
           "id": "crm_opportunity.value",
@@ -830,11 +955,17 @@
         "tracked_fields": [
           "crm_opportunity.title",
           "crm_opportunity.company_id",
+          "crm_opportunity.primary_contact_person_id",
+          "crm_opportunity.primary_contact_name",
+          "crm_opportunity.primary_contact_email",
+          "crm_opportunity.primary_contact_phone",
           "crm_opportunity.site_id",
           "crm_opportunity.owner_user_id",
           "crm_opportunity.pipeline",
           "crm_opportunity.stage",
           "crm_opportunity.status",
+          "crm_opportunity.source",
+          "crm_opportunity.currency",
           "crm_opportunity.value",
           "crm_opportunity.probability",
           "crm_opportunity.expected_close_date",
@@ -966,6 +1097,14 @@
           "label": "Lead",
           "entity": "entity.crm_lead",
           "display_field": "crm_lead.title",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_activity.company_id": "crm_lead.company_id",
+                "crm_activity.owner_user_id": "crm_lead.owner_user_id"
+              }
+            }
+          },
           "label_key": "crm.entities.crm_activity.fields.lead_id.label"
         },
         {
@@ -974,6 +1113,15 @@
           "label": "Opportunity",
           "entity": "entity.crm_opportunity",
           "display_field": "crm_opportunity.title",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_activity.company_id": "crm_opportunity.company_id",
+                "crm_activity.site_id": "crm_opportunity.site_id",
+                "crm_activity.owner_user_id": "crm_opportunity.owner_user_id"
+              }
+            }
+          },
           "label_key": "crm.entities.crm_activity.fields.opportunity_id.label"
         },
         {
@@ -982,6 +1130,13 @@
           "label": "Site",
           "entity": "entity.crm_site",
           "display_field": "crm_site.name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "crm_activity.company_id": "crm_site.company_id"
+              }
+            }
+          },
           "label_key": "crm.entities.crm_activity.fields.site_id.label"
         },
         {
@@ -1414,17 +1569,26 @@
         "crm_opportunity.company_id": {
           "from": "crm_lead.company_id"
         },
+        "crm_opportunity.primary_contact_person_id": {
+          "from": "crm_lead.contact_person_id"
+        },
         "crm_opportunity.primary_contact_name": {
           "from": "crm_lead.contact_name"
         },
         "crm_opportunity.primary_contact_email": {
           "from": "crm_lead.contact_email"
         },
+        "crm_opportunity.primary_contact_phone": {
+          "from": "crm_lead.contact_phone"
+        },
         "crm_opportunity.owner_user_id": {
           "from": "crm_lead.owner_user_id"
         },
         "crm_opportunity.currency": {
           "from": "crm_lead.currency"
+        },
+        "crm_opportunity.quote_tax_percent": {
+          "from": "crm_lead.quote_tax_percent"
         },
         "crm_opportunity.value": {
           "from": "crm_lead.estimated_value"
@@ -1484,14 +1648,29 @@
         "biz_quote.customer_id": {
           "from": "crm_opportunity.company_id"
         },
+        "biz_quote.customer_contact_person_id": {
+          "from": "crm_opportunity.primary_contact_person_id"
+        },
         "biz_quote.customer_contact_name": {
           "from": "crm_opportunity.primary_contact_name"
+        },
+        "biz_quote.customer_contact_email": {
+          "from": "crm_opportunity.primary_contact_email"
+        },
+        "biz_quote.customer_contact_phone": {
+          "from": "crm_opportunity.primary_contact_phone"
         },
         "biz_quote.customer_reference": {
           "from": "crm_opportunity.title"
         },
+        "biz_quote.owner_user_id": {
+          "from": "crm_opportunity.owner_user_id"
+        },
         "biz_quote.currency": {
           "from": "crm_opportunity.currency"
+        },
+        "biz_quote.tax_percent": {
+          "from": "crm_opportunity.quote_tax_percent"
         },
         "biz_quote.follow_up_date": {
           "from": "crm_opportunity.next_activity_date"
@@ -1531,6 +1710,18 @@
         },
         "biz_order.customer_id": {
           "from": "crm_opportunity.company_id"
+        },
+        "biz_order.customer_contact_person_id": {
+          "from": "crm_opportunity.primary_contact_person_id"
+        },
+        "biz_order.customer_contact_name": {
+          "from": "crm_opportunity.primary_contact_name"
+        },
+        "biz_order.customer_contact_email": {
+          "from": "crm_opportunity.primary_contact_email"
+        },
+        "biz_order.customer_contact_phone": {
+          "from": "crm_opportunity.primary_contact_phone"
         },
         "biz_order.source_quote_id": {
           "from": "crm_opportunity.linked_quote_id"
@@ -2007,6 +2198,7 @@
             "crm_lead.status",
             "crm_lead.source",
             "crm_lead.company_id",
+            "crm_lead.contact_person_id",
             "crm_lead.contact_name",
             "crm_lead.contact_email",
             "crm_lead.contact_phone",
@@ -2274,8 +2466,10 @@
             "crm_opportunity.stage",
             "crm_opportunity.status",
             "crm_opportunity.company_id",
+            "crm_opportunity.primary_contact_person_id",
             "crm_opportunity.primary_contact_name",
             "crm_opportunity.primary_contact_email",
+            "crm_opportunity.primary_contact_phone",
             "crm_opportunity.site_id",
             "crm_opportunity.owner_user_id",
             "crm_opportunity.pipeline",

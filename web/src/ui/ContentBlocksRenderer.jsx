@@ -790,25 +790,14 @@ function StatCardsBlock({
     };
   }, [block, moduleId, recordContext?.record, recordContext?.recordId, externalRefreshTick]);
 
-  const columns = Math.max(1, Math.min(Number(block?.columns) || 4, 6));
-  const gridClass =
-    columns >= 6
-      ? "grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6"
-      : columns === 5
-        ? "grid-cols-2 xl:grid-cols-5"
-        : columns >= 4
-      ? "grid-cols-2 xl:grid-cols-4"
-      : columns === 3
-        ? "grid-cols-2 xl:grid-cols-3"
-        : columns === 2
-          ? "grid-cols-2"
-          : "grid-cols-1";
+  const desktopColumns = Math.max(1, cards.length || Number(block?.columns) || 4);
+  const gridStyle = isMobile ? undefined : { gridTemplateColumns: `repeat(${desktopColumns}, minmax(0, 1fr))` };
 
   return (
     <div className="space-y-3">
       {block?.title ? <div className="text-sm font-semibold">{block.title}</div> : null}
       {error ? <div className="alert alert-error">{error}</div> : null}
-      <div className={`grid ${gridClass} ${isMobile ? "gap-0" : "gap-4"}`}>
+      <div className={`grid grid-cols-1 ${isMobile ? "gap-0" : "gap-4"}`} style={gridStyle}>
         {cards.map((card) => {
           const clickable = typeof card.target === "string" && card.target && typeof onNavigate === "function";
           const toneClass =
@@ -846,12 +835,12 @@ function StatCardsBlock({
               </div>
             </div>
           );
-          if (!clickable) return <div key={card.id}>{content}</div>;
+          if (!clickable) return <div key={card.id} className="min-w-0">{content}</div>;
           return (
             <button
               key={card.id}
               type="button"
-              className="block h-full w-full text-left"
+              className="block h-full w-full min-w-0 text-left"
               onClick={() => onNavigate(card.target)}
             >
               {content}

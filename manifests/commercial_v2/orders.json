@@ -163,7 +163,59 @@
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_order.currency": "biz_contact.currency_preference",
+                "biz_order.payment_terms": "biz_contact.default_payment_terms"
+              },
+              "clear_fields": [
+                "biz_order.customer_contact_person_id",
+                "biz_order.customer_contact_name",
+                "biz_order.customer_contact_email",
+                "biz_order.customer_contact_phone"
+              ]
+            }
+          },
           "label_key": "orders.entities.biz_order.fields.customer_id.label"
+        },
+        {
+          "id": "biz_order.customer_contact_person_id",
+          "type": "lookup",
+          "label": "Customer Contact Person",
+          "entity": "entity.biz_contact_person",
+          "display_field": "biz_contact_person.display_name",
+          "domain": {
+            "op": "eq",
+            "field": "biz_contact_person.company_id",
+            "value": {
+              "ref": "$record.biz_order.customer_id"
+            }
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_order.customer_contact_name": "biz_contact_person.display_name",
+                "biz_order.customer_contact_email": "biz_contact_person.email",
+                "biz_order.customer_contact_phone": "biz_contact_person.phone"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.customer_contact_name",
+          "type": "string",
+          "label": "Customer Contact"
+        },
+        {
+          "id": "biz_order.customer_contact_email",
+          "type": "string",
+          "label": "Customer Contact Email"
+        },
+        {
+          "id": "biz_order.customer_contact_phone",
+          "type": "string",
+          "label": "Customer Contact Phone"
         },
         {
           "id": "biz_order.source_quote_id",
@@ -250,6 +302,11 @@
           "type": "string",
           "label": "Customer Reference",
           "label_key": "orders.entities.biz_order.fields.customer_reference.label"
+        },
+        {
+          "id": "biz_order.payment_terms",
+          "type": "string",
+          "label": "Payment Terms"
         },
         {
           "id": "biz_order.site_name",
@@ -425,6 +482,222 @@
           "label_key": "orders.entities.biz_order.fields.generated_files.label"
         },
         {
+          "id": "biz_order.purchase_order_count",
+          "type": "number",
+          "label": "Purchase Orders",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_purchase_order",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order.source_customer_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.open_purchase_order_count",
+          "type": "number",
+          "label": "Open Purchase Orders",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_purchase_order",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_purchase_order.source_customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "in",
+                      "field": "biz_purchase_order.status",
+                      "value": [
+                        "closed",
+                        "cancelled"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.procurement_line_count",
+          "type": "number",
+          "label": "Lines Requiring Procurement",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_order_line",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_order_line.procurement_quantity_required",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.procured_purchase_line_count",
+          "type": "number",
+          "label": "Procured Lines",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_order_line",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_order_line.procurement_quantity_required",
+                    "value": 0
+                  },
+                  {
+                    "op": "lte",
+                    "field": "biz_order_line.procurement_shortfall_quantity",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.unprocured_purchase_line_count",
+          "type": "number",
+          "label": "Lines Still To Procure",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_order_line",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_order_line.procurement_shortfall_quantity",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.receipted_purchase_line_count",
+          "type": "number",
+          "label": "Received Purchase Lines",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_order_line",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_order_line.procurement_quantity_required",
+                    "value": 0
+                  },
+                  {
+                    "op": "lte",
+                    "field": "biz_order_line.receipt_shortfall_quantity",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.receipt_pending_line_count",
+          "type": "number",
+          "label": "Lines Awaiting Receipt",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_order_line",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_order_line.receipt_shortfall_quantity",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
           "id": "biz_order.order_total",
           "type": "number",
           "label": "Order Total",
@@ -523,6 +796,181 @@
             }
           },
           "label_key": "orders.entities.biz_order.fields.balance_to_invoice.label"
+        },
+        {
+          "id": "biz_order.invoice_count",
+          "type": "number",
+          "label": "Invoices",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice",
+              "where": {
+                "op": "eq",
+                "field": "biz_invoice.source_order_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.open_invoice_count",
+          "type": "number",
+          "label": "Open Invoices",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.source_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "in",
+                    "field": "biz_invoice.status",
+                    "value": [
+                      "draft",
+                      "issued",
+                      "part_paid"
+                    ]
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "eq",
+                      "field": "biz_invoice.invoice_type",
+                      "value": "credit_note"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.overdue_invoice_count",
+          "type": "number",
+          "label": "Overdue Invoices",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.source_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "in",
+                    "field": "biz_invoice.status",
+                    "value": [
+                      "issued",
+                      "part_paid"
+                    ]
+                  },
+                  {
+                    "op": "lte",
+                    "field": "biz_invoice.due_date",
+                    "value": {
+                      "ref": "$today"
+                    }
+                  },
+                  {
+                    "op": "gt",
+                    "field": "biz_invoice.balance_due",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.paid_invoice_count",
+          "type": "number",
+          "label": "Paid Invoices",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.source_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.status",
+                    "value": "paid"
+                  },
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "eq",
+                      "field": "biz_invoice.invoice_type",
+                      "value": "credit_note"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order.credit_note_count",
+          "type": "number",
+          "label": "Credit Notes",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.biz_invoice",
+              "where": {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.source_order_id",
+                    "value": {
+                      "ref": "$parent.id"
+                    }
+                  },
+                  {
+                    "op": "eq",
+                    "field": "biz_invoice.invoice_type",
+                    "value": "credit_note"
+                  }
+                ]
+              }
+            }
+          }
         },
         {
           "id": "biz_order.estimated_buy_total",
@@ -680,6 +1128,46 @@
           "label_key": "orders.entities.biz_order_line.fields.sales_entity_snapshot.label"
         },
         {
+          "id": "biz_order_line.fulfilment_mode_snapshot",
+          "type": "enum",
+          "label": "Fulfilment Mode Snapshot",
+          "default": "made_to_order",
+          "options": [
+            {
+              "value": "made_to_order",
+              "label": "Made To Order"
+            },
+            {
+              "value": "stocked",
+              "label": "Stocked"
+            },
+            {
+              "value": "hybrid",
+              "label": "Hybrid"
+            }
+          ]
+        },
+        {
+          "id": "biz_order_line.procurement_route",
+          "type": "enum",
+          "label": "Procurement Route",
+          "default": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto"
+            },
+            {
+              "value": "purchase",
+              "label": "Purchase"
+            },
+            {
+              "value": "stock",
+              "label": "Use Stock"
+            }
+          ]
+        },
+        {
           "id": "biz_order_line.currency_snapshot",
           "type": "enum",
           "label": "Currency Snapshot",
@@ -812,6 +1300,125 @@
           "label_key": "orders.entities.biz_order_line.fields.unit_cost_snapshot.label"
         },
         {
+          "id": "biz_order_line.available_stock_snapshot",
+          "type": "number",
+          "label": "Available Stock Snapshot",
+          "readonly": true,
+          "default": 0
+        },
+        {
+          "id": "biz_order_line.buy_currency_snapshot",
+          "type": "enum",
+          "label": "Buy Currency Snapshot",
+          "default": "USD",
+          "options": [
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
+          ]
+        },
+        {
+          "id": "biz_order_line.procurement_supplier_id",
+          "type": "lookup",
+          "label": "Procurement Supplier",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "domain": {
+            "op": "in",
+            "field": "biz_contact.contact_type",
+            "value": [
+              "supplier",
+              "factory_partner"
+            ]
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_order_line.buy_currency_snapshot": "biz_contact.currency_preference"
+              },
+              "clear_fields": [
+                "biz_order_line.product_supplier_id"
+              ]
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.product_supplier_id",
+          "type": "lookup",
+          "label": "Supplier Source",
+          "entity": "entity.biz_product_supplier",
+          "display_field": "biz_product_supplier.product_name_snapshot",
+          "domain": {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "biz_product_supplier.product_id",
+                "value": {
+                  "ref": "$record.biz_order_line.product_id"
+                }
+              },
+              {
+                "op": "eq",
+                "field": "biz_product_supplier.supplier_id",
+                "value": {
+                  "ref": "$record.biz_order_line.procurement_supplier_id"
+                }
+              },
+              {
+                "op": "eq",
+                "field": "biz_product_supplier.is_active",
+                "value": true
+              }
+            ]
+          },
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_order_line.procurement_supplier_id": "biz_product_supplier.supplier_id",
+                "biz_order_line.buy_currency_snapshot": "biz_product_supplier.purchase_currency",
+                "biz_order_line.unit_cost_snapshot": "biz_product_supplier.unit_cost",
+                "biz_order_line.supplier_sku_snapshot": "biz_product_supplier.supplier_sku",
+                "biz_order_line.minimum_order_quantity_snapshot": "biz_product_supplier.minimum_order_quantity",
+                "biz_order_line.lead_time_weeks_snapshot": "biz_product_supplier.lead_time_weeks"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.supplier_sku_snapshot",
+          "type": "string",
+          "label": "Supplier SKU Snapshot",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.minimum_order_quantity_snapshot",
+          "type": "number",
+          "label": "MOQ",
+          "readonly": true,
+          "default": 1
+        },
+        {
+          "id": "biz_order_line.lead_time_weeks_snapshot",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "readonly": true,
+          "default": 0
+        },
+        {
           "id": "biz_order_line.buy_total",
           "type": "number",
           "label": "Buy Total",
@@ -839,11 +1446,232 @@
           "label_key": "orders.entities.biz_order_line.fields.buy_total.label"
         },
         {
+          "id": "biz_order_line.procurement_quantity_required",
+          "type": "number",
+          "label": "Qty To Procure",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "eq",
+                "field": "biz_order_line.procurement_route",
+                "value": "purchase"
+              },
+              "then": {
+                "ref": "$current.biz_order_line.quantity"
+              },
+              "else": {
+                "op": "if",
+                "condition": {
+                  "op": "eq",
+                  "field": "biz_order_line.procurement_route",
+                  "value": "stock"
+                },
+                "then": 0,
+                "else": {
+                  "op": "if",
+                  "condition": {
+                    "op": "eq",
+                    "field": "biz_order_line.fulfilment_mode_snapshot",
+                    "value": "made_to_order"
+                  },
+                  "then": {
+                    "ref": "$current.biz_order_line.quantity"
+                  },
+                  "else": {
+                    "op": "if",
+                    "condition": {
+                      "op": "eq",
+                      "field": "biz_order_line.fulfilment_mode_snapshot",
+                      "value": "stocked"
+                    },
+                    "then": 0,
+                    "else": {
+                      "op": "if",
+                      "condition": {
+                        "op": "gt",
+                        "field": "biz_order_line.quantity",
+                        "value": {
+                          "ref": "$current.biz_order_line.available_stock_snapshot"
+                        }
+                      },
+                      "then": {
+                        "op": "sub",
+                        "args": [
+                          {
+                            "ref": "$current.biz_order_line.quantity"
+                          },
+                          {
+                            "ref": "$current.biz_order_line.available_stock_snapshot"
+                          }
+                        ]
+                      },
+                      "else": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.stock_quantity_allocated",
+          "type": "number",
+          "label": "Qty From Stock",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "sub",
+              "args": [
+                {
+                  "ref": "$current.biz_order_line.quantity"
+                },
+                {
+                  "ref": "$current.biz_order_line.procurement_quantity_required"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.procurement_required",
+          "type": "bool",
+          "label": "Procurement Required",
+          "readonly": true,
+          "default": false,
+          "compute": {
+            "expression": {
+              "op": "gt",
+              "field": "biz_order_line.procurement_quantity_required",
+              "value": 0
+            }
+          }
+        },
+        {
           "id": "biz_order_line.source_quote_line_ref",
           "type": "string",
           "label": "Source Quote Line Ref",
           "readonly": true,
           "label_key": "orders.entities.biz_order_line.fields.source_quote_line_ref.label"
+        },
+        {
+          "id": "biz_order_line.linked_purchase_order_id",
+          "type": "lookup",
+          "label": "Linked Purchase Order",
+          "entity": "entity.biz_purchase_order",
+          "display_field": "biz_purchase_order.po_number",
+          "readonly": true,
+          "visible_when": {
+            "op": "exists",
+            "field": "biz_order_line.linked_purchase_order_id"
+          }
+        },
+        {
+          "id": "biz_order_line.procured_quantity_total",
+          "type": "number",
+          "label": "Qty On POs",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_purchase_order_line",
+              "field": "biz_purchase_order_line.quantity",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.source_order_line_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.received_purchase_quantity_total",
+          "type": "number",
+          "label": "Qty Received",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.biz_purchase_order_line",
+              "field": "biz_purchase_order_line.quantity_received",
+              "where": {
+                "op": "eq",
+                "field": "biz_purchase_order_line.source_order_line_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.procurement_shortfall_quantity",
+          "type": "number",
+          "label": "Qty Still To Buy",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "biz_order_line.procurement_quantity_required",
+                "value": {
+                  "ref": "$current.biz_order_line.procured_quantity_total"
+                }
+              },
+              "then": {
+                "op": "sub",
+                "args": [
+                  {
+                    "ref": "$current.biz_order_line.procurement_quantity_required"
+                  },
+                  {
+                    "ref": "$current.biz_order_line.procured_quantity_total"
+                  }
+                ]
+              },
+              "else": 0
+            }
+          }
+        },
+        {
+          "id": "biz_order_line.receipt_shortfall_quantity",
+          "type": "number",
+          "label": "Qty Awaiting Receipt",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "biz_order_line.procurement_quantity_required",
+                "value": {
+                  "ref": "$current.biz_order_line.received_purchase_quantity_total"
+                }
+              },
+              "then": {
+                "op": "sub",
+                "args": [
+                  {
+                    "ref": "$current.biz_order_line.procurement_quantity_required"
+                  },
+                  {
+                    "ref": "$current.biz_order_line.received_purchase_quantity_total"
+                  }
+                ]
+              },
+              "else": 0
+            }
+          }
         }
       ],
       "label_key": "orders.entities.biz_order_line.label"
@@ -885,9 +1713,6 @@
         {
           "id": "in_production",
           "label": "In Production",
-          "required_fields": [
-            "biz_order.primary_purchase_order_id"
-          ],
           "status_label_key": "orders.workflows.customer_order_status_workflow.states.in_production.label",
           "label_key": "orders.workflows.customer_order_status_workflow.states.in_production.label"
         },
@@ -1014,9 +1839,6 @@
         "confirmed": [
           "biz_order.customer_id",
           "biz_order.order_date"
-        ],
-        "in_production": [
-          "biz_order.primary_purchase_order_id"
         ],
         "on_hold": [
           "biz_order.hold_reason"
@@ -1249,6 +2071,118 @@
       }
     },
     {
+      "key": "customer_order_lines_to_purchase_order",
+      "source_entity_id": "entity.biz_order_line",
+      "target_entity_id": "entity.biz_purchase_order",
+      "field_mappings": {
+        "biz_purchase_order.supplier_id": {
+          "from": "biz_order_line.procurement_supplier_id"
+        },
+        "biz_purchase_order.purchasing_entity": {
+          "value": "EcoTech FZCO"
+        },
+        "biz_purchase_order.source_customer_order_id": {
+          "from": "biz_order_line.customer_order_id"
+        },
+        "biz_purchase_order.currency": {
+          "from": "biz_order_line.buy_currency_snapshot"
+        },
+        "biz_purchase_order.po_date": {
+          "ref": "$today"
+        },
+        "biz_purchase_order.status": {
+          "value": "draft"
+        }
+      },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.biz_order_line",
+          "target_entity_id": "entity.biz_purchase_order_line",
+          "source_scope": "selected_records",
+          "target_link_field": "biz_purchase_order_line.purchase_order_id",
+          "field_mappings": {
+            "biz_purchase_order_line.product_id": {
+              "from": "biz_order_line.product_id"
+            },
+            "biz_purchase_order_line.product_supplier_id": {
+              "from": "biz_order_line.product_supplier_id"
+            },
+            "biz_purchase_order_line.description": {
+              "from": "biz_order_line.description"
+            },
+            "biz_purchase_order_line.purchasing_entity_snapshot": {
+              "value": "EcoTech FZCO"
+            },
+            "biz_purchase_order_line.currency_snapshot": {
+              "from": "biz_order_line.buy_currency_snapshot"
+            },
+            "biz_purchase_order_line.uom": {
+              "from": "biz_order_line.uom"
+            },
+            "biz_purchase_order_line.quantity": {
+              "from": "biz_order_line.procurement_quantity_required"
+            },
+            "biz_purchase_order_line.unit_cost": {
+              "from": "biz_order_line.unit_cost_snapshot"
+            },
+            "biz_purchase_order_line.source_order_line_id": {
+              "from": "biz_order_line.id"
+            },
+            "biz_purchase_order_line.supplier_sku_snapshot": {
+              "from": "biz_order_line.supplier_sku_snapshot"
+            },
+            "biz_purchase_order_line.minimum_order_quantity_snapshot": {
+              "from": "biz_order_line.minimum_order_quantity_snapshot"
+            },
+            "biz_purchase_order_line.lead_time_weeks_snapshot": {
+              "from": "biz_order_line.lead_time_weeks_snapshot"
+            },
+            "biz_purchase_order_line.source_order_line_ref": {
+              "ref": "$source.id"
+            }
+          }
+        }
+      ],
+      "link_fields": {
+        "source_to_target": "biz_order_line.linked_purchase_order_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_order_line.customer_order_id",
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.buy_currency_snapshot"
+        ],
+        "require_child_records": true,
+        "prevent_if_target_linked": true,
+        "require_uniform_fields": [
+          "biz_order_line.customer_order_id",
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.buy_currency_snapshot"
+        ],
+        "selected_record_domain": {
+          "op": "and",
+          "conditions": [
+            {
+              "op": "gt",
+              "field": "biz_order_line.procurement_quantity_required",
+              "value": 0
+            },
+            {
+              "op": "exists",
+              "field": "biz_order_line.procurement_supplier_id"
+            },
+            {
+              "op": "not",
+              "condition": {
+                "op": "exists",
+                "field": "biz_order_line.linked_purchase_order_id"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
       "key": "customer_order_to_deposit_invoice",
       "source_entity_id": "entity.biz_order",
       "target_entity_id": "entity.biz_invoice",
@@ -1258,6 +2192,18 @@
         },
         "biz_invoice.customer_id": {
           "from": "biz_order.customer_id"
+        },
+        "biz_invoice.customer_contact_person_id": {
+          "from": "biz_order.customer_contact_person_id"
+        },
+        "biz_invoice.customer_contact_name": {
+          "from": "biz_order.customer_contact_name"
+        },
+        "biz_invoice.customer_contact_email": {
+          "from": "biz_order.customer_contact_email"
+        },
+        "biz_invoice.customer_contact_phone": {
+          "from": "biz_order.customer_contact_phone"
         },
         "biz_invoice.source_order_number": {
           "from": "biz_order.order_number"
@@ -1274,8 +2220,14 @@
         "biz_invoice.customer_reference": {
           "from": "biz_order.customer_reference"
         },
+        "biz_invoice.payment_terms": {
+          "from": "biz_order.payment_terms"
+        },
         "biz_invoice.notes": {
           "from": "biz_order.notes"
+        },
+        "biz_invoice.due_date": {
+          "ref": "$today"
         },
         "biz_invoice.source_order_total_snapshot": {
           "from": "biz_order.order_total"
@@ -1310,6 +2262,18 @@
         "biz_invoice.customer_id": {
           "from": "biz_order.customer_id"
         },
+        "biz_invoice.customer_contact_person_id": {
+          "from": "biz_order.customer_contact_person_id"
+        },
+        "biz_invoice.customer_contact_name": {
+          "from": "biz_order.customer_contact_name"
+        },
+        "biz_invoice.customer_contact_email": {
+          "from": "biz_order.customer_contact_email"
+        },
+        "biz_invoice.customer_contact_phone": {
+          "from": "biz_order.customer_contact_phone"
+        },
         "biz_invoice.source_order_number": {
           "from": "biz_order.order_number"
         },
@@ -1325,8 +2289,14 @@
         "biz_invoice.customer_reference": {
           "from": "biz_order.customer_reference"
         },
+        "biz_invoice.payment_terms": {
+          "from": "biz_order.payment_terms"
+        },
         "biz_invoice.notes": {
           "from": "biz_order.notes"
+        },
+        "biz_invoice.due_date": {
+          "ref": "$today"
         },
         "biz_invoice.source_order_total_snapshot": {
           "from": "biz_order.order_total"
@@ -1383,6 +2353,11 @@
           {
             "op": "exists",
             "field": "biz_order.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.deposit_percent",
+            "value": 0
           },
           {
             "op": "gt",
@@ -1446,8 +2421,9 @@
         "value": "confirmed"
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "biz_order.primary_purchase_order_id"
+        "op": "eq",
+        "field": "biz_order.unprocured_purchase_line_count",
+        "value": 0
       },
       "action_label_key": "orders.actions.action_customer_order_mark_in_production.label"
     },
@@ -1457,7 +2433,10 @@
       "entity_id": "entity.biz_order",
       "label": "Mark Shipped",
       "patch": {
-        "biz_order.status": "shipped"
+        "biz_order.status": "shipped",
+        "biz_order.actual_ship_date": {
+          "ref": "$today"
+        }
       },
       "visible_when": {
         "op": "eq",
@@ -1465,8 +2444,9 @@
         "value": "in_production"
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "biz_order.primary_purchase_order_id"
+        "op": "eq",
+        "field": "biz_order.receipt_pending_line_count",
+        "value": 0
       },
       "action_label_key": "orders.actions.action_customer_order_mark_shipped.label"
     },
@@ -1577,6 +2557,48 @@
       "action_label_key": "orders.actions.action_customer_order_create_purchase_order.label"
     },
     {
+      "id": "action.customer_order_line_raise_purchase_order",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_order_line",
+      "label": "Raise Purchase Order",
+      "transformation_key": "customer_order_lines_to_purchase_order",
+      "selection_mode": "selected_records",
+      "confirm": {
+        "title": "Raise supplier purchase order?",
+        "body": "This will create one purchase order from the selected supplier-matched order lines."
+      }
+    },
+    {
+      "id": "action.customer_order_line_set_route_purchase",
+      "kind": "bulk_update",
+      "entity_id": "entity.biz_order_line",
+      "label": "Set Route To Purchase",
+      "selection_mode": "selected_records",
+      "patch": {
+        "biz_order_line.procurement_route": "purchase"
+      }
+    },
+    {
+      "id": "action.customer_order_line_set_route_stock",
+      "kind": "bulk_update",
+      "entity_id": "entity.biz_order_line",
+      "label": "Set Route To Stock",
+      "selection_mode": "selected_records",
+      "patch": {
+        "biz_order_line.procurement_route": "stock"
+      }
+    },
+    {
+      "id": "action.customer_order_line_set_route_auto",
+      "kind": "bulk_update",
+      "entity_id": "entity.biz_order_line",
+      "label": "Set Route To Auto",
+      "selection_mode": "selected_records",
+      "patch": {
+        "biz_order_line.procurement_route": "auto"
+      }
+    },
+    {
       "id": "action.customer_order_create_deposit_invoice",
       "kind": "transform_record",
       "entity_id": "entity.biz_order",
@@ -1623,7 +2645,7 @@
           },
           {
             "op": "gt",
-            "field": "biz_order.order_total",
+            "field": "biz_order.balance_to_invoice",
             "value": 0
           }
         ]
@@ -1931,6 +2953,10 @@
             "biz_order.order_number",
             "biz_order.status",
             "biz_order.customer_id",
+            "biz_order.customer_contact_person_id",
+            "biz_order.customer_contact_name",
+            "biz_order.customer_contact_email",
+            "biz_order.customer_contact_phone",
             "biz_order.source_quote_id",
             "biz_order.sales_entity",
             "biz_order.currency",
@@ -1949,13 +2975,45 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
-            "biz_order.preferred_supplier_id",
             "biz_order.deposit_percent",
             "biz_order.order_total",
             "biz_order.invoiced_total",
             "biz_order.balance_to_invoice"
           ],
           "section_title_key": "orders.views.form.sections.commercials.title"
+        },
+        {
+          "id": "finance",
+          "title": "Finance",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_order.payment_terms",
+            "biz_order.deposit_percent",
+            "biz_order.invoiced_total",
+            "biz_order.balance_to_invoice",
+            "biz_order.invoice_count",
+            "biz_order.open_invoice_count",
+            "biz_order.overdue_invoice_count",
+            "biz_order.paid_invoice_count",
+            "biz_order.credit_note_count"
+          ]
+        },
+        {
+          "id": "procurement",
+          "title": "Procurement",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_order.purchase_order_count",
+            "biz_order.open_purchase_order_count",
+            "biz_order.procurement_line_count",
+            "biz_order.procured_purchase_line_count",
+            "biz_order.receipted_purchase_line_count",
+            "biz_order.unprocured_purchase_line_count",
+            "biz_order.receipt_pending_line_count",
+            "biz_order.preferred_supplier_id"
+          ]
         },
         {
           "id": "logistics",
@@ -1976,7 +3034,6 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
-            "biz_order.primary_purchase_order_id",
             "biz_order.deposit_invoice_id",
             "biz_order.final_invoice_id",
             "biz_order.primary_document_id"
@@ -2025,9 +3082,16 @@
             "item_lookup_display_field": "biz_product.name",
             "item_field_map": {
               "biz_order_line.description": "biz_product.description",
+              "biz_order_line.fulfilment_mode_snapshot": "biz_product.fulfilment_mode",
+              "biz_order_line.available_stock_snapshot": "biz_product.available_qty",
               "biz_order_line.uom": "biz_product.uom",
               "biz_order_line.unit_price": "biz_product.default_sales_price",
-              "biz_order_line.unit_cost_snapshot": "biz_product.default_buy_price"
+              "biz_order_line.unit_cost_snapshot": "biz_product.default_buy_price",
+              "biz_order_line.procurement_supplier_id": "biz_product.preferred_supplier_id",
+              "biz_order_line.buy_currency_snapshot": "biz_product.default_purchase_currency",
+              "biz_order_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
+              "biz_order_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
+              "biz_order_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks"
             },
             "parent_field_map": {
               "biz_order_line.sales_entity_snapshot": "biz_order.sales_entity",
@@ -2036,11 +3100,17 @@
             "description_field": "biz_order_line.description",
             "defaults": {
               "biz_order_line.sales_entity_snapshot": "NLight BV",
+              "biz_order_line.fulfilment_mode_snapshot": "made_to_order",
+              "biz_order_line.procurement_route": "auto",
               "biz_order_line.currency_snapshot": "EUR",
+              "biz_order_line.buy_currency_snapshot": "USD",
               "biz_order_line.uom": "EA",
               "biz_order_line.quantity": 1,
               "biz_order_line.unit_price": 0,
-              "biz_order_line.unit_cost_snapshot": 0
+              "biz_order_line.unit_cost_snapshot": 0,
+              "biz_order_line.available_stock_snapshot": 0,
+              "biz_order_line.minimum_order_quantity_snapshot": 1,
+              "biz_order_line.lead_time_weeks_snapshot": 0
             },
             "columns": [
               {
@@ -2151,9 +3221,6 @@
             "action_id": "action.customer_order_resume"
           },
           {
-            "action_id": "action.customer_order_create_purchase_order"
-          },
-          {
             "action_id": "action.customer_order_create_deposit_invoice"
           },
           {
@@ -2206,6 +3273,34 @@
               ]
             },
             {
+              "id": "finance",
+              "label": "Finance",
+              "sections": [
+                "finance"
+              ]
+            },
+            {
+              "id": "procurement",
+              "label": "Procurement",
+              "sections": [
+                "procurement"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.biz_order_line",
+                  "target": "view:biz_order_line.procurement_list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "biz_order_line.customer_order_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  }
+                }
+              ]
+            },
+            {
               "id": "logistics",
               "label": "Logistics",
               "sections": [
@@ -2255,19 +3350,23 @@
           "biz_order.order_number",
           "biz_order.status",
           "biz_order.customer_id",
+          "biz_order.customer_contact_person_id",
+          "biz_order.customer_contact_name",
+          "biz_order.customer_contact_email",
+          "biz_order.customer_contact_phone",
           "biz_order.source_quote_id",
           "biz_order.sales_entity",
           "biz_order.currency",
           "biz_order.order_date",
           "biz_order.site_name",
           "biz_order.customer_reference",
+          "biz_order.payment_terms",
           "biz_order.container_count",
           "biz_order.deposit_received_date",
           "biz_order.production_release_date",
           "biz_order.actual_ship_date",
           "biz_order.delivered_date",
           "biz_order.preferred_supplier_id",
-          "biz_order.primary_purchase_order_id",
           "biz_order.deposit_invoice_id",
           "biz_order.final_invoice_id",
           "biz_order.primary_document_id",
@@ -2359,6 +3458,89 @@
       }
     },
     {
+      "id": "biz_order_line.procurement_list",
+      "kind": "list",
+      "entity": "entity.biz_order_line",
+      "columns": [
+        {
+          "field_id": "biz_order_line.product_id"
+        },
+        {
+          "field_id": "biz_order_line.description"
+        },
+        {
+          "field_id": "biz_order_line.fulfilment_mode_snapshot"
+        },
+        {
+          "field_id": "biz_order_line.procurement_route"
+        },
+        {
+          "field_id": "biz_order_line.available_stock_snapshot"
+        },
+        {
+          "field_id": "biz_order_line.stock_quantity_allocated"
+        },
+        {
+          "field_id": "biz_order_line.procurement_quantity_required"
+        },
+        {
+          "field_id": "biz_order_line.procurement_supplier_id"
+        },
+        {
+          "field_id": "biz_order_line.product_supplier_id"
+        },
+        {
+          "field_id": "biz_order_line.quantity"
+        },
+        {
+          "field_id": "biz_order_line.buy_currency_snapshot"
+        },
+        {
+          "field_id": "biz_order_line.unit_cost_snapshot"
+        },
+        {
+          "field_id": "biz_order_line.procured_quantity_total"
+        },
+        {
+          "field_id": "biz_order_line.received_purchase_quantity_total"
+        },
+        {
+          "field_id": "biz_order_line.procurement_shortfall_quantity"
+        },
+        {
+          "field_id": "biz_order_line.receipt_shortfall_quantity"
+        },
+        {
+          "field_id": "biz_order_line.linked_purchase_order_id"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:biz_order_line.form_page",
+        "bulk_actions": [
+          {
+            "action_id": "action.customer_order_line_set_route_purchase"
+          },
+          {
+            "action_id": "action.customer_order_line_set_route_stock"
+          },
+          {
+            "action_id": "action.customer_order_line_set_route_auto"
+          },
+          {
+            "action_id": "action.customer_order_line_raise_purchase_order"
+          }
+        ],
+        "search": {
+          "enabled": true,
+          "placeholder": "Search procurement lines...",
+          "fields": [
+            "biz_order_line.description",
+            "biz_order_line.source_quote_line_ref"
+          ]
+        }
+      }
+    },
+    {
       "id": "biz_order_line.form",
       "kind": "form",
       "entity": "entity.biz_order_line",
@@ -2372,13 +3554,30 @@
             "biz_order_line.customer_order_id",
             "biz_order_line.product_id",
             "biz_order_line.description",
+            "biz_order_line.fulfilment_mode_snapshot",
+            "biz_order_line.procurement_route",
             "biz_order_line.uom",
             "biz_order_line.quantity",
             "biz_order_line.unit_price",
             "biz_order_line.line_total",
             "biz_order_line.unit_cost_snapshot",
+            "biz_order_line.available_stock_snapshot",
+            "biz_order_line.stock_quantity_allocated",
+            "biz_order_line.buy_currency_snapshot",
+            "biz_order_line.procurement_supplier_id",
+            "biz_order_line.product_supplier_id",
+            "biz_order_line.supplier_sku_snapshot",
+            "biz_order_line.minimum_order_quantity_snapshot",
+            "biz_order_line.lead_time_weeks_snapshot",
             "biz_order_line.buy_total",
-            "biz_order_line.source_quote_line_ref"
+            "biz_order_line.procurement_quantity_required",
+            "biz_order_line.procurement_required",
+            "biz_order_line.source_quote_line_ref",
+            "biz_order_line.linked_purchase_order_id",
+            "biz_order_line.procured_quantity_total",
+            "biz_order_line.received_purchase_quantity_total",
+            "biz_order_line.procurement_shortfall_quantity",
+            "biz_order_line.receipt_shortfall_quantity"
           ],
           "section_title_key": "orders.views.form.sections.main.title"
         }
@@ -2392,12 +3591,29 @@
           "biz_order_line.customer_order_id",
           "biz_order_line.product_id",
           "biz_order_line.description",
+          "biz_order_line.fulfilment_mode_snapshot",
+          "biz_order_line.procurement_route",
           "biz_order_line.uom",
           "biz_order_line.quantity",
           "biz_order_line.unit_price",
           "biz_order_line.line_total",
           "biz_order_line.unit_cost_snapshot",
-          "biz_order_line.buy_total"
+          "biz_order_line.available_stock_snapshot",
+          "biz_order_line.stock_quantity_allocated",
+          "biz_order_line.buy_currency_snapshot",
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.product_supplier_id",
+          "biz_order_line.supplier_sku_snapshot",
+          "biz_order_line.minimum_order_quantity_snapshot",
+          "biz_order_line.lead_time_weeks_snapshot",
+          "biz_order_line.buy_total",
+          "biz_order_line.procurement_quantity_required",
+          "biz_order_line.procurement_required",
+          "biz_order_line.linked_purchase_order_id",
+          "biz_order_line.procured_quantity_total",
+          "biz_order_line.received_purchase_quantity_total",
+          "biz_order_line.procurement_shortfall_quantity",
+          "biz_order_line.receipt_shortfall_quantity"
         ]
       }
     }
@@ -2766,6 +3982,16 @@
                   "target": "view:biz_order_line.list"
                 }
               ]
+            }
+          ]
+        },
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view",
+              "target": "view:biz_order_line.procurement_list"
             }
           ]
         }
