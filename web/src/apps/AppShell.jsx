@@ -17,7 +17,9 @@ import { applyComputedFields } from "../utils/computedFields.js";
 import {
   buildFormDraftStorageKey,
   clearFormDraftSnapshot,
+  formDraftValuesEqual,
   loadFormDraftSnapshot,
+  resolvePersistedFormDraft,
   saveFormDraftSnapshot,
 } from "../utils/formDraftPersistence.js";
 import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
@@ -1375,7 +1377,10 @@ export default function AppShell({
   const createEntityDef = createModal
     ? (createManifest?.entities || []).find((e) => e.id === createEntityId)
     : null;
-  const createIsDirty = createDraft !== createInitialDraft;
+  const createIsDirty = useMemo(
+    () => !formDraftValuesEqual(createDraft, createInitialDraft),
+    [createDraft, createInitialDraft]
+  );
 
   function closeCreateModal(result = null) {
     const resolve = createModal?.resolve;
@@ -2182,9 +2187,10 @@ function AppView({
         : null,
     [effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
   );
-  const isDirty = useMemo(() => draft !== initialDraft, [draft, initialDraft]);
+  const isDirty = useMemo(() => !formDraftValuesEqual(draft, initialDraft), [draft, initialDraft]);
   const isDirtyRef = useRef(false);
   const draftNotifyTimerRef = useRef(null);
+  const lastLoadedDraftKeyRef = useRef(null);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -2208,19 +2214,17 @@ function AppView({
 
   useEffect(() => {
     if (kind === "form") {
-      if (isDirtyRef.current && formDraftStorageKey) return;
+      if (isDirtyRef.current && formDraftStorageKey && lastLoadedDraftKeyRef.current === formDraftStorageKey) return;
       setShowValidation(false);
       if (!effectiveRecordId) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
-        const nextDraft = applyDraftComputed(
-          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object" ? persisted.draft : {}
-        );
-        setDraft(nextDraft);
-        setInitialDraft(
-          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
-            ? applyDraftComputed(persisted.initialDraft)
-            : {}
-        );
+        const resolvedDraft = resolvePersistedFormDraft({}, persisted, applyDraftComputed);
+        setDraft(resolvedDraft.draft);
+        setInitialDraft(resolvedDraft.initialDraft);
+        lastLoadedDraftKeyRef.current = formDraftStorageKey;
+        if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
+          clearFormDraftSnapshot(formDraftStorageKey);
+        }
         setState({ status: "ok", error: null });
         return;
       }
@@ -2229,6 +2233,7 @@ function AppView({
         const next = applyDraftComputed(entry?.record || {});
         setDraft(next);
         setInitialDraft(next);
+        lastLoadedDraftKeyRef.current = formDraftStorageKey;
         setState({ status: "ok", error: null });
         return;
       }
@@ -2236,6 +2241,7 @@ function AppView({
         const next = applyDraftComputed(recordContext?.record || {});
         setDraft(next);
         setInitialDraft(next);
+        lastLoadedDraftKeyRef.current = formDraftStorageKey;
         setState({ status: "ok", error: null });
         return;
       }
@@ -2249,13 +2255,13 @@ function AppView({
       if (bootstrapMatches) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
         const baseRecord = bootstrapRecord?.record || {};
-        const next = applyDraftComputed(
-          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-            ? { ...baseRecord, ...persisted.draft }
-            : baseRecord
-        );
-        setDraft(next);
-        setInitialDraft(applyDraftComputed(baseRecord));
+        const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
+        setDraft(resolvedDraft.draft);
+        setInitialDraft(resolvedDraft.initialDraft);
+        lastLoadedDraftKeyRef.current = formDraftStorageKey;
+        if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
+          clearFormDraftSnapshot(formDraftStorageKey);
+        }
         setState({ status: "ok", error: null });
         bootstrapUsedRef.current.form = bootstrapVersion;
         return;
@@ -2276,13 +2282,13 @@ function AppView({
         }
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
         const baseRecord = recordContext?.record || {};
-        const next = applyDraftComputed(
-          persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-            ? { ...baseRecord, ...persisted.draft }
-            : baseRecord
-        );
-        setDraft(next);
-        setInitialDraft(applyDraftComputed(baseRecord));
+        const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
+        setDraft(resolvedDraft.draft);
+        setInitialDraft(resolvedDraft.initialDraft);
+        lastLoadedDraftKeyRef.current = formDraftStorageKey;
+        if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
+          clearFormDraftSnapshot(formDraftStorageKey);
+        }
         setState({ status: "ok", error: null });
         return;
       }
@@ -2291,13 +2297,13 @@ function AppView({
         .then((res) => {
           const persisted = loadFormDraftSnapshot(formDraftStorageKey);
           const baseRecord = res.record || {};
-          const next = applyDraftComputed(
-            persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-              ? { ...baseRecord, ...persisted.draft }
-              : baseRecord
-          );
-          setDraft(next);
-          setInitialDraft(applyDraftComputed(baseRecord));
+          const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
+          setDraft(resolvedDraft.draft);
+          setInitialDraft(resolvedDraft.initialDraft);
+          lastLoadedDraftKeyRef.current = formDraftStorageKey;
+          if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
+            clearFormDraftSnapshot(formDraftStorageKey);
+          }
           setState({ status: "ok", error: null });
         })
         .catch((err) => {

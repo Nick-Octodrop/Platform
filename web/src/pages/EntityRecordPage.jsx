@@ -13,7 +13,9 @@ import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
 import {
   buildFormDraftStorageKey,
   clearFormDraftSnapshot,
+  formDraftValuesEqual,
   loadFormDraftSnapshot,
+  resolvePersistedFormDraft,
   saveFormDraftSnapshot,
 } from "../utils/formDraftPersistence.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
@@ -39,6 +41,7 @@ export default function EntityRecordPage() {
   const { hasCapability } = useAccessContext();
   const canWriteRecords = hasCapability("records.write");
   const isDirtyRef = React.useRef(false);
+  const lastLoadedDraftKeyRef = React.useRef(null);
 
   useEffect(() => {
     async function buildIndex() {
@@ -67,7 +70,7 @@ export default function EntityRecordPage() {
       }),
     [entity, id, selected?.formViewId, selected?.moduleId]
   );
-  const isDirty = useMemo(() => record != null && draft !== record, [draft, record]);
+  const isDirty = useMemo(() => record != null && !formDraftValuesEqual(draft, record), [draft, record]);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -84,7 +87,7 @@ export default function EntityRecordPage() {
         setManifestError("NO_FORM_VIEW");
         return;
       }
-      if (record != null && isDirtyRef.current) return;
+      if (record != null && isDirtyRef.current && lastLoadedDraftKeyRef.current === draftStorageKey) return;
       setLoading(true);
       try {
         const [res, manifestRes] = await Promise.all([
@@ -105,17 +108,15 @@ export default function EntityRecordPage() {
         setFieldIndex(indexMap);
         const nextRecord = applyComputedFields(indexMap, res.record);
         const persisted = loadFormDraftSnapshot(draftStorageKey);
-        if (persisted?.dirty && persisted?.draft && typeof persisted.draft === "object") {
-          setDraft(
-            applyComputedFields(indexMap, {
-              ...(nextRecord || {}),
-              ...(persisted.draft || {}),
-            })
-          );
-        } else {
-          setDraft(nextRecord);
+        const resolvedDraft = resolvePersistedFormDraft(nextRecord, persisted, (value) =>
+          applyComputedFields(indexMap, value)
+        );
+        setDraft(resolvedDraft.draft);
+        setRecord(resolvedDraft.initialDraft);
+        lastLoadedDraftKeyRef.current = draftStorageKey;
+        if (persisted?.dirty && !resolvedDraft.dirty) {
+          clearFormDraftSnapshot(draftStorageKey);
         }
-        setRecord(nextRecord);
         setError(null);
         if (!resolvedView) {
           setManifestError("FORM_VIEW_MISSING");
