@@ -4,11 +4,17 @@ const EVENT_NAME = "octo_apps_usage";
 const RECENT_MAX = 5;
 
 function notify() {
-  window.dispatchEvent(new Event(EVENT_NAME));
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new Event(EVENT_NAME));
+  } catch {
+    // Ignore non-critical UI cache notification failures.
+  }
 }
 
 function readList(key) {
   try {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") return [];
     const raw = localStorage.getItem(key);
     if (!raw) return [];
     const arr = JSON.parse(raw);
@@ -19,8 +25,13 @@ function readList(key) {
 }
 
 function writeList(key, list) {
-  localStorage.setItem(key, JSON.stringify(list));
-  notify();
+  try {
+    if (typeof window === "undefined" || typeof window.localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(list));
+    notify();
+  } catch {
+    // Ignore non-critical UI cache persistence failures.
+  }
 }
 
 export function getPinnedApps() {
@@ -42,12 +53,14 @@ export function getRecentApps() {
 }
 
 export function recordRecentApp(moduleId) {
+  if (typeof moduleId !== "string" || !moduleId.trim()) return;
   const current = readList(RECENT_KEY);
   const next = [moduleId, ...current.filter((id) => id !== moduleId)].slice(0, RECENT_MAX);
   writeList(RECENT_KEY, next);
 }
 
 export function subscribeAppUsage(handler) {
+  if (typeof window === "undefined") return () => {};
   window.addEventListener(EVENT_NAME, handler);
   return () => window.removeEventListener(EVENT_NAME, handler);
 }

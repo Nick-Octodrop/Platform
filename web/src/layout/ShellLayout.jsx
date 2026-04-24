@@ -11,26 +11,28 @@ import {
 export default function ShellLayout({ user, onSignOut, children }) {
   const location = useLocation();
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const search = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const pathname = typeof location?.pathname === "string" ? location.pathname : "/";
+  const searchText = typeof location?.search === "string" ? location.search : "";
+  const search = useMemo(() => new URLSearchParams(searchText), [searchText]);
   const isEmbedMode = search.get("octo_ai_embed") === "1";
   const isFrameMode = search.get("octo_ai_frame") === "1";
   const isNestedFrame = typeof window !== "undefined" && window.self !== window.top;
-  const isAppRoute = location.pathname === "/apps" || location.pathname.startsWith("/apps/");
-  const isSettingsRoute = location.pathname.startsWith("/settings");
-  const isStudioRoute = location.pathname.startsWith("/studio");
-  const isOctoAiRoute = location.pathname.startsWith("/octo-ai");
-  const isAutomationRoute = location.pathname.startsWith("/automations") || location.pathname.startsWith("/automation-runs");
+  const isAppRoute = pathname === "/apps" || pathname.startsWith("/apps/");
+  const isSettingsRoute = pathname.startsWith("/settings");
+  const isStudioRoute = pathname.startsWith("/studio");
+  const isOctoAiRoute = pathname.startsWith("/octo-ai");
+  const isAutomationRoute = pathname.startsWith("/automations") || pathname.startsWith("/automation-runs");
   const isTemplateStudioRoute =
-    location.pathname.startsWith("/email/templates/")
-    || location.pathname.startsWith("/documents/templates/");
+    pathname.startsWith("/email/templates/")
+    || pathname.startsWith("/documents/templates/");
   useEffect(() => {
-    const parts = location.pathname.split("/").filter(Boolean);
+    const parts = pathname.split("/").filter(Boolean);
     if (parts[0] === "apps" && parts[1]) {
       recordRecentApp(parts[1]);
     } else if (parts[0] === "data" && parts[1]) {
       recordRecentApp(parts[1]);
     }
-  }, [location.pathname]);
+  }, [pathname]);
   useEffect(() => {
     // The legacy global sandbox dock is retired. Keep any stale session storage cleared
     // so top-level /home never resurrects the old right-side Octo AI panel.
@@ -39,7 +41,7 @@ export default function ShellLayout({ user, onSignOut, children }) {
     }
   }, [isFrameMode, isNestedFrame]);
 
-  const isHome = location.pathname === "/";
+  const isHome = pathname === "/";
   const hideTopNav = isEmbedMode;
   const shellHeightClass = isMobile ? "h-[100dvh]" : "h-screen";
   const baseMainClass = isEmbedMode || isHome

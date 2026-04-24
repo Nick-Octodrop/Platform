@@ -1377,10 +1377,7 @@ export default function AppShell({
   const createEntityDef = createModal
     ? (createManifest?.entities || []).find((e) => e.id === createEntityId)
     : null;
-  const createIsDirty = useMemo(
-    () => !formDraftValuesEqual(createDraft, createInitialDraft),
-    [createDraft, createInitialDraft]
-  );
+  const createIsDirty = !formDraftValuesEqual(createDraft, createInitialDraft);
 
   function closeCreateModal(result = null) {
     const resolve = createModal?.resolve;
