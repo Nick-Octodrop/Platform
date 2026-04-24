@@ -5045,8 +5045,8 @@ class DbDocTemplateStore:
                 insert into doc_templates (
                   org_id, name, description, format, html, filename_pattern, paper_size,
                   margin_top, margin_right, margin_bottom, margin_left,
-                  header_html, footer_html, created_at, updated_at
-                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+                  header_html, footer_html, variables_schema, created_at, updated_at
+                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
                 returning *
                 """,
                 [
@@ -5063,6 +5063,7 @@ class DbDocTemplateStore:
                     record.get("margin_left", "12mm"),
                     record.get("header_html"),
                     record.get("footer_html"),
+                    json.dumps(record.get("variables_schema") or {}),
                 ],
                 query_name="doc_templates.insert",
             )
@@ -5084,10 +5085,14 @@ class DbDocTemplateStore:
             "margin_left",
             "header_html",
             "footer_html",
+            "variables_schema",
         ):
             if key in updates:
                 fields.append(f"{key}=%s")
-                params.append(updates[key])
+                value = updates[key]
+                if key == "variables_schema":
+                    value = json.dumps(value or {})
+                params.append(value)
         if not fields:
             return self.get(template_id)
         params.extend([_now(), get_org_id(), template_id])

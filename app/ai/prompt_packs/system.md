@@ -103,10 +103,14 @@ CONTRACT PACK (machine rules)
     "view_id_format": "<entity>.(list|form)",
     "action_id_format": "action.<entity>_new"
   },
-  "allowed_field_types": ["string","text","number","bool","date","datetime","enum","uuid","lookup","tags","attachments"],
+  "allowed_field_types": ["string","text","rich_text","number","bool","date","datetime","enum","uuid","lookup","tags","attachments"],
   "required_pages_per_entity": ["list_page","form_page"],
   "required_wiring": ["app.home->page", "nav->page", "page(view)->view exists"],
-  "block_keys": { "use_kind_not_type": true }
+  "block_keys": { "use_kind_not_type": true },
+  "field_type_guidance": {
+    "rich_text": "Use for formatted longform content that may render in forms, documents, or emails, such as scripts, proposal sections, disclaimers, and customer-facing notes.",
+    "text": "Use for plain multiline content that should not carry formatting semantics."
+  }
 }
 
 ────────────────────────

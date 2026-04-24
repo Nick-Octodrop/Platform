@@ -1,0 +1,837 @@
+{% set quote_lines = lines if lines is defined and lines else (line_items if line_items is defined and line_items else (formatted_line_items if formatted_line_items is defined and formatted_line_items else (record['lines'] if record is defined and record and record['lines'] is defined and record['lines'] else []))) %}
+{% set brand_name = template_branding.brand_name if template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name else (company.name if company is defined and company and company.name is defined and company.name else (workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'NLight')) %}
+{% set legal_name = template_branding.legal_name if template_branding is defined and template_branding and template_branding.legal_name is defined and template_branding.legal_name else brand_name %}
+{% set brand_website = template_branding.website if template_branding is defined and template_branding and template_branding.website is defined and template_branding.website else '' %}
+{% set brand_phone = template_branding.phone if template_branding is defined and template_branding and template_branding.phone is defined and template_branding.phone else '' %}
+{% set brand_email = template_branding.email if template_branding is defined and template_branding and template_branding.email is defined and template_branding.email else '' %}
+{% set brand_address_line_1 = template_branding.address_line_1 if template_branding is defined and template_branding and template_branding.address_line_1 is defined and template_branding.address_line_1 else '' %}
+{% set brand_address_line_2 = template_branding.address_line_2 if template_branding is defined and template_branding and template_branding.address_line_2 is defined and template_branding.address_line_2 else '' %}
+{% set brand_city = template_branding.city if template_branding is defined and template_branding and template_branding.city is defined and template_branding.city else '' %}
+{% set brand_region = template_branding.state_region if template_branding is defined and template_branding and template_branding.state_region is defined and template_branding.state_region else '' %}
+{% set brand_postcode = template_branding.postcode if template_branding is defined and template_branding and template_branding.postcode is defined and template_branding.postcode else '' %}
+{% set brand_country = template_branding.country if template_branding is defined and template_branding and template_branding.country is defined and template_branding.country else '' %}
+{% set brand_vat = template_branding.vat_number if template_branding is defined and template_branding and template_branding.vat_number is defined and template_branding.vat_number else '' %}
+{% set company_registration_number = template_branding.company_registration_number if template_branding is defined and template_branding and template_branding.company_registration_number is defined and template_branding.company_registration_number else '' %}
+{% set bank_name = 'Revolut Bank UAB' %}
+{% set bank_account_name = 'Nlight B.V.' %}
+{% set bank_sort_code = '' %}
+{% set bank_account_number = '' %}
+{% set bank_iban = 'NL22 REVO 8738 4532 58' %}
+{% set bank_bic = 'REVONL22' %}
+{% set logo_url = template_branding.primary_logo_url if template_branding is defined and template_branding and template_branding.primary_logo_url is defined and template_branding.primary_logo_url else (template_branding.logo_url if template_branding is defined and template_branding and template_branding.logo_url is defined and template_branding.logo_url else ((template_branding.assets.logo.file_url if template_branding is defined and template_branding and template_branding.assets is defined and template_branding.assets and template_branding.assets.logo is defined and template_branding.assets.logo and template_branding.assets.logo.file_url is defined and template_branding.assets.logo.file_url else '') if template_branding is defined else '')) %}
+{% set logo_url = logo_url if logo_url else ((template_branding.assets_by_type.logo[0].file_url if template_branding is defined and template_branding and template_branding.assets_by_type is defined and template_branding.assets_by_type and template_branding.assets_by_type.logo is defined and template_branding.assets_by_type.logo and template_branding.assets_by_type.logo[0] is defined and template_branding.assets_by_type.logo[0] and template_branding.assets_by_type.logo[0].file_url is defined and template_branding.assets_by_type.logo[0].file_url else '') if template_branding is defined else '') %}
+{% set logo_url = logo_url if logo_url else (company.logo_url if company is defined and company and company.logo_url is defined and company.logo_url else (branding.logo_url if branding is defined and branding and branding.logo_url is defined and branding.logo_url else (workspace.logo_url if workspace is defined and workspace and workspace.logo_url is defined and workspace.logo_url else ''))) %}
+{% set text_color = template_branding.template_text_color if template_branding is defined and template_branding and template_branding.template_text_color is defined and template_branding.template_text_color else '#111827' %}
+{% set background_graphic_url = template_branding.default_background_graphic_url if template_branding is defined and template_branding and template_branding.default_background_graphic_url is defined and template_branding.default_background_graphic_url else '' %}
+{% set customer_name = record['biz_quote.customer_id_label'] if record is defined and record and record['biz_quote.customer_id_label'] is defined and record['biz_quote.customer_id_label'] else '' %}
+{% set contact_name = record['biz_quote.customer_contact_name'] if record is defined and record and record['biz_quote.customer_contact_name'] is defined and record['biz_quote.customer_contact_name'] else customer_name %}
+{% set contact_email = record['biz_quote.customer_contact_email'] if record is defined and record and record['biz_quote.customer_contact_email'] is defined and record['biz_quote.customer_contact_email'] else '' %}
+{% set contact_phone = record['biz_quote.customer_contact_phone'] if record is defined and record and record['biz_quote.customer_contact_phone'] is defined and record['biz_quote.customer_contact_phone'] else '' %}
+{% set quote_owner = record['biz_quote.sales_owner'] if record is defined and record and record['biz_quote.sales_owner'] is defined and record['biz_quote.sales_owner'] else brand_name %}
+{% set sales_entity = record['biz_quote.sales_entity'] if record is defined and record and record['biz_quote.sales_entity'] is defined and record['biz_quote.sales_entity'] else brand_name %}
+{% set quote_number = record['biz_quote.quote_number'] if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] else 'Quote' %}
+{% set quote_date = record['biz_quote.quote_date'] if record is defined and record and record['biz_quote.quote_date'] is defined and record['biz_quote.quote_date'] else '' %}
+{% set expiry_date = record['biz_quote.expiry_date'] if record is defined and record and record['biz_quote.expiry_date'] is defined and record['biz_quote.expiry_date'] else '' %}
+{% set currency_code = record['biz_quote.currency'] if record is defined and record and record['biz_quote.currency'] is defined and record['biz_quote.currency'] else '' %}
+{% set site_name = record['biz_quote.project_site_name'] if record is defined and record and record['biz_quote.project_site_name'] is defined and record['biz_quote.project_site_name'] else '' %}
+{% set customer_reference = record['biz_quote.customer_reference'] if record is defined and record and record['biz_quote.customer_reference'] is defined and record['biz_quote.customer_reference'] else '' %}
+{% set opening_message = record['biz_quote.opening_message'] if record is defined and record and record['biz_quote.opening_message'] is defined and record['biz_quote.opening_message'] else '' %}
+{% set quote_script_body = record['biz_quote.quote_script_body'] if record is defined and record and record['biz_quote.quote_script_body'] is defined and record['biz_quote.quote_script_body'] else '' %}
+{% set transport_disclaimer = record['biz_quote.transport_disclaimer'] if record is defined and record and record['biz_quote.transport_disclaimer'] is defined and record['biz_quote.transport_disclaimer'] else '' %}
+{% set closing_text = record['biz_quote.closing_text'] if record is defined and record and record['biz_quote.closing_text'] is defined and record['biz_quote.closing_text'] else '' %}
+{% set customer_notes = record['biz_quote.customer_notes'] if record is defined and record and record['biz_quote.customer_notes'] is defined and record['biz_quote.customer_notes'] else '' %}
+{% set payment_terms = record['biz_quote.payment_terms'] if record is defined and record and record['biz_quote.payment_terms'] is defined and record['biz_quote.payment_terms'] else '' %}
+{% set incoterm = record['biz_quote.incoterm'] if record is defined and record and record['biz_quote.incoterm'] is defined and record['biz_quote.incoterm'] else '' %}
+{% set shipping_terms = record['biz_quote.shipping_terms'] if record is defined and record and record['biz_quote.shipping_terms'] is defined and record['biz_quote.shipping_terms'] else '' %}
+{% set validity_notes = record['biz_quote.validity_notes'] if record is defined and record and record['biz_quote.validity_notes'] is defined and record['biz_quote.validity_notes'] else '' %}
+{% set subtotal = record['biz_quote.subtotal'] if record is defined and record and record['biz_quote.subtotal'] is defined and record['biz_quote.subtotal'] else 0 %}
+{% set discount_total = record['biz_quote.discount_total'] if record is defined and record and record['biz_quote.discount_total'] is defined and record['biz_quote.discount_total'] else 0 %}
+{% set tax_total = record['biz_quote.tax_total'] if record is defined and record and record['biz_quote.tax_total'] is defined and record['biz_quote.tax_total'] else 0 %}
+{% set grand_total = record['biz_quote.grand_total'] if record is defined and record and record['biz_quote.grand_total'] is defined and record['biz_quote.grand_total'] else 0 %}
+{% set tax_percent = record['biz_quote.tax_percent'] if record is defined and record and record['biz_quote.tax_percent'] is defined and record['biz_quote.tax_percent'] else 0 %}
+{% set site_label = site_name if site_name else customer_name %}
+{% set currency_symbol = '€' if currency_code == 'EUR' else ('$' if currency_code == 'USD' else ('£' if currency_code == 'GBP' else '')) %}
+
+<style>
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: {{ text_color }};
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: #ffffff;
+  }
+  body {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .page-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    {% if background_graphic_url %}
+    background: url('{{ background_graphic_url }}') no-repeat center top / cover;
+    {% else %}
+    background:
+      linear-gradient(135deg, rgba(255, 144, 202, 0.12) 0%, rgba(255,255,255,0) 42%),
+      linear-gradient(35deg, rgba(255, 144, 202, 0.10) 0%, rgba(255,255,255,0) 38%),
+      #ffffff;
+    {% endif %}
+  }
+  .page-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .repeat-header {
+    position: fixed;
+    top: 12mm;
+    left: 15mm;
+    right: 15mm;
+    z-index: 2;
+    display: table;
+    width: calc(100% - 30mm);
+    border-collapse: collapse;
+  }
+  .repeat-header > div {
+    display: table-cell;
+    vertical-align: top;
+  }
+  .repeat-header-left {
+    width: 34%;
+    padding-top: 4px;
+  }
+  .repeat-header-middle {
+    width: 31%;
+    font-size: 10.5px;
+    line-height: 1.25;
+    color: #334155;
+  }
+  .repeat-header-right {
+    width: 35%;
+    font-size: 10.5px;
+    line-height: 1.25;
+    text-align: right;
+    color: #111827;
+  }
+  .header-brand {
+    display: inline-block;
+  }
+  .header-logo {
+    display: block;
+    max-width: 150px;
+    max-height: 40px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+  .header-brand-fallback {
+    font-size: 28px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    font-weight: 800;
+    color: #111827;
+  }
+  .quote-title {
+    margin-top: 12px;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.08;
+    letter-spacing: 0.03em;
+    color: #111827;
+  }
+  .quote-title .label {
+    display: block;
+    white-space: nowrap;
+  }
+  .quote-title .value {
+    display: block;
+  }
+  .repeat-footer {
+    position: fixed;
+    left: 15mm;
+    right: 15mm;
+    bottom: 8mm;
+    z-index: 2;
+    height: 0;
+  }
+  .doc {
+    position: relative;
+    z-index: 3;
+  }
+  .cover-page {
+    margin-bottom: 8mm;
+  }
+  .page-frame {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .page-frame thead {
+    display: table-header-group;
+  }
+  .page-frame tfoot {
+    display: table-footer-group;
+  }
+  .page-frame td {
+    padding: 0;
+  }
+  .frame-top {
+    height: 42mm;
+  }
+  .frame-bottom {
+    height: 14mm;
+  }
+  .frame-body {
+    padding: 0 15mm;
+  }
+  .flow-section {
+    padding-top: 1mm;
+  }
+  .recipient-meta {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 9mm;
+  }
+  .recipient-meta > div {
+    display: table-cell;
+    vertical-align: top;
+  }
+  .recipient-block {
+    width: 49%;
+    padding-right: 10mm;
+    font-size: 12.5px;
+    line-height: 1.38;
+    color: #111827;
+  }
+  .meta-card-wrap {
+    width: 51%;
+  }
+  .meta-card {
+    margin-left: auto;
+    width: 100%;
+    max-width: 81mm;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    background: transparent;
+    border: none;
+  }
+  .meta-row {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 4px;
+  }
+  .meta-row:last-child {
+    margin-bottom: 0;
+  }
+  .meta-label,
+  .meta-value {
+    display: table-cell;
+    vertical-align: top;
+    font-size: 11.5px;
+    line-height: 1.28;
+  }
+  .meta-label {
+    width: 35%;
+    padding-right: 8px;
+    font-weight: 700;
+    color: #111827;
+  }
+  .meta-value {
+    color: #334155;
+  }
+  .cover-kicker {
+    margin: 0 0 4mm 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #475569;
+  }
+  .cover-title {
+    margin: 0 0 5mm 0;
+    max-width: 116mm;
+    font-size: 18px;
+    line-height: 1.12;
+    font-weight: 800;
+    color: #111827;
+  }
+  .panel,
+  .table-card,
+  .pay-card,
+  .reference-card {
+    background: transparent;
+    border: none;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .panel {
+    padding: 0;
+    margin-bottom: 5mm;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .cover-panel {
+    max-width: 118mm;
+  }
+  .terms-panel {
+    width: 78mm;
+    margin-left: auto;
+  }
+  .body-copy {
+    font-size: 11.8px;
+    line-height: 1.54;
+    white-space: pre-line;
+    color: #1f2937;
+  }
+  .fine-copy {
+    font-size: 11.2px;
+    line-height: 1.5;
+    white-space: pre-line;
+    color: #374151;
+  }
+  .richtext {
+    color: inherit;
+  }
+  .richtext > :first-child {
+    margin-top: 0;
+  }
+  .richtext > :last-child {
+    margin-bottom: 0;
+  }
+  .richtext p {
+    margin: 0 0 8px 0;
+  }
+  .richtext h1,
+  .richtext h2,
+  .richtext h3 {
+    margin: 0 0 6px 0;
+    color: #111827;
+    font-weight: 800;
+    line-height: 1.24;
+  }
+  .richtext h1 {
+    font-size: 13px;
+  }
+  .richtext h2 {
+    font-size: 12.2px;
+  }
+  .richtext h3 {
+    font-size: 11.7px;
+  }
+  .richtext ul,
+  .richtext ol {
+    margin: 0 0 8px 0;
+    padding-left: 18px;
+  }
+  .richtext li {
+    margin: 0 0 4px 0;
+  }
+  .richtext strong {
+    font-weight: 800;
+    color: #111827;
+  }
+  .richtext-body {
+    font-size: 11.8px;
+    line-height: 1.54;
+    color: #1f2937;
+  }
+  .richtext-fine {
+    font-size: 11.2px;
+    line-height: 1.5;
+    color: #374151;
+  }
+  .section-title {
+    margin: 0 0 6px 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #111827;
+  }
+  .page-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+  .summary-table,
+  .detail-table,
+  .final-totals table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .summary-table,
+  .detail-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .summary-table td,
+  .detail-table th,
+  .detail-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.12);
+    font-size: 11.1px;
+  }
+  .summary-table tr:last-child td,
+  .detail-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .summary-label {
+    font-weight: 700;
+    color: #111827;
+  }
+  .summary-value,
+  .detail-value {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .summary-card,
+  .detail-card {
+    margin-bottom: 7mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .summary-head,
+  .detail-head {
+    padding: 0 0 6px 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #111827;
+  }
+  .detail-table thead {
+    display: table-header-group;
+  }
+  .detail-table th {
+    font-size: 10.2px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #475569;
+    text-align: left;
+  }
+  .detail-table th.detail-value {
+    text-align: right;
+  }
+  .summary-note {
+    margin-top: 3mm;
+    font-size: 10.4px;
+    line-height: 1.45;
+    color: #475569;
+  }
+  .pricing-page {
+    min-height: 223mm;
+    display: flex;
+    flex-direction: column;
+  }
+  .pricing-page-title {
+    margin: 0 0 6mm 0;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #111827;
+  }
+  .pricing-page-bottom {
+    margin-top: auto;
+  }
+  .final-totals {
+    margin: 8mm 0 8mm auto;
+    width: 100%;
+    max-width: 82mm;
+    border-top: 1px solid rgba(15, 23, 42, 0.7);
+    padding-top: 4px;
+  }
+  .final-totals td {
+    padding: 3px 0;
+    font-size: 11px;
+  }
+  .final-totals .label {
+    text-align: right;
+    padding-right: 10px;
+    font-weight: 800;
+    color: #111827;
+  }
+  .final-totals .value {
+    width: 30mm;
+    text-align: right;
+    white-space: nowrap;
+    color: #111827;
+  }
+  .payment-area {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .payment-divider {
+    width: 100%;
+    margin-top: 4mm;
+    border-top: 1px dashed rgba(15, 23, 42, 0.45);
+  }
+  .payment-area > div {
+    display: table-cell;
+    vertical-align: top;
+  }
+  .payment-title-wrap {
+    width: 43%;
+    padding-right: 10mm;
+  }
+  .payment-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.08;
+    color: #111827;
+  }
+  .payment-side {
+    width: 57%;
+  }
+  .payment-badge {
+    display: inline-block;
+    float: right;
+    margin-bottom: 11px;
+    padding: 8px 14px;
+    background: #8a8686;
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .pay-card {
+    clear: both;
+    margin-left: auto;
+    width: 100%;
+    max-width: 83mm;
+    padding: 0;
+  }
+  .pay-method {
+    margin-bottom: 9px;
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #111827;
+  }
+  .pay-row {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2px;
+  }
+  .pay-row:last-child {
+    margin-bottom: 0;
+  }
+  .pay-label,
+  .pay-value {
+    display: table-cell;
+    vertical-align: top;
+    font-size: 11px;
+    line-height: 1.34;
+  }
+  .pay-label {
+    width: 34%;
+    color: #111827;
+  }
+  .pay-value {
+    font-weight: 700;
+    color: #111827;
+  }
+  .reference-grid {
+    width: 100%;
+    max-width: 126mm;
+    margin-left: auto;
+    margin-top: 10mm;
+  }
+  .reference-card {
+    padding: 0;
+  }
+  .reference-row {
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 7px;
+  }
+  .reference-row:last-child {
+    margin-bottom: 0;
+  }
+  .reference-label,
+  .reference-value {
+    display: table-cell;
+    vertical-align: top;
+    font-size: 11.1px;
+    line-height: 1.35;
+  }
+  .reference-label {
+    width: 34%;
+    padding-right: 8px;
+    font-weight: 700;
+    color: #374151;
+  }
+  .reference-value {
+    font-weight: 700;
+    color: #111827;
+  }
+</style>
+
+<div class="page-bg"></div>
+
+<div class="repeat-header">
+  <div class="repeat-header-left">
+    <div class="header-brand">
+      {% if logo_url %}
+      <img src="{{ logo_url }}" alt="{{ brand_name }}" class="header-logo" />
+      {% else %}
+      <div class="header-brand-fallback">{{ brand_name }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="repeat-header-middle">
+    {% if brand_address_line_1 %}<div>{{ brand_address_line_1 }}</div>{% endif %}
+    {% if brand_address_line_2 %}<div>{{ brand_address_line_2 }}</div>{% endif %}
+    {% if brand_postcode or brand_city or brand_region %}
+    <div>{{ brand_postcode }}{% if brand_postcode and (brand_city or brand_region) %} {% endif %}{{ brand_city }}{% if brand_region %} {{ brand_region }}{% endif %}</div>
+    {% endif %}
+    {% if brand_country %}<div>{{ brand_country }}</div>{% endif %}
+  </div>
+  <div class="repeat-header-right">
+    {% if brand_phone %}<div>Tel. {{ brand_phone }}</div>{% endif %}
+    {% if brand_website %}<div>{{ brand_website }}</div>{% endif %}
+    {% if brand_email %}<div>{{ brand_email }}</div>{% endif %}
+    {% if brand_vat %}<div>VAT Reg. No. {{ brand_vat }}</div>{% endif %}
+    {% if company_registration_number %}<div>CoC {{ company_registration_number }}</div>{% endif %}
+    <div class="quote-title">
+      <span class="label">QUOTATION NO.</span>
+      <span class="value">{{ quote_number }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="repeat-footer"></div>
+
+<div class="doc">
+  <table class="page-frame">
+    <thead>
+      <tr><td><div class="frame-top"></div></td></tr>
+    </thead>
+    <tfoot>
+      <tr><td><div class="frame-bottom"></div></td></tr>
+    </tfoot>
+    <tbody>
+      <tr>
+        <td>
+          <div class="frame-body">
+            <section class="cover-page">
+              <div class="recipient-meta">
+                <div class="recipient-block">
+                  {% if contact_name %}<div>{{ contact_name }}</div>{% endif %}
+                  {% if customer_name and customer_name != contact_name %}<div>{{ customer_name }}</div>{% endif %}
+                  {% if contact_email %}<div>{{ contact_email }}</div>{% endif %}
+                  {% if contact_phone %}<div>{{ contact_phone }}</div>{% endif %}
+                </div>
+                <div class="meta-card-wrap">
+                  <div class="meta-card">
+                    <div class="meta-row">
+                      <div class="meta-label">Date:</div>
+                      <div class="meta-value">{{ quote_date }}</div>
+                    </div>
+                    <div class="meta-row">
+                      <div class="meta-label">Site:</div>
+                      <div class="meta-value">{{ site_label }}</div>
+                    </div>
+                    <div class="meta-row">
+                      <div class="meta-label">Valid For:</div>
+                      <div class="meta-value">30 Day(s)</div>
+                    </div>
+                    <div class="meta-row">
+                      <div class="meta-label">Valid Until:</div>
+                      <div class="meta-value">{{ expiry_date }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel cover-panel">
+                {% if opening_message %}
+                <div class="richtext richtext-body">{{ opening_message|richtext }}</div>
+                {% else %}
+                <div class="body-copy">Please find enclosed our quotation and commercial proposal for your review.</div>
+                {% endif %}
+              </div>
+
+              {% if shipping_terms or incoterm or payment_terms or validity_notes %}
+              <div class="panel terms-panel">
+                {% if shipping_terms %}
+                <div class="section-title">Delivery Terms</div>
+                <div class="fine-copy" style="margin-bottom:8px;">{{ shipping_terms }}</div>
+                {% endif %}
+                {% if incoterm %}
+                <div class="section-title">Incoterm</div>
+                <div class="fine-copy" style="margin-bottom:8px;">{{ incoterm }}</div>
+                {% endif %}
+                {% if payment_terms %}
+                <div class="section-title">Payment Terms</div>
+                <div class="fine-copy" style="margin-bottom:8px;">{{ payment_terms }}</div>
+                {% endif %}
+                {% if validity_notes %}
+                <div class="section-title">Validity Notes</div>
+                <div class="richtext richtext-fine">{{ validity_notes|richtext }}</div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </section>
+
+            <section class="flow-section">
+              {% if quote_script_body %}
+              <div class="panel">
+                <div class="richtext richtext-body">{{ quote_script_body|richtext }}</div>
+              </div>
+              {% endif %}
+
+              {% if transport_disclaimer %}
+              <div class="panel">
+                <div class="section-title">Transport Disclaimer</div>
+                <div class="richtext richtext-fine">{{ transport_disclaimer|richtext }}</div>
+              </div>
+              {% endif %}
+
+              {% if closing_text %}
+              <div class="panel">
+                <div class="richtext richtext-fine">{{ closing_text|richtext }}</div>
+              </div>
+              {% endif %}
+
+              {% if customer_notes %}
+              <div class="panel">
+                <div class="section-title">Project Notes</div>
+                <div class="richtext richtext-fine">{{ customer_notes|richtext }}</div>
+              </div>
+              {% endif %}
+
+              <div class="table-card summary-card">
+                <div class="summary-head">Summary</div>
+                <table class="summary-table">
+                  {% for line in quote_lines %}
+                  <tr>
+                    <td class="summary-label">{{ line['biz_quote_line.description'] if line is defined and line and line['biz_quote_line.description'] is defined and line['biz_quote_line.description'] else ('Line ' ~ loop.index) }}</td>
+                    <td class="summary-value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ line['biz_quote_line.line_total'] if line is defined and line and line['biz_quote_line.line_total'] is defined and line['biz_quote_line.line_total'] else 0 }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </table>
+                <div class="summary-note">
+                  {% if tax_percent %}All prices are shown with {{ tax_percent }}% VAT / sales tax treatment applied.{% else %}All prices are shown with the current quote tax treatment applied.{% endif %}
+                  {% if payment_terms %} Payment terms: {{ payment_terms }}.{% endif %}
+                </div>
+              </div>
+            </section>
+
+            <section class="pricing-section page-break-before">
+              <div class="pricing-page">
+                <div>
+                  <div class="pricing-page-title">Detailed Pricing</div>
+                  <div class="table-card detail-card">
+                    <table class="detail-table">
+                      <thead>
+                        <tr>
+                          <th>Description</th>
+                          <th class="detail-value">Qty</th>
+                          <th class="detail-value">UOM</th>
+                          <th class="detail-value">Unit Price</th>
+                          <th class="detail-value">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for line in quote_lines %}
+                        <tr>
+                          <td>{{ line['biz_quote_line.description'] if line is defined and line and line['biz_quote_line.description'] is defined and line['biz_quote_line.description'] else '' }}</td>
+                          <td class="detail-value">{{ line['biz_quote_line.quantity'] if line is defined and line and line['biz_quote_line.quantity'] is defined and line['biz_quote_line.quantity'] else '' }}</td>
+                          <td class="detail-value">{{ line['biz_quote_line.uom'] if line is defined and line and line['biz_quote_line.uom'] is defined and line['biz_quote_line.uom'] else '' }}</td>
+                          <td class="detail-value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ line['biz_quote_line.unit_price'] if line is defined and line and line['biz_quote_line.unit_price'] is defined and line['biz_quote_line.unit_price'] else '' }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                          <td class="detail-value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ line['biz_quote_line.line_total'] if line is defined and line and line['biz_quote_line.line_total'] is defined and line['biz_quote_line.line_total'] else '' }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="pricing-page-bottom">
+                  <div class="final-totals">
+                    <table>
+                      <tr>
+                        <td class="label">Sub-Total ex VAT</td>
+                        <td class="value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ subtotal }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                      </tr>
+                      {% if discount_total %}
+                      <tr>
+                        <td class="label">Discount</td>
+                        <td class="value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ discount_total }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                      </tr>
+                      {% endif %}
+                      <tr>
+                        <td class="label">VAT</td>
+                        <td class="value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ tax_total }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                      </tr>
+                      <tr>
+                        <td class="label">Total inc VAT</td>
+                        <td class="value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ grand_total }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <div class="payment-divider"></div>
+
+                  {% if bank_name or bank_account_name or bank_account_number or bank_bic or bank_iban %}
+                  <div class="payment-area">
+                    <div class="payment-title-wrap">
+                      <div class="payment-title">How To Pay</div>
+                    </div>
+                    <div class="payment-side">
+                      <div class="payment-badge">Quotation No. {{ quote_number }}</div>
+                      <div class="pay-card">
+                        <div class="pay-method">Direct Deposit</div>
+                        <div class="pay-row">
+                          <div class="pay-label">Bank</div>
+                          <div class="pay-value">{{ bank_name }}</div>
+                        </div>
+                        <div class="pay-row">
+                          <div class="pay-label">Acc. Name</div>
+                          <div class="pay-value">{{ bank_account_name }}</div>
+                        </div>
+                        <div class="pay-row">
+                          <div class="pay-label">Sort Code</div>
+                          <div class="pay-value">&nbsp;</div>
+                        </div>
+                        <div class="pay-row">
+                          <div class="pay-label">Acc. No.</div>
+                          <div class="pay-value">{{ bank_account_number }}</div>
+                        </div>
+                        <div class="pay-row">
+                          <div class="pay-label">BIC</div>
+                          <div class="pay-value">{{ bank_bic }}</div>
+                        </div>
+                        <div class="pay-row">
+                          <div class="pay-label">IBAN</div>
+                          <div class="pay-value">{{ bank_iban }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

@@ -1375,7 +1375,7 @@ export default function AppShell({
   const createEntityDef = createModal
     ? (createManifest?.entities || []).find((e) => e.id === createEntityId)
     : null;
-  const createIsDirty = JSON.stringify(createDraft) !== JSON.stringify(createInitialDraft);
+  const createIsDirty = createDraft !== createInitialDraft;
 
   function closeCreateModal(result = null) {
     const resolve = createModal?.resolve;
@@ -1745,7 +1745,7 @@ function AppView({
   const filterableFields = useMemo(() => {
     if (!entityDef || !Array.isArray(entityDef.fields)) return [];
     return entityDef.fields
-      .filter((field) => field?.id && ["string", "text", "enum", "bool", "date", "datetime", "number", "user"].includes(field.type))
+      .filter((field) => field?.id && ["string", "text", "rich_text", "enum", "bool", "date", "datetime", "number", "user"].includes(field.type))
       .map((field) => ({
         id: field.id,
         label: field.label || field.id,
@@ -2182,18 +2182,21 @@ function AppView({
         : null,
     [effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
   );
-  const isDirty = useMemo(() => {
-    try {
-      return JSON.stringify(draft || {}) !== JSON.stringify(initialDraft || {});
-    } catch {
-      return true;
-    }
-  }, [draft, initialDraft]);
+  const isDirty = useMemo(() => draft !== initialDraft, [draft, initialDraft]);
   const isDirtyRef = useRef(false);
+  const draftNotifyTimerRef = useRef(null);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  useEffect(() => {
+    return () => {
+      if (draftNotifyTimerRef.current) {
+        clearTimeout(draftNotifyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setActiveManifestModal(null);
@@ -2245,17 +2248,14 @@ function AppView({
         bootstrapUsedRef.current.form !== bootstrapVersion;
       if (bootstrapMatches) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+        const baseRecord = bootstrapRecord?.record || {};
         const next = applyDraftComputed(
           persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-            ? persisted.draft
-            : bootstrapRecord?.record || {}
+            ? { ...baseRecord, ...persisted.draft }
+            : baseRecord
         );
         setDraft(next);
-        setInitialDraft(
-          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
-            ? applyDraftComputed(persisted.initialDraft)
-            : applyDraftComputed(bootstrapRecord?.record || {})
-        );
+        setInitialDraft(applyDraftComputed(baseRecord));
         setState({ status: "ok", error: null });
         bootstrapUsedRef.current.form = bootstrapVersion;
         return;
@@ -2275,17 +2275,14 @@ function AppView({
           return;
         }
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+        const baseRecord = recordContext?.record || {};
         const next = applyDraftComputed(
           persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-            ? persisted.draft
-            : recordContext?.record || {}
+            ? { ...baseRecord, ...persisted.draft }
+            : baseRecord
         );
         setDraft(next);
-        setInitialDraft(
-          persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
-            ? applyDraftComputed(persisted.initialDraft)
-            : applyDraftComputed(recordContext?.record || {})
-        );
+        setInitialDraft(applyDraftComputed(baseRecord));
         setState({ status: "ok", error: null });
         return;
       }
@@ -2293,17 +2290,14 @@ function AppView({
       apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
         .then((res) => {
           const persisted = loadFormDraftSnapshot(formDraftStorageKey);
+          const baseRecord = res.record || {};
           const next = applyDraftComputed(
             persisted?.dirty && persisted?.draft && typeof persisted.draft === "object"
-              ? persisted.draft
-              : res.record || {}
+              ? { ...baseRecord, ...persisted.draft }
+              : baseRecord
           );
           setDraft(next);
-          setInitialDraft(
-            persisted?.dirty && persisted?.initialDraft && typeof persisted.initialDraft === "object"
-              ? applyDraftComputed(persisted.initialDraft)
-              : applyDraftComputed(res.record || {})
-          );
+          setInitialDraft(applyDraftComputed(baseRecord));
           setState({ status: "ok", error: null });
         })
         .catch((err) => {
@@ -2357,8 +2351,24 @@ function AppView({
 
   useEffect(() => {
     if (typeof onRecordDraftChange === "function") {
-      onRecordDraftChange(draft);
+      if (draftNotifyTimerRef.current) {
+        clearTimeout(draftNotifyTimerRef.current);
+      }
+      draftNotifyTimerRef.current = window.setTimeout(() => {
+        draftNotifyTimerRef.current = null;
+        if (typeof React.startTransition === "function") {
+          React.startTransition(() => onRecordDraftChange(draft));
+        } else {
+          onRecordDraftChange(draft);
+        }
+      }, 80);
     }
+    return () => {
+      if (draftNotifyTimerRef.current) {
+        clearTimeout(draftNotifyTimerRef.current);
+        draftNotifyTimerRef.current = null;
+      }
+    };
   }, [draft, onRecordDraftChange]);
 
   async function handleSave(validationErrors, opts = {}) {

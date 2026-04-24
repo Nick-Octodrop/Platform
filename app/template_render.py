@@ -8,6 +8,8 @@ from jinja2 import TemplateSyntaxError, UndefinedError, meta
 from jinja2.runtime import LoopContext
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from app.rich_text import render_rich_text
+
 _ALLOWED_FILTERS = {
     "default",
     "lower",
@@ -70,6 +72,7 @@ def _env(strict: bool) -> _LockedSandbox:
     env.globals = {"range": range}
     env.filters = {key: val for key, val in env.filters.items() if key in _ALLOWED_FILTERS}
     env.filters["slugify"] = _slugify
+    env.filters["richtext"] = render_rich_text
     env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
     return env
 

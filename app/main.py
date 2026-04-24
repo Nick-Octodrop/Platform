@@ -3067,7 +3067,7 @@ def _validate_patch_payload(entity: dict, patch: dict, existing: dict, workflow:
         ftype = field.get("type")
         if val is None:
             continue
-        if ftype in ("string", "text"):
+        if ftype in ("string", "text", "rich_text"):
             if not isinstance(val, str):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a string", path=field_id)
         elif ftype in {"number", "currency"}:
@@ -6022,7 +6022,7 @@ def _ai_pick_scaffold_display_field(entity_slug: str, fields: list[dict]) -> str
         field_type = field.get("type")
         if not isinstance(field_id, str) or field_id.endswith(".id") or field_id.endswith(".created_at"):
             continue
-        if field_type in {"string", "text"}:
+        if field_type in {"string", "text", "rich_text"}:
             return field_id
     for field in valid_fields:
         field_id = field.get("id")
@@ -6706,7 +6706,7 @@ def _ai_design_lookup_display_field(entity_def: dict | None) -> str | None:
                 continue
             field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
             field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else ""
-            if not isinstance(field_id, str) or field_type not in {"string", "text", "enum"}:
+            if not isinstance(field_id, str) or field_type not in {"string", "text", "rich_text", "enum"}:
                 continue
             if field_id.split(".")[-1] == suffix:
                 return field_id
@@ -6715,7 +6715,7 @@ def _ai_design_lookup_display_field(entity_def: dict | None) -> str | None:
             continue
         field_id = field.get("id") if isinstance(field.get("id"), str) and field.get("id").strip() else None
         field_type = field.get("type") if isinstance(field.get("type"), str) and field.get("type").strip() else ""
-        if isinstance(field_id, str) and field_type in {"string", "text", "enum"}:
+        if isinstance(field_id, str) and field_type in {"string", "text", "rich_text", "enum"}:
             return field_id
     return None
 
@@ -7575,7 +7575,7 @@ def _ai_coerce_design_condition(condition: Any, entity_slug: str, valid_field_id
 
 
 def _ai_coerce_design_fields(entity_slug: str, raw_fields: Any, extra_valid_field_ids: set[str] | None = None) -> list[dict]:
-    allowed_types = {"string", "text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user"}
+    allowed_types = {"string", "text", "rich_text", "number", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user"}
     prepared_fields: list[tuple[dict, dict]] = []
     seen: set[str] = set()
     for item in raw_fields if isinstance(raw_fields, list) else []:
@@ -8595,7 +8595,9 @@ def _ai_request_module_design_spec_from_model(module_id: str, module_name: str, 
         "workflow must use {enabled,status_field,states,action_labels}. "
         "layout must use {sections,tabs,default_tab}. "
         "experience must use {views,pages,interfaces}. "
-        "Use only field types: string,text,number,bool,date,datetime,enum,uuid,lookup,tags,attachments,user. "
+        "Use only field types: string,text,rich_text,number,bool,date,datetime,enum,uuid,lookup,tags,attachments,user. "
+        "Use rich_text for customer-facing longform content that needs formatting in forms, documents, or emails, such as proposal sections, quote scripts, disclaimers, instructions, or structured notes. "
+        "Use plain text only when the content should remain unformatted multiline copy. "
         "Anchor the module around one primary entity, and use related_entities only when the workflow clearly needs separate repeatable child records. "
         "Capture surrounding business context through fields, financial metrics, lookups, workflow, reporting views, and pivot-friendly structure. "
         "Prefer broad, useful business fields, not toy scaffolds. "
@@ -12410,7 +12412,7 @@ def _ai_build_create_module_handoff_ops(
                     continue
                 source_type = source_field.get("type")
                 target_type = target_field.get("type")
-                compatible = source_type == target_type or {source_type, target_type} <= {"string", "text"}
+                compatible = source_type == target_type or {source_type, target_type} <= {"string", "text", "rich_text"}
                 if compatible:
                     values[target_field_id] = f"{{{{trigger.record.fields.{source_field_id}}}}}"
 
@@ -17987,7 +17989,7 @@ def _studio2_normalize_view_bodies(manifest: dict, collect_paths: bool = False):
             fid = field.get("id")
             if not isinstance(fid, str):
                 continue
-            if field.get("type") not in {"string", "text"}:
+            if field.get("type") not in {"string", "text", "rich_text"}:
                 continue
             if fid == display_field:
                 continue
@@ -24961,7 +24963,7 @@ _AI_SESSION_STATUSES = {"draft", "planning", "waiting_input", "ready_to_apply", 
 _AI_SCOPE_MODES = {"auto", "current_item", "selected_items", "workspace"}
 _AI_ARTIFACT_TYPES = {"module", "automation", "email_template", "document_template", "integration", "none"}
 _AI_PATCHSET_STATUSES = {"draft", "validated", "invalid", "approved", "applied", "rolled_back", "failed"}
-_AI_FIELD_TYPES = ["string", "text", "attachments", "bool", "int", "float", "date", "datetime", "enum", "lookup", "user", "tags"]
+_AI_FIELD_TYPES = ["string", "text", "rich_text", "attachments", "bool", "int", "float", "date", "datetime", "enum", "lookup", "user", "tags"]
 
 
 def _ai_now() -> str:
@@ -49863,6 +49865,8 @@ def _load_template_related_lines(line_entity_id: str, parent_field_id: str, pare
             continue
         if record.get(parent_field_id) != parent_record_id:
             continue
+        if isinstance(line_entity_def, dict):
+            record = _recompute_record_for_entity(line_entity_def, record)
         enriched = _enrich_template_record(record, line_entity_def)
         if row.get("record_id") and "id" not in enriched:
             enriched["id"] = row.get("record_id")
@@ -49886,6 +49890,8 @@ def _load_invoice_template_lines(invoice_id: str) -> list[dict]:
             continue
         if record.get("billing_invoice_line.invoice_id") != invoice_id:
             continue
+        if isinstance(line_entity_def, dict):
+            record = _recompute_record_for_entity(line_entity_def, record)
         enriched = _enrich_template_record(record, line_entity_def)
         if row.get("record_id") and "id" not in enriched:
             enriched["id"] = row.get("record_id")
@@ -49893,10 +49899,21 @@ def _load_invoice_template_lines(invoice_id: str) -> list[dict]:
     return items
 
 
+def _template_record_has_placeholders(record: dict | None) -> bool:
+    if not isinstance(record, dict):
+        return False
+    for value in record.values():
+        if isinstance(value, str) and "{{" in value and "}}" in value:
+            return True
+    return False
+
+
 def _build_template_record_context(record: dict, entity_def: dict | None) -> dict:
     base_record = _template_lookup_alias_defaults(entity_def)
     if isinstance(record, dict):
         base_record.update(record)
+    if isinstance(entity_def, dict) and not _template_record_has_placeholders(base_record):
+        base_record = _recompute_record_for_entity(entity_def, base_record)
     enriched = _enrich_template_record(base_record, entity_def)
     entity_name = entity_def.get("id") if isinstance(entity_def, dict) else None
     record_id = record.get("id") if isinstance(record, dict) else None
@@ -50677,15 +50694,6 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     body = await _safe_json(request)
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
-    errors, clean = _validate_record_payload(found[1], data, for_create=False, workflow=workflow)
-    lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
-    errors.extend(lookup_errors)
-    domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
-    errors.extend(domain_errors)
-    errors.extend(_field_write_policy_errors(actor, found[0], found[1], clean if isinstance(clean, dict) else {}))
-    if errors:
-        _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, errors, workflow)
-        return _validation_response(errors, [])
     existing = generic_records.get(entity_id, record_id)
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
@@ -50694,13 +50702,27 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     if not _record_write_allowed_for_actor(actor, found[0], entity_id, before_record):
         return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
+    if not isinstance(data, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    merged = dict(before_record)
+    merged.update(data)
+    merged.pop("id", None)
+    errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
+    lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
+    errors.extend(lookup_errors)
+    domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
+    errors.extend(domain_errors)
+    errors.extend(_field_write_policy_errors(actor, found[0], found[1], data if isinstance(data, dict) else {}))
+    if errors:
+        _log_record_validation_errors(entity_id, merged, errors, workflow)
+        return _validation_response(errors, [])
     numbering_write_errors = _document_numbering_write_errors(actor, found[1], before_record, clean if isinstance(clean, dict) else {})
     if numbering_write_errors:
-        _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, numbering_write_errors, workflow)
+        _log_record_validation_errors(entity_id, merged, numbering_write_errors, workflow)
         return _validation_response(numbering_write_errors, [])
     assignment_errors = _document_numbering_assignment_errors(found[1], before_record, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="save")
     if assignment_errors:
-        _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, assignment_errors, workflow)
+        _log_record_validation_errors(entity_id, merged, assignment_errors, workflow)
         return _validation_response(assignment_errors, [])
     try:
         record = _update_record_with_computed_fields(
@@ -54616,6 +54638,8 @@ def _artifact_ai_normalize_document_runtime_tokens(text: Any) -> Any:
 def _artifact_ai_document_prompt_requests_logo(prompt: str | None, requested_focus: str | None = None) -> bool:
     prompt_text = _ai_norm_token(prompt) if isinstance(prompt, str) else ""
     focus_text = _ai_norm_token(requested_focus) if isinstance(requested_focus, str) else ""
+    if _artifact_ai_prompt_avoids_logo(prompt):
+        return False
     logo_signals = (
         "logo",
         "branding",
@@ -54700,6 +54724,200 @@ def _artifact_ai_branding_primary_color(context: dict | None) -> str:
     return ""
 
 
+def _artifact_ai_branding_text_color(context: dict | None) -> str:
+    if not isinstance(context, dict):
+        return "#111827"
+    for key in ("template_branding", "branding", "company", "workspace", "app_branding"):
+        value = context.get(key)
+        if not isinstance(value, dict):
+            continue
+        for field_name in ("template_text_color", "text_color"):
+            direct = value.get(field_name)
+            if isinstance(direct, str) and direct.strip():
+                return direct.strip()
+        colors = value.get("colors")
+        if isinstance(colors, dict):
+            nested = colors.get("text")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    return "#111827"
+
+
+def _artifact_ai_template_branding_url(
+    context: dict | None,
+    *,
+    direct_fields: tuple[str, ...] = (),
+    asset_types: tuple[str, ...] = (),
+) -> str:
+    if not isinstance(context, dict):
+        return ""
+    template_branding = context.get("template_branding") if isinstance(context.get("template_branding"), dict) else {}
+    for field_name in direct_fields:
+        value = template_branding.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    assets_by_type = template_branding.get("assets_by_type") if isinstance(template_branding.get("assets_by_type"), dict) else {}
+    for asset_type in asset_types:
+        rows = assets_by_type.get(asset_type)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            value = row.get("file_url") or row.get("url")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _artifact_ai_prompt_requests_branding(prompt: str | None, requested_focus: str | None = None) -> bool:
+    prompt_text = _ai_norm_token(prompt) if isinstance(prompt, str) else ""
+    focus_text = _ai_norm_token(requested_focus) if isinstance(requested_focus, str) else ""
+    if focus_text == "branding":
+        return True
+    branding_signals = (
+        "branding",
+        "brand",
+        "brand color",
+        "brand colours",
+        "brand colors",
+        "palette",
+        "apply workspace branding",
+        "use our branding",
+        "use branding",
+        "background graphic",
+        "background image",
+        "banner image",
+        "banner",
+        "watermark",
+    )
+    return any(signal in prompt_text for signal in branding_signals)
+
+
+def _artifact_ai_prompt_avoids_logo(prompt: str | None) -> bool:
+    prompt_text = _ai_norm_token(prompt) if isinstance(prompt, str) else ""
+    if not prompt_text:
+        return False
+    negative_logo_signals = (
+        "dont use logo",
+        "don t use logo",
+        "do not use logo",
+        "no logo",
+        "without logo",
+        "exclude logo",
+    )
+    return any(signal in prompt_text for signal in negative_logo_signals)
+
+
+def _artifact_ai_document_prompt_requests_background_graphic(prompt: str | None, requested_focus: str | None = None) -> bool:
+    prompt_text = _ai_norm_token(prompt) if isinstance(prompt, str) else ""
+    focus_text = _ai_norm_token(requested_focus) if isinstance(requested_focus, str) else ""
+    if any(
+        signal in prompt_text
+        for signal in (
+            "background graphic",
+            "background image",
+            "use our background",
+            "use the background",
+            "use our branding background",
+            "hero background",
+            "full page background",
+            "watermark",
+        )
+    ):
+        return True
+    return focus_text == "branding" and "background" in prompt_text
+
+
+def _artifact_ai_email_prompt_requests_banner(prompt: str | None, requested_focus: str | None = None) -> bool:
+    prompt_text = _ai_norm_token(prompt) if isinstance(prompt, str) else ""
+    focus_text = _ai_norm_token(requested_focus) if isinstance(requested_focus, str) else ""
+    if any(
+        signal in prompt_text
+        for signal in (
+            "banner image",
+            "email banner",
+            "header graphic",
+            "hero image",
+            "background image",
+            "background graphic",
+        )
+    ):
+        return True
+    return focus_text == "branding" and ("banner" in prompt_text or "graphic" in prompt_text)
+    
+
+def _artifact_ai_text_contains_branding_reference(text: str | None, *, resolved_url: str | None = None, token: str | None = None) -> bool:
+    source = str(text or "")
+    lowered = source.lower()
+    if isinstance(token, str) and token.strip() and token.strip().lower() in lowered:
+        return True
+    if isinstance(resolved_url, str) and resolved_url.strip() and resolved_url.strip() in source:
+        return True
+    return "template_branding." in lowered or "branding." in lowered
+
+
+def _artifact_ai_document_wrap_brand_shell(html: str, primary_color: str, text_color: str) -> str:
+    border_color = primary_color if re.fullmatch(r"#[0-9a-fA-F]{6}", str(primary_color or "").strip()) else "#1f2937"
+    body_color = text_color if re.fullmatch(r"#[0-9a-fA-F]{6}", str(text_color or "").strip()) else "#111827"
+    return (
+        f"<div style=\"font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;color:{body_color};"
+        f"background:#ffffff;border-top:6px solid {border_color};padding:28px 32px;\">"
+        f"{html}"
+        "</div>"
+    )
+
+
+def _artifact_ai_document_wrap_background_shell(html: str, primary_color: str, text_color: str) -> str:
+    border_color = primary_color if re.fullmatch(r"#[0-9a-fA-F]{6}", str(primary_color or "").strip()) else "#1f2937"
+    body_color = text_color if re.fullmatch(r"#[0-9a-fA-F]{6}", str(text_color or "").strip()) else "#111827"
+    return (
+        "{% set background_graphic_url = template_branding.default_background_graphic_url if template_branding is defined and template_branding and "
+        "template_branding.default_background_graphic_url is defined and template_branding.default_background_graphic_url else '' %}"
+        f"<div style=\"font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;color:{body_color};"
+        f"background:#ffffff;border-top:6px solid {border_color};\">"
+        "{% if background_graphic_url %}"
+        "<div style=\"background-image:url('{{ background_graphic_url }}');background-repeat:no-repeat;background-position:center top;background-size:cover;padding:28px 32px;\">"
+        "{% else %}"
+        "<div style=\"padding:28px 32px;\">"
+        "{% endif %}"
+        f"{html}"
+        "</div></div>"
+    )
+
+
+def _artifact_ai_document_ensure_branding(
+    html: str | None,
+    context: dict | None,
+    prompt: str | None,
+    requested_focus: str | None = None,
+) -> tuple[str | None, list[str]]:
+    if not isinstance(html, str) or not html.strip():
+        return html, []
+    primary_color = _artifact_ai_branding_primary_color(context)
+    text_color = _artifact_ai_branding_text_color(context)
+    wants_branding = _artifact_ai_prompt_requests_branding(prompt, requested_focus)
+    wants_background = _artifact_ai_document_prompt_requests_background_graphic(prompt, requested_focus)
+    background_url = _artifact_ai_template_branding_url(
+        context,
+        direct_fields=("default_background_graphic_url", "header_graphic_url", "default_watermark_url"),
+        asset_types=("background_graphic", "header_graphic", "watermark"),
+    )
+    updated = html
+    assumptions: list[str] = []
+    if wants_background and background_url and not _artifact_ai_text_contains_branding_reference(
+        updated,
+        resolved_url=background_url,
+        token="default_background_graphic_url",
+    ):
+        updated = _artifact_ai_document_wrap_background_shell(updated, primary_color, text_color)
+        assumptions.append("Applied the workspace background graphic to the document body.")
+    elif wants_branding and not _artifact_ai_text_contains_branding_reference(updated, token="template_primary_color"):
+        updated = _artifact_ai_document_wrap_brand_shell(updated, primary_color, text_color)
+        assumptions.append("Applied the workspace brand palette and typography shell to the document body.")
+    return updated, assumptions
+
+
 def _artifact_ai_hex_mix(color: str, target: str, ratio: float) -> str:
     def parse(value: str) -> tuple[int, int, int] | None:
         text = str(value or "").strip()
@@ -54753,6 +54971,18 @@ def _artifact_ai_email_logo_header_html(primary_color: str | None = None) -> str
     ) % (border_color, border_color, border_color)
 
 
+def _artifact_ai_email_banner_html() -> str:
+    return (
+        "{% set banner_url = template_branding.default_email_banner_url if template_branding is defined and template_branding and "
+        "template_branding.default_email_banner_url is defined and template_branding.default_email_banner_url else '' %}"
+        "{% if banner_url %}"
+        "<div style=\"margin:0 0 20px 0;\">"
+        "<img src=\"{{ banner_url }}\" alt=\"\" style=\"width:100%;max-width:640px;height:auto;display:block;border:0;border-radius:16px;\" />"
+        "</div>"
+        "{% endif %}"
+    )
+
+
 def _artifact_ai_email_apply_brand_palette(body_html: str, primary_color: str | None) -> str:
     if not isinstance(body_html, str) or not body_html.strip():
         return body_html
@@ -54779,19 +55009,50 @@ def _artifact_ai_email_apply_brand_palette(body_html: str, primary_color: str | 
     return updated
 
 
-def _artifact_ai_email_ensure_branding(body_html: str | None, primary_color: str | None, *, require_logo: bool) -> tuple[str | None, bool]:
+def _artifact_ai_email_ensure_branding(
+    body_html: str | None,
+    context: dict | None,
+    prompt: str | None,
+    requested_focus: str | None = None,
+    *,
+    require_logo: bool,
+) -> tuple[str | None, list[str]]:
     if not isinstance(body_html, str) or not body_html.strip():
-        return body_html, False
+        return body_html, []
+    primary_color = _artifact_ai_branding_primary_color(context)
+    banner_url = _artifact_ai_template_branding_url(
+        context,
+        direct_fields=("default_email_banner_url", "header_graphic_url"),
+        asset_types=("email_banner", "header_graphic"),
+    )
+    wants_banner = _artifact_ai_email_prompt_requests_banner(prompt, requested_focus)
+    wants_branding = _artifact_ai_prompt_requests_branding(prompt, requested_focus)
     updated = body_html
-    changed = False
+    assumptions: list[str] = []
+    if wants_banner and banner_url and not _artifact_ai_text_contains_branding_reference(
+        updated,
+        resolved_url=banner_url,
+        token="default_email_banner_url",
+    ):
+        updated = f"{_artifact_ai_email_banner_html()}{updated}"
+        assumptions.append("Applied the workspace email banner asset to the email draft.")
     if require_logo and "logo_url" not in updated.lower():
         updated = f"{_artifact_ai_email_logo_header_html(primary_color)}{updated}"
-        changed = True
+        assumptions.append("Applied the workspace logo masthead to the email draft.")
     recolored = _artifact_ai_email_apply_brand_palette(updated, primary_color)
     if recolored != updated:
         updated = recolored
-        changed = True
-    return updated, changed
+        assumptions.append("Applied the workspace primary brand color to the email draft.")
+    elif wants_branding and "font-family" not in updated.lower():
+        text_color = _artifact_ai_branding_text_color(context)
+        body_color = text_color if re.fullmatch(r"#[0-9a-fA-F]{6}", str(text_color or "").strip()) else "#111827"
+        updated = (
+            f"<div style=\"font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;color:{body_color};\">"
+            f"{updated}"
+            "</div>"
+        )
+        assumptions.append("Applied the workspace typography shell to the email draft.")
+    return updated, assumptions
 
 
 def _artifact_ai_email_strip_dead_quote_cta(body_html: str | None) -> tuple[str | None, bool]:
@@ -59489,6 +59750,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
             "For customer-facing emails, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
             "Use context.template_branding.assets, asset_reference_keys, assets_by_type, field_groups, and usage_guidance before falling back to context.branding, context.company, or context.workspace. "
+            "When the user asks for a background, banner, header graphic, footer graphic, or watermark, prefer the direct template asset urls such as context.template_branding.default_email_banner_url, header_graphic_url, footer_graphic_url, and default_watermark_url before inventing raw asset URLs. "
             "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing email content. "
             "Do not automatically place every available branding field or asset into every email. Choose only the subset that suits the email type, audience, and user request. "
             "Prefer the primary logo and core colors by default. Use banners, watermarks, backgrounds, header/footer graphics, legal copy, terms links, registration or tax numbers, and payment details only when they are explicitly requested or genuinely useful for the specific email. "
@@ -59529,6 +59791,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         "If context.template_helpers.supports_line_items is true, use context.template_helpers.preferred_collections, context.template_helpers.related_entity_fields, context.template_helpers.accessible_line_item_keys, context.template_helpers.preferred_line_item_keys, and context.template_helpers.example_row_columns for repeating rows instead of inventing unsupported paths. "
         "For customer-facing documents and PDFs, prefer context.template_branding first for brand_name, legal_name, website, phone, address, footer/disclaimer text, primary_logo_url, template colors, and named assets. "
         "Use context.template_branding.assets, asset_reference_keys, assets_by_type, field_groups, and usage_guidance before falling back to context.branding, context.company, or context.workspace. "
+        "When the user asks for a background, banner, header graphic, footer graphic, or watermark, prefer the direct template asset urls such as context.template_branding.default_background_graphic_url, default_email_banner_url, header_graphic_url, footer_graphic_url, and default_watermark_url before inventing raw asset URLs. "
         "Use context.app_branding only when the request is explicitly about app/workspace UI identity rather than customer-facing document styling. "
         "Do not automatically place every available branding field or asset into every document. Choose only the subset that serves the document type, audience, and user request. "
         "Prefer the primary logo and core colors by default. Use banners, watermarks, backgrounds, header/footer graphics, legal copy, terms links, registration or tax numbers, and payment details only when they are explicitly requested or genuinely useful for the specific document. "
@@ -59708,15 +59971,19 @@ def _artifact_ai_generate_plan(
         if isinstance(context_payload.get("selected_entity_id"), str) and context_payload.get("selected_entity_id").strip():
             variables_schema = draft.get("variables_schema") if isinstance(draft.get("variables_schema"), dict) else {}
             draft["variables_schema"] = {**variables_schema, "entity_id": context_payload.get("selected_entity_id").strip()}
-        if _artifact_ai_email_prompt_implies_branded_transactional_layout(prompt, requested_focus):
-            updated_body_html, branding_changed = _artifact_ai_email_ensure_branding(
+        if _artifact_ai_email_prompt_implies_branded_transactional_layout(prompt, requested_focus) or _artifact_ai_prompt_requests_branding(prompt, requested_focus):
+            updated_body_html, branding_assumptions = _artifact_ai_email_ensure_branding(
                 draft.get("body_html"),
-                _artifact_ai_branding_primary_color(context_payload),
-                require_logo=_artifact_ai_branding_context_has_logo(context_payload),
+                context_payload,
+                prompt,
+                requested_focus,
+                require_logo=_artifact_ai_branding_context_has_logo(context_payload) and not _artifact_ai_prompt_avoids_logo(prompt),
             )
-            if branding_changed and isinstance(updated_body_html, str):
+            if isinstance(updated_body_html, str):
                 draft["body_html"] = updated_body_html
-                assumptions.append("Applied workspace logo and primary brand color to the email draft.")
+            for item in branding_assumptions:
+                if item not in assumptions:
+                    assumptions.append(item)
         updated_body_html, cta_changed = _artifact_ai_email_strip_dead_quote_cta(draft.get("body_html"))
         if cta_changed and isinstance(updated_body_html, str):
             draft["body_html"] = updated_body_html
@@ -59732,6 +59999,17 @@ def _artifact_ai_generate_plan(
             draft, logo_injected = _artifact_ai_ensure_document_logo_masthead(draft)
             if logo_injected:
                 assumptions.append("Inserted the workspace logo masthead because the request asked for branding or logo treatment.")
+        updated_html, branding_assumptions = _artifact_ai_document_ensure_branding(
+            draft.get("html"),
+            context_payload,
+            prompt,
+            requested_focus,
+        )
+        if isinstance(updated_html, str):
+            draft["html"] = updated_html
+        for item in branding_assumptions:
+            if item not in assumptions:
+                assumptions.append(item)
         validation = _artifact_ai_validate_doc_template_draft(draft)
     return {
         "summary": summary.strip() if isinstance(summary, str) and summary.strip() else "Draft updated.",
@@ -61451,6 +61729,14 @@ def _validate_automation_payload(data: dict, for_update: bool = False) -> list[d
                         )
                         if not has_source_record:
                             errors.append(_issue("AUTOMATION_STEP_INVALID", "source_record required for apply_integration_mapping", f"{step_path}.inputs.source_record"))
+                        elif isinstance(source_record, str) and source_record.strip() == "[object Object]":
+                            errors.append(
+                                _issue(
+                                    "AUTOMATION_STEP_INVALID",
+                                    "source_record must be a JSON object or raw context reference, not a stringified object placeholder",
+                                    f"{step_path}.inputs.source_record",
+                                )
+                            )
                     if kind == "action" and action_id == "system.integration_request":
                         connection_id = inputs.get("connection_id")
                         if not isinstance(connection_id, str) or not connection_id.strip():

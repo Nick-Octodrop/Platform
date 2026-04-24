@@ -1,5 +1,6 @@
 import React from "react";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
+import { renderHtmlToRichText, renderRichTextToHtml } from "../utils/richText.js";
 import { translateRuntime } from "../i18n/runtime.js";
 
 const FIELD_TEXT_STYLE = {
@@ -23,8 +24,9 @@ export function setFieldValue(record, fieldId, value) {
   return next;
 }
 
-function AutoTextarea({ value, onChange, disabled }) {
-  const ref = React.useRef(null);
+function AutoTextarea({ value, onChange, disabled, textareaRef = null }) {
+  const localRef = React.useRef(null);
+  const ref = textareaRef || localRef;
 
   const resize = React.useCallback(() => {
     const el = ref.current;
@@ -65,6 +67,237 @@ function PreviewText({ value, emptyLabel = "No content yet." }) {
       style={{ ...FIELD_TEXT_STYLE, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
     >
       {text ? text : <span className="opacity-60">{emptyLabel}</span>}
+    </div>
+  );
+}
+
+function RichTextPreview({ value, emptyLabel = "No content yet." }) {
+  const html = renderRichTextToHtml(value);
+  return (
+    <div
+      className="min-h-[7rem] w-full rounded-box border border-base-300 bg-base-200/30 px-3 py-3 text-sm"
+      style={{ ...FIELD_TEXT_STYLE, overflowWrap: "anywhere" }}
+    >
+      {html ? (
+        <div
+          className="space-y-2 [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <span className="opacity-60">{emptyLabel}</span>
+      )}
+    </div>
+  );
+}
+
+function RichTextEditor({ value, onChange, disabled }) {
+  const editorRef = React.useRef(null);
+  const savedRangeRef = React.useRef(null);
+  const emitFrameRef = React.useRef(0);
+  const serializedValueRef = React.useRef(String(value ?? ""));
+  const propValueRef = React.useRef(String(value ?? ""));
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [hasSelection, setHasSelection] = React.useState(false);
+  const [isFocused, setIsFocused] = React.useState(false);
+
+  const syncEditorFromValue = React.useCallback(
+    (nextValue, { force = false } = {}) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const normalizedValue = String(nextValue ?? "");
+      propValueRef.current = normalizedValue;
+      if (!force && serializedValueRef.current === normalizedValue) return;
+      editor.innerHTML = renderRichTextToHtml(normalizedValue);
+      serializedValueRef.current = normalizedValue;
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    syncEditorFromValue(value, { force: !editorRef.current?.innerHTML });
+  }, [syncEditorFromValue, value]);
+
+  React.useEffect(() => {
+    return () => {
+      if (emitFrameRef.current) {
+        cancelAnimationFrame(emitFrameRef.current);
+      }
+    };
+  }, []);
+
+  const emitEditorValue = React.useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const nextValue = renderHtmlToRichText(editor.innerHTML);
+    serializedValueRef.current = nextValue;
+    if (propValueRef.current !== nextValue) {
+      onChange(nextValue);
+    }
+  }, [onChange]);
+
+  const scheduleEmitEditorValue = React.useCallback(() => {
+    if (emitFrameRef.current) return;
+    emitFrameRef.current = window.requestAnimationFrame(() => {
+      emitFrameRef.current = 0;
+      emitEditorValue();
+    });
+  }, [emitEditorValue]);
+
+  const updateSelectionUi = React.useCallback(() => {
+    if (disabled) {
+      setHasSelection(false);
+      setMenuOpen(false);
+      return;
+    }
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      setHasSelection(false);
+      setMenuOpen(false);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer) || !selection.toString().trim()) {
+      setHasSelection(false);
+      setMenuOpen(false);
+      return;
+    }
+    savedRangeRef.current = range.cloneRange();
+    setHasSelection(true);
+  }, [disabled]);
+
+  React.useEffect(() => {
+    if (!isFocused || disabled) return undefined;
+    const handleSelectionChange = () => {
+      updateSelectionUi();
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [disabled, isFocused, updateSelectionUi]);
+
+  const restoreSelection = React.useCallback(() => {
+    const range = savedRangeRef.current;
+    const selection = window.getSelection();
+    const editor = editorRef.current;
+    if (!range || !selection || !editor) return false;
+    editor.focus();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }, []);
+
+  const runCommand = React.useCallback(
+    (command) => {
+      if (disabled) return;
+      if (!restoreSelection()) return;
+      switch (command) {
+        case "bold":
+          document.execCommand("bold", false);
+          break;
+        case "h1":
+          document.execCommand("formatBlock", false, "h1");
+          break;
+        case "h2":
+          document.execCommand("formatBlock", false, "h2");
+          break;
+        case "bullet":
+          document.execCommand("insertUnorderedList", false);
+          break;
+        case "number":
+          document.execCommand("insertOrderedList", false);
+          break;
+        default:
+          return;
+      }
+      emitEditorValue();
+      setMenuOpen(false);
+      requestAnimationFrame(() => {
+        updateSelectionUi();
+      });
+    },
+    [disabled, emitEditorValue, restoreSelection, updateSelectionUi],
+  );
+
+  const toolbarButtons = [
+    { id: "bold", label: "Bold" },
+    { id: "h1", label: "H1" },
+    { id: "h2", label: "H2" },
+    { id: "bullet", label: "Bullet" },
+    { id: "number", label: "1." },
+  ];
+
+  return (
+    <div className="relative">
+      <div
+        className="relative min-h-[12rem] w-full rounded-box border border-base-300 bg-base-200/30 px-3 py-3 text-sm"
+        style={{ ...FIELD_TEXT_STYLE, overflowWrap: "anywhere" }}
+      >
+        {hasSelection ? (
+          <div className="absolute right-2 top-2 z-20">
+            <div className="dropdown dropdown-end">
+              <button
+                type="button"
+                className="btn btn-xs border border-base-300 bg-base-100 shadow-sm"
+                disabled={disabled}
+                aria-label="Format selection"
+                title="Format selection"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                Format
+              </button>
+              {menuOpen ? (
+                <ul className="menu menu-compact mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                  {toolbarButtons.map((button) => (
+                    <li key={button.id}>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => runCommand(button.id)}
+                      >
+                        {button.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          className="min-h-[10rem] pr-16 outline-none [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+          onFocus={() => {
+            setIsFocused(true);
+            syncEditorFromValue(value);
+          }}
+          onInput={() => {
+            scheduleEmitEditorValue();
+            updateSelectionUi();
+          }}
+          onBlur={() => {
+            setIsFocused(false);
+            if (emitFrameRef.current) {
+              cancelAnimationFrame(emitFrameRef.current);
+              emitFrameRef.current = 0;
+            }
+            emitEditorValue();
+            setMenuOpen(false);
+            setHasSelection(false);
+          }}
+          onPaste={(event) => {
+            event.preventDefault();
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            document.execCommand("insertText", false, text);
+            scheduleEmitEditorValue();
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -127,6 +360,17 @@ export function renderField(field, value, onChange, readonly, record = null) {
       }
       return (
         <AutoTextarea
+          value={value || ""}
+          onChange={onChange}
+          disabled={readonly || field.readonly}
+        />
+      );
+    case "rich_text":
+      if (readonly || field.readonly || previewWidget) {
+        return <RichTextPreview value={value} />;
+      }
+      return (
+        <RichTextEditor
           value={value || ""}
           onChange={onChange}
           disabled={readonly || field.readonly}

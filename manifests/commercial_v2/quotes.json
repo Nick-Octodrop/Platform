@@ -170,25 +170,25 @@
         },
         {
           "id": "biz_quote_script.opening_message",
-          "type": "text",
+          "type": "rich_text",
           "label": "Opening Message",
           "label_key": "quotes.entities.biz_quote_script.fields.opening_message.label"
         },
         {
           "id": "biz_quote_script.body_text",
-          "type": "text",
-          "label": "Script Body",
+          "type": "rich_text",
+          "label": "Quote Script",
           "label_key": "quotes.entities.biz_quote_script.fields.body_text.label"
         },
         {
           "id": "biz_quote_script.transport_disclaimer",
-          "type": "text",
+          "type": "rich_text",
           "label": "Transport Disclaimer",
           "label_key": "quotes.entities.biz_quote_script.fields.transport_disclaimer.label"
         },
         {
           "id": "biz_quote_script.closing_text",
-          "type": "text",
+          "type": "rich_text",
           "label": "Closing Text",
           "label_key": "quotes.entities.biz_quote_script.fields.closing_text.label"
         },
@@ -314,6 +314,10 @@
                 "biz_quote.customer_contact_email": "biz_contact.email",
                 "biz_quote.customer_contact_phone": "biz_contact.phone"
               },
+              "only_when_empty": [
+                "biz_quote.customer_contact_email",
+                "biz_quote.customer_contact_phone"
+              ],
               "clear_fields": [
                 "biz_quote.customer_contact_person_id",
                 "biz_quote.customer_contact_name",
@@ -468,7 +472,7 @@
         {
           "id": "biz_quote.script_template_id",
           "type": "lookup",
-          "label": "Quote Script",
+          "label": "Quote Script Template",
           "entity": "entity.biz_quote_script",
           "display_field": "biz_quote_script.script_name",
           "ui": {
@@ -553,7 +557,7 @@
         },
         {
           "id": "biz_quote.script_source_opening_message",
-          "type": "text",
+          "type": "rich_text",
           "label": "Source Opening Message",
           "readonly": true,
           "ui": {
@@ -562,7 +566,7 @@
         },
         {
           "id": "biz_quote.script_source_body",
-          "type": "text",
+          "type": "rich_text",
           "label": "Source Script Body",
           "readonly": true,
           "ui": {
@@ -571,7 +575,7 @@
         },
         {
           "id": "biz_quote.script_source_transport_disclaimer",
-          "type": "text",
+          "type": "rich_text",
           "label": "Source Transport Disclaimer",
           "readonly": true,
           "ui": {
@@ -580,7 +584,7 @@
         },
         {
           "id": "biz_quote.script_source_closing_text",
-          "type": "text",
+          "type": "rich_text",
           "label": "Source Closing Text",
           "readonly": true,
           "ui": {
@@ -621,13 +625,13 @@
         },
         {
           "id": "biz_quote.validity_notes",
-          "type": "text",
+          "type": "rich_text",
           "label": "Validity Notes",
           "label_key": "quotes.entities.biz_quote.fields.validity_notes.label"
         },
         {
           "id": "biz_quote.loss_reason",
-          "type": "text",
+          "type": "rich_text",
           "label": "Loss / Expiry Reason",
           "required_when": {
             "op": "in",
@@ -641,37 +645,37 @@
         },
         {
           "id": "biz_quote.internal_notes",
-          "type": "text",
+          "type": "rich_text",
           "label": "Internal Notes",
           "label_key": "quotes.entities.biz_quote.fields.internal_notes.label"
         },
         {
           "id": "biz_quote.customer_notes",
-          "type": "text",
+          "type": "rich_text",
           "label": "Customer Notes",
           "label_key": "quotes.entities.biz_quote.fields.customer_notes.label"
         },
         {
           "id": "biz_quote.opening_message",
-          "type": "text",
+          "type": "rich_text",
           "label": "Opening Message",
           "label_key": "quotes.entities.biz_quote.fields.opening_message.label"
         },
         {
           "id": "biz_quote.quote_script_body",
-          "type": "text",
-          "label": "Quote Script Body",
+          "type": "rich_text",
+          "label": "Quote Script",
           "label_key": "quotes.entities.biz_quote.fields.quote_script_body.label"
         },
         {
           "id": "biz_quote.transport_disclaimer",
-          "type": "text",
+          "type": "rich_text",
           "label": "Transport Disclaimer",
           "label_key": "quotes.entities.biz_quote.fields.transport_disclaimer.label"
         },
         {
           "id": "biz_quote.closing_text",
-          "type": "text",
+          "type": "rich_text",
           "label": "Closing Text"
         },
         {
@@ -1840,7 +1844,7 @@
       "id": "action.quote_reset_copy_from_script",
       "kind": "update_record",
       "entity_id": "entity.biz_quote",
-      "label": "Reset Copy From Script",
+      "label": "Reset Quote Script From Template",
       "patch": {
         "biz_quote.document_language": {
           "ref": "biz_quote.script_source_language"
@@ -1862,8 +1866,8 @@
         }
       },
       "confirm": {
-        "title": "Reset quote copy from the selected script?",
-        "body": "This replaces the quote-specific copy fields with the current selected script content."
+        "title": "Reset quote script from the selected template?",
+        "body": "This replaces the quote-specific script with the current selected template content."
       },
       "visible_when": {
         "op": "exists",
@@ -2123,12 +2127,6 @@
           "field_id": "biz_quote_script.sales_entity"
         },
         {
-          "field_id": "biz_quote_script.owner_name"
-        },
-        {
-          "field_id": "biz_quote_script.template_name"
-        },
-        {
           "field_id": "biz_quote_script.is_active"
         }
       ],
@@ -2144,8 +2142,6 @@
           "placeholder": "Search quote scripts...",
           "fields": [
             "biz_quote_script.script_name",
-            "biz_quote_script.owner_name",
-            "biz_quote_script.template_name",
             "biz_quote_script.body_text"
           ],
           "placeholder_key": "quotes.views.quote_script_list.search.placeholder"
@@ -2188,8 +2184,6 @@
             "biz_quote_script.script_name",
             "biz_quote_script.language",
             "biz_quote_script.sales_entity",
-            "biz_quote_script.owner_name",
-            "biz_quote_script.template_name",
             "biz_quote_script.is_active"
           ],
           "section_title_key": "quotes.views.quote_script_form.sections.summary.title"
@@ -2239,8 +2233,6 @@
           "biz_quote_script.script_name",
           "biz_quote_script.language",
           "biz_quote_script.sales_entity",
-          "biz_quote_script.owner_name",
-          "biz_quote_script.template_name",
           "biz_quote_script.opening_message",
           "biz_quote_script.body_text",
           "biz_quote_script.transport_disclaimer",
@@ -2405,7 +2397,6 @@
             "biz_quote.customer_contact_name",
             "biz_quote.customer_contact_email",
             "biz_quote.customer_contact_phone",
-            "biz_quote.script_template_id",
             "biz_quote.sales_entity",
             "biz_quote.currency",
             "biz_quote.quote_date",
@@ -2582,26 +2573,10 @@
           "section_title_key": "quotes.views.form.sections.lines.title"
         },
         {
-          "id": "script_source",
-          "title": "Source Script",
+          "id": "script",
+          "title": "Quote Script",
           "fields": [
-            "biz_quote.document_language",
-            "biz_quote.pdf_template_name",
-            "biz_quote.script_source_name",
-            "biz_quote.script_source_owner_name",
-            "biz_quote.script_source_sales_entity",
-            "biz_quote.script_source_language",
-            "biz_quote.script_source_template_name",
-            "biz_quote.script_source_opening_message",
-            "biz_quote.script_source_body",
-            "biz_quote.script_source_transport_disclaimer",
-            "biz_quote.script_source_closing_text"
-          ]
-        },
-        {
-          "id": "commercial_copy",
-          "title": "Quote Override",
-          "fields": [
+            "biz_quote.script_template_id",
             "biz_quote.opening_message",
             "biz_quote.quote_script_body",
             "biz_quote.transport_disclaimer",
@@ -2705,11 +2680,10 @@
               ]
             },
             {
-              "id": "commercial_copy",
-              "label": "Quote Copy",
+              "id": "script",
+              "label": "Quote Script",
               "sections": [
-                "script_source",
-                "commercial_copy"
+                "script"
               ]
             },
             {
@@ -2777,6 +2751,7 @@
           "biz_quote.opening_message",
           "biz_quote.quote_script_body",
           "biz_quote.transport_disclaimer",
+          "biz_quote.closing_text",
           "biz_quote.internal_notes",
           "biz_quote.linked_customer_order_id",
           "biz_quote.primary_document_id",

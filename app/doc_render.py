@@ -159,6 +159,7 @@ def render_pdf(
             pdf_args["format"] = paper_size
         if margins:
             pdf_args["margin"] = margins
+        pdf_args["print_background"] = True
         if header_html or footer_html:
             pdf_args["display_header_footer"] = True
             pdf_args["header_template"] = wrapped_header or "<span></span>"

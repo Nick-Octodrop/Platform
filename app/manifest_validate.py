@@ -11,7 +11,7 @@ from app.module_dependencies import validate_depends_on_shape
 Issue = Dict[str, Any]
 
 
-ALLOWED_FIELD_TYPES = {"string", "text", "number", "currency", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
+ALLOWED_FIELD_TYPES = {"string", "text", "rich_text", "number", "currency", "bool", "date", "datetime", "enum", "uuid", "lookup", "tags", "attachments", "user", "users"}
 ALLOWED_FIELD_FORMAT_KINDS = {"plain", "currency", "percent", "measurement", "duration"}
 ALLOWED_FIELD_FORMAT_KEYS = {"kind", "currency", "currency_code", "currency_field", "currency_source", "unit", "unit_field", "precision"}
 ALLOWED_V1_TOP_KEYS = {
@@ -762,7 +762,7 @@ def _validate_blocks(
 
 
 def _default_type_valid(field_type: str, value) -> bool:
-    if field_type in {"string", "text"}:
+    if field_type in {"string", "text", "rich_text"}:
         return isinstance(value, str)
     if field_type == "user":
         return isinstance(value, str)

@@ -134,6 +134,7 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
   if (!config || typeof config !== "object") return nextRecord;
 
   const fieldMap = config.field_map;
+  const lookupValueChanged = !valuesEquivalent(getFieldValue(baseRecord || {}, lookupFieldId), selectedValue);
   const onlyWhenEmpty = new Set(
     Array.isArray(config.only_when_empty) ? config.only_when_empty.filter((fieldId) => typeof fieldId === "string" && fieldId) : []
   );
@@ -144,6 +145,13 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
     config.overwrite_if_current_matches && typeof config.overwrite_if_current_matches === "object"
       ? config.overwrite_if_current_matches
       : {};
+
+  if (lookupValueChanged) {
+    for (const targetFieldId of clearFields) {
+      if (targetFieldId === lookupFieldId) continue;
+      nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, "");
+    }
+  }
 
   if (lookupRecord && fieldMap && typeof fieldMap === "object") {
     for (const [targetFieldId, sourceFieldId] of Object.entries(fieldMap)) {
@@ -165,11 +173,6 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
       nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, mappedValue ?? "");
     }
     return nextRecord;
-  }
-
-  for (const targetFieldId of clearFields) {
-    if (targetFieldId === lookupFieldId) continue;
-    nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, "");
   }
   return nextRecord;
 }

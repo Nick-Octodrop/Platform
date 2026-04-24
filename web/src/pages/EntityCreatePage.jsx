@@ -45,13 +45,16 @@ export default function EntityCreatePage({ entityId }) {
       }),
     [entityId, indexEntry?.formViewId, location.pathname, routeEntity]
   );
-  const isDirty = useMemo(() => {
-    try {
-      return JSON.stringify(draft || {}) !== JSON.stringify({});
-    } catch {
-      return true;
-    }
-  }, [draft]);
+  const hasMeaningfulDraft = useMemo(
+    () =>
+      Boolean(
+        draft &&
+          typeof draft === "object" &&
+          Object.entries(draft).some(([, value]) => value !== null && value !== undefined && value !== "")
+      ),
+    [draft]
+  );
+  const isDirty = hasMeaningfulDraft;
 
   useEffect(() => {
     async function buildIndex() {
@@ -98,10 +101,6 @@ export default function EntityCreatePage({ entityId }) {
 
   useEffect(() => {
     if (!draftStorageKey) return;
-    const hasMeaningfulDraft =
-      draft &&
-      typeof draft === "object" &&
-      Object.entries(draft).some(([, value]) => value !== null && value !== undefined && value !== "");
     if (!hasMeaningfulDraft) {
       clearFormDraftSnapshot(draftStorageKey);
       return;
@@ -111,7 +110,7 @@ export default function EntityCreatePage({ entityId }) {
       draft,
       updatedAt: Date.now(),
     });
-  }, [draftStorageKey, draft]);
+  }, [draftStorageKey, draft, hasMeaningfulDraft]);
 
   useEffect(() => {
     if (!isDirty) return undefined;

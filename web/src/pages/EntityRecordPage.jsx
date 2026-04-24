@@ -67,14 +67,7 @@ export default function EntityRecordPage() {
       }),
     [entity, id, selected?.formViewId, selected?.moduleId]
   );
-  const isDirty = useMemo(() => {
-    if (record == null) return false;
-    try {
-      return JSON.stringify(draft || {}) !== JSON.stringify(record || {});
-    } catch {
-      return true;
-    }
-  }, [draft, record]);
+  const isDirty = useMemo(() => record != null && draft !== record, [draft, record]);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -94,8 +87,10 @@ export default function EntityRecordPage() {
       if (record != null && isDirtyRef.current) return;
       setLoading(true);
       try {
-        const res = await apiFetch(`/records/${entity}/${id}`);
-        const manifestRes = await getManifest(selected.moduleId);
+        const [res, manifestRes] = await Promise.all([
+          apiFetch(`/records/${entity}/${id}`),
+          getManifest(selected.moduleId),
+        ]);
         setManifestHash(manifestRes.manifest_hash || null);
         const compiled = manifestRes.compiled;
         const view = compiled?.viewById?.get(selected.formViewId);
@@ -111,7 +106,12 @@ export default function EntityRecordPage() {
         const nextRecord = applyComputedFields(indexMap, res.record);
         const persisted = loadFormDraftSnapshot(draftStorageKey);
         if (persisted?.dirty && persisted?.draft && typeof persisted.draft === "object") {
-          setDraft(applyComputedFields(indexMap, persisted.draft));
+          setDraft(
+            applyComputedFields(indexMap, {
+              ...(nextRecord || {}),
+              ...(persisted.draft || {}),
+            })
+          );
         } else {
           setDraft(nextRecord);
         }

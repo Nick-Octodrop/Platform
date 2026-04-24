@@ -9,7 +9,9 @@ Manifest Contract v1.3 (Studio2)
 - top-level `modals[]` can render fields and run modal actions (`action_id` or inline).
 - form sections may use `line_editor` (or `line_editors` fallback on form view) for inline child-table editing.
 - UI composition rules for v1.3 apply (containers define surfaces; views are flat).
-- Field types allowlisted: `string`, `text`, `number`, `bool`, `date`, `datetime`, `enum`, `uuid`, `lookup`, `tags`, `attachments`.
+- Field types allowlisted: `string`, `text`, `rich_text`, `number`, `bool`, `date`, `datetime`, `enum`, `uuid`, `lookup`, `tags`, `attachments`.
+- `rich_text` is for formatted longform content that may render with headings, bold text, bullets, lists, and paragraphs in forms, documents, or emails.
+- `text` is for plain multiline content without formatting semantics.
 - Number fields may include `format` for shared display semantics. Use:
   - `{"kind":"currency","currency":"NZD","precision":2}`
   - `{"kind":"currency","currency_field":"invoice.currency_code","precision":2}`

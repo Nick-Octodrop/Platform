@@ -6,6 +6,7 @@ import json
 import os
 from typing import Any
 from urllib import error as urlerror
+from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 
@@ -46,6 +47,12 @@ def is_ok(payload: dict[str, Any]) -> bool:
 def collect_error_text(payload: dict[str, Any]) -> str:
     errors = payload.get("errors")
     if not isinstance(errors, list) or not errors:
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+        detail = payload.get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
         return "Unknown error"
     parts: list[str] = []
     for entry in errors[:8]:
@@ -70,9 +77,10 @@ def list_automations(base_url: str, *, token: str, workspace_id: str) -> list[di
 
 
 def list_mappings(base_url: str, *, token: str, workspace_id: str, connection_id: str) -> list[dict[str, Any]]:
+    query = urlparse.urlencode({"connection_id": connection_id})
     status, payload = api_call(
         "GET",
-        f"{base_url}/integrations/mappings?connection_id={connection_id}",
+        f"{base_url}/integrations/mappings?{query}",
         token=token,
         workspace_id=workspace_id,
     )
@@ -196,6 +204,18 @@ def resolve_member_emails(
     if not resolved:
         raise RuntimeError("No order email recipients resolved")
     return resolved
+
+
+def _looks_like_placeholder(value: str | None) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.startswith("<") and text.endswith(">"):
+        return True
+    return text.upper() in {
+        "YOUR_SHOPIFY_CONNECTION_ID",
+        "OCTO_SHOPIFY_CONNECTION_ID",
+    }
 
 
 def create_mapping(base_url: str, definition: dict[str, Any], *, token: str, workspace_id: str) -> dict[str, Any]:
@@ -468,8 +488,34 @@ def build_sales_order_line_mapping(connection_id: str) -> dict[str, Any]:
     }
 
 
-def _shopify_customer_source(prefix: str) -> dict[str, Any]:
-    return {
+def _json_source_record(spec: dict[str, Any]) -> str:
+    lines: list[str] = ["{"]
+    items = list(spec.items())
+    for index, (key, value) in enumerate(items):
+        suffix = "," if index < len(items) - 1 else ""
+        key_json = json.dumps(str(key))
+        if isinstance(value, bool):
+            rendered_value = "true" if value else "false"
+        elif value is None:
+            rendered_value = "null"
+        elif isinstance(value, (int, float)):
+            rendered_value = json.dumps(value)
+        elif isinstance(value, str):
+            text = value.strip()
+            if "{{" in text or "{%" in text:
+                capture_var = f"__octo_source_value_{index}"
+                rendered_value = f"{{% set {capture_var} %}}{text}{{% endset %}}{{{{ {capture_var} | trim | tojson }}}}"
+            else:
+                rendered_value = json.dumps(text)
+        else:
+            rendered_value = json.dumps(value)
+        lines.append(f'  {key_json}: {rendered_value}{suffix}')
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _shopify_customer_source(prefix: str) -> str:
+    return _json_source_record({
         "name": (
             "{% if " + prefix + ".first_name and " + prefix + ".last_name %}"
             "{{ " + prefix + ".first_name }} {{ " + prefix + ".last_name }}"
@@ -499,11 +545,11 @@ def _shopify_customer_source(prefix: str) -> dict[str, Any]:
         "total_spent_nzd": "{{ " + prefix + ".total_spent | default(0, true) }}",
         "last_order_name": "{{ " + prefix + ".last_order_name | default('', true) }}",
         "last_order_date": "{{ (" + prefix + ".updated_at | default(" + prefix + ".created_at | default('', true), true))[:10] }}",
-    }
+    })
 
 
-def _order_customer_source(prefix: str) -> dict[str, Any]:
-    return {
+def _order_customer_source(prefix: str) -> str:
+    return _json_source_record({
         "name": (
             "{% if " + prefix + ".customer.first_name and " + prefix + ".customer.last_name %}"
             "{{ " + prefix + ".customer.first_name }} {{ " + prefix + ".customer.last_name }}"
@@ -533,11 +579,11 @@ def _order_customer_source(prefix: str) -> dict[str, Any]:
         "total_spent_nzd": "{{ " + prefix + ".current_total_price | default(" + prefix + ".total_price | default(0, true), true) }}",
         "last_order_name": "{{ " + prefix + ".name | default('', true) }}",
         "last_order_date": "{{ (" + prefix + ".updated_at | default(" + prefix + ".created_at | default('', true), true))[:10] }}",
-    }
+    })
 
 
-def _product_variant_source(product_var: str, variant_var: str) -> dict[str, Any]:
-    return {
+def _product_variant_source(product_var: str, variant_var: str) -> str:
+    return _json_source_record({
         "sku": "{{ " + variant_var + ".sku | default('', true) }}",
         "title": "{{ " + product_var + ".title | default(" + variant_var + ".sku | default('', true), true) }}",
         "variant_name": "{% if " + variant_var + ".title and " + variant_var + ".title != 'Default Title' %}{{ " + variant_var + ".title }}{% endif %}",
@@ -564,11 +610,11 @@ def _product_variant_source(product_var: str, variant_var: str) -> dict[str, Any
             "{% if " + variant_var + ".inventory_item_id %}gid://shopify/InventoryItem/{{ " + variant_var + ".inventory_item_id }}{% endif %}"
         ),
         "shopify_status": "{{ " + product_var + ".status | default('', true) }}",
-    }
+    })
 
 
-def _order_source(prefix: str) -> dict[str, Any]:
-    return {
+def _order_source(prefix: str) -> str:
+    return _json_source_record({
         "order_number": "{{ " + prefix + ".name | default(" + prefix + ".order_number | default('', true), true) }}",
         "status": (
             "{% if " + prefix + ".cancelled_at %}cancelled"
@@ -611,11 +657,11 @@ def _order_source(prefix: str) -> dict[str, Any]:
         "tracking_number": "{{ " + prefix + ".fulfillments[0].tracking_number | default('', true) }}",
         "tracking_url": "{{ " + prefix + ".fulfillments[0].tracking_url | default('', true) }}",
         "customer_record_id": "{{ steps.upsert_order_customer.record_id | default('', true) }}",
-    }
+    })
 
 
-def _line_item_source(line_var: str, order_var: str) -> dict[str, Any]:
-    return {
+def _line_item_source(line_var: str, order_var: str) -> str:
+    return _json_source_record({
         "sales_order_id": "{{ steps.upsert_sales_order.record_id }}",
         "shopify_line_item_id": (
             "{% if " + line_var + ".admin_graphql_api_id %}{{ " + line_var + ".admin_graphql_api_id }}"
@@ -644,7 +690,7 @@ def _line_item_source(line_var: str, order_var: str) -> dict[str, Any]:
         "line_tax_total": "{{ " + line_var + ".tax_lines[0].price | default(0, true) }}",
         "unit_cost_snapshot": 0,
         "product_record_id": "{{ steps.find_product_for_line.first.record_id | default('', true) }}",
-    }
+    })
 
 
 def build_orders_consumer_automation(
@@ -1025,6 +1071,11 @@ def main() -> int:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
     if not args.connection_id:
         raise SystemExit("Missing --connection-id or OCTO_SHOPIFY_CONNECTION_ID")
+    if _looks_like_placeholder(args.connection_id):
+        raise SystemExit(
+            "Replace --connection-id with the real Shopify connection id from Integrations. "
+            "Do not pass the placeholder value."
+        )
 
     base_url = args.base_url.rstrip("/")
     for definition in all_mapping_definitions(connection_id=args.connection_id):

@@ -1,4 +1,6 @@
 const STORAGE_PREFIX = "octo:form-draft:";
+const pendingWrites = new Map();
+const lastPersistedRaw = new Map();
 
 function canUseSessionStorage() {
   return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
@@ -13,6 +15,7 @@ export function loadFormDraftSnapshot(key) {
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
+    lastPersistedRaw.set(key, raw);
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
     return parsed;
@@ -24,7 +27,23 @@ export function loadFormDraftSnapshot(key) {
 export function saveFormDraftSnapshot(key, snapshot) {
   if (!key || !canUseSessionStorage()) return;
   try {
-    window.sessionStorage.setItem(key, JSON.stringify(snapshot || {}));
+    const raw = JSON.stringify(snapshot || {});
+    if (lastPersistedRaw.get(key) === raw && !pendingWrites.has(key)) return;
+    const existingTimer = pendingWrites.get(key);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    const timer = window.setTimeout(() => {
+      try {
+        window.sessionStorage.setItem(key, raw);
+        lastPersistedRaw.set(key, raw);
+      } catch {
+        // ignore quota / storage failures
+      } finally {
+        pendingWrites.delete(key);
+      }
+    }, 180);
+    pendingWrites.set(key, timer);
   } catch {
     // ignore quota / storage failures
   }
@@ -33,7 +52,13 @@ export function saveFormDraftSnapshot(key, snapshot) {
 export function clearFormDraftSnapshot(key) {
   if (!key || !canUseSessionStorage()) return;
   try {
+    const existingTimer = pendingWrites.get(key);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      pendingWrites.delete(key);
+    }
     window.sessionStorage.removeItem(key);
+    lastPersistedRaw.delete(key);
   } catch {
     // ignore storage failures
   }

@@ -229,7 +229,7 @@ def validate_record_payload(entity: dict, data: dict, for_create: bool, workflow
         ftype = field.get("type")
         if val is None:
             continue
-        if ftype in ("string", "text"):
+        if ftype in ("string", "text", "rich_text"):
             if not isinstance(val, str):
                 _add_error("TYPE_MISMATCH", f"{field_id} must be a string", path=field_id)
         elif ftype in {"number", "currency"}:

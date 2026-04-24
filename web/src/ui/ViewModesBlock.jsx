@@ -2714,7 +2714,7 @@ export default function ViewModesBlock({
 
   const filterableFields = useMemo(() => {
     if (!entityDef || !Array.isArray(entityDef.fields)) return [];
-    return entityDef.fields.filter((f) => f?.id && ["string", "text", "enum", "bool", "date", "datetime", "number", "user"].includes(f.type));
+    return entityDef.fields.filter((f) => f?.id && ["string", "text", "rich_text", "enum", "bool", "date", "datetime", "number", "user"].includes(f.type));
   }, [entityDef]);
   const measureOptions = useMemo(() => {
     const opts = [{ value: "count", label: translateRuntime("common.view_modes.count") }];

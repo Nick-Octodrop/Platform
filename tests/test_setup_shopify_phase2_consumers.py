@@ -51,8 +51,14 @@ class TestShopifyPhase2ConsumersSetup(unittest.TestCase):
         )
         self.assertEqual(automation["steps"][1]["action_id"], "system.apply_integration_mapping")
         self.assertEqual(automation["steps"][1]["inputs"]["mapping_id"], "map_order")
+        self.assertIsInstance(automation["steps"][0]["then_steps"][0]["inputs"]["source_record"], str)
+        self.assertTrue(automation["steps"][0]["then_steps"][0]["inputs"]["source_record"].lstrip().startswith("{"))
+        self.assertIsInstance(automation["steps"][1]["inputs"]["source_record"], str)
+        self.assertTrue(automation["steps"][1]["inputs"]["source_record"].lstrip().startswith("{"))
         self.assertEqual(automation["steps"][2]["kind"], "foreach")
         self.assertEqual(automation["steps"][2]["steps"][1]["action_id"], "system.apply_integration_mapping")
+        self.assertIsInstance(automation["steps"][2]["steps"][1]["inputs"]["source_record"], str)
+        self.assertTrue(automation["steps"][2]["steps"][1]["inputs"]["source_record"].lstrip().startswith("{"))
 
     def test_customer_and_product_consumers_use_mapping_action(self) -> None:
         module = _load_setup_module()
@@ -60,13 +66,16 @@ class TestShopifyPhase2ConsumersSetup(unittest.TestCase):
         product = module.build_products_consumer_automation(status="draft", product_mapping_id="map_product")
         self.assertEqual(customer["steps"][0]["action_id"], "system.apply_integration_mapping")
         self.assertEqual(customer["steps"][0]["inputs"]["mapping_id"], "map_customer")
+        self.assertIsInstance(customer["steps"][0]["inputs"]["source_record"], str)
         self.assertEqual(product["steps"][0]["kind"], "foreach")
         self.assertEqual(product["steps"][0]["steps"][0]["kind"], "condition")
         self.assertEqual(product["steps"][0]["steps"][0]["then_steps"][0]["action_id"], "system.apply_integration_mapping")
+        self.assertIsInstance(product["steps"][0]["steps"][0]["then_steps"][0]["inputs"]["source_record"], str)
 
     def test_refund_consumer_fetches_order_and_reapplies_mappings(self) -> None:
         module = _load_setup_module()
         automation = module.build_refunds_consumer_automation(
+            connection_id="conn_shopify",
             status="published",
             customer_mapping_id="map_customer",
             order_mapping_id="map_order",
@@ -76,6 +85,8 @@ class TestShopifyPhase2ConsumersSetup(unittest.TestCase):
         self.assertEqual(automation["trigger"]["event_types"], ["integration.webhook.shopify.refunds.create"])
         self.assertEqual(automation["steps"][0]["action_id"], "system.integration_request")
         self.assertEqual(automation["steps"][1]["then_steps"][1]["action_id"], "system.apply_integration_mapping")
+        self.assertIsInstance(automation["steps"][1]["then_steps"][0]["then_steps"][0]["inputs"]["source_record"], str)
+        self.assertIsInstance(automation["steps"][1]["then_steps"][1]["inputs"]["source_record"], str)
 
 
 if __name__ == "__main__":

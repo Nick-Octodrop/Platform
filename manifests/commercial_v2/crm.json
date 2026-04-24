@@ -309,6 +309,10 @@
                 "crm_lead.currency": "biz_contact.currency_preference",
                 "crm_lead.quote_tax_percent": "biz_contact.default_sales_tax_percent"
               },
+              "only_when_empty": [
+                "crm_lead.contact_email",
+                "crm_lead.contact_phone"
+              ],
               "clear_fields": [
                 "crm_lead.contact_person_id",
                 "crm_lead.contact_name",
@@ -515,6 +519,10 @@
                 "crm_opportunity.currency": "biz_contact.currency_preference",
                 "crm_opportunity.quote_tax_percent": "biz_contact.default_sales_tax_percent"
               },
+              "only_when_empty": [
+                "crm_opportunity.primary_contact_email",
+                "crm_opportunity.primary_contact_phone"
+              ],
               "clear_fields": [
                 "crm_opportunity.primary_contact_person_id",
                 "crm_opportunity.primary_contact_name",

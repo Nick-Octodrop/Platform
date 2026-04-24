@@ -1,0 +1,4 @@
+{% set brand_name = template_branding.brand_name if template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name else (company.name if company is defined and company and company.name is defined and company.name else (workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'NLight')) %}
+<div style="width:100%;font-size:9px;color:#64748b;text-align:center;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;">
+  {{ brand_name }}{% if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] %} · {{ record['biz_quote.quote_number'] }}{% endif %} · Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+</div>

@@ -131,19 +131,19 @@ export default function SettingsDocumentNumberingDetailPage() {
   );
 
   const numberFields = useMemo(
-    () => (selectedEntity?.fields || []).filter((field) => ["string", "text"].includes(field.type)),
+    () => (selectedEntity?.fields || []).filter((field) => ["string", "text", "rich_text"].includes(field.type)),
     [selectedEntity],
   );
 
   const scopeFields = useMemo(
-    () => (selectedEntity?.fields || []).filter((field) => ["string", "text", "enum", "lookup", "user"].includes(field.type)),
+    () => (selectedEntity?.fields || []).filter((field) => ["string", "text", "rich_text", "enum", "lookup", "user"].includes(field.type)),
     [selectedEntity],
   );
 
   const patternFields = useMemo(
     () =>
       (selectedEntity?.fields || []).filter((field) =>
-        ["string", "text", "enum", "lookup", "user", "number", "date", "datetime"].includes(field.type),
+        ["string", "text", "rich_text", "enum", "lookup", "user", "number", "date", "datetime"].includes(field.type),
       ),
     [selectedEntity],
   );

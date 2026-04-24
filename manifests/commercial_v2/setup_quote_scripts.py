@@ -14,6 +14,52 @@ from urllib import request as urlrequest
 ENTITY_ID = "entity.biz_quote_script"
 
 
+SECTION_HEADING_MAP = {
+    "Verkoopcondities": "## Verkoopcondities",
+    "Garantievoorwaarden:": "### Garantievoorwaarden",
+    "Leveringsomvang:": "### Leveringsomvang",
+    "Offertes en lichtplannen:": "### Offertes en lichtplannen",
+    "Leveringstermijn:": "### Leveringstermijn",
+    "Leveringsvoorwaarden:": "### Leveringsvoorwaarden",
+    "Betalingscondities:": "### Betalingscondities",
+    "BTW & verwijderingsbijdrage:": "### BTW & verwijderingsbijdrage",
+    "Verzekering:": "### Verzekering",
+    "Why Choose NLight": "## Why Choose NLight",
+    "Sales & Warranty Conditions": "## Sales & Warranty Conditions",
+    "Scope of Delivery": "## Scope of Delivery",
+    "Quotations and Lighting Design": "## Quotations and Lighting Design",
+    "Delivery Timeline": "## Delivery Timeline",
+    "Pricing & VAT": "## Pricing & VAT",
+    "Delivery & Payment Terms": "## Delivery & Payment Terms",
+    "Insurance & Risk Transfer": "## Insurance & Risk Transfer",
+    "Disclaimer – Transportkosten en toeslagen": "## Disclaimer – Transportkosten en toeslagen",
+    "Disclaimer – Transport Costs and Surcharges": "## Disclaimer – Transport Costs and Surcharges",
+}
+
+
+def format_seed_rich_text(value: str | None) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    lines = text.split("\n")
+    formatted_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped in SECTION_HEADING_MAP:
+            formatted_lines.append(SECTION_HEADING_MAP[stripped])
+            continue
+        if (
+            stripped
+            and stripped.endswith(":")
+            and not stripped.startswith("-")
+            and len(stripped) <= 80
+        ):
+            formatted_lines.append(f"### {stripped[:-1]}")
+            continue
+        formatted_lines.append(line)
+    return "\n".join(formatted_lines).strip()
+
+
 def api_call(
     method: str,
     url: str,
@@ -129,7 +175,7 @@ def update_record(
 
 
 def desired_scripts() -> list[dict[str, Any]]:
-    return [
+    scripts = [
         {
             "biz_quote_script.script_name": "Joost Standard 3C NL",
             "biz_quote_script.language": "NL",
@@ -418,6 +464,22 @@ Deze kosten zijn buiten onze invloed en controle en worden door externe partijen
             "biz_quote_script.is_active": True,
         },
     ]
+
+    for spec in scripts:
+        spec["biz_quote_script.opening_message"] = format_seed_rich_text(
+            spec.get("biz_quote_script.opening_message")
+        )
+        spec["biz_quote_script.body_text"] = format_seed_rich_text(
+            spec.get("biz_quote_script.body_text")
+        )
+        spec["biz_quote_script.transport_disclaimer"] = format_seed_rich_text(
+            spec.get("biz_quote_script.transport_disclaimer")
+        )
+        spec["biz_quote_script.closing_text"] = format_seed_rich_text(
+            spec.get("biz_quote_script.closing_text")
+        )
+
+    return scripts
 
 
 def script_key(record: dict[str, Any]) -> tuple[str, str, str]:
