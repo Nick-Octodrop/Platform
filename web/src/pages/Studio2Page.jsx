@@ -404,6 +404,7 @@ function findUnsupportedBlocks(manifest) {
     "chatter",
     "view_modes",
     "related_list",
+    "document_registry",
   ]);
 
   function walkBlocks(blocks, basePath) {

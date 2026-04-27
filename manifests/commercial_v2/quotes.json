@@ -1788,6 +1788,9 @@
             "biz_order_line.buy_currency_snapshot": {
               "from": "biz_quote_line.buy_currency_snapshot"
             },
+            "biz_order_line.buy_fx_to_order_rate": {
+              "from": "biz_quote_line.buy_fx_to_quote_rate"
+            },
             "biz_order_line.procurement_supplier_id": {
               "from": "biz_quote_line.procurement_supplier_id"
             },
@@ -2427,8 +2430,8 @@
               "biz_quote_line.available_stock_snapshot": "biz_product.available_qty",
               "biz_quote_line.uom": "biz_product.uom",
               "biz_quote_line.unit_price": "biz_product.default_sales_price",
-              "biz_quote_line.default_buy_price_snapshot": "biz_product.default_buy_price",
-              "biz_quote_line.buy_currency_snapshot": "biz_product.default_purchase_currency",
+              "biz_quote_line.default_buy_price_snapshot": "biz_product.default_quote_cost_price",
+              "biz_quote_line.buy_currency_snapshot": "biz_product.default_quote_cost_currency",
               "biz_quote_line.procurement_supplier_id": "biz_product.preferred_supplier_id",
               "biz_quote_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
               "biz_quote_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
@@ -2850,6 +2853,8 @@
             "biz_quote_line.line_type",
             "biz_quote_line.product_id",
             "biz_quote_line.description",
+            "biz_quote_line.fulfilment_mode_snapshot",
+            "biz_quote_line.available_stock_snapshot",
             "biz_quote_line.uom",
             "biz_quote_line.quantity",
             "biz_quote_line.unit_price",
@@ -2857,7 +2862,13 @@
             "biz_quote_line.line_total",
             "biz_quote_line.default_buy_price_snapshot",
             "biz_quote_line.buy_currency_snapshot",
+            "biz_quote_line.procurement_supplier_id",
+            "biz_quote_line.supplier_sku_snapshot",
+            "biz_quote_line.minimum_order_quantity_snapshot",
+            "biz_quote_line.lead_time_weeks_snapshot",
+            "biz_quote_line.buy_fx_to_quote_rate",
             "biz_quote_line.buy_total",
+            "biz_quote_line.buy_total_quote_currency",
             "biz_quote_line.estimated_margin_amount",
             "biz_quote_line.estimated_margin_percent"
           ],
@@ -2874,6 +2885,8 @@
           "biz_quote_line.line_type",
           "biz_quote_line.product_id",
           "biz_quote_line.description",
+          "biz_quote_line.fulfilment_mode_snapshot",
+          "biz_quote_line.available_stock_snapshot",
           "biz_quote_line.uom",
           "biz_quote_line.quantity",
           "biz_quote_line.unit_price",
@@ -2881,7 +2894,13 @@
           "biz_quote_line.line_total",
           "biz_quote_line.default_buy_price_snapshot",
           "biz_quote_line.buy_currency_snapshot",
+          "biz_quote_line.procurement_supplier_id",
+          "biz_quote_line.supplier_sku_snapshot",
+          "biz_quote_line.minimum_order_quantity_snapshot",
+          "biz_quote_line.lead_time_weeks_snapshot",
+          "biz_quote_line.buy_fx_to_quote_rate",
           "biz_quote_line.buy_total",
+          "biz_quote_line.buy_total_quote_currency",
           "biz_quote_line.estimated_margin_amount",
           "biz_quote_line.estimated_margin_percent"
         ]

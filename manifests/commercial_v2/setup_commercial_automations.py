@@ -51,8 +51,8 @@ def build_generate_document_automation(
     *,
     name: str,
     description: str,
-    entity_id: str,
-    action_id: str,
+    source_entity_id: str,
+    primary_document_field_id: str,
     template_id: str,
     purpose: str,
     status: str,
@@ -63,11 +63,12 @@ def build_generate_document_automation(
         "status": status,
         "trigger": {
             "kind": "event",
-            "event_types": ["action.clicked"],
+            "event_types": ["record.updated"],
             "filters": [
-                {"path": "entity_id", "op": "eq", "value": entity_id},
-                {"path": "action_id", "op": "eq", "value": action_id},
+                {"path": "entity_id", "op": "eq", "value": source_entity_id},
+                {"path": primary_document_field_id, "op": "changed"},
             ],
+            "expr": exists("trigger.record.fields.primary_document_id"),
         },
         "steps": [
             {
@@ -76,8 +77,8 @@ def build_generate_document_automation(
                 "action_id": "system.generate_document",
                 "inputs": {
                     "template_id": template_id,
-                    "entity_id": entity_id,
-                    "record_id": "{{ trigger.record_id }}",
+                    "entity_id": "entity.biz_document",
+                    "record_id": "{{ trigger.record.fields.primary_document_id }}",
                     "purpose": purpose,
                 },
             }
@@ -205,8 +206,8 @@ def desired_automations(
             build_generate_document_automation(
                 name="Commercial - Generate Quote PDF",
                 description="Generate the quote PDF when a user clicks Create Document on a quote.",
-                entity_id="entity.biz_quote",
-                action_id="action.quote_create_document",
+                source_entity_id="entity.biz_quote",
+                primary_document_field_id="biz_quote.primary_document_id",
                 template_id=quote_document_template_id.strip(),
                 purpose="quote_pdf",
                 status=status,
@@ -217,8 +218,8 @@ def desired_automations(
             build_generate_document_automation(
                 name="Commercial - Generate Order Confirmation",
                 description="Generate the order confirmation PDF when a user clicks Create Document on a customer order.",
-                entity_id="entity.biz_order",
-                action_id="action.customer_order_create_document",
+                source_entity_id="entity.biz_order",
+                primary_document_field_id="biz_order.primary_document_id",
                 template_id=order_document_template_id.strip(),
                 purpose="order_confirmation",
                 status=status,
@@ -229,8 +230,8 @@ def desired_automations(
             build_generate_document_automation(
                 name="Commercial - Generate Purchase Order PDF",
                 description="Generate the purchase order PDF when a user clicks Create Document on a purchase order.",
-                entity_id="entity.biz_purchase_order",
-                action_id="action.purchase_order_create_document",
+                source_entity_id="entity.biz_purchase_order",
+                primary_document_field_id="biz_purchase_order.primary_document_id",
                 template_id=purchase_order_document_template_id.strip(),
                 purpose="purchase_order_pdf",
                 status=status,
@@ -241,8 +242,8 @@ def desired_automations(
             build_generate_document_automation(
                 name="Commercial - Generate Invoice PDF",
                 description="Generate the invoice PDF when a user clicks Create Document on an invoice.",
-                entity_id="entity.biz_invoice",
-                action_id="action.invoice_create_document",
+                source_entity_id="entity.biz_invoice",
+                primary_document_field_id="biz_invoice.primary_document_id",
                 template_id=invoice_document_template_id.strip(),
                 purpose="invoice_pdf",
                 status=status,

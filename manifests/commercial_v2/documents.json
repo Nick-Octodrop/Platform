@@ -814,7 +814,12 @@
       "title": "Documents",
       "layout": "single",
       "header": {
-        "variant": "none"
+        "variant": "none",
+        "actions": [
+          {
+            "action_id": "action.document_new"
+          }
+        ]
       },
       "content": [
         {
@@ -822,30 +827,11 @@
           "variant": "card",
           "content": [
             {
-              "kind": "view_modes",
-              "entity_id": "entity.biz_document",
-              "default_mode": "list",
-              "default_filter_id": "active",
-              "modes": [
-                {
-                  "mode": "list",
-                  "target": "view:biz_document.list"
-                },
-                {
-                  "mode": "kanban",
-                  "target": "view:biz_document.kanban",
-                  "default_group_by": "biz_document.status"
-                },
-                {
-                  "mode": "graph",
-                  "target": "view:biz_document.graph"
-                },
-                {
-                  "mode": "pivot",
-                  "target": "view:biz_document.list",
-                  "default_group_by": "biz_document.document_type"
-                }
-              ]
+              "kind": "document_registry",
+              "id": "biz_document.global_registry",
+              "title": "Documents",
+              "scope": "global",
+              "page_size": 50
             }
           ]
         }

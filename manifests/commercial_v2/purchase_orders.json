@@ -835,8 +835,12 @@
           "compute": {
             "expression": {
               "op": "lte",
-              "field": "biz_purchase_order_line.quantity_outstanding",
-              "value": 0
+              "args": [
+                {
+                  "ref": "$current.biz_purchase_order_line.quantity_outstanding"
+                },
+                0
+              ]
             }
           }
         },
@@ -2075,10 +2079,14 @@
             "biz_purchase_order_line.description",
             "biz_purchase_order_line.uom",
             "biz_purchase_order_line.quantity",
+            "biz_purchase_order_line.quantity_received",
+            "biz_purchase_order_line.quantity_outstanding",
+            "biz_purchase_order_line.is_fully_received",
             "biz_purchase_order_line.minimum_order_quantity_snapshot",
             "biz_purchase_order_line.lead_time_weeks_snapshot",
             "biz_purchase_order_line.unit_cost",
             "biz_purchase_order_line.line_total",
+            "biz_purchase_order_line.source_order_line_id",
             "biz_purchase_order_line.source_order_line_ref"
           ],
           "section_title_key": "purchase_orders.views.form.sections.main.title"
@@ -2097,10 +2105,15 @@
           "biz_purchase_order_line.description",
           "biz_purchase_order_line.uom",
           "biz_purchase_order_line.quantity",
+          "biz_purchase_order_line.quantity_received",
+          "biz_purchase_order_line.quantity_outstanding",
+          "biz_purchase_order_line.is_fully_received",
           "biz_purchase_order_line.minimum_order_quantity_snapshot",
           "biz_purchase_order_line.lead_time_weeks_snapshot",
           "biz_purchase_order_line.unit_cost",
-          "biz_purchase_order_line.line_total"
+          "biz_purchase_order_line.line_total",
+          "biz_purchase_order_line.source_order_line_id",
+          "biz_purchase_order_line.source_order_line_ref"
         ]
       }
     }

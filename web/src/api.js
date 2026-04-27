@@ -47,6 +47,7 @@ const REQUEST_POLICIES = [
   { pattern: /^\/system\/interfaces\/sources(?:\?.*)?$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/system\/calendar\/sources$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/system\/documents\/sources$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/system\/documents\/items(?:\?.*)?$/, methods: ["GET"], ttl: 10000 },
   { pattern: /^\/system\/dashboard\/sources$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/settings\/api-credentials(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
   { pattern: /^\/email\/templates(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },

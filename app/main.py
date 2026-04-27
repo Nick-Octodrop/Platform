@@ -48332,6 +48332,7 @@ async def system_documents_sources(request: Request) -> dict:
 async def system_document_items(
     request: Request,
     source_key: str | None = None,
+    source_keys: str | None = None,
     q: str | None = None,
     mine: bool = False,
     limit: int = 500,
@@ -48344,14 +48345,36 @@ async def system_document_items(
         return denied
     limit_cap = max(1, min(int(limit or 500), 2000))
     sources = _collect_interface_sources(request, "documentable", actor)
+    selected_source_keys = {
+        item.strip()
+        for item in str(source_keys or "").split(",")
+        if isinstance(item, str) and item.strip()
+    }
     if source_key:
         selected = _find_source_by_key(sources, source_key)
         if not selected:
             return _error_response("SOURCE_NOT_FOUND", "source_key not found", "source_key", status=404)
         sources = [selected]
+    elif selected_source_keys:
+        sources = [
+            source
+            for source in sources
+            if isinstance(source, dict) and source.get("source_key") in selected_source_keys
+        ]
+        if not sources:
+            return _ok_response({"items": [], "sources": []})
     per_source_cap = max(50, min(600, int(limit_cap / max(1, len(sources))) + 25))
     user_id = actor.get("user_id") if isinstance(actor, dict) else None
-    items_out: list[dict] = []
+    items_by_attachment_id: dict[str, dict] = {}
+    ordered_attachment_ids: list[str] = []
+    items_without_attachment_id: list[dict] = []
+
+    def _registry_item_rank(item: dict[str, Any]) -> tuple[int, int]:
+        entity_value = item.get("entity_id")
+        is_document_record = 1 if _entity_id_matches(entity_value, "entity.biz_document") else 0
+        has_owner = 1 if item.get("owner") not in (None, "") else 0
+        return (is_document_record, has_owner)
+
     for source in sources:
         entity_id = source.get("entity_id")
         module_id = source.get("module_id")
@@ -48395,29 +48418,41 @@ async def system_document_items(
             if record_title is None:
                 record_title = record_id
             for attachment in attachment_items:
-                items_out.append(
-                    {
-                        "source_key": source.get("source_key"),
-                        "module_id": source.get("module_id"),
-                        "entity_id": entity_id,
-                        "record_id": record_id,
-                        "record_label": record_title,
-                        "attachment_field": attachment_field,
-                        "attachment": attachment,
-                        "owner": _record_value(record, owner_field),
-                        "category": _record_value(record, category_field),
-                        "date": _record_value(record, date_field),
-                        "preview_enabled": cfg.get("preview_enabled") is not False,
-                        "allow_delete": cfg.get("allow_delete") is True,
-                        "allow_download": cfg.get("allow_download") is not False,
-                    }
-                )
-                if len(items_out) >= limit_cap:
+                candidate_item = {
+                    "source_key": source.get("source_key"),
+                    "module_id": source.get("module_id"),
+                    "entity_id": entity_id,
+                    "record_id": record_id,
+                    "record_label": record_title,
+                    "attachment_field": attachment_field,
+                    "attachment": attachment,
+                    "owner": _record_value(record, owner_field),
+                    "category": _record_value(record, category_field),
+                    "date": _record_value(record, date_field),
+                    "preview_enabled": cfg.get("preview_enabled") is not False,
+                    "allow_delete": cfg.get("allow_delete") is True,
+                    "allow_download": cfg.get("allow_download") is not False,
+                }
+                attachment_id = attachment.get("id") if isinstance(attachment, dict) else None
+                if isinstance(attachment_id, str) and attachment_id:
+                    existing_item = items_by_attachment_id.get(attachment_id)
+                    if existing_item is None:
+                        items_by_attachment_id[attachment_id] = candidate_item
+                        ordered_attachment_ids.append(attachment_id)
+                    elif _registry_item_rank(candidate_item) > _registry_item_rank(existing_item):
+                        items_by_attachment_id[attachment_id] = candidate_item
+                else:
+                    items_without_attachment_id.append(candidate_item)
+                current_count = len(ordered_attachment_ids) + len(items_without_attachment_id)
+                if current_count >= limit_cap:
                     break
-            if len(items_out) >= limit_cap:
+            if len(ordered_attachment_ids) + len(items_without_attachment_id) >= limit_cap:
                 break
-        if len(items_out) >= limit_cap:
+        if len(ordered_attachment_ids) + len(items_without_attachment_id) >= limit_cap:
             break
+    items_out = [items_by_attachment_id[item_id] for item_id in ordered_attachment_ids]
+    if items_without_attachment_id:
+        items_out.extend(items_without_attachment_id)
     return _ok_response({"items": items_out[:limit_cap], "sources": sources})
 
 
@@ -49998,6 +50033,47 @@ def _build_template_render_context(
         "localization": localization or build_locale_context(),
         **(branding or {}),
     }
+
+
+def _resolve_document_template_record_source(
+    template: dict | None,
+    entity_id: str | None,
+    record: dict | None,
+) -> tuple[str | None, dict | None, dict]:
+    current_entity_id = _normalize_entity_id(entity_id) if isinstance(entity_id, str) and entity_id.strip() else None
+    current_entity_def = _find_entity_def_global(current_entity_id) if isinstance(current_entity_id, str) and current_entity_id else None
+    current_record = record if isinstance(record, dict) else {}
+    variables_schema = template.get("variables_schema") if isinstance(template, dict) and isinstance(template.get("variables_schema"), dict) else {}
+    template_entity_id = variables_schema.get("entity_id") if isinstance(variables_schema.get("entity_id"), str) and variables_schema.get("entity_id").strip() else None
+    desired_entity_id = _normalize_entity_id(template_entity_id) if isinstance(template_entity_id, str) and template_entity_id else None
+    if not isinstance(desired_entity_id, str) or not desired_entity_id:
+        return current_entity_id, current_entity_def, current_record
+    desired_entity_def = _find_entity_def_global(desired_entity_id)
+    if not isinstance(current_entity_id, str) or not current_entity_id:
+        return desired_entity_id, desired_entity_def, current_record
+    if _template_entity_matches(current_entity_id, desired_entity_id):
+        return desired_entity_id, desired_entity_def, current_record
+    if isinstance(current_record, dict) and _template_entity_matches(current_entity_id, "entity.biz_document"):
+        related_field_by_template_entity = {
+            "entity.biz_quote": "biz_document.related_quote_id",
+            "entity.biz_order": "biz_document.related_order_id",
+            "entity.biz_purchase_order": "biz_document.related_purchase_order_id",
+            "entity.biz_invoice": "biz_document.related_invoice_id",
+        }
+        for candidate_entity_id, field_id in related_field_by_template_entity.items():
+            if not _template_entity_matches(desired_entity_id, candidate_entity_id):
+                continue
+            related_record_id = current_record.get(field_id)
+            if not isinstance(related_record_id, str) or not related_record_id.strip():
+                break
+            related_wrapper = generic_records.get(desired_entity_id, related_record_id) or generic_records.get(desired_entity_id[7:], related_record_id)
+            _, related_record = _unwrap_store_record(related_wrapper if isinstance(related_wrapper, dict) and "record" in related_wrapper else None)
+            if not isinstance(related_record, dict) and isinstance(related_wrapper, dict):
+                related_record = related_wrapper
+            if isinstance(related_record, dict):
+                return desired_entity_id, desired_entity_def, related_record
+            break
+    return current_entity_id, current_entity_def, current_record
 
 
 def _template_lookup_alias_defaults(entity_def: dict | None, *, placeholder: bool = False) -> dict[str, str]:
@@ -60440,6 +60516,11 @@ async def validate_email_template(request: Request, template_id: str) -> dict:
                 _, resolved_record = _unwrap_store_record(record_context if isinstance(record_context, dict) else None)
                 record_data = resolved_record or {}
         if isinstance(record_data, dict):
+            entity_id, entity_def, record_data = _resolve_document_template_record_source(
+                source_template,
+                entity_id,
+                record_data,
+            )
             context = _build_template_render_context(
                 record_data,
                 entity_def,
@@ -61233,6 +61314,11 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
                 return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
             _, resolved_record = _unwrap_store_record(record_context if isinstance(record_context, dict) else None)
             record_data = resolved_record or {}
+        entity_id, entity_def, record_data = _resolve_document_template_record_source(
+            source_template,
+            entity_id,
+            record_data,
+        )
         context = _build_template_render_context(
             record_data,
             entity_def,
@@ -61612,6 +61698,7 @@ async def generate_document(request: Request) -> dict:
                 "entity_id": entity_id,
                 "record_id": record_id,
                 "purpose": body.get("purpose") or "default",
+                "actor_user_id": actor.get("user_id"),
             },
         }
     )

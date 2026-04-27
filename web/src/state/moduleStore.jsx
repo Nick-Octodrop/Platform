@@ -9,7 +9,36 @@ import {
   getActiveWorkspaceId,
 } from "../api";
 
-const ModuleStoreContext = createContext(null);
+const MODULE_STORE_CONTEXT_KEY = "__octoModuleStoreContext";
+const MODULE_STORE_FALLBACK_WARNED_KEY = "__octoModuleStoreFallbackWarned";
+
+function getStableModuleStoreContext() {
+  if (typeof globalThis === "undefined") {
+    return createContext(null);
+  }
+  if (!globalThis[MODULE_STORE_CONTEXT_KEY]) {
+    globalThis[MODULE_STORE_CONTEXT_KEY] = createContext(null);
+  }
+  return globalThis[MODULE_STORE_CONTEXT_KEY];
+}
+
+const ModuleStoreContext = getStableModuleStoreContext();
+ModuleStoreContext.displayName = "ModuleStoreContext";
+
+function buildFallbackValue() {
+  return {
+    modules: [],
+    loading: true,
+    error: null,
+    enabledById: {},
+    actions: {
+      refresh: async () => {},
+      enableModule,
+      disableModule,
+      deleteModule,
+    },
+  };
+}
 
 export function ModuleStoreProvider({ user, children }) {
   const [modules, setModules] = useState(() => {
@@ -95,8 +124,10 @@ export function ModuleStoreProvider({ user, children }) {
 
 export function useModuleStore() {
   const ctx = useContext(ModuleStoreContext);
-  if (!ctx) {
-    throw new Error("useModuleStore must be used within ModuleStoreProvider");
+  if (ctx) return ctx;
+  if (typeof globalThis !== "undefined" && !globalThis[MODULE_STORE_FALLBACK_WARNED_KEY]) {
+    globalThis[MODULE_STORE_FALLBACK_WARNED_KEY] = true;
+    console.warn("ModuleStoreContext missing; falling back to an empty loading state.");
   }
-  return ctx;
+  return buildFallbackValue();
 }

@@ -982,7 +982,7 @@
             "aggregate": {
               "op": "sum",
               "entity": "entity.biz_order_line",
-              "field": "biz_order_line.buy_total",
+              "field": "biz_order_line.buy_total_order_currency",
               "where": {
                 "op": "eq",
                 "field": "biz_order_line.customer_order_id",
@@ -1446,6 +1446,43 @@
           "label_key": "orders.entities.biz_order_line.fields.buy_total.label"
         },
         {
+          "id": "biz_order_line.buy_fx_to_order_rate",
+          "type": "number",
+          "label": "Buy FX To Order",
+          "default": 1
+        },
+        {
+          "id": "biz_order_line.buy_total_order_currency",
+          "type": "number",
+          "label": "Buy Total (Order Currency)",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_order_line.currency_snapshot",
+            "precision": 2
+          },
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.biz_order_line.buy_total"
+                    },
+                    {
+                      "ref": "$current.biz_order_line.buy_fx_to_order_rate"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
           "id": "biz_order_line.procurement_quantity_required",
           "type": "number",
           "label": "Qty To Procure",
@@ -1545,8 +1582,12 @@
           "compute": {
             "expression": {
               "op": "gt",
-              "field": "biz_order_line.procurement_quantity_required",
-              "value": 0
+              "args": [
+                {
+                  "ref": "$current.biz_order_line.procurement_quantity_required"
+                },
+                0
+              ]
             }
           }
         },
@@ -1942,6 +1983,12 @@
       "action_id": "action.customer_order_create_deposit_invoice"
     },
     {
+      "id": "biz_orders.action.customer_order_create_progress_invoice.clicked",
+      "label": "Raise Progress Invoice clicked",
+      "event": "action.clicked",
+      "action_id": "action.customer_order_create_progress_invoice"
+    },
+    {
       "id": "biz_orders.action.customer_order_create_final_invoice.clicked",
       "label": "Raise Final Invoice clicked",
       "event": "action.clicked",
@@ -2033,6 +2080,9 @@
             "biz_purchase_order_line.product_id": {
               "from": "biz_order_line.product_id"
             },
+            "biz_purchase_order_line.product_supplier_id": {
+              "from": "biz_order_line.product_supplier_id"
+            },
             "biz_purchase_order_line.description": {
               "from": "biz_order_line.description"
             },
@@ -2040,16 +2090,28 @@
               "value": "EcoTech FZCO"
             },
             "biz_purchase_order_line.currency_snapshot": {
-              "value": "USD"
+              "from": "biz_order_line.buy_currency_snapshot"
             },
             "biz_purchase_order_line.uom": {
               "from": "biz_order_line.uom"
             },
             "biz_purchase_order_line.quantity": {
-              "from": "biz_order_line.quantity"
+              "from": "biz_order_line.procurement_quantity_required"
             },
             "biz_purchase_order_line.unit_cost": {
               "from": "biz_order_line.unit_cost_snapshot"
+            },
+            "biz_purchase_order_line.source_order_line_id": {
+              "ref": "$source.id"
+            },
+            "biz_purchase_order_line.supplier_sku_snapshot": {
+              "from": "biz_order_line.supplier_sku_snapshot"
+            },
+            "biz_purchase_order_line.minimum_order_quantity_snapshot": {
+              "from": "biz_order_line.minimum_order_quantity_snapshot"
+            },
+            "biz_purchase_order_line.lead_time_weeks_snapshot": {
+              "from": "biz_order_line.lead_time_weeks_snapshot"
             },
             "biz_purchase_order_line.source_order_line_ref": {
               "ref": "$source.id"
@@ -2126,7 +2188,7 @@
               "from": "biz_order_line.unit_cost_snapshot"
             },
             "biz_purchase_order_line.source_order_line_id": {
-              "from": "biz_order_line.id"
+              "ref": "$source.id"
             },
             "biz_purchase_order_line.supplier_sku_snapshot": {
               "from": "biz_order_line.supplier_sku_snapshot"
@@ -2252,6 +2314,73 @@
       }
     },
     {
+      "key": "customer_order_to_progress_invoice",
+      "source_entity_id": "entity.biz_order",
+      "target_entity_id": "entity.biz_invoice",
+      "field_mappings": {
+        "biz_invoice.invoice_type": {
+          "value": "progress"
+        },
+        "biz_invoice.customer_id": {
+          "from": "biz_order.customer_id"
+        },
+        "biz_invoice.customer_contact_person_id": {
+          "from": "biz_order.customer_contact_person_id"
+        },
+        "biz_invoice.customer_contact_name": {
+          "from": "biz_order.customer_contact_name"
+        },
+        "biz_invoice.customer_contact_email": {
+          "from": "biz_order.customer_contact_email"
+        },
+        "biz_invoice.customer_contact_phone": {
+          "from": "biz_order.customer_contact_phone"
+        },
+        "biz_invoice.source_order_number": {
+          "from": "biz_order.order_number"
+        },
+        "biz_invoice.sales_entity": {
+          "from": "biz_order.sales_entity"
+        },
+        "biz_invoice.invoice_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.currency": {
+          "from": "biz_order.currency"
+        },
+        "biz_invoice.customer_reference": {
+          "from": "biz_order.customer_reference"
+        },
+        "biz_invoice.payment_terms": {
+          "from": "biz_order.payment_terms"
+        },
+        "biz_invoice.notes": {
+          "from": "biz_order.notes"
+        },
+        "biz_invoice.due_date": {
+          "ref": "$today"
+        },
+        "biz_invoice.source_order_total_snapshot": {
+          "from": "biz_order.order_total"
+        },
+        "biz_invoice.deposit_percent_snapshot": {
+          "from": "biz_order.deposit_percent"
+        },
+        "biz_invoice.status": {
+          "value": "draft"
+        }
+      },
+      "link_fields": {
+        "target_to_source": "biz_invoice.source_order_id"
+      },
+      "validation": {
+        "require_source_fields": [
+          "biz_order.order_number",
+          "biz_order.customer_id"
+        ]
+      }
+    },
+    {
       "key": "customer_order_to_final_invoice",
       "source_entity_id": "entity.biz_order",
       "target_entity_id": "entity.biz_invoice",
@@ -2300,6 +2429,9 @@
         },
         "biz_invoice.source_order_total_snapshot": {
           "from": "biz_order.order_total"
+        },
+        "biz_invoice.invoice_manual_total": {
+          "from": "biz_order.balance_to_invoice"
         },
         "biz_invoice.deposit_percent_snapshot": {
           "from": "biz_order.deposit_percent"
@@ -2551,6 +2683,11 @@
             "op": "gt",
             "field": "biz_order.order_total",
             "value": 0
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.procurement_line_count",
+            "value": 0
           }
         ]
       },
@@ -2651,6 +2788,66 @@
         ]
       },
       "action_label_key": "orders.actions.action_customer_order_create_deposit_invoice.label"
+    },
+    {
+      "id": "action.customer_order_create_progress_invoice",
+      "kind": "transform_record",
+      "entity_id": "entity.biz_order",
+      "label": "Raise Progress Invoice",
+      "transformation_key": "customer_order_to_progress_invoice",
+      "confirm": {
+        "title": "Raise progress invoice?",
+        "body": "This will create a draft progress invoice linked to this order."
+      },
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "confirmed"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "in_production"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "shipped"
+              },
+              {
+                "op": "eq",
+                "field": "biz_order.status",
+                "value": "completed"
+              }
+            ]
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.balance_to_invoice",
+            "value": 0
+          }
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "biz_order.customer_id"
+          },
+          {
+            "op": "gt",
+            "field": "biz_order.order_total",
+            "value": 0
+          }
+        ]
+      }
     },
     {
       "id": "action.customer_order_create_final_invoice",
@@ -3224,6 +3421,9 @@
             "action_id": "action.customer_order_create_deposit_invoice"
           },
           {
+            "action_id": "action.customer_order_create_progress_invoice"
+          },
+          {
             "action_id": "action.customer_order_mark_in_production"
           },
           {
@@ -3499,6 +3699,12 @@
           "field_id": "biz_order_line.unit_cost_snapshot"
         },
         {
+          "field_id": "biz_order_line.buy_fx_to_order_rate"
+        },
+        {
+          "field_id": "biz_order_line.buy_total_order_currency"
+        },
+        {
           "field_id": "biz_order_line.procured_quantity_total"
         },
         {
@@ -3564,12 +3770,14 @@
             "biz_order_line.available_stock_snapshot",
             "biz_order_line.stock_quantity_allocated",
             "biz_order_line.buy_currency_snapshot",
+            "biz_order_line.buy_fx_to_order_rate",
             "biz_order_line.procurement_supplier_id",
             "biz_order_line.product_supplier_id",
             "biz_order_line.supplier_sku_snapshot",
             "biz_order_line.minimum_order_quantity_snapshot",
             "biz_order_line.lead_time_weeks_snapshot",
             "biz_order_line.buy_total",
+            "biz_order_line.buy_total_order_currency",
             "biz_order_line.procurement_quantity_required",
             "biz_order_line.procurement_required",
             "biz_order_line.source_quote_line_ref",
@@ -3601,12 +3809,14 @@
           "biz_order_line.available_stock_snapshot",
           "biz_order_line.stock_quantity_allocated",
           "biz_order_line.buy_currency_snapshot",
+          "biz_order_line.buy_fx_to_order_rate",
           "biz_order_line.procurement_supplier_id",
           "biz_order_line.product_supplier_id",
           "biz_order_line.supplier_sku_snapshot",
           "biz_order_line.minimum_order_quantity_snapshot",
           "biz_order_line.lead_time_weeks_snapshot",
           "biz_order_line.buy_total",
+          "biz_order_line.buy_total_order_currency",
           "biz_order_line.procurement_quantity_required",
           "biz_order_line.procurement_required",
           "biz_order_line.linked_purchase_order_id",

@@ -621,35 +621,52 @@
                       "value": "final"
                     },
                     "then": {
-                      "op": "round",
-                      "args": [
-                        {
-                          "op": "sub",
-                          "args": [
-                            {
-                              "ref": "$current.biz_invoice.source_order_total_snapshot"
-                            },
-                            {
-                              "op": "mul",
-                              "args": [
-                                {
-                                  "ref": "$current.biz_invoice.source_order_total_snapshot"
-                                },
-                                {
-                                  "op": "div",
-                                  "args": [
-                                    {
-                                      "ref": "$current.biz_invoice.deposit_percent_snapshot"
-                                    },
-                                    100
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        2
-                      ]
+                      "op": "if",
+                      "condition": {
+                        "op": "gt",
+                        "field": "biz_invoice.invoice_manual_total",
+                        "value": 0
+                      },
+                      "then": {
+                        "op": "round",
+                        "args": [
+                          {
+                            "ref": "$current.biz_invoice.invoice_manual_total"
+                          },
+                          2
+                        ]
+                      },
+                      "else": {
+                        "op": "round",
+                        "args": [
+                          {
+                            "op": "sub",
+                            "args": [
+                              {
+                                "ref": "$current.biz_invoice.source_order_total_snapshot"
+                              },
+                              {
+                                "op": "mul",
+                                "args": [
+                                  {
+                                    "ref": "$current.biz_invoice.source_order_total_snapshot"
+                                  },
+                                  {
+                                    "op": "div",
+                                    "args": [
+                                      {
+                                        "ref": "$current.biz_invoice.deposit_percent_snapshot"
+                                      },
+                                      100
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          2
+                        ]
+                      }
                     },
                     "else": {
                       "ref": "$current.biz_invoice.invoice_manual_total"

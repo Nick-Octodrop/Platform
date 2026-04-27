@@ -288,10 +288,26 @@ def in_condition(field_id: str, values: list[Any]) -> dict[str, Any]:
     return {"op": "in", "field": field_id, "value": values}
 
 
+def contains_condition(field_id: str, value: Any) -> dict[str, Any]:
+    return {"op": "contains", "field": field_id, "value": value}
+
+
+def and_condition(*conditions: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "and", "conditions": list(conditions)}
+
+
 def modules_visible(include_settings: bool) -> list[RuleSpec]:
     return [module_rule(module_id, "visible") for module_id in BUSINESS_MODULES] + [
         module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES
     ]
+
+
+def visible_modules(module_ids: list[str]) -> list[RuleSpec]:
+    visible = set(module_ids)
+    rules = [module_rule(module_id, "visible") for module_id in BUSINESS_MODULES if module_id in visible]
+    rules.extend(module_rule(module_id, "hidden") for module_id in BUSINESS_MODULES if module_id not in visible)
+    rules.extend(module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES)
+    return rules
 
 
 def entities_access(entity_ids: list[str], access_level: str) -> list[RuleSpec]:
@@ -310,15 +326,22 @@ def sales_hidden_fields() -> list[RuleSpec]:
         "biz_contact.xero_last_sync_error",
         "biz_product.default_purchase_currency",
         "biz_product.default_buy_price",
+        "biz_product.default_quote_cost_currency",
+        "biz_product.default_quote_cost_price",
         "biz_product.preferred_supplier_id",
         "biz_product.supplier_factory_reference",
         "biz_product.internal_notes",
         "biz_quote.estimated_buy_total",
         "biz_quote.estimated_margin_amount",
         "biz_quote.estimated_margin_percent",
+        "biz_quote.internal_notes",
         "biz_quote_line.default_buy_price_snapshot",
         "biz_quote_line.buy_currency_snapshot",
+        "biz_quote_line.procurement_supplier_id",
+        "biz_quote_line.supplier_sku_snapshot",
+        "biz_quote_line.buy_fx_to_quote_rate",
         "biz_quote_line.buy_total",
+        "biz_quote_line.buy_total_quote_currency",
         "biz_quote_line.estimated_margin_amount",
         "biz_quote_line.estimated_margin_percent",
         "biz_order.preferred_supplier_id",
@@ -379,6 +402,7 @@ def procurement_hidden_actions() -> list[RuleSpec]:
         action_rule("action.invoice_create_document", "hidden"),
         action_rule("action.invoice_send_email", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
+        action_rule("action.customer_order_create_progress_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
     ] + crm_write_actions()
 
@@ -386,143 +410,262 @@ def procurement_hidden_actions() -> list[RuleSpec]:
 def operations_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.quote_script_new", "hidden"),
-        action_rule("action.contact_new", "hidden"),
-        action_rule("action.contact_activate", "hidden"),
-        action_rule("action.contact_deactivate", "hidden"),
-        action_rule("action.contact_person_new", "hidden"),
-        action_rule("action.contact_person_activate", "hidden"),
-        action_rule("action.contact_person_deactivate", "hidden"),
-        action_rule("action.product_new", "hidden"),
-        action_rule("action.quote_new", "hidden"),
-        action_rule("action.quote_create_document", "hidden"),
         action_rule("action.invoice_new", "hidden"),
         action_rule("action.invoice_create_document", "hidden"),
         action_rule("action.invoice_send_email", "hidden"),
-        action_rule("action.quote_accept_and_create_order", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
+        action_rule("action.customer_order_create_progress_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
-    ] + crm_write_actions()
+    ]
 
 
 def finance_hidden_actions() -> list[RuleSpec]:
-    return [
-        action_rule("action.quote_script_new", "hidden"),
-        action_rule("action.contact_new", "hidden"),
-        action_rule("action.contact_activate", "hidden"),
-        action_rule("action.contact_deactivate", "hidden"),
-        action_rule("action.contact_person_new", "hidden"),
-        action_rule("action.contact_person_activate", "hidden"),
-        action_rule("action.contact_person_deactivate", "hidden"),
-        action_rule("action.product_new", "hidden"),
-        action_rule("action.quote_new", "hidden"),
-        action_rule("action.quote_create_document", "hidden"),
-        action_rule("action.purchase_order_new", "hidden"),
-        action_rule("action.purchase_order_create_document", "hidden"),
-        action_rule("action.document_new", "hidden"),
-        action_rule("action.customer_order_create_purchase_order", "hidden"),
-        action_rule("action.customer_order_mark_in_production", "hidden"),
-        action_rule("action.customer_order_mark_shipped", "hidden"),
-        action_rule("action.customer_order_mark_completed", "hidden"),
-    ] + crm_write_actions() + task_write_actions() + calendar_write_actions()
+    return []
 
 
 def sales_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.quote_script_new", "hidden"),
-        action_rule("action.product_new", "hidden"),
-        action_rule("action.purchase_order_new", "hidden"),
-        action_rule("action.purchase_order_create_document", "hidden"),
-        action_rule("action.invoice_new", "hidden"),
-        action_rule("action.invoice_create_document", "hidden"),
-        action_rule("action.invoice_send_email", "hidden"),
-        action_rule("action.document_new", "hidden"),
-        action_rule("action.customer_order_create_purchase_order", "hidden"),
+        action_rule("action.quote_convert_to_order", "hidden"),
+        action_rule("action.customer_order_new", "hidden"),
+        action_rule("action.customer_order_confirm", "hidden"),
+        action_rule("action.customer_order_open_hold_modal", "hidden"),
         action_rule("action.customer_order_mark_in_production", "hidden"),
         action_rule("action.customer_order_mark_shipped", "hidden"),
         action_rule("action.customer_order_mark_completed", "hidden"),
+        action_rule("action.customer_order_open_cancel_modal", "hidden"),
+        action_rule("action.customer_order_create_purchase_order", "hidden"),
+        action_rule("action.customer_order_line_raise_purchase_order", "hidden"),
         action_rule("action.customer_order_create_deposit_invoice", "hidden"),
+        action_rule("action.customer_order_create_progress_invoice", "hidden"),
         action_rule("action.customer_order_create_final_invoice", "hidden"),
+        action_rule("action.customer_order_create_document", "hidden"),
+        action_rule("action.customer_order_send_confirmation", "hidden"),
+        action_rule("action.purchase_order_new", "hidden"),
+        action_rule("action.purchase_order_mark_sent", "hidden"),
+        action_rule("action.purchase_order_confirm", "hidden"),
+        action_rule("action.purchase_order_open_hold_modal", "hidden"),
+        action_rule("action.purchase_order_mark_in_production", "hidden"),
+        action_rule("action.purchase_order_mark_shipped", "hidden"),
+        action_rule("action.purchase_order_mark_received", "hidden"),
+        action_rule("action.purchase_order_close", "hidden"),
+        action_rule("action.purchase_order_open_cancel_modal", "hidden"),
+        action_rule("action.purchase_order_create_document", "hidden"),
+        action_rule("action.purchase_order_send_email", "hidden"),
+        action_rule("action.invoice_new", "hidden"),
+        action_rule("action.invoice_issue", "hidden"),
+        action_rule("action.invoice_mark_part_paid", "hidden"),
+        action_rule("action.invoice_mark_paid", "hidden"),
+        action_rule("action.invoice_open_cancel_modal", "hidden"),
+        action_rule("action.invoice_create_credit_note", "hidden"),
+        action_rule("action.invoice_create_document", "hidden"),
+        action_rule("action.invoice_send_email", "hidden"),
+        action_rule("action.invoice_mark_credited", "hidden"),
+        action_rule("action.document_new", "hidden"),
+        action_rule("action.biz_task_new", "hidden"),
+        action_rule("action.biz_task_start", "hidden"),
+        action_rule("action.biz_task_block", "hidden"),
+        action_rule("action.biz_task_done", "hidden"),
+        action_rule("action.biz_task_cancel", "hidden"),
+        action_rule("action.biz_calendar_event_new", "hidden"),
+        action_rule("action.biz_calendar_event_confirm", "hidden"),
+        action_rule("action.biz_calendar_event_done", "hidden"),
+        action_rule("action.biz_calendar_event_cancel", "hidden"),
+    ]
+
+
+def engineer_hidden_fields() -> list[RuleSpec]:
+    hidden = [
+        "biz_order.preferred_supplier_id",
+        "biz_order.deposit_invoice_id",
+        "biz_order.final_invoice_id",
+        "biz_order.invoiced_total",
+        "biz_order.balance_to_invoice",
+        "biz_order.estimated_buy_total",
+        "biz_order.estimated_margin_amount",
+        "biz_order.estimated_margin_percent",
+        "biz_order_line.unit_cost_snapshot",
+        "biz_order_line.buy_currency_snapshot",
+        "biz_order_line.buy_fx_to_order_rate",
+        "biz_order_line.buy_total",
+        "biz_order_line.buy_total_order_currency",
+        "biz_order_line.procurement_supplier_id",
+        "biz_order_line.product_supplier_id",
+        "biz_order_line.supplier_sku_snapshot",
+        "biz_order_line.minimum_order_quantity_snapshot",
+        "biz_order_line.lead_time_weeks_snapshot",
+        "biz_order_line.linked_purchase_order_id",
+        "biz_order_line.procured_quantity_total",
+        "biz_order_line.received_purchase_quantity_total",
+        "biz_order_line.procurement_shortfall_quantity",
+        "biz_order_line.receipt_shortfall_quantity",
+    ]
+    return [field_rule(field_id, "hidden") for field_id in hidden]
+
+
+def engineer_hidden_actions() -> list[RuleSpec]:
+    return [
+        action_rule("action.contact_new", "hidden"),
+        action_rule("action.contact_activate", "hidden"),
+        action_rule("action.contact_deactivate", "hidden"),
+        action_rule("action.contact_person_new", "hidden"),
+        action_rule("action.contact_person_activate", "hidden"),
+        action_rule("action.contact_person_deactivate", "hidden"),
+        action_rule("action.product_new", "hidden"),
+        action_rule("action.product_activate", "hidden"),
+        action_rule("action.product_deactivate", "hidden"),
+        action_rule("action.quote_script_new", "hidden"),
+        action_rule("action.quote_new", "hidden"),
+        action_rule("action.quote_reset_copy_from_script", "hidden"),
+        action_rule("action.quote_mark_sent", "hidden"),
+        action_rule("action.quote_mark_accepted", "hidden"),
+        action_rule("action.quote_convert_to_order", "hidden"),
+        action_rule("action.quote_create_document", "hidden"),
+        action_rule("action.quote_open_lost_modal", "hidden"),
+        action_rule("action.quote_open_expired_modal", "hidden"),
+        action_rule("action.customer_order_new", "hidden"),
+        action_rule("action.customer_order_confirm", "hidden"),
+        action_rule("action.customer_order_open_hold_modal", "hidden"),
+        action_rule("action.customer_order_mark_in_production", "hidden"),
+        action_rule("action.customer_order_mark_shipped", "hidden"),
+        action_rule("action.customer_order_mark_completed", "hidden"),
+        action_rule("action.customer_order_open_cancel_modal", "hidden"),
+        action_rule("action.customer_order_create_purchase_order", "hidden"),
+        action_rule("action.customer_order_line_raise_purchase_order", "hidden"),
+        action_rule("action.customer_order_create_deposit_invoice", "hidden"),
+        action_rule("action.customer_order_create_progress_invoice", "hidden"),
+        action_rule("action.customer_order_create_final_invoice", "hidden"),
+        action_rule("action.purchase_order_new", "hidden"),
+        action_rule("action.purchase_order_mark_sent", "hidden"),
+        action_rule("action.purchase_order_confirm", "hidden"),
+        action_rule("action.purchase_order_open_hold_modal", "hidden"),
+        action_rule("action.purchase_order_mark_in_production", "hidden"),
+        action_rule("action.purchase_order_mark_shipped", "hidden"),
+        action_rule("action.purchase_order_mark_received", "hidden"),
+        action_rule("action.purchase_order_close", "hidden"),
+        action_rule("action.purchase_order_open_cancel_modal", "hidden"),
+        action_rule("action.purchase_order_create_document", "hidden"),
+        action_rule("action.purchase_order_send_email", "hidden"),
+        action_rule("action.invoice_new", "hidden"),
+        action_rule("action.invoice_issue", "hidden"),
+        action_rule("action.invoice_mark_part_paid", "hidden"),
+        action_rule("action.invoice_mark_paid", "hidden"),
+        action_rule("action.invoice_open_cancel_modal", "hidden"),
+        action_rule("action.invoice_create_credit_note", "hidden"),
+        action_rule("action.invoice_create_document", "hidden"),
+        action_rule("action.invoice_send_email", "hidden"),
+        action_rule("action.invoice_mark_credited", "hidden"),
+        action_rule("action.document_new", "hidden"),
     ]
 
 
 def desired_profiles() -> dict[str, dict[str, Any]]:
-    directors_rules = (
+    full_access_rules = (
         modules_visible(include_settings=True)
         + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
     )
-    procurement_rules = (
+    operational_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
-        + entities_access(QUOTE_SCRIPT_ENTITIES, "read")
-        + entities_access(CRM_ENTITIES, "read")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + entities_access(INVOICE_ENTITIES, "read")
-        + procurement_hidden_actions()
-    )
-    operations_rules = (
-        modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + INVOICE_ENTITIES + CRM_ENTITIES, "read")
-        + entities_access(ORDER_ENTITIES + PO_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + operations_hidden_actions()
     )
     finance_rules = (
         modules_visible(include_settings=False)
-        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "read")
-        + entities_access(DOCUMENT_ENTITIES, "write")
-        + entities_access(ORDER_ENTITIES, "write")
-        + entities_access(INVOICE_ENTITIES, "write")
+        + entities_access(CONTACT_ENTITIES + PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "write")
         + finance_hidden_actions()
     )
-    sales_rules = (
-        [module_rule(module_id, "visible") for module_id in ["biz_contacts", "biz_products", "biz_quotes", "biz_orders", "biz_invoices", "biz_documents", "biz_crm", "biz_tasks", "biz_calendar"]]
-        + [module_rule("biz_purchase_orders", "hidden")]
-        + [module_rule(module_id, "hidden") for module_id in LEGACY_REMOVED_MODULES]
-        + [entity_rule("entity.biz_contact", "write"), entity_rule("entity.biz_contact", "write", eq_condition("biz_contact.contact_type", "customer"))]
-        + [entity_rule("entity.biz_contact_person", "write"), entity_rule("entity.biz_contact_person", "write", eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"))]
-        + entities_access(CRM_ENTITIES, "write")
+
+    def sales_rules_for(entity_scope: str) -> list[RuleSpec]:
+        return (
+            visible_modules(["biz_contacts", "biz_products", "biz_quotes", "biz_crm"])
+            + [
+                entity_rule(
+                    "entity.biz_contact",
+                    "write",
+                    and_condition(
+                        eq_condition("biz_contact.contact_type", "customer"),
+                        contains_condition("biz_contact.company_entity_scope", entity_scope),
+                    ),
+                )
+            ]
+            + [
+                entity_rule(
+                    "entity.biz_contact_person",
+                    "write",
+                    and_condition(
+                        eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"),
+                        contains_condition("biz_contact_person.company_entity_scope_snapshot", entity_scope),
+                    ),
+                )
+            ]
+            + [
+                entity_rule("entity.crm_lead", "write", eq_condition("crm_lead.sales_entity", entity_scope)),
+                entity_rule("entity.crm_opportunity", "write", eq_condition("crm_opportunity.sales_entity", entity_scope)),
+                entity_rule("entity.crm_activity", "write", eq_condition("crm_activity.sales_entity", entity_scope)),
+                entity_rule("entity.crm_site", "write", eq_condition("crm_site.sales_entity", entity_scope)),
+            ]
+            + entities_access(PRODUCT_ENTITIES, "read")
+            + [entity_rule("entity.biz_quote_script", "read", eq_condition("biz_quote_script.sales_entity", entity_scope))]
+            + [entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", entity_scope))]
+            + [entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", entity_scope))]
+            + entities_access(ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "none")
+            + sales_hidden_fields()
+            + sales_hidden_actions()
+        )
+
+    engineer_rules = (
+        visible_modules(["biz_orders", "biz_tasks", "biz_calendar", "biz_contacts"])
+        + entities_access(ORDER_ENTITIES, "read")
+        + [entity_rule("entity.biz_contact", "read", eq_condition("biz_contact.contact_type", "customer"))]
+        + [entity_rule("entity.biz_contact_person", "read", eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"))]
         + entities_access(TASK_ENTITIES + CALENDAR_ENTITIES, "write")
-        + entities_access(PRODUCT_ENTITIES, "read")
-        + [entity_rule("entity.biz_quote_script", "read", eq_condition("biz_quote_script.sales_entity", "NLight BV"))]
-        + [entity_rule("entity.biz_quote", "write"), entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", "NLight BV"))]
-        + [entity_rule("entity.biz_quote_line", "write"), entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", "NLight BV"))]
-        + [entity_rule("entity.biz_order", "write"), entity_rule("entity.biz_order", "write", eq_condition("biz_order.sales_entity", "NLight BV"))]
-        + [entity_rule("entity.biz_order_line", "write"), entity_rule("entity.biz_order_line", "write", eq_condition("biz_order_line.sales_entity_snapshot", "NLight BV"))]
-        + [entity_rule("entity.biz_invoice", "read"), entity_rule("entity.biz_invoice", "read", eq_condition("biz_invoice.sales_entity", "NLight BV"))]
-        + [entity_rule("entity.biz_invoice_line", "read"), entity_rule("entity.biz_invoice_line", "read", eq_condition("biz_invoice_line.sales_entity_snapshot", "NLight BV"))]
-        + [entity_rule("entity.biz_document", "write"), entity_rule("entity.biz_document", "write", eq_condition("biz_document.sales_entity", "NLight BV"))]
-        + entities_access(PO_ENTITIES, "none")
-        + sales_hidden_fields()
-        + sales_hidden_actions()
+        + entities_access(PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "none")
+        + engineer_hidden_fields()
+        + engineer_hidden_actions()
     )
     return {
-        "directors": {
-            "name": "Directors",
-            "description": "Full commercial, financial, and supplier access.",
-            "rules": directors_rules,
-            "members": ["luke", "matthew"],
+        "owner": {
+            "name": "Owner",
+            "description": "Workspace owner access across all commercial modules.",
+            "rules": full_access_rules,
+            "members": ["luke"],
         },
-        "procurement": {
-            "name": "Procurement",
-            "description": "Commercial handoff, supplier, and purchasing ownership.",
-            "rules": procurement_rules,
-            "members": ["walter"],
-        },
-        "operations": {
-            "name": "Operations",
-            "description": "Order and purchase-order execution access.",
-            "rules": operations_rules,
-            "members": ["shelly"],
+        "admin": {
+            "name": "Admin",
+            "description": "Full commercial administration across all NLight modules.",
+            "rules": full_access_rules,
+            "members": ["matthew", "natalie", "shelly"],
         },
         "finance": {
             "name": "Finance",
-            "description": "Invoice, payment-status, and finance-oriented order visibility.",
+            "description": "Finance-led control across quotes, orders, purchasing, invoicing, and Xero-linked records.",
             "rules": finance_rules,
-            "members": ["tamzin"],
+            "members": ["debra", "mark", "tamzin"],
         },
-        "sales_nl": {
-            "name": "Sales NL",
-            "description": "NLight BV customer-side sales access without supplier and cost visibility.",
-            "rules": sales_rules,
+        "operational": {
+            "name": "Operational",
+            "description": "Operational ownership of CRM handoff, stock, supplier, and purchasing workflows.",
+            "rules": operational_rules,
+            "members": ["walter"],
+        },
+        "sales_nlight_bv": {
+            "name": "NLight BV Sales",
+            "description": "NLight BV sales access for CRM and quotes without supplier, cost, or job visibility.",
+            "rules": sales_rules_for("NLight BV"),
             "members": ["joost", "joram"],
+        },
+        "sales_cis": {
+            "name": "CIS Sales",
+            "description": "EcoTech/CIS sales access for CRM and quotes without supplier, cost, or job visibility.",
+            "rules": sales_rules_for("EcoTech FZCO"),
+            "members": ["alexey", "a.kurbanaev", "andrey", "a.funk"],
+        },
+        "engineer": {
+            "name": "Engineer",
+            "description": "Basic order visibility with task and calendar activity logging.",
+            "rules": engineer_rules,
+            "members": ["tomas"],
         },
     }
 

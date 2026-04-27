@@ -400,7 +400,8 @@
           "ui": {
             "populate_from_lookup": {
               "field_map": {
-                "biz_contact_person.company_contact_type_snapshot": "biz_contact.contact_type"
+                "biz_contact_person.company_contact_type_snapshot": "biz_contact.contact_type",
+                "biz_contact_person.company_entity_scope_snapshot": "biz_contact.company_entity_scope"
               }
             }
           },
@@ -425,6 +426,12 @@
               "label": "Factory Partner"
             }
           ]
+        },
+        {
+          "id": "biz_contact_person.company_entity_scope_snapshot",
+          "type": "tags",
+          "label": "Entity Scope Snapshot",
+          "readonly": true
         },
         {
           "id": "biz_contact_person.display_name",
@@ -865,6 +872,9 @@
                     "biz_contact_person.company_contact_type_snapshot": {
                       "ref": "$record.biz_contact.contact_type"
                     },
+                    "biz_contact_person.company_entity_scope_snapshot": {
+                      "ref": "$record.biz_contact.company_entity_scope"
+                    },
                     "biz_contact_person.is_active": true
                   }
                 }
@@ -1068,6 +1078,7 @@
           "columns": 2,
           "fields": [
             "biz_contact_person.company_id",
+            "biz_contact_person.company_entity_scope_snapshot",
             "biz_contact_person.display_name",
             "biz_contact_person.first_name",
             "biz_contact_person.last_name",

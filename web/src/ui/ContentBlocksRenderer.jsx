@@ -4,6 +4,7 @@ import { getSafeSession } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
 import ViewModesBlock from "./ViewModesBlock.jsx";
+import DocumentRegistryBlock from "./DocumentRegistryBlock.jsx";
 import { Info, Paperclip, Trash2 } from "lucide-react";
 import { useAccessContext } from "../access.js";
 import { formatDateTime } from "../utils/dateTime.js";
@@ -82,7 +83,7 @@ function hasViewModes(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes" || block.kind === "related_list") return true;
+    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "document_registry") return true;
     if (block.kind === "container" && hasViewModes(block.content)) return true;
     if (block.kind === "stack" && hasViewModes(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasViewModes(item?.content))) return true;
@@ -96,7 +97,7 @@ function hasFillHeight(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter") return true;
+    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") return true;
     if (block.kind === "container" && hasFillHeight(block.content)) return true;
     if (block.kind === "stack" && hasFillHeight(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasFillHeight(item?.content))) return true;
@@ -107,7 +108,7 @@ function hasFillHeight(blocks) {
 
 function blockPrefersFill(block) {
   if (!block || typeof block !== "object") return false;
-  if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter") {
+  if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") {
     return true;
   }
   if (block.kind === "container") return hasFillHeight(block.content);
@@ -268,6 +269,22 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
     );
   }
 
+  if (kind === "document_registry") {
+    return (
+      <div className={constrainHeight ? "flex-1 h-full min-h-0 flex flex-col overflow-hidden" : "flex flex-col"}>
+        <DocumentRegistryBlock
+          block={block}
+          manifest={manifest}
+          moduleId={moduleId}
+          onNavigate={onNavigate}
+          onConfirm={onConfirm}
+          externalRefreshTick={externalRefreshTick}
+          onPageSectionLoadingChange={onPageSectionLoadingChange}
+        />
+      </div>
+    );
+  }
+
   if (kind === "stack") {
     return (
       <div className={`${constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${gapClass(block.gap)}`}>
@@ -353,9 +370,9 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "container") {
     const variant = block.variant || "card";
     const title = block.title;
-    const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes" || b?.kind === "related_list");
-    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "tabs");
-    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "chatter" || b?.kind === "tabs");
+    const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry");
+    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry" || b?.kind === "tabs");
+    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry" || b?.kind === "chatter" || b?.kind === "tabs");
     const content = (
       <ContentBlocksRenderer
         blocks={block.content || []}

@@ -213,6 +213,59 @@ def _sync_attachment_field(records: DbGenericRecordStore, entity_id: str, record
     records.update(entity_id, record_id, updated_record)
 
 
+def _record_payload(record: dict | None) -> dict:
+    if isinstance(record, dict) and isinstance(record.get("record"), dict):
+        return record.get("record") or {}
+    return record if isinstance(record, dict) else {}
+
+
+def _mirror_generated_attachment_to_parent_record(
+    records: DbGenericRecordStore,
+    attach_store: DbAttachmentStore,
+    *,
+    entity_id: str,
+    record_data: dict,
+    attachment: dict,
+    purpose: str | None,
+) -> None:
+    if not _entity_id_matches(entity_id, "entity.biz_document") or not isinstance(record_data, dict):
+        return
+    document_type = record_data.get("biz_document.document_type")
+    doc_type = document_type.strip() if isinstance(document_type, str) and document_type.strip() else None
+    source_mappings = [
+        ("biz_document.related_quote_id", "entity.biz_quote", "biz_quote.generated_files", "quote_pdf"),
+        ("biz_document.related_order_id", "entity.biz_order", "biz_order.generated_files", "order_confirmation"),
+        ("biz_document.related_purchase_order_id", "entity.biz_purchase_order", "biz_purchase_order.generated_files", "purchase_order_pdf"),
+        ("biz_document.related_invoice_id", "entity.biz_invoice", "biz_invoice.generated_files", "invoice_pdf"),
+    ]
+    for related_field, target_entity_id, attachment_field, fallback_purpose in source_mappings:
+        target_record_id = record_data.get(related_field)
+        if not isinstance(target_record_id, str) or not target_record_id.strip():
+            continue
+        target_record_id = target_record_id.strip()
+        source_wrapper = records.get(target_entity_id, target_record_id)
+        if not source_wrapper and target_entity_id.startswith("entity."):
+            source_wrapper = records.get(target_entity_id[7:], target_record_id)
+        source_record = _record_payload(source_wrapper if isinstance(source_wrapper, dict) else None)
+        if not isinstance(source_record, dict) or not source_record:
+            continue
+        _sync_attachment_field(records, target_entity_id, target_record_id, source_record, attachment_field, attachment)
+        link_purpose = (
+            doc_type
+            or (purpose.strip() if isinstance(purpose, str) and purpose.strip() and purpose != "default" else "")
+            or fallback_purpose
+        )
+        attach_store.link(
+            {
+                "attachment_id": attachment.get("id"),
+                "entity_id": target_entity_id,
+                "record_id": target_record_id,
+                "purpose": link_purpose,
+            }
+        )
+        break
+
+
 def _resolve_linked_attachments(
     attach_store: DbAttachmentStore,
     *,
@@ -381,6 +434,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
     template = doc_store.get(template_id)
     if not template:
         raise RuntimeError("Template not found")
+    source_template = app_main._artifact_ai_normalize_doc_template_draft(template, None)
     record = records.get(entity_id, record_id)
     if not record:
         raise RuntimeError("Record not found")
@@ -393,32 +447,40 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         lambda module_id, manifest_hash: app_main.store.get_snapshot(module_id, manifest_hash),
         entity_id,
     )
-    entity_def = found[1] if found else None
-    record_data = record.get("record") or {}
-    context = app_main._build_template_render_context(
+    record_entity_id = entity_id
+    record_entity_def = found[1] if found else None
+    record_data = _record_payload(record if isinstance(record, dict) else None)
+    render_entity_id, render_entity_def, render_record_data = app_main._resolve_document_template_record_source(
+        source_template,
+        record_entity_id,
         record_data,
-        entity_def,
-        entity_id,
-        app_main._branding_context_for_org(org_id),
-        localization=app_main._localization_context_for_actor(None),
     )
-    html = render_html(template.get("html") or "", context)
-    filename_pattern = template.get("filename_pattern") or template.get("name") or "document"
+    actor_user_id = payload.get("actor_user_id") if isinstance(payload.get("actor_user_id"), str) and payload.get("actor_user_id").strip() else None
+    actor_context = {"user_id": actor_user_id} if actor_user_id else None
+    context = app_main._build_template_render_context(
+        render_record_data,
+        render_entity_def,
+        render_entity_id,
+        app_main._branding_context_for_org(org_id),
+        localization=app_main._localization_context_for_actor(actor_context),
+    )
+    html = render_html(source_template.get("html") or "", context)
+    filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
     filename = render_template(filename_pattern, context, strict=True)
-    header_html = template.get("header_html") or ""
-    footer_html = template.get("footer_html") or ""
+    header_html = source_template.get("header_html") or ""
+    footer_html = source_template.get("footer_html") or ""
     if header_html:
         header_html = render_template(header_html, context, strict=True)
     if footer_html:
         footer_html = render_template(footer_html, context, strict=True)
     margins = {
-        "top": template.get("margin_top") or "12mm",
-        "right": template.get("margin_right") or "12mm",
-        "bottom": template.get("margin_bottom") or "12mm",
-        "left": template.get("margin_left") or "12mm",
+        "top": source_template.get("margin_top") or "12mm",
+        "right": source_template.get("margin_right") or "12mm",
+        "bottom": source_template.get("margin_bottom") or "12mm",
+        "left": source_template.get("margin_left") or "12mm",
     }
     margins = normalize_margins(margins)
-    paper_size = template.get("paper_size") or "A4"
+    paper_size = source_template.get("paper_size") or "A4"
     pdf_bytes = render_pdf(
         html,
         paper_size=paper_size,
@@ -441,7 +503,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
     attach_store.link(
         {
             "attachment_id": attachment.get("id"),
-            "entity_id": entity_id,
+            "entity_id": record_entity_id,
             "record_id": record_id,
             "purpose": f"template:{template_id}",
         }
@@ -450,13 +512,21 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         attach_store.link(
             {
                 "attachment_id": attachment.get("id"),
-                "entity_id": entity_id,
+                "entity_id": record_entity_id,
                 "record_id": record_id,
                 "purpose": purpose,
             }
         )
-    attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, entity_id)
-    _sync_attachment_field(records, entity_id, record_id, record_data, attachment_field, attachment)
+    attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, record_entity_id)
+    _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment)
+    _mirror_generated_attachment_to_parent_record(
+        records,
+        attach_store,
+        entity_id=record_entity_id,
+        record_data=record_data,
+        attachment=attachment,
+        purpose=purpose,
+    )
 
 
 def _handle_attachments_cleanup(job: dict, org_id: str) -> None:

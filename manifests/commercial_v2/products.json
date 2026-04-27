@@ -185,6 +185,41 @@
           "label_key": "products.entities.biz_product.fields.default_sales_price.label"
         },
         {
+          "id": "biz_product.default_quote_cost_currency",
+          "type": "enum",
+          "label": "Quote Cost Currency",
+          "default": "EUR",
+          "options": [
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
+          ]
+        },
+        {
+          "id": "biz_product.default_quote_cost_price",
+          "type": "number",
+          "label": "Quote Cost",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_product.default_quote_cost_currency",
+            "precision": 2
+          }
+        },
+        {
           "id": "biz_product.default_purchase_currency",
           "type": "enum",
           "label": "Purchase Currency",
@@ -663,6 +698,12 @@
           "field_id": "biz_product.default_sales_currency"
         },
         {
+          "field_id": "biz_product.default_quote_cost_price"
+        },
+        {
+          "field_id": "biz_product.default_quote_cost_currency"
+        },
+        {
           "field_id": "biz_product.default_buy_price"
         },
         {
@@ -833,6 +874,8 @@
           "fields": [
             "biz_product.default_sales_currency",
             "biz_product.default_sales_price",
+            "biz_product.default_quote_cost_currency",
+            "biz_product.default_quote_cost_price",
             "biz_product.default_purchase_currency",
             "biz_product.default_buy_price"
           ],
@@ -979,6 +1022,8 @@
           "biz_product.uom",
           "biz_product.default_sales_currency",
           "biz_product.default_sales_price",
+          "biz_product.default_quote_cost_currency",
+          "biz_product.default_quote_cost_price",
           "biz_product.default_purchase_currency",
           "biz_product.default_buy_price",
           "biz_product.fulfilment_mode",

@@ -126,6 +126,22 @@
           "label_key": "crm.entities.crm_site.fields.company_id.label"
         },
         {
+          "id": "crm_site.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO"
+            }
+          ]
+        },
+        {
           "id": "crm_site.address_line_1",
           "type": "string",
           "label": "Address Line 1",
@@ -183,6 +199,7 @@
         "tracked_fields": [
           "crm_site.name",
           "crm_site.company_id",
+          "crm_site.sales_entity",
           "crm_site.address_line_1",
           "crm_site.address_line_2",
           "crm_site.city",
@@ -322,6 +339,22 @@
             }
           },
           "label_key": "crm.entities.crm_lead.fields.company_id.label"
+        },
+        {
+          "id": "crm_lead.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO"
+            }
+          ]
         },
         {
           "id": "crm_lead.contact_person_id",
@@ -470,6 +503,7 @@
           "crm_lead.status",
           "crm_lead.source",
           "crm_lead.company_id",
+          "crm_lead.sales_entity",
           "crm_lead.contact_person_id",
           "crm_lead.contact_name",
           "crm_lead.contact_email",
@@ -536,6 +570,22 @@
           "label_key": "crm.entities.crm_opportunity.fields.company_id.label"
         },
         {
+          "id": "crm_opportunity.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO"
+            }
+          ]
+        },
+        {
           "id": "crm_opportunity.primary_contact_person_id",
           "type": "lookup",
           "label": "Primary Contact Person",
@@ -591,7 +641,8 @@
           "ui": {
             "populate_from_lookup": {
               "field_map": {
-                "crm_opportunity.company_id": "crm_site.company_id"
+                "crm_opportunity.company_id": "crm_site.company_id",
+                "crm_opportunity.sales_entity": "crm_site.sales_entity"
               }
             }
           },
@@ -611,13 +662,13 @@
           "options": [
             {
               "value": "nlight_sales",
-              "label": "NLight Sales",
+              "label": "NLight BV Sales",
               "status_label_key": "crm.entities.crm_opportunity.fields.pipeline.options.nlight_sales",
               "label_key": "crm.entities.crm_opportunity.fields.pipeline.options.nlight_sales"
             },
             {
               "value": "ecotech_supply",
-              "label": "EcoTech Supply",
+              "label": "EcoTech CIS Sales",
               "status_label_key": "crm.entities.crm_opportunity.fields.pipeline.options.ecotech_supply",
               "label_key": "crm.entities.crm_opportunity.fields.pipeline.options.ecotech_supply"
             },
@@ -963,6 +1014,7 @@
         "tracked_fields": [
           "crm_opportunity.title",
           "crm_opportunity.company_id",
+          "crm_opportunity.sales_entity",
           "crm_opportunity.primary_contact_person_id",
           "crm_opportunity.primary_contact_name",
           "crm_opportunity.primary_contact_email",
@@ -1100,6 +1152,22 @@
           "label_key": "crm.entities.crm_activity.fields.company_id.label"
         },
         {
+          "id": "crm_activity.sales_entity",
+          "type": "enum",
+          "label": "Sales Entity",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO"
+            }
+          ]
+        },
+        {
           "id": "crm_activity.lead_id",
           "type": "lookup",
           "label": "Lead",
@@ -1109,6 +1177,7 @@
             "populate_from_lookup": {
               "field_map": {
                 "crm_activity.company_id": "crm_lead.company_id",
+                "crm_activity.sales_entity": "crm_lead.sales_entity",
                 "crm_activity.owner_user_id": "crm_lead.owner_user_id"
               }
             }
@@ -1125,6 +1194,7 @@
             "populate_from_lookup": {
               "field_map": {
                 "crm_activity.company_id": "crm_opportunity.company_id",
+                "crm_activity.sales_entity": "crm_opportunity.sales_entity",
                 "crm_activity.site_id": "crm_opportunity.site_id",
                 "crm_activity.owner_user_id": "crm_opportunity.owner_user_id"
               }
@@ -1141,7 +1211,8 @@
           "ui": {
             "populate_from_lookup": {
               "field_map": {
-                "crm_activity.company_id": "crm_site.company_id"
+                "crm_activity.company_id": "crm_site.company_id",
+                "crm_activity.sales_entity": "crm_site.sales_entity"
               }
             }
           },
@@ -1166,6 +1237,7 @@
           "crm_activity.due_date",
           "crm_activity.owner_user_id",
           "crm_activity.company_id",
+          "crm_activity.sales_entity",
           "crm_activity.lead_id",
           "crm_activity.opportunity_id",
           "crm_activity.site_id",
@@ -1592,6 +1664,9 @@
         "crm_opportunity.owner_user_id": {
           "from": "crm_lead.owner_user_id"
         },
+        "crm_opportunity.sales_entity": {
+          "from": "crm_lead.sales_entity"
+        },
         "crm_opportunity.currency": {
           "from": "crm_lead.currency"
         },
@@ -1651,7 +1726,7 @@
           "ref": "$today"
         },
         "biz_quote.sales_entity": {
-          "value": "NLight BV"
+          "from": "crm_opportunity.sales_entity"
         },
         "biz_quote.customer_id": {
           "from": "crm_opportunity.company_id"
@@ -1735,7 +1810,7 @@
           "from": "crm_opportunity.linked_quote_id"
         },
         "biz_order.sales_entity": {
-          "value": "NLight BV"
+          "from": "crm_opportunity.sales_entity"
         },
         "biz_order.order_date": {
           "ref": "$today"
@@ -2088,6 +2163,9 @@
           "field_id": "crm_lead.company_id"
         },
         {
+          "field_id": "crm_lead.sales_entity"
+        },
+        {
           "field_id": "crm_lead.status"
         },
         {
@@ -2211,6 +2289,7 @@
             "crm_lead.contact_email",
             "crm_lead.contact_phone",
             "crm_lead.owner_user_id",
+            "crm_lead.sales_entity",
             "crm_lead.currency",
             "crm_lead.estimated_value",
             "crm_lead.next_action",
@@ -2292,6 +2371,9 @@
                     "crm_activity.company_id": {
                       "ref": "$record.crm_lead.company_id"
                     },
+                    "crm_activity.sales_entity": {
+                      "ref": "$record.crm_lead.sales_entity"
+                    },
                     "crm_activity.owner_user_id": {
                       "ref": "$record.crm_lead.owner_user_id"
                     },
@@ -2320,6 +2402,9 @@
         },
         {
           "field_id": "crm_opportunity.company_id"
+        },
+        {
+          "field_id": "crm_opportunity.sales_entity"
         },
         {
           "field_id": "crm_opportunity.stage"
@@ -2480,6 +2565,7 @@
             "crm_opportunity.primary_contact_phone",
             "crm_opportunity.site_id",
             "crm_opportunity.owner_user_id",
+            "crm_opportunity.sales_entity",
             "crm_opportunity.pipeline",
             "crm_opportunity.source",
             "crm_opportunity.expected_close_date",
@@ -2601,6 +2687,9 @@
                     "crm_activity.company_id": {
                       "ref": "$record.crm_opportunity.company_id"
                     },
+                    "crm_activity.sales_entity": {
+                      "ref": "$record.crm_opportunity.sales_entity"
+                    },
                     "crm_activity.site_id": {
                       "ref": "$record.crm_opportunity.site_id"
                     },
@@ -2635,6 +2724,9 @@
         },
         {
           "field_id": "crm_activity.status"
+        },
+        {
+          "field_id": "crm_activity.sales_entity"
         },
         {
           "field_id": "crm_activity.due_date"
@@ -2746,6 +2838,7 @@
             "crm_activity.title",
             "crm_activity.activity_type",
             "crm_activity.status",
+            "crm_activity.sales_entity",
             "crm_activity.due_date",
             "crm_activity.owner_user_id",
             "crm_activity.company_id",
@@ -2815,6 +2908,9 @@
           "field_id": "crm_site.company_id"
         },
         {
+          "field_id": "crm_site.sales_entity"
+        },
+        {
           "field_id": "crm_site.city"
         },
         {
@@ -2869,6 +2965,7 @@
           "fields": [
             "crm_site.name",
             "crm_site.company_id",
+            "crm_site.sales_entity",
             "crm_site.address_line_1",
             "crm_site.address_line_2",
             "crm_site.city",
@@ -2934,6 +3031,9 @@
                     "crm_opportunity.company_id": {
                       "ref": "$record.crm_site.company_id"
                     },
+                    "crm_opportunity.sales_entity": {
+                      "ref": "$record.crm_site.sales_entity"
+                    },
                     "crm_opportunity.stage": "new",
                     "crm_opportunity.status": "open"
                   }
@@ -2964,6 +3064,9 @@
                     },
                     "crm_activity.company_id": {
                       "ref": "$record.crm_site.company_id"
+                    },
+                    "crm_activity.sales_entity": {
+                      "ref": "$record.crm_site.sales_entity"
                     },
                     "crm_activity.status": "planned"
                   }
@@ -3542,6 +3645,22 @@
     }
   ],
   "interfaces": {
+    "documentable": [
+      {
+        "entity_id": "entity.crm_opportunity",
+        "enabled": true,
+        "scope": "module_and_global",
+        "attachment_field": "crm_opportunity.attachments",
+        "title_field": "crm_opportunity.title",
+        "owner_field": "crm_opportunity.owner_user_id",
+        "category_field": "crm_opportunity.stage",
+        "date_field": "crm_opportunity.expected_close_date",
+        "record_label_field": "crm_opportunity.title",
+        "preview_enabled": true,
+        "allow_delete": false,
+        "allow_download": true
+      }
+    ],
     "dashboardable": [
       {
         "entity_id": "entity.crm_opportunity",

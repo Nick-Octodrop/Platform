@@ -39,6 +39,7 @@ ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
 ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id"}
 ALLOWED_V1_BLOCK_KEYS = {
     "kind",
+    "id",
     "target",
     "content",
     "items",
@@ -71,6 +72,21 @@ ALLOWED_V1_BLOCK_KEYS = {
     "create_modal",
     "cards",
     "title_key",
+    "scope",
+    "limit",
+    "default_search",
+    "default_source_key",
+    "default_category",
+    "default_mine",
+    "include_module_ids",
+    "exclude_module_ids",
+    "include_entity_ids",
+    "exclude_entity_ids",
+    "include_source_keys",
+    "exclude_source_keys",
+    "include_categories",
+    "exclude_categories",
+    "saved_views_entity_id",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "label", "event", "entity_id", "action_id", "status_field"}
@@ -102,6 +118,28 @@ ALLOWED_V1_VIEW_MODES_KEYS = {
     "page_size",
 }
 ALLOWED_V1_RELATED_LIST_KEYS = {"kind", "entity_id", "target", "view", "record_domain", "create_defaults", "create_modal"}
+ALLOWED_V1_DOCUMENT_REGISTRY_KEYS = {
+    "kind",
+    "id",
+    "title",
+    "title_key",
+    "scope",
+    "page_size",
+    "limit",
+    "default_search",
+    "default_source_key",
+    "default_category",
+    "default_mine",
+    "include_module_ids",
+    "exclude_module_ids",
+    "include_entity_ids",
+    "exclude_entity_ids",
+    "include_source_keys",
+    "exclude_source_keys",
+    "include_categories",
+    "exclude_categories",
+    "saved_views_entity_id",
+}
 ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by", "default_measure"}
 MAX_BLOCK_DEPTH = 6
 MAX_CONDITION_DEPTH = 6
@@ -746,6 +784,40 @@ def _validate_blocks(
             record_domain = _get(block, "record_domain")
             if record_domain is not None:
                 _validate_condition(record_domain, f"{bpath}.record_domain", errors)
+        elif kind == "document_registry":
+            if not allow_v13:
+                errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "document_registry blocks require manifest_version >= 1.3", f"{bpath}.kind"))
+                continue
+            _reject_unknown_keys(errors, block, ALLOWED_V1_DOCUMENT_REGISTRY_KEYS, bpath)
+            scope = _get(block, "scope")
+            if scope is not None and scope not in {"global", "current_module"}:
+                errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", "scope must be global|current_module", f"{bpath}.scope"))
+            page_size = _get(block, "page_size")
+            if page_size is not None and (not isinstance(page_size, int) or page_size <= 0):
+                errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", "page_size must be a positive integer", f"{bpath}.page_size"))
+            limit = _get(block, "limit")
+            if limit is not None and (not isinstance(limit, int) or limit <= 0):
+                errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", "limit must be a positive integer", f"{bpath}.limit"))
+            for key in (
+                "include_module_ids",
+                "exclude_module_ids",
+                "include_entity_ids",
+                "exclude_entity_ids",
+                "include_source_keys",
+                "exclude_source_keys",
+                "include_categories",
+                "exclude_categories",
+            ):
+                value = _get(block, key)
+                if value is not None and (not isinstance(value, list) or not all(isinstance(item, str) for item in value)):
+                    errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", f"{key} must be a list of strings", f"{bpath}.{key}"))
+            for key in ("default_search", "default_source_key", "default_category", "saved_views_entity_id"):
+                value = _get(block, key)
+                if value is not None and not isinstance(value, str):
+                    errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", f"{key} must be a string", f"{bpath}.{key}"))
+            default_mine = _get(block, "default_mine")
+            if default_mine is not None and not isinstance(default_mine, bool):
+                errors.append(_issue("MANIFEST_DOCUMENT_REGISTRY_INVALID", "default_mine must be boolean", f"{bpath}.default_mine"))
         elif kind == "chatter":
             if not allow_chatter:
                 errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "chatter blocks require manifest_version >= 1.2", f"{bpath}.kind"))
