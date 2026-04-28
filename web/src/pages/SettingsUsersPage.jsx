@@ -36,6 +36,13 @@ export default function SettingsUsersPage() {
   const [selectedProfileIds, setSelectedProfileIds] = useState([]);
   const [platformInviteEmail, setPlatformInviteEmail] = useState("");
   const [platformInviteRole, setPlatformInviteRole] = useState("standard");
+  const [stagedEmail, setStagedEmail] = useState("");
+  const [stagedRole, setStagedRole] = useState("member");
+  const [stagedPassword, setStagedPassword] = useState("");
+  const [stagedProfileIds, setStagedProfileIds] = useState([]);
+  const [pendingHandoffMember, setPendingHandoffMember] = useState(null);
+  const [handoffPasswordInput, setHandoffPasswordInput] = useState("");
+  const [issuedHandoffPassword, setIssuedHandoffPassword] = useState("");
   const { context, loading: accessLoading } = useAccessContext();
 
   const roleOptions = useMemo(
@@ -99,6 +106,20 @@ export default function SettingsUsersPage() {
     const map = new Map(roleOptions.map((r) => [r.value, r.label]));
     return (role) => map.get(role) || role || t("settings.users.roles.member");
   }, [roleOptions, t]);
+
+  const managedStateMeta = useMemo(
+    () => ({
+      staged: { label: "Staged", tone: "badge-warning" },
+      handoff_required: { label: "Handoff pending", tone: "badge-secondary" },
+      active: { label: "Managed account", tone: "badge-outline" },
+    }),
+    [],
+  );
+
+  function managedStateBadge(state) {
+    if (!state || !managedStateMeta[state]) return null;
+    return managedStateMeta[state];
+  }
 
   function openProfileModal(member) {
     setPendingProfileEdit(member);
@@ -262,6 +283,75 @@ export default function SettingsUsersPage() {
     }
   }
 
+  async function createStagedMember() {
+    if (!stagedEmail.trim() || !stagedPassword.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const res = await apiFetch("/access/members/create", {
+        method: "POST",
+        body: {
+          email: stagedEmail.trim().toLowerCase(),
+          role: stagedRole,
+          password: stagedPassword,
+          profile_ids: stagedProfileIds,
+        },
+      });
+      setMembers(res?.members || []);
+      setStagedEmail("");
+      setStagedRole("member");
+      setStagedPassword("");
+      setStagedProfileIds([]);
+      pushToast("success", "Staged user created.");
+    } catch (err) {
+      setError(err?.message || "Failed to create staged user.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openHandoffModal(member) {
+    setPendingHandoffMember(member);
+    setHandoffPasswordInput("");
+    setIssuedHandoffPassword("");
+  }
+
+  function closeHandoffModal() {
+    setPendingHandoffMember(null);
+    setHandoffPasswordInput("");
+    setIssuedHandoffPassword("");
+  }
+
+  async function approveHandoff(member) {
+    if (!member?.user_id) return;
+    setSaving(true);
+    setError("");
+    try {
+      const body = handoffPasswordInput.trim() ? { password: handoffPasswordInput } : {};
+      const res = await apiFetch(`/access/members/${member.user_id}/approve-handoff`, {
+        method: "POST",
+        body,
+      });
+      setMembers(res?.members || []);
+      setIssuedHandoffPassword(res?.temporary_password || "");
+      pushToast("success", "Handoff password ready.");
+    } catch (err) {
+      setError(err?.message || "Failed to approve handoff.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copyIssuedPassword() {
+    if (!issuedHandoffPassword || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(issuedHandoffPassword);
+      pushToast("success", "Temporary password copied.");
+    } catch {
+      // ignore clipboard failures
+    }
+  }
+
   const tabs = useMemo(
     () => [],
     [],
@@ -368,6 +458,98 @@ export default function SettingsUsersPage() {
             </SettingsSection>
           ) : null}
 
+          {actor.platform_role === "superadmin" ? (
+            <SettingsSection
+              title="Create Staged User"
+              description="Create a workspace user silently with a temporary password so you can test access before handoff."
+            >
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <label className="form-control md:col-span-4">
+                  <span className="label-text text-sm">{t("settings.email")}</span>
+                  <input
+                    className="input input-bordered input-sm"
+                    type="email"
+                    placeholder="user@company.com"
+                    value={stagedEmail}
+                    disabled={saving}
+                    onChange={(e) => setStagedEmail(e.target.value)}
+                  />
+                </label>
+                <label className="form-control md:col-span-3">
+                  <span className="label-text text-sm">{t("settings.role")}</span>
+                  <AppSelect
+                    className="select select-bordered select-sm"
+                    value={stagedRole}
+                    disabled={saving}
+                    onChange={(e) => setStagedRole(e.target.value)}
+                  >
+                    {roleOptions.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </AppSelect>
+                </label>
+                <label className="form-control md:col-span-5">
+                  <span className="label-text text-sm">Temporary Password</span>
+                  <input
+                    className="input input-bordered input-sm"
+                    type="text"
+                    placeholder="At least 8 characters"
+                    value={stagedPassword}
+                    disabled={saving}
+                    onChange={(e) => setStagedPassword(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="mt-4">
+                <div className="text-sm font-medium">Access Profiles</div>
+                <div className="text-xs opacity-70 mt-1">Assign profiles now so staged testing matches the final user access.</div>
+                <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {accessProfiles.length ? (
+                    accessProfiles.map((profile) => {
+                      const checked = stagedProfileIds.includes(profile.id);
+                      return (
+                        <label key={profile.id} className="flex items-start gap-3 rounded-box border border-base-300 bg-base-100 p-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="checkbox checkbox-sm mt-0.5"
+                            checked={checked}
+                            disabled={saving}
+                            onChange={(e) => {
+                              setStagedProfileIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(profile.id);
+                                else next.delete(profile.id);
+                                return Array.from(next);
+                              });
+                            }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm">{profile.name || profile.id}</div>
+                            {profile.description ? <div className="text-xs opacity-70 mt-1">{profile.description}</div> : null}
+                          </div>
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm opacity-70">{t("settings.users.no_access_profiles")}</div>
+                  )}
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={saving || !stagedEmail.trim() || stagedPassword.trim().length < 8}
+                  onClick={createStagedMember}
+                  type="button"
+                >
+                  Create staged user
+                </button>
+              </div>
+            </SettingsSection>
+          ) : null}
+
           <SettingsSection title={t("settings.users.workspace_users_title")} description={t("settings.users.workspace_users_description")}>
             {loading ? (
               <div className="text-sm opacity-60">{t("settings.users.loading_users")}</div>
@@ -399,9 +581,14 @@ export default function SettingsUsersPage() {
                   {pagedMembers.map((member) => (
                     <tr key={member.user_id}>
                       <td>
-                        <div className="truncate" title={member.name || member.user_id}>
+                        <div className="truncate font-medium" title={member.name || member.user_id}>
                           {member.name || member.user_id}
                         </div>
+                        {managedStateBadge(member.managed_account_state) ? (
+                          <div className={`badge badge-xs mt-1 ${managedStateBadge(member.managed_account_state).tone}`}>
+                            {managedStateBadge(member.managed_account_state).label}
+                          </div>
+                        ) : null}
                       </td>
                       <td>
                         <div className="truncate" title={member.email || "—"}>
@@ -445,6 +632,16 @@ export default function SettingsUsersPage() {
                         <td>
                           {canManage ? (
                             <div className="flex flex-wrap items-center gap-2">
+                              {actor.platform_role === "superadmin" && member.managed_account_state === "staged" ? (
+                                <button
+                                  className="btn btn-ghost btn-xs"
+                                  disabled={saving}
+                                  onClick={() => openHandoffModal(member)}
+                                  type="button"
+                                >
+                                  Approve handoff
+                                </button>
+                              ) : null}
                               <button
                                 className="btn btn-ghost btn-xs"
                                 disabled={saving}
@@ -602,6 +799,56 @@ export default function SettingsUsersPage() {
             </div>
           </div>
           <div className="modal-backdrop" onClick={closeProfileModal} />
+        </div>
+      ) : null}
+
+      {pendingHandoffMember ? (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Approve User Handoff</h3>
+            <p className="text-sm opacity-70 mt-2">
+              Reset this staged account to a fresh handoff password, then force the real user to change it on their first login.
+            </p>
+            {issuedHandoffPassword ? (
+              <div className="mt-4 space-y-3">
+                <div className="alert alert-success text-sm">
+                  The user is ready for handoff. Share this temporary password securely.
+                </div>
+                <label className="form-control">
+                  <span className="label-text">Temporary Password</span>
+                  <input className="input input-bordered input-sm" type="text" readOnly value={issuedHandoffPassword} />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button className="btn btn-sm" onClick={copyIssuedPassword} type="button">Copy</button>
+                  <button className="btn btn-primary btn-sm" onClick={closeHandoffModal} type="button">Done</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className="form-control mt-4">
+                  <span className="label-text">New Temporary Password</span>
+                  <input
+                    className="input input-bordered input-sm"
+                    type="text"
+                    value={handoffPasswordInput}
+                    disabled={saving}
+                    placeholder="Leave blank to auto-generate"
+                    onChange={(e) => setHandoffPasswordInput(e.target.value)}
+                  />
+                </label>
+                <p className="text-xs opacity-70 mt-2">
+                  If you leave this blank, the system will generate a fresh temporary password for handoff.
+                </p>
+                <div className="modal-action">
+                  <button className="btn btn-sm" onClick={closeHandoffModal} disabled={saving} type="button">Cancel</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => approveHandoff(pendingHandoffMember)} disabled={saving} type="button">
+                    {saving ? t("common.saving") : "Approve handoff"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="modal-backdrop" onClick={closeHandoffModal} />
         </div>
       ) : null}
     </TabbedPaneShell>

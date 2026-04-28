@@ -223,6 +223,7 @@ def list_workspace_members(workspace_id: str) -> list[dict]:
                   wm.user_id,
                   wm.role,
                   u.email,
+                  nullif(trim(u.raw_app_meta_data->>'octo_managed_account_state'), '') as managed_account_state,
                   coalesce(
                     nullif(trim(u.raw_user_meta_data->>'full_name'), ''),
                     nullif(trim(u.raw_user_meta_data->>'name'), '')

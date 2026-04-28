@@ -8,6 +8,7 @@ import html
 import hmac
 import os
 import re
+import secrets
 import sys
 import urllib.parse
 import urllib.request
@@ -999,6 +1000,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
     user_id = user.get("id")
     set_db_user_id(user_id)
     platform_role = get_platform_role(user_id)
+    managed_account_state = _managed_account_state_from_claims(user.get("claims"))
     user_email = user.get("email")
     if isinstance(user_email, str) and user_email:
         try:
@@ -1021,6 +1023,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
             "platform_role": platform_role,
             "workspace_id": workspace_id,
             "workspaces": user_workspaces,
+            "managed_account_state": managed_account_state,
             "claims": user.get("claims"),
         }
     if workspace_header:
@@ -1066,6 +1069,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         "platform_role": platform_role,
         "workspace_id": workspace_id,
         "workspaces": user_workspaces,
+        "managed_account_state": managed_account_state,
         "claims": user.get("claims"),
     }
 
@@ -1980,6 +1984,14 @@ def _resolve_api_credential_expiry(body: dict) -> tuple[str | None, JSONResponse
 
 _WORKSPACE_ROLES = {"admin", "member", "readonly", "portal"}
 _PLATFORM_ROLES = {"standard", "superadmin"}
+_MANAGED_ACCOUNT_STATES = {"staged", "handoff_required", "active"}
+_MANAGED_ACCOUNT_FLAG_KEY = "octo_managed_account"
+_MANAGED_ACCOUNT_STATE_KEY = "octo_managed_account_state"
+_MANAGED_ACCOUNT_WORKSPACE_KEY = "octo_managed_workspace_id"
+_MANAGED_ACCOUNT_CREATED_BY_KEY = "octo_managed_created_by"
+_PASSWORD_HANDOFF_ALLOWED_PATHS = {
+    "/access/password-handoff/complete",
+}
 
 
 def _normalize_workspace_role(value: Any) -> str | None:
@@ -1991,6 +2003,72 @@ def _normalize_workspace_role(value: Any) -> str | None:
     if role in _WORKSPACE_ROLES:
         return role
     return None
+
+
+def _coerce_json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            decoded = json.loads(value)
+        except Exception:
+            return {}
+        if isinstance(decoded, dict):
+            return dict(decoded)
+    return {}
+
+
+def _normalize_managed_account_state(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized in _MANAGED_ACCOUNT_STATES:
+        return normalized
+    return None
+
+
+def _managed_account_state_from_metadata(metadata: Any) -> str | None:
+    data = _coerce_json_object(metadata)
+    return _normalize_managed_account_state(data.get(_MANAGED_ACCOUNT_STATE_KEY))
+
+
+def _managed_account_state_from_claims(claims: Any) -> str | None:
+    if not isinstance(claims, dict):
+        return None
+    return _managed_account_state_from_metadata(claims.get("app_metadata"))
+
+
+def _managed_account_state_from_actor(actor: dict | None) -> str | None:
+    if not isinstance(actor, dict):
+        return None
+    return _normalize_managed_account_state(actor.get("managed_account_state"))
+
+
+def _actor_requires_password_handoff(actor: dict | None) -> bool:
+    return _managed_account_state_from_actor(actor) == "handoff_required"
+
+
+def _merge_managed_account_app_metadata(
+    existing: Any,
+    *,
+    state: str,
+    workspace_id: str | None = None,
+    created_by_user_id: str | None = None,
+) -> dict[str, Any]:
+    merged = _coerce_json_object(existing)
+    merged[_MANAGED_ACCOUNT_FLAG_KEY] = True
+    merged[_MANAGED_ACCOUNT_STATE_KEY] = state
+    if isinstance(workspace_id, str) and workspace_id.strip():
+        merged[_MANAGED_ACCOUNT_WORKSPACE_KEY] = workspace_id.strip()
+    if isinstance(created_by_user_id, str) and created_by_user_id.strip():
+        merged[_MANAGED_ACCOUNT_CREATED_BY_KEY] = created_by_user_id.strip()
+    return merged
+
+
+def _generate_temporary_password(length: int = 16) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
+    size = max(12, int(length or 0))
+    return "".join(secrets.choice(alphabet) for _ in range(size))
 
 
 def _supabase_admin_headers() -> dict:
@@ -2024,6 +2102,38 @@ def _supabase_invite_user(email: str, redirect_to: str | None = None) -> dict:
         raise RuntimeError(f"invite_failed:{exc.code}:{body}") from exc
 
 
+def _supabase_create_user(
+    email: str,
+    password: str,
+    *,
+    email_confirm: bool = True,
+    user_metadata: dict[str, Any] | None = None,
+) -> dict:
+    if not _supabase_admin_enabled():
+        raise RuntimeError("Supabase service role not configured")
+    base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    payload: dict[str, Any] = {
+        "email": email,
+        "password": password,
+        "email_confirm": bool(email_confirm),
+    }
+    if isinstance(user_metadata, dict) and user_metadata:
+        payload["user_metadata"] = user_metadata
+    req = urllib.request.Request(
+        f"{base}/auth/v1/admin/users",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_supabase_admin_headers(),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            raw = res.read().decode("utf-8", errors="ignore").strip()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"create_user_failed:{exc.code}:{body}") from exc
+
+
 def _supabase_send_recovery(email: str, redirect_to: str | None = None) -> dict:
     if not _supabase_admin_enabled():
         raise RuntimeError("Supabase service role not configured")
@@ -2048,10 +2158,14 @@ def _supabase_send_recovery(email: str, redirect_to: str | None = None) -> dict:
 
 
 def _supabase_update_user_email(user_id: str, new_email: str) -> dict:
+    return _supabase_update_user(user_id, {"email": new_email})
+
+
+def _supabase_update_user(user_id: str, attributes: dict[str, Any]) -> dict:
     if not _supabase_admin_enabled():
         raise RuntimeError("Supabase service role not configured")
     base = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
-    payload: dict[str, Any] = {"email": new_email}
+    payload: dict[str, Any] = dict(attributes or {})
     req = urllib.request.Request(
         f"{base}/auth/v1/admin/users/{urllib.parse.quote(user_id)}",
         data=json.dumps(payload).encode("utf-8"),
@@ -2064,7 +2178,7 @@ def _supabase_update_user_email(user_id: str, new_email: str) -> dict:
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"update_email_failed:{exc.code}:{body}") from exc
+        raise RuntimeError(f"update_user_failed:{exc.code}:{body}") from exc
 
 
 def _default_invite_redirect() -> str:
@@ -2116,6 +2230,77 @@ def _find_auth_user_id_by_email(email: str) -> str | None:
             return None
 
 
+def _find_auth_user_row_by_id(user_id: str) -> dict[str, Any] | None:
+    if not isinstance(user_id, str) or not user_id.strip():
+        return None
+    with get_conn() as conn:
+        try:
+            row = fetch_one(
+                conn,
+                """
+                select
+                  id::text as id,
+                  email,
+                  raw_app_meta_data,
+                  raw_user_meta_data
+                from auth.users
+                where id::text=%s
+                limit 1
+                """,
+                [user_id.strip()],
+                query_name="auth_users.find_by_id",
+            )
+        except Exception:
+            return None
+    if not isinstance(row, dict):
+        return None
+    row = dict(row)
+    row["app_metadata"] = _coerce_json_object(row.get("raw_app_meta_data"))
+    row["user_metadata"] = _coerce_json_object(row.get("raw_user_meta_data"))
+    row["managed_account_state"] = _managed_account_state_from_metadata(row.get("app_metadata"))
+    return row
+
+
+def _supabase_update_managed_account_state(
+    user_id: str,
+    *,
+    state: str,
+    workspace_id: str | None = None,
+    created_by_user_id: str | None = None,
+    password: str | None = None,
+    email_confirm: bool | None = None,
+) -> dict:
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if not auth_user:
+        raise RuntimeError("auth_user_not_found")
+    app_metadata = _merge_managed_account_app_metadata(
+        auth_user.get("app_metadata"),
+        state=state,
+        workspace_id=workspace_id or auth_user.get("app_metadata", {}).get(_MANAGED_ACCOUNT_WORKSPACE_KEY),
+        created_by_user_id=created_by_user_id or auth_user.get("app_metadata", {}).get(_MANAGED_ACCOUNT_CREATED_BY_KEY),
+    )
+    payload: dict[str, Any] = {"app_metadata": app_metadata}
+    if isinstance(password, str) and password:
+        payload["password"] = password
+    if email_confirm is not None:
+        payload["email_confirm"] = bool(email_confirm)
+    return _supabase_update_user(user_id, payload)
+
+
+def _password_handoff_required_response(actor: dict | None, path: str | None) -> JSONResponse | None:
+    if not _actor_requires_password_handoff(actor):
+        return None
+    normalized_path = str(path or "").strip()
+    if normalized_path in _PASSWORD_HANDOFF_ALLOWED_PATHS:
+        return None
+    return _error_response(
+        "PASSWORD_CHANGE_REQUIRED",
+        "Password change required before accessing the app",
+        detail={"redirect_to": "/auth/set-password"},
+        status=403,
+    )
+
+
 class ActorContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method == "OPTIONS" or _is_public_path(request.url.path):
@@ -2123,6 +2308,9 @@ class ActorContextMiddleware(BaseHTTPMiddleware):
         actor = _resolve_actor(request)
         if isinstance(actor, JSONResponse):
             return _attach_cors_headers(request, actor)
+        handoff_denied = _password_handoff_required_response(actor, request.url.path)
+        if handoff_denied:
+            return _attach_cors_headers(request, handoff_denied)
         if request.url.path.startswith("/studio2") or request.url.path.startswith("/studio/"):
             denied = _require_capability(actor, "modules.manage", "Admin role required")
             if denied:
@@ -51446,6 +51634,33 @@ async def add_chatter(request: Request, entity_id: str, record_id: str) -> dict:
 # ---- Access / Users / Roles ----
 
 
+def _list_workspace_members_enriched(workspace_id: str) -> list[dict]:
+    members = list_workspace_members(workspace_id)
+    assignments = list_workspace_access_assignments(workspace_id)
+    profiles_by_user: dict[str, list[dict]] = {}
+    for row in assignments:
+        user_id = row.get("user_id")
+        if not isinstance(user_id, str) or not user_id:
+            continue
+        profiles_by_user.setdefault(user_id, []).append(
+            {
+                "id": row.get("profile_id"),
+                "profile_key": row.get("profile_key"),
+                "name": row.get("name"),
+                "description": row.get("description"),
+            }
+        )
+    enriched = []
+    for member in members:
+        user_id = member.get("user_id")
+        row = dict(member)
+        row["managed_account_state"] = _normalize_managed_account_state(row.get("managed_account_state"))
+        row["access_profiles"] = profiles_by_user.get(user_id, [])
+        row["access_profile_ids"] = [profile.get("id") for profile in row["access_profiles"] if isinstance(profile.get("id"), str)]
+        enriched.append(row)
+    return enriched
+
+
 @app.get("/access/context")
 async def access_context(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -51455,7 +51670,8 @@ async def access_context(request: Request) -> dict:
     user_id = str(actor.get("user_id") or "").strip()
     workspace_role = str(actor.get("workspace_role") or actor.get("role") or "").strip()
     platform_role = str(actor.get("platform_role") or "").strip()
-    cache_key = f"access_context:{workspace_id}:{user_id}:{workspace_role}:{platform_role}"
+    managed_account_state = _managed_account_state_from_actor(actor) or ""
+    cache_key = f"access_context:{workspace_id}:{user_id}:{workspace_role}:{platform_role}:{managed_account_state}"
     cached = _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=access_context key=%s", cache_key)
@@ -51473,6 +51689,8 @@ async def access_context(request: Request) -> dict:
                 "workspace_id": actor.get("workspace_id"),
                 "workspace_role": actor.get("workspace_role") or actor.get("role"),
                 "platform_role": actor.get("platform_role") or "standard",
+                "managed_account_state": managed_account_state or None,
+                "password_handoff_required": _actor_requires_password_handoff(actor),
             },
             "workspaces": workspaces,
             "permissions": _actor_permissions(actor),
@@ -51545,29 +51763,86 @@ async def access_members(request: Request) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
         return actor
-    members = list_workspace_members(actor.get("workspace_id"))
-    assignments = list_workspace_access_assignments(actor.get("workspace_id"))
-    profiles_by_user: dict[str, list[dict]] = {}
-    for row in assignments:
-        user_id = row.get("user_id")
-        if not isinstance(user_id, str) or not user_id:
-            continue
-        profiles_by_user.setdefault(user_id, []).append(
-            {
-                "id": row.get("profile_id"),
-                "profile_key": row.get("profile_key"),
-                "name": row.get("name"),
-                "description": row.get("description"),
-            }
+    return _ok_response({"members": _list_workspace_members_enriched(actor.get("workspace_id"))})
+
+
+@app.post("/access/members/create")
+async def create_staged_workspace_member(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Superadmin role required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password")
+    role = _normalize_workspace_role(body.get("role") or "member")
+    profile_ids = body.get("profile_ids")
+    if "@" not in email:
+        return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
+    if not isinstance(password, str) or len(password) < 8:
+        return _error_response("PASSWORD_REQUIRED", "Temporary password must be at least 8 characters", "password", status=400)
+    if not role:
+        return _error_response("ROLE_INVALID", "Invalid role", "role", status=400)
+    if profile_ids is None:
+        profile_ids = []
+    if not isinstance(profile_ids, list):
+        return _error_response("INVALID_BODY", "profile_ids must be a list", "profile_ids", status=400)
+    if _find_auth_user_id_by_email(email):
+        return _error_response("USER_EXISTS", "A user with that email already exists", "email", status=400)
+
+    workspace_id = actor.get("workspace_id")
+    created_user_id = ""
+    try:
+        created = _supabase_create_user(email, password, email_confirm=True)
+        created_user = created.get("user") if isinstance(created, dict) else None
+        created_user_id = created_user.get("id") if isinstance(created_user, dict) else ""
+        if not isinstance(created_user_id, str) or not created_user_id:
+            created_user_id = _find_auth_user_id_by_email(email) or ""
+        if not created_user_id:
+            raise RuntimeError("create_user_missing_id")
+        _supabase_update_managed_account_state(
+            created_user_id,
+            state="staged",
+            workspace_id=workspace_id,
+            created_by_user_id=actor.get("user_id"),
+            email_confirm=True,
         )
-    enriched = []
-    for member in members:
-        user_id = member.get("user_id")
-        row = dict(member)
-        row["access_profiles"] = profiles_by_user.get(user_id, [])
-        row["access_profile_ids"] = [profile.get("id") for profile in row["access_profiles"] if isinstance(profile.get("id"), str)]
-        enriched.append(row)
-    return _ok_response({"members": enriched})
+        member = add_workspace_member(workspace_id, created_user_id, role)
+        assigned_profiles = replace_workspace_user_access_profiles(workspace_id, created_user_id, profile_ids)
+    except ValueError as exc:
+        if created_user_id:
+            with suppress(Exception):
+                replace_workspace_user_access_profiles(workspace_id, created_user_id, [])
+            with suppress(Exception):
+                remove_workspace_member(workspace_id, created_user_id)
+            with suppress(Exception):
+                _supabase_delete_user(created_user_id)
+        return _error_response("PROFILE_INVALID", str(exc), "profile_ids", status=400)
+    except Exception as exc:
+        if created_user_id:
+            with suppress(Exception):
+                replace_workspace_user_access_profiles(workspace_id, created_user_id, [])
+            with suppress(Exception):
+                remove_workspace_member(workspace_id, created_user_id)
+            with suppress(Exception):
+                _supabase_delete_user(created_user_id)
+        return _error_response("CREATE_USER_FAILED", str(exc), "email", status=400)
+
+    _invalidate_access_runtime_caches(workspace_id, created_user_id)
+    members = _list_workspace_members_enriched(workspace_id)
+    return _ok_response(
+        {
+            "member": member,
+            "members": members,
+            "user_id": created_user_id,
+            "managed_account_state": "staged",
+            "assigned_profiles": assigned_profiles,
+        }
+    )
 
 
 @app.post("/access/members/invite")
@@ -51618,7 +51893,7 @@ async def invite_workspace_member(request: Request) -> dict:
             invited_by_user_id=actor.get("user_id"),
         )
         invite_pending = True
-    members = list_workspace_members(actor.get("workspace_id"))
+    members = _list_workspace_members_enriched(actor.get("workspace_id"))
     _invalidate_access_runtime_caches(actor.get("workspace_id"), invited_user_id if isinstance(invited_user_id, str) else None)
     return _ok_response(
         {
@@ -51628,6 +51903,55 @@ async def invite_workspace_member(request: Request) -> dict:
             "invite_pending": invite_pending,
             "existing_user": bool(existing_user_id),
             "email_flow": "recovery" if existing_user_id else "invite",
+        }
+    )
+
+
+@app.post("/access/members/{user_id}/approve-handoff")
+async def approve_staged_member_handoff(request: Request, user_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_superadmin(actor, "Superadmin role required")
+    if denied:
+        return denied
+    workspace_id = actor.get("workspace_id")
+    member = get_membership(user_id, workspace_id)
+    if not member:
+        return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if not auth_user:
+        return _error_response("AUTH_USER_NOT_FOUND", "Auth user not found", "user_id", status=404)
+    if auth_user.get("managed_account_state") != "staged":
+        return _error_response(
+            "HANDOFF_INVALID",
+            "Only staged users can be approved for handoff",
+            "user_id",
+            status=400,
+        )
+    body = await _safe_json(request)
+    provided_password = (body or {}).get("password") if isinstance(body, dict) else None
+    if provided_password not in (None, "") and (not isinstance(provided_password, str) or len(provided_password) < 8):
+        return _error_response("PASSWORD_REQUIRED", "Temporary password must be at least 8 characters", "password", status=400)
+    temporary_password = provided_password if isinstance(provided_password, str) and provided_password else _generate_temporary_password()
+    try:
+        _supabase_update_managed_account_state(
+            user_id,
+            state="handoff_required",
+            workspace_id=workspace_id,
+            password=temporary_password,
+            email_confirm=True,
+        )
+    except Exception as exc:
+        return _error_response("HANDOFF_FAILED", str(exc), "user_id", status=400)
+    _invalidate_access_runtime_caches(workspace_id, user_id)
+    return _ok_response(
+        {
+            "ok": True,
+            "user_id": user_id,
+            "managed_account_state": "handoff_required",
+            "temporary_password": temporary_password,
+            "members": _list_workspace_members_enriched(workspace_id),
         }
     )
 
@@ -51685,6 +52009,30 @@ async def invite_platform_user(request: Request) -> dict:
     )
 
 
+@app.post("/access/password-handoff/complete")
+async def complete_password_handoff(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    user_id = actor.get("user_id")
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if not auth_user:
+        return _error_response("AUTH_USER_NOT_FOUND", "Auth user not found", "user_id", status=404)
+    current_state = auth_user.get("managed_account_state")
+    if current_state != "handoff_required":
+        return _ok_response({"ok": True, "managed_account_state": current_state, "completed": False})
+    try:
+        _supabase_update_managed_account_state(
+            user_id,
+            state="active",
+            workspace_id=actor.get("workspace_id"),
+        )
+    except Exception as exc:
+        return _error_response("HANDOFF_COMPLETE_FAILED", str(exc), "user_id", status=400)
+    _invalidate_access_runtime_caches(actor.get("workspace_id"), user_id)
+    return _ok_response({"ok": True, "managed_account_state": "active", "completed": True})
+
+
 @app.patch("/access/members/{user_id}")
 async def update_member_role(request: Request, user_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -51712,7 +52060,7 @@ async def update_member_role(request: Request, user_id: str) -> dict:
     updated = update_workspace_member_role(workspace_id, user_id, role)
     if not updated:
         updated = add_workspace_member(workspace_id, user_id, role)
-    members = list_workspace_members(workspace_id)
+    members = _list_workspace_members_enriched(workspace_id)
     _invalidate_access_runtime_caches(workspace_id, user_id)
     return _ok_response({"member": updated, "members": members})
 
@@ -51757,7 +52105,7 @@ async def delete_member(request: Request, user_id: str) -> dict:
             role = (member_before or {}).get("role") or "member"
             add_workspace_member(workspace_id, user_id, role)
             return _error_response("DELETE_AUTH_FAILED", str(exc), "delete_auth_user", status=400)
-    members = list_workspace_members(workspace_id)
+    members = _list_workspace_members_enriched(workspace_id)
     _invalidate_access_runtime_caches(workspace_id, user_id)
     return _ok_response({"ok": True, "members": members, "auth_deleted": delete_auth_user})
 
@@ -51780,7 +52128,7 @@ async def update_member_email(request: Request, user_id: str) -> dict:
         result = _supabase_update_user_email(user_id, email.strip().lower())
     except Exception as exc:
         return _error_response("UPDATE_EMAIL_FAILED", str(exc), "email", status=400)
-    members = list_workspace_members(workspace_id)
+    members = _list_workspace_members_enriched(workspace_id)
     return _ok_response({"ok": True, "user": result.get("user") or result, "members": members})
 
 

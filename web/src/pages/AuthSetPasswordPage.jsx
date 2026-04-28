@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from "../supabase";
+import { apiFetch } from "../api";
+import { getSafeSession, supabase } from "../supabase";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function AuthSetPasswordPage({ user }) {
@@ -14,6 +15,7 @@ export default function AuthSetPasswordPage({ user }) {
 
   const canSet = !!user;
   const email = useMemo(() => user?.email || "", [user]);
+  const handoffRequired = user?.app_metadata?.octo_managed_account_state === "handoff_required";
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -31,6 +33,10 @@ export default function AuthSetPasswordPage({ user }) {
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) throw updateError;
+      if (handoffRequired) {
+        await apiFetch("/access/password-handoff/complete", { method: "POST", body: {} });
+        await getSafeSession({ forceRefresh: true });
+      }
       setNotice(t("settings.auth.password_updated_redirecting"));
       setTimeout(() => navigate("/home", { replace: true }), 700);
     } catch (err) {

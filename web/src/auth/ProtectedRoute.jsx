@@ -1,13 +1,17 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 
-export default function ProtectedRoute({ user, loading, children }) {
+export default function ProtectedRoute({ user, loading, children, allowPasswordHandoff = false }) {
+  const location = useLocation();
   if (loading) {
     return <LoadingSpinner className="h-screen" />;
   }
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  if (!allowPasswordHandoff && user?.app_metadata?.octo_managed_account_state === "handoff_required") {
+    return <Navigate to="/auth/set-password" replace state={{ from: location.pathname }} />;
   }
   return children;
 }
