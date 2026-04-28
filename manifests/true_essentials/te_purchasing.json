@@ -235,6 +235,21 @@
           ]
         },
         {
+          "id": "te_purchase_order_line.order_status_snapshot",
+          "type": "enum",
+          "label": "PO Status",
+          "readonly": true,
+          "default": "draft",
+          "options": [
+            { "value": "draft", "label": "Draft" },
+            { "value": "placed", "label": "Ordered" },
+            { "value": "partially_received", "label": "Partially Received" },
+            { "value": "received", "label": "Received" },
+            { "value": "cancelled", "label": "Cancelled" }
+          ],
+          "help_text": "Maintained from the supplier order so catalogue stock-on-order only counts active orders."
+        },
+        {
           "id": "te_purchase_order_line.supplier_product_id",
           "type": "lookup",
           "label": "Supplier Product",
@@ -287,6 +302,15 @@
           "help_text": "Use this to track what has physically arrived against the ordered quantity."
         },
         {
+          "id": "te_purchase_order_line.stock_posted_quantity",
+          "type": "number",
+          "label": "Stock Posted Quantity",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 },
+          "help_text": "Quantity already posted into catalogue stock on hand. Used to prevent duplicate receipt postings."
+        },
+        {
           "id": "te_purchase_order_line.open_quantity",
           "type": "number",
           "label": "Open Quantity",
@@ -308,6 +332,27 @@
               ]
             }
           }
+        },
+        {
+          "id": "te_purchase_order_line.stock_on_order_quantity",
+          "type": "number",
+          "label": "Stock On Order Quantity",
+          "readonly": true,
+          "default": 0,
+          "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 },
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "in",
+                "field": "te_purchase_order_line.order_status_snapshot",
+                "value": ["placed", "partially_received"]
+              },
+              "then": { "ref": "$current.te_purchase_order_line.open_quantity" },
+              "else": 0
+            }
+          },
+          "help_text": "Open quantity counted in catalogue stock-on-order. Draft, received, and cancelled supplier orders count as zero."
         },
         {
           "id": "te_purchase_order_line.unit_cost",
@@ -588,6 +633,7 @@
               { "field_id": "te_purchase_order_line.quantity", "label": "Qty", "type": "number", "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
               { "field_id": "te_purchase_order_line.received_quantity", "label": "Received", "type": "number", "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
               { "field_id": "te_purchase_order_line.open_quantity", "label": "Open Qty", "type": "number", "readonly": true, "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
+              { "field_id": "te_purchase_order_line.stock_on_order_quantity", "label": "On Order", "type": "number", "readonly": true, "width": 120, "align": "right", "format": { "kind": "measurement", "unit_field": "te_purchase_order_line.order_uom", "precision": 0 } },
               { "field_id": "te_purchase_order_line.unit_cost", "label": "Unit Cost", "type": "number", "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" },
               { "field_id": "te_purchase_order_line.line_total", "label": "Line Total", "type": "number", "readonly": true, "width": 150, "align": "right", "currency_field": "te_purchase_order_line.currency_snapshot" }
             ]
@@ -694,6 +740,8 @@
         { "field_id": "te_purchase_order_line.quantity" },
         { "field_id": "te_purchase_order_line.received_quantity" },
         { "field_id": "te_purchase_order_line.open_quantity" },
+        { "field_id": "te_purchase_order_line.stock_on_order_quantity" },
+        { "field_id": "te_purchase_order_line.order_status_snapshot" },
         { "field_id": "te_purchase_order_line.unit_cost" },
         { "field_id": "te_purchase_order_line.line_total" },
         { "field_id": "te_purchase_order_line.purchase_order_id" }
@@ -728,6 +776,9 @@
             "te_purchase_order_line.quantity",
             "te_purchase_order_line.received_quantity",
             "te_purchase_order_line.open_quantity",
+            "te_purchase_order_line.stock_on_order_quantity",
+            "te_purchase_order_line.stock_posted_quantity",
+            "te_purchase_order_line.order_status_snapshot",
             "te_purchase_order_line.unit_cost",
             "te_purchase_order_line.line_total"
           ]

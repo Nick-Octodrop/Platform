@@ -2022,8 +2022,20 @@
         "biz_document.status": {
           "value": "draft"
         },
-        "biz_document.related_contact_id": {
+        "biz_document.contact_id": {
           "from": "biz_order.customer_id"
+        },
+        "biz_document.source_entity_label": {
+          "value": "Order"
+        },
+        "biz_document.source_record_label": {
+          "from": "biz_order.order_number"
+        },
+        "biz_document.source_entity_id": {
+          "value": "entity.biz_order"
+        },
+        "biz_document.source_field_id": {
+          "value": "biz_order.generated_files"
         },
         "biz_document.sales_entity": {
           "from": "biz_order.sales_entity"
@@ -2034,7 +2046,7 @@
       },
       "link_fields": {
         "source_to_target": "biz_order.primary_document_id",
-        "target_to_source": "biz_document.related_order_id"
+        "target_to_source": "biz_document.source_record_id"
       },
       "validation": {
         "require_source_fields": [

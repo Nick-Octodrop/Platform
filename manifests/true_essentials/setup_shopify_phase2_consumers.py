@@ -514,25 +514,45 @@ def _json_source_record(spec: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _first_list_value(prefix: str, list_field: str, value_expr: str, fallback_expr: str) -> str:
+    list_expr = f"{prefix}.{list_field}"
+    first_expr = f"{list_expr}[0].{value_expr}"
+    return (
+        "{% if " + list_expr + " | default([], true) | length > 0 %}"
+        "{{ " + first_expr + " | default(" + fallback_expr + ", true) }}"
+        "{% else %}{{ " + fallback_expr + " }}{% endif %}"
+    )
+
+
+def _first_list_date(prefix: str, list_field: str, value_expr: str) -> str:
+    list_expr = f"{prefix}.{list_field}"
+    first_expr = f"{list_expr}[0].{value_expr}"
+    return (
+        "{% if " + list_expr + " | default([], true) | length > 0 %}"
+        "{{ (" + first_expr + " | default('', true))[:10] }}"
+        "{% else %}{% endif %}"
+    )
+
+
 def _shopify_customer_source(prefix: str) -> str:
     return _json_source_record({
         "name": (
-            "{% if " + prefix + ".first_name and " + prefix + ".last_name %}"
-            "{{ " + prefix + ".first_name }} {{ " + prefix + ".last_name }}"
-            "{% elif " + prefix + ".default_address.name %}{{ " + prefix + ".default_address.name }}"
-            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% if " + prefix + ".first_name | default('', true) and " + prefix + ".last_name | default('', true) %}"
+            "{{ " + prefix + ".first_name | default('', true) }} {{ " + prefix + ".last_name | default('', true) }}"
+            "{% elif " + prefix + ".default_address.name | default('', true) %}{{ " + prefix + ".default_address.name | default('', true) }}"
+            "{% elif " + prefix + ".email | default('', true) %}{{ " + prefix + ".email | default('', true) }}"
             "{% else %}Shopify Customer{% endif %}"
         ),
         "email": "{{ " + prefix + ".email | default('', true) }}",
         "phone": "{{ " + prefix + ".phone | default(" + prefix + ".default_address.phone | default('', true), true) }}",
-        "status": "{% if " + prefix + ".state in ['disabled', 'declined'] %}inactive{% else %}active{% endif %}",
-        "accepts_email_marketing": "{% if " + prefix + ".email_marketing_consent.state == 'subscribed' %}true{% else %}false{% endif %}",
-        "accepts_sms_marketing": "{% if " + prefix + ".sms_marketing_consent.state == 'subscribed' %}true{% else %}false{% endif %}",
+        "status": "{% if " + prefix + ".state | default('', true) in ['disabled', 'declined'] %}inactive{% else %}active{% endif %}",
+        "accepts_email_marketing": "{% if " + prefix + ".email_marketing_consent.state | default('', true) == 'subscribed' %}true{% else %}false{% endif %}",
+        "accepts_sms_marketing": "{% if " + prefix + ".sms_marketing_consent.state | default('', true) == 'subscribed' %}true{% else %}false{% endif %}",
         "currency_preference": "{{ " + prefix + ".currency | default('NZD', true) }}",
         "tags": "{{ " + prefix + ".tags | default('', true) }}",
         "shopify_customer_id": (
-            "{% if " + prefix + ".admin_graphql_api_id %}{{ " + prefix + ".admin_graphql_api_id }}"
-            "{% elif " + prefix + ".id %}gid://shopify/Customer/{{ " + prefix + ".id }}{% endif %}"
+            "{% if " + prefix + ".admin_graphql_api_id | default('', true) %}{{ " + prefix + ".admin_graphql_api_id | default('', true) }}"
+            "{% elif " + prefix + ".id | default('', true) %}gid://shopify/Customer/{{ " + prefix + ".id | default('', true) }}{% endif %}"
         ),
         "shopify_state": "{{ " + prefix + ".state | default('', true) }}",
         "default_address_line_1": "{{ " + prefix + ".default_address.address1 | default('', true) }}",
@@ -551,10 +571,10 @@ def _shopify_customer_source(prefix: str) -> str:
 def _order_customer_source(prefix: str) -> str:
     return _json_source_record({
         "name": (
-            "{% if " + prefix + ".customer.first_name and " + prefix + ".customer.last_name %}"
-            "{{ " + prefix + ".customer.first_name }} {{ " + prefix + ".customer.last_name }}"
-            "{% elif " + prefix + ".shipping_address.name %}{{ " + prefix + ".shipping_address.name }}"
-            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% if " + prefix + ".customer.first_name | default('', true) and " + prefix + ".customer.last_name | default('', true) %}"
+            "{{ " + prefix + ".customer.first_name | default('', true) }} {{ " + prefix + ".customer.last_name | default('', true) }}"
+            "{% elif " + prefix + ".shipping_address.name | default('', true) %}{{ " + prefix + ".shipping_address.name | default('', true) }}"
+            "{% elif " + prefix + ".email | default('', true) %}{{ " + prefix + ".email | default('', true) }}"
             "{% else %}Order Customer{% endif %}"
         ),
         "email": "{{ " + prefix + ".email | default(" + prefix + ".customer.email | default('', true), true) }}",
@@ -565,8 +585,8 @@ def _order_customer_source(prefix: str) -> str:
         "currency_preference": "{{ " + prefix + ".currency | default('NZD', true) }}",
         "tags": "",
         "shopify_customer_id": (
-            "{% if " + prefix + ".customer.admin_graphql_api_id %}{{ " + prefix + ".customer.admin_graphql_api_id }}"
-            "{% elif " + prefix + ".customer.id %}gid://shopify/Customer/{{ " + prefix + ".customer.id }}{% endif %}"
+            "{% if " + prefix + ".customer.admin_graphql_api_id | default('', true) %}{{ " + prefix + ".customer.admin_graphql_api_id | default('', true) }}"
+            "{% elif " + prefix + ".customer.id | default('', true) %}gid://shopify/Customer/{{ " + prefix + ".customer.id | default('', true) }}{% endif %}"
         ),
         "shopify_state": "{{ " + prefix + ".customer.state | default('enabled', true) }}",
         "default_address_line_1": "{{ " + prefix + ".shipping_address.address1 | default('', true) }}",
@@ -586,28 +606,28 @@ def _product_variant_source(product_var: str, variant_var: str) -> str:
     return _json_source_record({
         "sku": "{{ " + variant_var + ".sku | default('', true) }}",
         "title": "{{ " + product_var + ".title | default(" + variant_var + ".sku | default('', true), true) }}",
-        "variant_name": "{% if " + variant_var + ".title and " + variant_var + ".title != 'Default Title' %}{{ " + variant_var + ".title }}{% endif %}",
+        "variant_name": "{% if " + variant_var + ".title | default('', true) and " + variant_var + ".title | default('', true) != 'Default Title' %}{{ " + variant_var + ".title | default('', true) }}{% endif %}",
         "status": (
-            "{% if " + product_var + ".status == 'ACTIVE' %}active"
-            "{% elif " + product_var + ".status == 'ARCHIVED' %}archived"
+            "{% if " + product_var + ".status | default('', true) == 'ACTIVE' %}active"
+            "{% elif " + product_var + ".status | default('', true) == 'ARCHIVED' %}archived"
             "{% else %}draft{% endif %}"
         ),
         "sales_currency": "{{ " + product_var + ".currency | default('NZD', true) }}",
         "retail_price": "{{ " + variant_var + ".price | default(0, true) }}",
         "compare_at_price": "{{ " + variant_var + ".compare_at_price | default(0, true) }}",
-        "track_stock": "{% if " + variant_var + ".inventory_management %}true{% else %}false{% endif %}",
+        "track_stock": "{% if " + variant_var + ".inventory_management | default('', true) %}true{% else %}false{% endif %}",
         "shopify_handle": "{{ " + product_var + ".handle | default('', true) }}",
         "shopify_description_html": "{{ " + product_var + ".body_html | default(" + product_var + ".descriptionHtml | default('', true), true) }}",
         "shopify_product_id": (
-            "{% if " + product_var + ".admin_graphql_api_id %}{{ " + product_var + ".admin_graphql_api_id }}"
-            "{% elif " + product_var + ".id %}gid://shopify/Product/{{ " + product_var + ".id }}{% endif %}"
+            "{% if " + product_var + ".admin_graphql_api_id | default('', true) %}{{ " + product_var + ".admin_graphql_api_id | default('', true) }}"
+            "{% elif " + product_var + ".id | default('', true) %}gid://shopify/Product/{{ " + product_var + ".id | default('', true) }}{% endif %}"
         ),
         "shopify_variant_id": (
-            "{% if " + variant_var + ".admin_graphql_api_id %}{{ " + variant_var + ".admin_graphql_api_id }}"
-            "{% elif " + variant_var + ".id %}gid://shopify/ProductVariant/{{ " + variant_var + ".id }}{% endif %}"
+            "{% if " + variant_var + ".admin_graphql_api_id | default('', true) %}{{ " + variant_var + ".admin_graphql_api_id | default('', true) }}"
+            "{% elif " + variant_var + ".id | default('', true) %}gid://shopify/ProductVariant/{{ " + variant_var + ".id | default('', true) }}{% endif %}"
         ),
         "shopify_inventory_item_id": (
-            "{% if " + variant_var + ".inventory_item_id %}gid://shopify/InventoryItem/{{ " + variant_var + ".inventory_item_id }}{% endif %}"
+            "{% if " + variant_var + ".inventory_item_id | default('', true) %}gid://shopify/InventoryItem/{{ " + variant_var + ".inventory_item_id | default('', true) }}{% endif %}"
         ),
         "shopify_status": "{{ " + product_var + ".status | default('', true) }}",
     })
@@ -617,10 +637,10 @@ def _order_source(prefix: str) -> str:
     return _json_source_record({
         "order_number": "{{ " + prefix + ".name | default(" + prefix + ".order_number | default('', true), true) }}",
         "status": (
-            "{% if " + prefix + ".cancelled_at %}cancelled"
-            "{% elif " + prefix + ".financial_status in ['refunded', 'partially_refunded'] %}refunded"
-            "{% elif " + prefix + ".fulfillment_status in ['fulfilled', 'restocked'] %}fulfilled"
-            "{% elif " + prefix + ".financial_status in ['paid', 'partially_paid'] %}paid"
+            "{% if " + prefix + ".cancelled_at | default('', true) %}cancelled"
+            "{% elif " + prefix + ".financial_status | default('', true) in ['refunded', 'partially_refunded'] %}refunded"
+            "{% elif " + prefix + ".fulfillment_status | default('', true) in ['fulfilled', 'restocked'] %}fulfilled"
+            "{% elif " + prefix + ".financial_status | default('', true) in ['paid', 'partially_paid'] %}paid"
             "{% else %}open{% endif %}"
         ),
         "financial_status": "{{ " + prefix + ".financial_status | default('pending', true) }}",
@@ -628,15 +648,15 @@ def _order_source(prefix: str) -> str:
         "order_date": "{{ (" + prefix + ".created_at | default('', true))[:10] }}",
         "currency": "{{ " + prefix + ".currency | default('NZD', true) }}",
         "shopify_order_id": (
-            "{% if " + prefix + ".admin_graphql_api_id %}{{ " + prefix + ".admin_graphql_api_id }}"
-            "{% elif " + prefix + ".id %}gid://shopify/Order/{{ " + prefix + ".id }}{% endif %}"
+            "{% if " + prefix + ".admin_graphql_api_id | default('', true) %}{{ " + prefix + ".admin_graphql_api_id | default('', true) }}"
+            "{% elif " + prefix + ".id | default('', true) %}gid://shopify/Order/{{ " + prefix + ".id | default('', true) }}{% endif %}"
         ),
         "shopify_order_name": "{{ " + prefix + ".name | default('', true) }}",
         "customer_name": (
-            "{% if " + prefix + ".customer.first_name and " + prefix + ".customer.last_name %}"
-            "{{ " + prefix + ".customer.first_name }} {{ " + prefix + ".customer.last_name }}"
-            "{% elif " + prefix + ".shipping_address.name %}{{ " + prefix + ".shipping_address.name }}"
-            "{% elif " + prefix + ".email %}{{ " + prefix + ".email }}"
+            "{% if " + prefix + ".customer.first_name | default('', true) and " + prefix + ".customer.last_name | default('', true) %}"
+            "{{ " + prefix + ".customer.first_name | default('', true) }} {{ " + prefix + ".customer.last_name | default('', true) }}"
+            "{% elif " + prefix + ".shipping_address.name | default('', true) %}{{ " + prefix + ".shipping_address.name | default('', true) }}"
+            "{% elif " + prefix + ".email | default('', true) %}{{ " + prefix + ".email | default('', true) }}"
             "{% else %}Shopify Customer{% endif %}"
         ),
         "customer_email": "{{ " + prefix + ".email | default(" + prefix + ".customer.email | default('', true), true) }}",
@@ -652,10 +672,10 @@ def _order_source(prefix: str) -> str:
         "order_total": "{{ " + prefix + ".current_total_price | default(" + prefix + ".total_price | default(0, true), true) }}",
         "total_paid": "{{ " + prefix + ".total_received | default(" + prefix + ".total_paid | default(0, true), true) }}",
         "customer_note": "{{ " + prefix + ".note | default('', true) }}",
-        "fulfilled_at": "{{ (" + prefix + ".fulfillments[0].created_at | default('', true))[:10] }}",
-        "tracking_company": "{{ " + prefix + ".fulfillments[0].tracking_company | default('', true) }}",
-        "tracking_number": "{{ " + prefix + ".fulfillments[0].tracking_number | default('', true) }}",
-        "tracking_url": "{{ " + prefix + ".fulfillments[0].tracking_url | default('', true) }}",
+        "fulfilled_at": _first_list_date(prefix, "fulfillments", "created_at"),
+        "tracking_company": _first_list_value(prefix, "fulfillments", "tracking_company", "''"),
+        "tracking_number": _first_list_value(prefix, "fulfillments", "tracking_number", "''"),
+        "tracking_url": _first_list_value(prefix, "fulfillments", "tracking_url", "''"),
         "customer_record_id": "{{ steps.upsert_order_customer.record_id | default('', true) }}",
     })
 
@@ -664,21 +684,21 @@ def _line_item_source(line_var: str, order_var: str) -> str:
     return _json_source_record({
         "sales_order_id": "{{ steps.upsert_sales_order.record_id }}",
         "shopify_line_item_id": (
-            "{% if " + line_var + ".admin_graphql_api_id %}{{ " + line_var + ".admin_graphql_api_id }}"
-            "{% elif " + line_var + ".id %}gid://shopify/LineItem/{{ " + line_var + ".id }}{% endif %}"
+            "{% if " + line_var + ".admin_graphql_api_id | default('', true) %}{{ " + line_var + ".admin_graphql_api_id | default('', true) }}"
+            "{% elif " + line_var + ".id | default('', true) %}gid://shopify/LineItem/{{ " + line_var + ".id | default('', true) }}{% endif %}"
         ),
         "shopify_product_id": (
-            "{% if " + line_var + ".product_id %}gid://shopify/Product/{{ " + line_var + ".product_id }}{% endif %}"
+            "{% if " + line_var + ".product_id | default('', true) %}gid://shopify/Product/{{ " + line_var + ".product_id | default('', true) }}{% endif %}"
         ),
         "shopify_variant_id": (
-            "{% if " + line_var + ".variant_id %}gid://shopify/ProductVariant/{{ " + line_var + ".variant_id }}{% endif %}"
+            "{% if " + line_var + ".variant_id | default('', true) %}gid://shopify/ProductVariant/{{ " + line_var + ".variant_id | default('', true) }}{% endif %}"
         ),
         "sku_snapshot": "{{ " + line_var + ".sku | default('', true) }}",
         "description": (
-            "{% if " + line_var + ".variant_title and " + line_var + ".variant_title != 'Default Title' %}"
-            "{{ " + line_var + ".title | default('', true) }} - {{ " + line_var + ".variant_title }}"
-            "{% elif " + line_var + ".title %}{{ " + line_var + ".title }}"
-            "{% elif " + line_var + ".name %}{{ " + line_var + ".name }}"
+            "{% if " + line_var + ".variant_title | default('', true) and " + line_var + ".variant_title | default('', true) != 'Default Title' %}"
+            "{{ " + line_var + ".title | default('', true) }} - {{ " + line_var + ".variant_title | default('', true) }}"
+            "{% elif " + line_var + ".title | default('', true) %}{{ " + line_var + ".title | default('', true) }}"
+            "{% elif " + line_var + ".name | default('', true) %}{{ " + line_var + ".name | default('', true) }}"
             "{% else %}Shopify line item{% endif %}"
         ),
         "uom_snapshot": "EA",
@@ -687,7 +707,7 @@ def _line_item_source(line_var: str, order_var: str) -> str:
         "fulfillable_quantity": "{{ " + line_var + ".fulfillable_quantity | default(0, true) }}",
         "unit_price": "{{ " + line_var + ".price | default(0, true) }}",
         "line_discount_total": "{{ " + line_var + ".total_discount | default(0, true) }}",
-        "line_tax_total": "{{ " + line_var + ".tax_lines[0].price | default(0, true) }}",
+        "line_tax_total": _first_list_value(line_var, "tax_lines", "price", "0"),
         "unit_cost_snapshot": 0,
         "product_record_id": "{{ steps.find_product_for_line.first.record_id | default('', true) }}",
     })

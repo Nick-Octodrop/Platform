@@ -179,6 +179,43 @@ def _attachment_item(attachment: dict) -> dict:
     }
 
 
+def _attachment_extension_from_filename(filename: object) -> str:
+    if not isinstance(filename, str):
+        return ""
+    trimmed = filename.strip()
+    if not trimmed or "." not in trimmed:
+        return ""
+    return trimmed.rsplit(".", 1)[-1].strip().lower()
+
+
+def _attachment_metadata_patch(entity_def: dict | None, attachment_field: str | None, attachment: dict | None) -> dict:
+    if not isinstance(entity_def, dict) or not isinstance(attachment_field, str) or not attachment_field or not isinstance(attachment, dict):
+        return {}
+    fields = entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []
+    field_ids = {
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict) and isinstance(field.get("id"), str) and field.get("id")
+    }
+    prefix = attachment_field.rsplit(".", 1)[0] if "." in attachment_field else attachment_field
+    file_name_field = f"{prefix}.file_name"
+    file_extension_field = f"{prefix}.file_extension"
+    mime_type_field = f"{prefix}.mime_type"
+    if not any(meta_field in field_ids for meta_field in (file_name_field, file_extension_field, mime_type_field)):
+        return {}
+    filename = attachment.get("filename") if isinstance(attachment.get("filename"), str) else ""
+    mime_type = attachment.get("mime_type") if isinstance(attachment.get("mime_type"), str) else ""
+    extension = _attachment_extension_from_filename(filename)
+    patch: dict = {}
+    if file_name_field in field_ids:
+        patch[file_name_field] = filename
+    if file_extension_field in field_ids:
+        patch[file_extension_field] = extension
+    if mime_type_field in field_ids:
+        patch[mime_type_field] = mime_type
+    return patch
+
+
 def _find_documentable_attachment_field(manifest: dict | None, entity_id: str | None) -> str | None:
     if not isinstance(manifest, dict) or not isinstance(entity_id, str) or not entity_id:
         return None
@@ -201,7 +238,16 @@ def _find_documentable_attachment_field(manifest: dict | None, entity_id: str | 
     return None
 
 
-def _sync_attachment_field(records: DbGenericRecordStore, entity_id: str, record_id: str, record_data: dict, attachment_field: str | None, attachment: dict) -> None:
+def _sync_attachment_field(
+    records: DbGenericRecordStore,
+    entity_id: str,
+    record_id: str,
+    record_data: dict,
+    attachment_field: str | None,
+    attachment: dict,
+    *,
+    entity_def: dict | None = None,
+) -> None:
     if not isinstance(attachment_field, str) or not attachment_field:
         return
     existing_items = _extract_attachment_refs(record_data.get(attachment_field))
@@ -210,6 +256,7 @@ def _sync_attachment_field(records: DbGenericRecordStore, entity_id: str, record
         return
     updated_record = dict(record_data)
     updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
+    updated_record.update(_attachment_metadata_patch(entity_def, attachment_field, attachment))
     records.update(entity_id, record_id, updated_record)
 
 
@@ -232,17 +279,61 @@ def _mirror_generated_attachment_to_parent_record(
         return
     document_type = record_data.get("biz_document.document_type")
     doc_type = document_type.strip() if isinstance(document_type, str) and document_type.strip() else None
-    source_mappings = [
-        ("biz_document.related_quote_id", "entity.biz_quote", "biz_quote.generated_files", "quote_pdf"),
-        ("biz_document.related_order_id", "entity.biz_order", "biz_order.generated_files", "order_confirmation"),
-        ("biz_document.related_purchase_order_id", "entity.biz_purchase_order", "biz_purchase_order.generated_files", "purchase_order_pdf"),
-        ("biz_document.related_invoice_id", "entity.biz_invoice", "biz_invoice.generated_files", "invoice_pdf"),
+    default_generated_fields = {
+        "entity.biz_quote": ("biz_quote.generated_files", "quote_pdf"),
+        "entity.biz_order": ("biz_order.generated_files", "order_confirmation"),
+        "entity.biz_purchase_order": ("biz_purchase_order.generated_files", "purchase_order_pdf"),
+        "entity.biz_invoice": ("biz_invoice.generated_files", "invoice_pdf"),
+    }
+    candidate_targets: list[tuple[str, str, str | None, str | None]] = []
+    source_entity_id = record_data.get("biz_document.source_entity_id")
+    source_record_id = record_data.get("biz_document.source_record_id")
+    source_field_id = record_data.get("biz_document.source_field_id")
+    normalized_source_entity_id = (
+        source_entity_id if isinstance(source_entity_id, str) and source_entity_id.startswith("entity.") else f"entity.{source_entity_id}"
+        if isinstance(source_entity_id, str) and source_entity_id.strip()
+        else None
+    )
+    if isinstance(normalized_source_entity_id, str) and normalized_source_entity_id and isinstance(source_record_id, str) and source_record_id.strip():
+        fallback_attachment_field, fallback_purpose = default_generated_fields.get(normalized_source_entity_id, (None, None))
+        candidate_targets.append(
+            (
+                normalized_source_entity_id,
+                source_record_id.strip(),
+                source_field_id.strip() if isinstance(source_field_id, str) and source_field_id.strip() else fallback_attachment_field,
+                fallback_purpose,
+            )
+        )
+    legacy_source_mappings = {
+        "biz_document.related_quote_id": ("entity.biz_quote", "biz_quote.generated_files", "quote_pdf"),
+        "biz_document.related_order_id": ("entity.biz_order", "biz_order.generated_files", "order_confirmation"),
+        "biz_document.related_purchase_order_id": ("entity.biz_purchase_order", "biz_purchase_order.generated_files", "purchase_order_pdf"),
+        "biz_document.related_invoice_id": ("entity.biz_invoice", "biz_invoice.generated_files", "invoice_pdf"),
+    }
+    preferred_legacy_fields = {
+        "quote_pdf": ["biz_document.related_quote_id"],
+        "order_confirmation": ["biz_document.related_order_id"],
+        "purchase_order_pdf": ["biz_document.related_purchase_order_id", "biz_document.related_order_id"],
+        "invoice_pdf": ["biz_document.related_invoice_id", "biz_document.related_order_id"],
+        "supplier_document": ["biz_document.related_purchase_order_id", "biz_document.related_order_id"],
+        "shipping_document": ["biz_document.related_order_id", "biz_document.related_purchase_order_id"],
+    }.get(doc_type, [])
+    ordered_legacy_fields = [
+        *preferred_legacy_fields,
+        *[field_id for field_id in legacy_source_mappings if field_id not in preferred_legacy_fields],
     ]
-    for related_field, target_entity_id, attachment_field, fallback_purpose in source_mappings:
+    for related_field in ordered_legacy_fields:
+        target_entity_id, attachment_field, fallback_purpose = legacy_source_mappings[related_field]
         target_record_id = record_data.get(related_field)
         if not isinstance(target_record_id, str) or not target_record_id.strip():
             continue
-        target_record_id = target_record_id.strip()
+        candidate_targets.append((target_entity_id, target_record_id.strip(), attachment_field, fallback_purpose))
+    seen_targets: set[tuple[str, str, str | None]] = set()
+    for target_entity_id, target_record_id, attachment_field, fallback_purpose in candidate_targets:
+        dedupe_key = (target_entity_id, target_record_id, attachment_field)
+        if dedupe_key in seen_targets:
+            continue
+        seen_targets.add(dedupe_key)
         source_wrapper = records.get(target_entity_id, target_record_id)
         if not source_wrapper and target_entity_id.startswith("entity."):
             source_wrapper = records.get(target_entity_id[7:], target_record_id)
@@ -518,7 +609,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
             }
         )
     attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, record_entity_id)
-    _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment)
+    _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment, entity_def=record_entity_def)
     _mirror_generated_attachment_to_parent_record(
         records,
         attach_store,

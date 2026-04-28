@@ -5,6 +5,7 @@ import argparse
 import base64
 import json
 import os
+import socket
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,14 @@ from urllib import request as urlrequest
 class CreatedRecord:
     record_id: str
     record: dict[str, Any]
+
+
+class ApiTimeoutError(TimeoutError):
+    def __init__(self, *, method: str, url: str, timeout: int | float) -> None:
+        super().__init__(f"{method} {url} timed out after {timeout} second(s)")
+        self.method = method
+        self.url = url
+        self.timeout = timeout
 
 
 REQUIRED_ENTITY_MODULES = {
@@ -41,6 +50,21 @@ REQUIRED_ENTITY_MODULES = {
 }
 
 
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("OCTO_SEED_REQUEST_TIMEOUT", "180"))
+WRITE_RETRY_ATTEMPTS = int(os.getenv("OCTO_SEED_WRITE_RETRIES", "3"))
+WRITE_RETRY_BACKOFF_SECONDS = float(os.getenv("OCTO_SEED_RETRY_BACKOFF_SECONDS", "2"))
+
+
+def is_timeout_exception(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, urlerror.URLError) and exc.reason is not exc:
+        reason = exc.reason
+        if isinstance(reason, BaseException):
+            return is_timeout_exception(reason)
+    return False
+
+
 def api_call(
     method: str,
     url: str,
@@ -48,8 +72,9 @@ def api_call(
     token: str | None = None,
     workspace_id: str | None = None,
     body: dict[str, Any] | None = None,
-    timeout: int = 60,
+    timeout: int | float | None = None,
 ) -> tuple[int, dict[str, Any]]:
+    request_timeout = timeout if timeout is not None else REQUEST_TIMEOUT_SECONDS
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -58,7 +83,7 @@ def api_call(
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urlrequest.Request(url, method=method, headers=headers, data=data)
     try:
-        with urlrequest.urlopen(req, timeout=timeout) as resp:
+        with urlrequest.urlopen(req, timeout=request_timeout) as resp:
             raw = resp.read()
             payload = json.loads(raw.decode("utf-8")) if raw else {}
             return int(resp.status), payload if isinstance(payload, dict) else {}
@@ -69,6 +94,10 @@ def api_call(
         except Exception:
             payload = {"ok": False, "errors": [{"message": raw.decode("utf-8", errors="replace")}]}
         return int(exc.code), payload if isinstance(payload, dict) else {}
+    except Exception as exc:
+        if is_timeout_exception(exc):
+            raise ApiTimeoutError(method=method, url=url, timeout=request_timeout) from exc
+        raise
 
 
 def is_ok(payload: dict[str, Any]) -> bool:
@@ -132,7 +161,7 @@ def create_record(base_url: str, entity_id: str, record: dict[str, Any], *, toke
         token=token,
         workspace_id=workspace_id,
         body={"record": record},
-        timeout=120,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     if status >= 400 or not is_ok(payload):
         raise RuntimeError(f"create {entity_id} failed: {collect_error_text(payload)}")
@@ -146,20 +175,35 @@ def create_record(base_url: str, entity_id: str, record: dict[str, Any], *, toke
 
 
 def update_record(base_url: str, entity_id: str, record_id: str, record: dict[str, Any], *, token: str | None, workspace_id: str | None) -> CreatedRecord:
-    status, payload = api_call(
-        "PUT",
-        f"{base_url}/records/{urlparse.quote(entity_id, safe='')}/{urlparse.quote(record_id, safe='')}",
-        token=token,
-        workspace_id=workspace_id,
-        body={"record": record},
-        timeout=120,
-    )
-    if status >= 400 or not is_ok(payload):
-        raise RuntimeError(f"update {entity_id}/{record_id} failed: {collect_error_text(payload)}")
-    updated_record = payload.get("record")
-    if not isinstance(updated_record, dict):
-        updated_record = record
-    return CreatedRecord(record_id=record_id, record=updated_record)
+    attempts = max(1, WRITE_RETRY_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        try:
+            status, payload = api_call(
+                "PUT",
+                f"{base_url}/records/{urlparse.quote(entity_id, safe='')}/{urlparse.quote(record_id, safe='')}",
+                token=token,
+                workspace_id=workspace_id,
+                body={"record": record},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            if status >= 400 or not is_ok(payload):
+                raise RuntimeError(f"update {entity_id}/{record_id} failed: {collect_error_text(payload)}")
+            updated_record = payload.get("record")
+            if not isinstance(updated_record, dict):
+                updated_record = record
+            return CreatedRecord(record_id=record_id, record=updated_record)
+        except ApiTimeoutError as exc:
+            if attempt >= attempts:
+                raise RuntimeError(
+                    f"update {entity_id}/{record_id} timed out after {attempt} attempt(s). "
+                    "Increase --request-timeout or rerun the seed."
+                ) from exc
+            wait_seconds = WRITE_RETRY_BACKOFF_SECONDS * attempt
+            print(
+                f"[seed] timeout  update {entity_id}/{record_id}; "
+                f"retrying in {wait_seconds:.1f}s ({attempt}/{attempts})"
+            )
+            time.sleep(wait_seconds)
 
 
 def list_records(
@@ -184,7 +228,7 @@ def list_records(
             f"{base_url}/records/{urlparse.quote(entity_id, safe='')}?{urlparse.urlencode(params)}",
             token=token,
             workspace_id=workspace_id,
-            timeout=120,
+            timeout=REQUEST_TIMEOUT_SECONDS,
         )
         if status >= 400 or not is_ok(payload):
             break
@@ -240,7 +284,7 @@ def verify_required_entities(
             f"{base_url}/studio2/modules/{urlparse.quote(module_id, safe='')}/manifest",
             token=token,
             workspace_id=workspace_id,
-            timeout=120,
+            timeout=REQUEST_TIMEOUT_SECONDS,
         )
         data = payload.get("data") if isinstance(payload, dict) else None
         manifest = data.get("manifest") if isinstance(data, dict) else None
@@ -324,12 +368,38 @@ def create_or_get(
         aliases[alias] = existing
         print(f"[seed] existing {alias} -> {existing.record_id}")
         return existing
-    created = create_record(base_url, entity_id, payload, token=token, workspace_id=workspace_id)
-    aliases[alias] = created
-    if cache_rows is not None:
-        cache_rows.append(created)
-    print(f"[seed] created  {alias} -> {created.record_id}")
-    return created
+    attempts = max(1, WRITE_RETRY_ATTEMPTS)
+    for attempt in range(1, attempts + 1):
+        try:
+            created = create_record(base_url, entity_id, payload, token=token, workspace_id=workspace_id)
+            aliases[alias] = created
+            if cache_rows is not None:
+                cache_rows.append(created)
+            print(f"[seed] created  {alias} -> {created.record_id}")
+            return created
+        except ApiTimeoutError as exc:
+            try:
+                confirmed = find_existing_record(base_url, entity_id, match_fields, token=token, workspace_id=workspace_id)
+            except ApiTimeoutError:
+                confirmed = None
+            if confirmed:
+                aliases[alias] = confirmed
+                if cache_rows is not None and all(row.record_id != confirmed.record_id for row in cache_rows):
+                    cache_rows.append(confirmed)
+                print(f"[seed] existing {alias} -> {confirmed.record_id} (confirmed after timeout)")
+                return confirmed
+            if attempt >= attempts:
+                raise RuntimeError(
+                    f"create {alias} ({entity_id}) timed out after {attempt} attempt(s). "
+                    "Increase --request-timeout or rerun the seed; the script is idempotent by match fields."
+                ) from exc
+            wait_seconds = WRITE_RETRY_BACKOFF_SECONDS * attempt
+            print(
+                f"[seed] timeout  {alias} -> {entity_id}; "
+                f"retrying create in {wait_seconds:.1f}s ({attempt}/{attempts})"
+            )
+            time.sleep(wait_seconds)
+    raise RuntimeError(f"create {alias} ({entity_id}) failed unexpectedly")
 
 
 CONTACTS = [
@@ -1282,8 +1352,12 @@ def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "biz_document.name": f"Quote {quote_a} - GreenGrow BV",
                 "biz_document.document_type": "quote_pdf",
                 "biz_document.status": "sent",
-                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
-                "biz_document.related_quote_id": {"$ref": "quote.a"},
+                "biz_document.contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.source_entity_label": "Quote",
+                "biz_document.source_record_label": quote_a,
+                "biz_document.source_entity_id": "entity.biz_quote",
+                "biz_document.source_record_id": {"$ref": "quote.a"},
+                "biz_document.source_field_id": "biz_quote.generated_files",
                 "biz_document.sales_entity": "NLight BV",
                 "biz_document.document_date": "2026-03-20",
                 "biz_document.external_system": "email",
@@ -1299,8 +1373,12 @@ def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "biz_document.name": f"Order {order_a} - Confirmation Pack",
                 "biz_document.document_type": "order_confirmation",
                 "biz_document.status": "approved",
-                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
-                "biz_document.related_order_id": {"$ref": "order.a"},
+                "biz_document.contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.source_entity_label": "Order",
+                "biz_document.source_record_label": order_a,
+                "biz_document.source_entity_id": "entity.biz_order",
+                "biz_document.source_record_id": {"$ref": "order.a"},
+                "biz_document.source_field_id": "biz_order.generated_files",
                 "biz_document.sales_entity": "NLight BV",
                 "biz_document.document_date": "2026-03-22",
                 "biz_document.external_system": "none",
@@ -1315,9 +1393,12 @@ def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "biz_document.name": f"{po_a} - Supplier Pack",
                 "biz_document.document_type": "purchase_order_pdf",
                 "biz_document.status": "sent",
-                "biz_document.related_contact_id": {"$ref": "contact.shenzhen"},
-                "biz_document.related_order_id": {"$ref": "order.a"},
-                "biz_document.related_purchase_order_id": {"$ref": "po.a"},
+                "biz_document.contact_id": {"$ref": "contact.shenzhen"},
+                "biz_document.source_entity_label": "Purchase Order",
+                "biz_document.source_record_label": po_a,
+                "biz_document.source_entity_id": "entity.biz_purchase_order",
+                "biz_document.source_record_id": {"$ref": "po.a"},
+                "biz_document.source_field_id": "biz_purchase_order.generated_files",
                 "biz_document.sales_entity": "EcoTech FZCO",
                 "biz_document.document_date": "2026-03-24",
                 "biz_document.external_system": "email",
@@ -1333,9 +1414,12 @@ def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "biz_document.name": f"{invoice_deposit} - Deposit Invoice",
                 "biz_document.document_type": "invoice_pdf",
                 "biz_document.status": "sent",
-                "biz_document.related_contact_id": {"$ref": "contact.greengrow"},
-                "biz_document.related_order_id": {"$ref": "order.a"},
-                "biz_document.related_invoice_id": {"$ref": "invoice.a.deposit"},
+                "biz_document.contact_id": {"$ref": "contact.greengrow"},
+                "biz_document.source_entity_label": "Invoice",
+                "biz_document.source_record_label": invoice_deposit,
+                "biz_document.source_entity_id": "entity.biz_invoice",
+                "biz_document.source_record_id": {"$ref": "invoice.a.deposit"},
+                "biz_document.source_field_id": "biz_invoice.generated_files",
                 "biz_document.sales_entity": "NLight BV",
                 "biz_document.document_date": "2026-03-26",
                 "biz_document.external_system": "xero",
@@ -1351,9 +1435,12 @@ def document_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "biz_document.name": f"{order_c} - Shipping Documents",
                 "biz_document.document_type": "shipping_document",
                 "biz_document.status": "signed",
-                "biz_document.related_contact_id": {"$ref": "contact.volga"},
-                "biz_document.related_order_id": {"$ref": "order.c"},
-                "biz_document.related_purchase_order_id": {"$ref": "po.c"},
+                "biz_document.contact_id": {"$ref": "contact.volga"},
+                "biz_document.source_entity_label": "Order",
+                "biz_document.source_record_label": order_c,
+                "biz_document.source_entity_id": "entity.biz_order",
+                "biz_document.source_record_id": {"$ref": "order.c"},
+                "biz_document.source_field_id": "biz_order.generated_files",
                 "biz_document.sales_entity": "EcoTech FZCO",
                 "biz_document.document_date": "2026-04-02",
                 "biz_document.external_system": "none",
@@ -2073,7 +2160,9 @@ def generated_demo_specs(count: int) -> list[dict[str, Any]]:
                     "biz_document.document_type": document_types[(index - 1) % len(document_types)],
                     "biz_document.status": "archived" if index % 17 == 0 else "signed" if index % 8 == 0 else "sent" if index % 3 == 0 else "approved",
                     "biz_document.archive_reason": "Superseded by newer revision." if index % 17 == 0 else "",
-                    "biz_document.related_contact_id": {"$ref": contact_alias},
+                    "biz_document.contact_id": {"$ref": contact_alias},
+                    "biz_document.source_entity_label": "Manual Upload",
+                    "biz_document.source_record_label": company_name,
                     "biz_document.sales_entity": "NLight BV",
                     "biz_document.document_date": f"2026-04-{due_day:02d}",
                     "biz_document.external_system": "none",
@@ -2218,12 +2307,34 @@ def main() -> None:
     parser.add_argument("--workspace-id", default=None, help="Workspace ID")
     parser.add_argument("--dry-run", action="store_true", help="Print the seed plan without writing records")
     parser.add_argument(
+        "--request-timeout",
+        type=int,
+        default=REQUEST_TIMEOUT_SECONDS,
+        help="Per-request timeout in seconds for API calls.",
+    )
+    parser.add_argument(
+        "--write-retries",
+        type=int,
+        default=WRITE_RETRY_ATTEMPTS,
+        help="How many times to retry timed-out create/update calls.",
+    )
+    parser.add_argument(
+        "--retry-backoff-seconds",
+        type=float,
+        default=WRITE_RETRY_BACKOFF_SECONDS,
+        help="Base backoff in seconds between write retries.",
+    )
+    parser.add_argument(
         "--demo-record-packs",
         type=int,
         default=60,
         help="Number of generated customer/site/CRM/task/calendar/document demo packs to add. Use 0 for only the core story.",
     )
     args = parser.parse_args()
+
+    globals()["REQUEST_TIMEOUT_SECONDS"] = max(30, int(args.request_timeout))
+    globals()["WRITE_RETRY_ATTEMPTS"] = max(1, int(args.write_retries))
+    globals()["WRITE_RETRY_BACKOFF_SECONDS"] = max(0.5, float(args.retry_backoff_seconds))
 
     base_url = (args.base_url or os.environ.get("OCTO_BASE_URL", "")).strip().rstrip("/")
     token = (args.token or os.environ.get("OCTO_API_TOKEN", "")).strip() or None

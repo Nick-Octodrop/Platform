@@ -3196,6 +3196,37 @@ def _manifest_find_first_view_modes_block(blocks: list | None) -> dict | None:
     return None
 
 
+def _manifest_contains_block_kind(blocks: list | None, kinds: set[str] | list[str] | tuple[str, ...]) -> bool:
+    if not isinstance(blocks, list):
+        return False
+    wanted = {str(kind).strip() for kind in kinds if isinstance(kind, str) and str(kind).strip()}
+    if not wanted:
+        return False
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if str(block.get("kind") or "").strip() in wanted:
+            return True
+        nested = block.get("content")
+        if _manifest_contains_block_kind(nested if isinstance(nested, list) else None, wanted):
+            return True
+        items = block.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if _manifest_contains_block_kind(item.get("content") if isinstance(item.get("content"), list) else None, wanted):
+                    return True
+        tabs = block.get("tabs")
+        if isinstance(tabs, list):
+            for tab in tabs:
+                if not isinstance(tab, dict):
+                    continue
+                if _manifest_contains_block_kind(tab.get("content") if isinstance(tab.get("content"), list) else None, wanted):
+                    return True
+    return False
+
+
 def _manifest_default_query_for_page(manifest: dict, page_id: str | None) -> str:
     page = _manifest_find_page_by_id(manifest, page_id)
     block = _manifest_find_first_view_modes_block(page.get("content") if isinstance(page, dict) else None)
@@ -3492,9 +3523,12 @@ def _studio2_normalize_list_page_scaffolds(manifest: dict, collect_paths: bool =
             for node in original_content
             if not _studio2_is_basic_list_page_block(node, list_view_id)
         ]
-        has_view_modes = isinstance(_manifest_find_first_view_modes_block(original_content), dict)
+        has_primary_list_surface = (
+            isinstance(_manifest_find_first_view_modes_block(original_content), dict)
+            or _manifest_contains_block_kind(original_content, {"document_registry"})
+        )
         changed = False
-        if has_view_modes:
+        if has_primary_list_surface:
             if len(filtered_content) != len(original_content):
                 page["content"] = filtered_content or _studio2_standard_list_page_content(views, entity_id, list_view_id, page)
                 changed = True
@@ -3973,8 +4007,71 @@ def _recompute_aggregate_dependents(request: Request, source_entity_id: str, sou
             _resp_cache_invalidate_entity(entity_id)
 
 
+def _extract_attachment_refs_for_metadata(value: Any) -> list[dict]:
+    if isinstance(value, list):
+        items: list[dict] = []
+        for item in value:
+            items.extend(_extract_attachment_refs_for_metadata(item))
+        return items
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, str) and value:
+        return [{"id": value}]
+    return []
+
+
+def _attachment_extension_from_filename(filename: Any) -> str:
+    if not isinstance(filename, str):
+        return ""
+    trimmed = filename.strip()
+    if not trimmed or "." not in trimmed:
+        return ""
+    extension = trimmed.rsplit(".", 1)[-1].strip().lower()
+    return extension
+
+
+def _apply_attachment_metadata_fields(entity_def: dict | None, record: dict | None) -> dict:
+    if not isinstance(entity_def, dict) or not isinstance(record, dict):
+        return record if isinstance(record, dict) else {}
+    fields = entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []
+    field_ids = {
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict) and isinstance(field.get("id"), str) and field.get("id")
+    }
+    updated = dict(record)
+    changed = False
+    for field in fields:
+        if not isinstance(field, dict) or field.get("type") != "attachments":
+            continue
+        field_id = field.get("id")
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        prefix = field_id.rsplit(".", 1)[0] if "." in field_id else field_id
+        file_name_field = f"{prefix}.file_name"
+        file_extension_field = f"{prefix}.file_extension"
+        mime_type_field = f"{prefix}.mime_type"
+        if not any(meta_field in field_ids for meta_field in (file_name_field, file_extension_field, mime_type_field)):
+            continue
+        attachments = _extract_attachment_refs_for_metadata(record.get(field_id))
+        first_attachment = next((item for item in attachments if isinstance(item, dict)), {})
+        filename = first_attachment.get("filename") if isinstance(first_attachment.get("filename"), str) else ""
+        mime_type = first_attachment.get("mime_type") if isinstance(first_attachment.get("mime_type"), str) else ""
+        extension = _attachment_extension_from_filename(filename)
+        if file_name_field in field_ids and updated.get(file_name_field) != filename:
+            updated[file_name_field] = filename
+            changed = True
+        if file_extension_field in field_ids and updated.get(file_extension_field) != extension:
+            updated[file_extension_field] = extension
+            changed = True
+        if mime_type_field in field_ids and updated.get(mime_type_field) != mime_type:
+            updated[mime_type_field] = mime_type
+            changed = True
+    return updated if changed else record
+
+
 def _create_record_with_computed_fields(request: Request, entity_id: str, entity_def: dict, clean: dict) -> dict:
-    payload = _recompute_record_for_entity(entity_def, clean)
+    payload = _apply_attachment_metadata_fields(entity_def, _recompute_record_for_entity(entity_def, clean))
     record = generic_records.create(entity_id, payload)
     created_record = record.get("record") if isinstance(record, dict) and isinstance(record.get("record"), dict) else payload
     _recompute_aggregate_dependents(request, entity_id, source_records=[created_record])
@@ -3990,7 +4087,7 @@ def _update_record_with_computed_fields(
     *,
     before_record: dict | None = None,
 ) -> dict:
-    payload = _recompute_record_for_entity(entity_def, clean)
+    payload = _apply_attachment_metadata_fields(entity_def, _recompute_record_for_entity(entity_def, clean))
     record = generic_records.update(entity_id, record_id, payload)
     updated_record = record.get("record") if isinstance(record, dict) and isinstance(record.get("record"), dict) else payload
     source_records = [row for row in [before_record, updated_record] if isinstance(row, dict)]
@@ -17343,8 +17440,11 @@ def _studio2_enforce_architecture(manifest: dict) -> dict:
                 existing_page.setdefault("header", {"variant": "none"})
                 existing_page.setdefault("layout", "single")
                 content = existing_page.get("content") if isinstance(existing_page.get("content"), list) else []
-                has_view_modes = isinstance(_manifest_find_first_view_modes_block(content), dict)
-                if has_view_modes:
+                has_primary_list_surface = (
+                    isinstance(_manifest_find_first_view_modes_block(content), dict)
+                    or _manifest_contains_block_kind(content, {"document_registry"})
+                )
+                if has_primary_list_surface:
                     filtered_content = [
                         node
                         for node in content
@@ -50054,6 +50154,21 @@ def _resolve_document_template_record_source(
     if _template_entity_matches(current_entity_id, desired_entity_id):
         return desired_entity_id, desired_entity_def, current_record
     if isinstance(current_record, dict) and _template_entity_matches(current_entity_id, "entity.biz_document"):
+        source_entity_id = _normalize_entity_id(current_record.get("biz_document.source_entity_id")) if isinstance(current_record.get("biz_document.source_entity_id"), str) else None
+        source_record_id = current_record.get("biz_document.source_record_id")
+        if (
+            isinstance(source_entity_id, str)
+            and source_entity_id
+            and isinstance(source_record_id, str)
+            and source_record_id.strip()
+            and _template_entity_matches(desired_entity_id, source_entity_id)
+        ):
+            related_wrapper = generic_records.get(source_entity_id, source_record_id) or generic_records.get(source_entity_id[7:], source_record_id)
+            _, related_record = _unwrap_store_record(related_wrapper if isinstance(related_wrapper, dict) and "record" in related_wrapper else None)
+            if not isinstance(related_record, dict) and isinstance(related_wrapper, dict):
+                related_record = related_wrapper
+            if isinstance(related_record, dict):
+                return desired_entity_id, desired_entity_def, related_record
         related_field_by_template_entity = {
             "entity.biz_quote": "biz_document.related_quote_id",
             "entity.biz_order": "biz_document.related_order_id",

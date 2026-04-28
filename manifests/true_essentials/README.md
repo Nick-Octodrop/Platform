@@ -24,6 +24,7 @@
 - Supplier orders with a real statusbar workflow: `draft -> ordered -> partially received -> received / cancelled`
 - Supplier-aware order lines filtered to compatible supplier-linked products, with a direct product reference carried onto each line for stock reporting
 - Supplier orders now support website, portal, email, phone, and formal-PO ordering methods plus external references, order URLs, and tracking details
+- Supplier order lines maintain active on-order quantity and receipt posting guards so ordered stock appears in the catalogue and received stock posts into stock on hand through `setup_purchasing_stock_sync.py`
 - Line items in their own tab, notes/documents in their own tab, activity enabled, cancellation modal included
 - Currency-aware totals and landed-cost estimate
 
@@ -151,6 +152,7 @@ After products are linked, import Shopify orders into `te_sales`:
 The order importer:
 - upserts `te_sales_order` by Shopify order ID
 - upserts `te_sales_order_line` by Shopify line-item ID
+- supports fast incremental imports with `--since-last-local --new-only` when webhooks handle updates and you only need to pull newly created orders
 - links line items back to `te_product` by Shopify variant ID first, then by unique SKU
 - links orders back to `te_customer` by Shopify customer ID first, then by unique email when customer records already exist
 - snapshots quantity, sell price, discounts, taxes, and current NZD cost onto each sales-order line

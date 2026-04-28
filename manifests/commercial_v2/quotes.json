@@ -1667,8 +1667,20 @@
         "biz_document.status": {
           "value": "draft"
         },
-        "biz_document.related_contact_id": {
+        "biz_document.contact_id": {
           "from": "biz_quote.customer_id"
+        },
+        "biz_document.source_entity_label": {
+          "value": "Quote"
+        },
+        "biz_document.source_record_label": {
+          "from": "biz_quote.quote_number"
+        },
+        "biz_document.source_entity_id": {
+          "value": "entity.biz_quote"
+        },
+        "biz_document.source_field_id": {
+          "value": "biz_quote.generated_files"
         },
         "biz_document.sales_entity": {
           "from": "biz_quote.sales_entity"
@@ -1685,7 +1697,7 @@
       },
       "link_fields": {
         "source_to_target": "biz_quote.primary_document_id",
-        "target_to_source": "biz_document.related_quote_id"
+        "target_to_source": "biz_document.source_record_id"
       },
       "validation": {
         "require_source_fields": [

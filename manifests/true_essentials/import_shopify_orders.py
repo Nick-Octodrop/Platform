@@ -374,6 +374,17 @@ def normalize_shopify_id(value: Any) -> str:
     return text
 
 
+def shopify_numeric_id(value: Any) -> int | None:
+    normalized = normalize_shopify_id(value)
+    if not normalized:
+        return None
+    try:
+        parsed = int(normalized)
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
+
+
 def index_te_products(records: list[LocalRecord]) -> tuple[dict[str, LocalRecord], dict[str, LocalRecord], set[str]]:
     by_variant_id: dict[str, LocalRecord] = {}
     by_sku: dict[str, LocalRecord] = {}
@@ -572,6 +583,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--connection-name", default=os.environ.get("OCTO_SHOPIFY_CONNECTION_NAME"))
     parser.add_argument("--page-size", type=int, default=100)
     parser.add_argument("--max-orders", type=int, default=1000)
+    parser.add_argument("--since-id", type=int, default=None, help="Only fetch Shopify orders with IDs greater than this value")
+    parser.add_argument(
+        "--since-last-local",
+        action="store_true",
+        help="Start after the highest Shopify order ID already stored in Octodrop",
+    )
+    parser.add_argument(
+        "--new-only",
+        action="store_true",
+        help="Create missing orders only; existing orders and lines are not patched",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -632,29 +654,46 @@ def main() -> int:
         if str(row.record.get("te_sales_order.shopify_order_id") or "").strip()
     }
 
-    existing_lines = list_records(
-        args.base_url,
-        "entity.te_sales_order_line",
-        token=args.api_token,
-        workspace_id=args.workspace_id,
-        fields=["te_sales_order_line.sales_order_id", "te_sales_order_line.shopify_line_item_id"],
-    )
     lines_by_order_and_shopify_id: dict[tuple[str, str], LocalRecord] = {}
-    for row in existing_lines:
-        sales_order_id = str(row.record.get("te_sales_order_line.sales_order_id") or "").strip()
-        shopify_line_id = str(row.record.get("te_sales_order_line.shopify_line_item_id") or "").strip()
-        if sales_order_id and shopify_line_id:
-            lines_by_order_and_shopify_id[(sales_order_id, shopify_line_id)] = row
+    if not args.new_only:
+        existing_lines = list_records(
+            args.base_url,
+            "entity.te_sales_order_line",
+            token=args.api_token,
+            workspace_id=args.workspace_id,
+            fields=["te_sales_order_line.sales_order_id", "te_sales_order_line.shopify_line_item_id"],
+        )
+        for row in existing_lines:
+            sales_order_id = str(row.record.get("te_sales_order_line.sales_order_id") or "").strip()
+            shopify_line_id = str(row.record.get("te_sales_order_line.shopify_line_item_id") or "").strip()
+            if sales_order_id and shopify_line_id:
+                lines_by_order_and_shopify_id[(sales_order_id, shopify_line_id)] = row
 
     created_orders = 0
     updated_orders = 0
+    skipped_existing_orders = 0
     created_lines = 0
     updated_lines = 0
     linked_lines = 0
     unlinked_lines = 0
     scanned_orders = 0
     scanned_lines = 0
-    since_id: int | None = None
+    since_id: int | None = args.since_id
+    if args.since_last_local:
+        local_max_id = max(
+            (
+                numeric_id
+                for numeric_id in (
+                    shopify_numeric_id(row.record.get("te_sales_order.shopify_order_id"))
+                    for row in existing_orders
+                )
+                if numeric_id is not None
+            ),
+            default=None,
+        )
+        if local_max_id is not None:
+            since_id = max(since_id or 0, local_max_id)
+            print(f"[orders] since-last-local using since_id={since_id}", flush=True)
 
     while scanned_orders < args.max_orders:
         query = {"status": "any", "limit": max(1, min(250, args.page_size))}
@@ -681,6 +720,12 @@ def main() -> int:
             if shop_domain and order.get("order_status_url"):
                 admin_url = str(order.get("order_status_url") or "").strip()
             existing_order = orders_by_shopify_id.get(shopify_order_id)
+            if args.new_only and existing_order is not None:
+                skipped_existing_orders += 1
+                since_id = int(order.get("id") or 0) or since_id
+                if scanned_orders >= args.max_orders:
+                    break
+                continue
             customer_row = find_customer_link(
                 order,
                 by_shopify_id=customer_by_shopify_id,
@@ -794,6 +839,7 @@ def main() -> int:
                 "scanned_lines": scanned_lines,
                 "created_orders": created_orders,
                 "updated_orders": updated_orders,
+                "skipped_existing_orders": skipped_existing_orders,
                 "created_lines": created_lines,
                 "updated_lines": updated_lines,
                 "linked_lines": linked_lines,

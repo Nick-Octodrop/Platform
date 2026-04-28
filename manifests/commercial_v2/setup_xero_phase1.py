@@ -412,6 +412,14 @@ def build_invoice_create_body_template(sales_account_code: str, default_tax_type
           "AccountCode": "__SALES_ACCOUNT_CODE__",
           "TaxType": "__DEFAULT_TAX_TYPE__"
         }{% if not loop.last %},{% endif %}
+{% else %}
+        {
+          "Description": "Invoice {{ trigger.record.fields.invoice_number | default('') | replace('\"', \"'\") }}",
+          "Quantity": 1,
+          "UnitAmount": {{ trigger.record.fields.invoice_total | default(trigger.record.fields.invoice_manual_total) | default(0) | float }},
+          "AccountCode": "__SALES_ACCOUNT_CODE__",
+          "TaxType": "__DEFAULT_TAX_TYPE__"
+        }
 {% endfor %}
       ]
     }
@@ -420,9 +428,22 @@ def build_invoice_create_body_template(sales_account_code: str, default_tax_type
     return template.replace("__SALES_ACCOUNT_CODE__", sales_account_code).replace("__DEFAULT_TAX_TYPE__", default_tax_type)
 
 
+def parse_invoice_types(raw: str | None) -> list[str]:
+    values = [part.strip() for part in str(raw or "").split(",") if part.strip()]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered or ["deposit", "progress", "final"]
+
+
 def build_export_automation(
     *,
     sales_entity: str,
+    invoice_types: list[str],
     sales_account_code: str,
     default_tax_type: str,
     connection_id: str,
@@ -433,7 +454,7 @@ def build_export_automation(
     invoice_create_body = build_invoice_create_body_template(sales_account_code, default_tax_type)
     return {
         "name": "Xero Phase 1 - Export Issued Invoices",
-        "description": "On invoice issue, resolve or create the Xero contact, then create a draft ACCREC invoice in Xero for deposit and final invoices only.",
+        "description": "On invoice issue, resolve or create the Xero contact, then create a draft ACCREC invoice in Xero for the configured commercial invoice types.",
         "status": status,
         "trigger": {
             "kind": "event",
@@ -443,7 +464,7 @@ def build_export_automation(
                 {"path": "action_id", "op": "eq", "value": "action.invoice_issue"},
             ],
             "expr": and_(
-                in_var("trigger.record.fields.invoice_type", ["deposit", "final"]),
+                in_var("trigger.record.fields.invoice_type", invoice_types),
                 eq_var("trigger.record.fields.sales_entity", sales_entity),
                 not_exists("trigger.record.fields.xero_invoice_id"),
             ),
@@ -782,62 +803,42 @@ def build_export_automation(
                         },
                     },
                     {
-                        "id": "invoice_has_lines",
+                        "id": "create_xero_invoice",
+                        "kind": "action",
+                        "action_id": "system.integration_request",
+                        "store_as": "create_xero_invoice",
+                        "inputs": {
+                            "connection_id": connection_id,
+                            "template_id": "xero_invoices_create",
+                            "body": invoice_create_body,
+                        },
+                    },
+                    {
+                        "id": "created_invoice_found",
                         "kind": "condition",
-                        "expr": any_exists("steps.load_lines.records", "record.biz_invoice_line.id"),
-                        "stop_on_false": True,
+                        "expr": any_exists("steps.create_xero_invoice.body_json.Invoices", "InvoiceID"),
                         "then_steps": [
-                            {
-                                "id": "create_xero_invoice",
-                                "kind": "action",
-                                "action_id": "system.integration_request",
-                                "store_as": "create_xero_invoice",
-                                "inputs": {
-                                    "connection_id": connection_id,
-                                    "template_id": "xero_invoices_create",
-                                    "body": invoice_create_body,
+                            update_record_step(
+                                "save_created_invoice",
+                                entity_id="entity.biz_invoice",
+                                record_id="{{ trigger.record_id }}",
+                                patch={
+                                    "biz_invoice.xero_invoice_id": "{{ steps.create_xero_invoice.body_json.Invoices[0].InvoiceID }}",
+                                    "biz_invoice.xero_last_sync_status": "draft_exported",
+                                    "biz_invoice.xero_last_sync_at": timestamp_ref,
+                                    "biz_invoice.xero_last_sync_error": "",
                                 },
-                            },
-                            {
-                                "id": "created_invoice_found",
-                                "kind": "condition",
-                                "expr": any_exists("steps.create_xero_invoice.body_json.Invoices", "InvoiceID"),
-                                "then_steps": [
-                                    update_record_step(
-                                        "save_created_invoice",
-                                        entity_id="entity.biz_invoice",
-                                        record_id="{{ trigger.record_id }}",
-                                        patch={
-                                            "biz_invoice.xero_invoice_id": "{{ steps.create_xero_invoice.body_json.Invoices[0].InvoiceID }}",
-                                            "biz_invoice.xero_last_sync_status": "draft_exported",
-                                            "biz_invoice.xero_last_sync_at": timestamp_ref,
-                                            "biz_invoice.xero_last_sync_error": "",
-                                        },
-                                    )
-                                ],
-                                "else_steps": [
-                                    update_record_step(
-                                        "mark_invoice_create_failed",
-                                        entity_id="entity.biz_invoice",
-                                        record_id="{{ trigger.record_id }}",
-                                        patch={
-                                            "biz_invoice.xero_last_sync_status": "error",
-                                            "biz_invoice.xero_last_sync_at": timestamp_ref,
-                                            "biz_invoice.xero_last_sync_error": "Xero invoice create returned no InvoiceID.",
-                                        },
-                                    )
-                                ],
-                            },
+                            )
                         ],
                         "else_steps": [
                             update_record_step(
-                                "mark_invoice_missing_lines",
+                                "mark_invoice_create_failed",
                                 entity_id="entity.biz_invoice",
                                 record_id="{{ trigger.record_id }}",
                                 patch={
                                     "biz_invoice.xero_last_sync_status": "error",
                                     "biz_invoice.xero_last_sync_at": timestamp_ref,
-                                    "biz_invoice.xero_last_sync_error": "Invoice has no line items for Xero export.",
+                                    "biz_invoice.xero_last_sync_error": "Xero invoice create returned no InvoiceID.",
                                 },
                             )
                         ],
@@ -851,6 +852,7 @@ def build_export_automation(
 def build_refresh_automation(
     *,
     sales_entity: str,
+    invoice_types: list[str],
     connection_id: str,
     refresh_interval_minutes: int,
     mapping_id: str,
@@ -859,7 +861,7 @@ def build_refresh_automation(
     timestamp_ref = "{{ trigger.scheduled_at }}"
     return {
         "name": "Xero Phase 1 - Refresh Invoice Payments",
-        "description": "Scheduled pull from Xero to refresh invoice amounts and payment status for linked deposit and final invoices.",
+        "description": "Scheduled pull from Xero to refresh invoice amounts and payment status for linked commercial invoices in the configured scope.",
         "status": status,
         "trigger": {
             "kind": "schedule",
@@ -879,7 +881,7 @@ def build_refresh_automation(
                         "children": [
                             {"op": "eq", "field": "biz_invoice.sales_entity", "value": sales_entity},
                             {"op": "exists", "field": "biz_invoice.xero_invoice_id"},
-                            {"op": "in", "field": "biz_invoice.invoice_type", "value": ["deposit", "final"]},
+                            {"op": "in", "field": "biz_invoice.invoice_type", "value": invoice_types},
                         ],
                     },
                 },
@@ -1060,6 +1062,7 @@ def main() -> None:
     parser.add_argument("--connection-id", default=os.getenv("OCTO_XERO_CONNECTION_ID", "").strip(), help="Xero connection ID")
     parser.add_argument("--connection-name", default=os.getenv("OCTO_XERO_CONNECTION_NAME", "").strip(), help="Xero connection name")
     parser.add_argument("--sales-entity", default=os.getenv("OCTO_XERO_SALES_ENTITY", "").strip(), help="Sales entity value to scope phase-1 automations")
+    parser.add_argument("--invoice-types", default=os.getenv("OCTO_XERO_INVOICE_TYPES", "deposit,progress,final").strip(), help="Comma-separated invoice types to export and refresh")
     parser.add_argument("--sales-account-code", default=os.getenv("OCTO_XERO_SALES_ACCOUNT_CODE", "200").strip(), help="Xero revenue account code for invoice line exports")
     parser.add_argument("--default-tax-type", default=os.getenv("OCTO_XERO_DEFAULT_TAX_TYPE", "OUTPUT").strip(), help="Xero tax type for exported invoice lines")
     parser.add_argument("--refresh-interval-minutes", type=int, default=int(os.getenv("OCTO_XERO_REFRESH_INTERVAL_MINUTES", "60")), help="Schedule interval for payment refresh automation")
@@ -1071,6 +1074,7 @@ def main() -> None:
     token = (args.token or "").strip()
     workspace_id = (args.workspace_id or "").strip()
     sales_entity = (args.sales_entity or "").strip()
+    invoice_types = parse_invoice_types(args.invoice_types)
     sales_account_code = (args.sales_account_code or "").strip()
     default_tax_type = (args.default_tax_type or "").strip()
 
@@ -1082,6 +1086,8 @@ def main() -> None:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
     if not sales_entity:
         raise SystemExit("Missing --sales-entity or OCTO_XERO_SALES_ENTITY")
+    if not invoice_types:
+        raise SystemExit("Missing --invoice-types or OCTO_XERO_INVOICE_TYPES")
     if not sales_account_code:
         raise SystemExit("Missing --sales-account-code or OCTO_XERO_SALES_ACCOUNT_CODE")
     if not default_tax_type:
@@ -1127,7 +1133,7 @@ def main() -> None:
                 "Else create the contact in Xero at first invoice export.",
             ],
             "scope": {
-                "invoice_types": ["deposit", "final"],
+                "invoice_types": invoice_types,
                 "sales_entity": sales_entity,
             },
         },
@@ -1157,6 +1163,7 @@ def main() -> None:
     automation_status = "published" if args.publish else "draft"
     export_automation = build_export_automation(
         sales_entity=sales_entity,
+        invoice_types=invoice_types,
         sales_account_code=sales_account_code,
         default_tax_type=default_tax_type,
         connection_id=connection_id,
@@ -1164,6 +1171,7 @@ def main() -> None:
     )
     refresh_automation = build_refresh_automation(
         sales_entity=sales_entity,
+        invoice_types=invoice_types,
         connection_id=connection_id,
         refresh_interval_minutes=args.refresh_interval_minutes,
         mapping_id=mapping_id,

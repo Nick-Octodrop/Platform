@@ -4,7 +4,7 @@ import re
 import unicodedata
 from typing import Any, Iterable, Tuple
 
-from jinja2 import TemplateSyntaxError, UndefinedError, meta
+from jinja2 import StrictUndefined, TemplateSyntaxError, UndefinedError, meta
 from jinja2.runtime import LoopContext
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
@@ -50,6 +50,20 @@ class _LockedSandbox(ImmutableSandboxedEnvironment):
         return False
 
 
+class _StrictChainableUndefined(StrictUndefined):
+    """Strict on final use, but chainable so `|default(...)` can recover."""
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> "_StrictChainableUndefined":
+        if name[:2] == "__":
+            raise AttributeError(name)
+        return self
+
+    def __getitem__(self, key: Any) -> "_StrictChainableUndefined":
+        return self
+
+
 def _slugify(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -63,8 +77,7 @@ def _slugify(value: Any) -> str:
 
 def _env(strict: bool) -> _LockedSandbox:
     if strict:
-        from jinja2 import StrictUndefined
-        undefined_cls = StrictUndefined
+        undefined_cls = _StrictChainableUndefined
     else:
         from jinja2 import Undefined
         undefined_cls = Undefined

@@ -239,44 +239,97 @@
           "label_key": "documents.entities.biz_document.fields.status.label"
         },
         {
-          "id": "biz_document.related_contact_id",
+          "id": "biz_document.contact_id",
           "type": "lookup",
           "label": "Contact",
           "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name"
+        },
+        {
+          "id": "biz_document.source_entity_label",
+          "type": "string",
+          "label": "Source Entity"
+        },
+        {
+          "id": "biz_document.source_record_label",
+          "type": "string",
+          "label": "Source Record"
+        },
+        {
+          "id": "biz_document.source_entity_id",
+          "type": "string",
+          "label": "Source Entity ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.source_record_id",
+          "type": "string",
+          "label": "Source Record ID",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.source_field_id",
+          "type": "string",
+          "label": "Source Attachment Field",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.file_name",
+          "type": "string",
+          "label": "File Name",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.file_extension",
+          "type": "string",
+          "label": "File Type",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.mime_type",
+          "type": "string",
+          "label": "MIME Type",
+          "readonly": true
+        },
+        {
+          "id": "biz_document.related_contact_id",
+          "type": "lookup",
+          "label": "Legacy Contact",
+          "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
-          "label_key": "documents.entities.biz_document.fields.related_contact_id.label"
+          "readonly": true
         },
         {
           "id": "biz_document.related_quote_id",
           "type": "lookup",
-          "label": "Quote",
+          "label": "Legacy Quote",
           "entity": "entity.biz_quote",
           "display_field": "biz_quote.quote_number",
-          "label_key": "documents.entities.biz_document.fields.related_quote_id.label"
+          "readonly": true
         },
         {
           "id": "biz_document.related_order_id",
           "type": "lookup",
-          "label": "Order",
+          "label": "Legacy Order",
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
-          "label_key": "documents.entities.biz_document.fields.related_order_id.label"
+          "readonly": true
         },
         {
           "id": "biz_document.related_purchase_order_id",
           "type": "lookup",
-          "label": "Purchase Order",
+          "label": "Legacy Purchase Order",
           "entity": "entity.biz_purchase_order",
           "display_field": "biz_purchase_order.po_number",
-          "label_key": "documents.entities.biz_document.fields.related_purchase_order_id.label"
+          "readonly": true
         },
         {
           "id": "biz_document.related_invoice_id",
           "type": "lookup",
-          "label": "Invoice",
+          "label": "Legacy Invoice",
           "entity": "entity.biz_invoice",
           "display_field": "biz_invoice.invoice_number",
-          "label_key": "documents.entities.biz_document.fields.related_invoice_id.label"
+          "readonly": true
         },
         {
           "id": "biz_document.sales_entity",
@@ -484,16 +537,19 @@
           "field_id": "biz_document.name"
         },
         {
+          "field_id": "biz_document.file_extension"
+        },
+        {
           "field_id": "biz_document.document_type"
         },
         {
+          "field_id": "biz_document.source_entity_label"
+        },
+        {
+          "field_id": "biz_document.source_record_label"
+        },
+        {
           "field_id": "biz_document.status"
-        },
-        {
-          "field_id": "biz_document.related_contact_id"
-        },
-        {
-          "field_id": "biz_document.related_order_id"
         },
         {
           "field_id": "biz_document.sales_entity"
@@ -517,7 +573,9 @@
           "placeholder": "Search documents...",
           "fields": [
             "biz_document.name",
+            "biz_document.file_name",
             "biz_document.external_reference",
+            "biz_document.source_record_label",
             "biz_document.notes"
           ],
           "placeholder_key": "documents.views.list.search.placeholder"
@@ -639,7 +697,7 @@
             "biz_document.status",
             "biz_document.document_type",
             "biz_document.sales_entity",
-            "biz_document.related_contact_id",
+            "biz_document.contact_id",
             "biz_document.owner_user_id",
             "biz_document.document_date",
             "biz_document.expiry_date"
@@ -647,17 +705,28 @@
           "section_title_key": "documents.views.form.sections.summary.title"
         },
         {
-          "id": "links",
-          "title": "Linked Records",
+          "id": "source",
+          "title": "Source",
           "layout": "columns",
           "columns": 2,
           "fields": [
-            "biz_document.related_quote_id",
-            "biz_document.related_order_id",
-            "biz_document.related_purchase_order_id",
-            "biz_document.related_invoice_id"
+            "biz_document.source_entity_label",
+            "biz_document.source_record_label",
+            "biz_document.source_entity_id",
+            "biz_document.source_record_id"
           ],
           "section_title_key": "documents.views.form.sections.links.title"
+        },
+        {
+          "id": "file_details",
+          "title": "File Details",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_document.file_name",
+            "biz_document.file_extension",
+            "biz_document.mime_type"
+          ]
         },
         {
           "id": "external",
@@ -722,11 +791,18 @@
               ]
             },
             {
-              "id": "links",
-              "label": "Linked Records",
+              "id": "source",
+              "label": "Source",
               "tab_label_key": "common.related_records",
               "sections": [
-                "links"
+                "source"
+              ]
+            },
+            {
+              "id": "file_details",
+              "label": "File Details",
+              "sections": [
+                "file_details"
               ]
             },
             {
@@ -765,15 +841,16 @@
           "biz_document.name",
           "biz_document.document_type",
           "biz_document.status",
-          "biz_document.related_contact_id",
-          "biz_document.related_quote_id",
-          "biz_document.related_order_id",
-          "biz_document.related_purchase_order_id",
-          "biz_document.related_invoice_id",
+          "biz_document.contact_id",
+          "biz_document.source_entity_label",
+          "biz_document.source_record_label",
           "biz_document.sales_entity",
           "biz_document.owner_user_id",
           "biz_document.document_date",
           "biz_document.expiry_date",
+          "biz_document.file_name",
+          "biz_document.file_extension",
+          "biz_document.mime_type",
           "biz_document.external_system",
           "biz_document.external_reference",
           "biz_document.archive_reason",
@@ -788,7 +865,7 @@
       "card": {
         "title_field": "biz_document.name",
         "subtitle_fields": [
-          "biz_document.related_contact_id",
+          "biz_document.source_record_label",
           "biz_document.document_date"
         ],
         "badge_fields": [
@@ -827,11 +904,24 @@
           "variant": "card",
           "content": [
             {
-              "kind": "document_registry",
-              "id": "biz_document.global_registry",
-              "title": "Documents",
-              "scope": "global",
-              "page_size": 50
+              "kind": "view_modes",
+              "entity_id": "entity.biz_document",
+              "default_mode": "list",
+              "default_filter_id": "active",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:biz_document.list"
+                },
+                {
+                  "mode": "kanban",
+                  "target": "view:biz_document.kanban"
+                },
+                {
+                  "mode": "graph",
+                  "target": "view:biz_document.graph"
+                }
+              ]
             }
           ]
         }

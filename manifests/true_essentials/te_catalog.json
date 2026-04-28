@@ -426,7 +426,7 @@
             "aggregate": {
               "op": "sum",
               "entity": "entity.te_purchase_order_line",
-              "field": "te_purchase_order_line.open_quantity",
+              "field": "te_purchase_order_line.stock_on_order_quantity",
               "where": {
                 "op": "eq",
                 "field": "te_purchase_order_line.product_id",
@@ -434,7 +434,7 @@
               }
             }
           },
-          "help_text": "Derived from open quantities on linked supplier-order lines. Keep draft or cancelled supplier baskets tidy so this stays trustworthy."
+          "help_text": "Derived from active ordered or partially received supplier-order lines. Draft, received, and cancelled supplier orders do not count."
         },
         {
           "id": "te_product.reorder_point",
