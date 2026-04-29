@@ -46,6 +46,7 @@ export default function EntityRecordPage() {
   const autoSaveTimerRef = React.useRef(null);
   const saveInFlightRef = React.useRef(false);
   const pendingAutoSaveRef = React.useRef(false);
+  const draftRef = React.useRef({});
 
   useEffect(() => {
     async function buildIndex() {
@@ -79,6 +80,10 @@ export default function EntityRecordPage() {
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     async function load() {
@@ -161,12 +166,12 @@ export default function EntityRecordPage() {
   }, [isDirty]);
 
   async function handleSave(options = {}) {
-    if (!selected) return;
+    if (!selected) return false;
     setShowValidation(true);
     const silent = options?.silent === true;
     if (!silent) setLoading(true);
     try {
-      const payload = normalizeManifestRecordPayload(fieldIndex, draft);
+      const payload = normalizeManifestRecordPayload(fieldIndex, draftRef.current || {});
       const res = await apiFetch(`/records/${entity}/${id}`, {
         method: "PUT",
         body: JSON.stringify(payload),
@@ -176,9 +181,11 @@ export default function EntityRecordPage() {
       setDraft(saved);
       clearFormDraftSnapshot(draftStorageKey);
       if (!silent) pushToast("success", t("common.saved"));
+      return true;
     } catch (err) {
       setError(err.message || t("common.save_failed"));
       pushToast("error", err.message || t("common.save_failed"));
+      return false;
     } finally {
       if (!silent) setLoading(false);
     }
@@ -197,13 +204,14 @@ export default function EntityRecordPage() {
       saveInFlightRef.current = true;
       setAutoSaveState("saving");
       try {
-        await handleSave({ silent: true });
-        setAutoSaveState("saved");
+        const saved = await handleSave({ silent: true });
+        setAutoSaveState(saved ? "saved" : "idle");
       } finally {
         saveInFlightRef.current = false;
         if (pendingAutoSaveRef.current) {
           pendingAutoSaveRef.current = false;
-          setAutoSaveState("idle");
+          const saved = await handleSave({ silent: true });
+          setAutoSaveState(saved ? "saved" : "idle");
         }
       }
     }, debounceMs);

@@ -689,16 +689,32 @@ export default function FormViewRenderer({
       }
       return;
     }
+    if (typeof condition.field === "string" && ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"].includes(op)) {
+      if (!evalCondition(condition, { record: computedRecord })) {
+        missing.add(condition.field);
+      }
+      return;
+    }
     if (op === "and" && Array.isArray(condition.conditions)) {
-      condition.conditions.forEach((c) => collectMissingFields(c, missing));
+      condition.conditions.forEach((c) => {
+        if (!evalCondition(c, { record: computedRecord })) {
+          collectMissingFields(c, missing);
+        }
+      });
       return;
     }
     if (op === "or" && Array.isArray(condition.conditions)) {
-      condition.conditions.forEach((c) => collectMissingFields(c, missing));
+      const children = condition.conditions.filter((c) => c && typeof c === "object");
+      if (children.some((c) => evalCondition(c, { record: computedRecord }))) {
+        return;
+      }
+      children.forEach((c) => collectMissingFields(c, missing));
       return;
     }
     if (op === "not" && condition.condition) {
-      collectMissingFields(condition.condition, missing);
+      if (evalCondition(condition.condition, { record: computedRecord })) {
+        collectMissingFields(condition.condition, missing);
+      }
     }
   }
 
@@ -2419,7 +2435,7 @@ function LookupField({
   }, [record]);
 
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(search), 400);
+    const handle = setTimeout(() => setDebouncedSearch(search), 150);
     return () => clearTimeout(handle);
   }, [search]);
 
@@ -2482,10 +2498,9 @@ function LookupField({
         }
       }
     }
-    const handle = setTimeout(loadOptions, 200);
+    loadOptions();
     return () => {
       cancelled = true;
-      clearTimeout(handle);
     };
   }, [entityId, field.display_field, field?.id, debouncedSearch, field.domain, recordContextKey, opened, previewMode]);
 

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
-import { getSafeSession, supabase } from "../supabase";
+import { clearStoredSupabaseSession, supabase } from "../supabase";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
 export default function AuthSetPasswordPage({ user }) {
@@ -23,6 +23,7 @@ export default function AuthSetPasswordPage({ user }) {
     } catch {
       // ignore local sign-out failures and still return to login
     }
+    clearStoredSupabaseSession();
     navigate("/login", { replace: true });
   }
 
@@ -40,17 +41,16 @@ export default function AuthSetPasswordPage({ user }) {
     }
     setSaving(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) throw updateError;
       if (handoffRequired) {
-        await apiFetch("/access/password-handoff/complete", { method: "POST", body: {} });
-        await getSafeSession({ forceRefresh: true });
+        await apiFetch("/access/password-handoff/complete", { method: "POST", body: { password } });
         setNotice(t("settings.auth.password_updated_redirecting"));
         setTimeout(() => {
           exitToLogin();
         }, 700);
         return;
       }
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) throw updateError;
       setNotice(t("settings.auth.password_updated_redirecting"));
       setTimeout(() => navigate("/home", { replace: true }), 700);
     } catch (err) {

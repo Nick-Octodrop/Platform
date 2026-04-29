@@ -32,7 +32,7 @@ function isInvalidRefreshTokenError(errorLike) {
   );
 }
 
-function clearStoredSupabaseSession() {
+export function clearStoredSupabaseSession() {
   if (typeof window === "undefined") return;
   const storages = [window.localStorage, window.sessionStorage].filter(Boolean);
   for (const storage of storages) {

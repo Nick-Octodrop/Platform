@@ -97,7 +97,7 @@ export default function HomePage({ user }) {
   const [dropTargetId, setDropTargetId] = useState("");
   const [savedHomeOrderIds, setSavedHomeOrderIds] = useState(initialHomeOrder);
   const [homeOrderIds, setHomeOrderIds] = useState(initialHomeOrder);
-  const [layoutLoading, setLayoutLoading] = useState(() => Boolean(user) && initialHomeOrder.length === 0);
+  const [, setLayoutLoading] = useState(() => Boolean(user) && initialHomeOrder.length === 0);
   const [reorderBusy, setReorderBusy] = useState(false);
   const dragDropCommittedRef = useRef(false);
   const dragStartOrderIdsRef = useRef([]);
@@ -105,7 +105,7 @@ export default function HomePage({ user }) {
   const { pushToast } = useToast();
   const canSeeOctoAi = Boolean(isSuperadmin);
   const canReorderApps = hasCapability("modules.manage");
-  const homeLoading = loading || layoutLoading;
+  const homeLoading = loading;
   const transitioningToApp = Boolean(openingAppId);
 
   useEffect(() => {
@@ -307,12 +307,14 @@ export default function HomePage({ user }) {
 
   return (
     <div className="w-full overflow-x-hidden min-h-full md:h-full flex justify-center overflow-y-auto md:overflow-hidden">
-      {(homeLoading || transitioningToApp) && <LoadingSpinner className="min-h-full w-full" />}
-      {!homeLoading && !transitioningToApp && (
+      {transitioningToApp && <LoadingSpinner className="min-h-full w-full" />}
+      {!transitioningToApp && (
         <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">
-              <div className="text-sm opacity-70 mb-3">{t("empty.no_apps_installed")}</div>
+              <div className="text-sm opacity-70 mb-3">
+                {homeLoading ? t("settings.studio.loading_modules", {}, { defaultValue: "Loading modules..." }) : t("empty.no_apps_installed")}
+              </div>
               <button className="btn btn-primary w-fit" onClick={() => navigate(appendOctoAiFrameParams("/apps"))}>
                 {t("navigation.apps")}
               </button>

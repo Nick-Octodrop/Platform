@@ -51113,6 +51113,16 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     resolved_id, resolved_record = _unwrap_store_record(record if isinstance(record, dict) else None)
     if not isinstance(resolved_id, str) or not isinstance(resolved_record, dict):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    recomputed_record = _recompute_record_for_entity(found[1], resolved_record)
+    if recomputed_record != resolved_record:
+        persisted = _persist_computed_record(entity_id, found[1], resolved_id, resolved_record)
+        persisted_record = None
+        if isinstance(persisted, dict):
+            _, persisted_record = _unwrap_store_record(persisted)
+        if isinstance(persisted_record, dict):
+            resolved_record = persisted_record
+        else:
+            resolved_record = recomputed_record
     if not _record_visible_for_actor(actor, found[0], entity_id, resolved_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})
@@ -52076,6 +52086,10 @@ async def complete_password_handoff(request: Request) -> dict:
     if isinstance(actor, JSONResponse):
         return actor
     user_id = actor.get("user_id")
+    body = await _safe_json(request)
+    new_password = body.get("password") if isinstance(body, dict) else None
+    if new_password not in (None, "") and (not isinstance(new_password, str) or len(new_password) < 8):
+        return _error_response("PASSWORD_REQUIRED", "Password must be at least 8 characters", "password", status=400)
     auth_user = _find_auth_user_row_by_id(user_id)
     if not auth_user:
         return _error_response("AUTH_USER_NOT_FOUND", "Auth user not found", "user_id", status=404)
@@ -52083,7 +52097,11 @@ async def complete_password_handoff(request: Request) -> dict:
     if current_state != "handoff_required":
         return _ok_response({"ok": True, "managed_account_state": current_state, "completed": False})
     try:
-        _supabase_clear_managed_account_state(user_id)
+        app_metadata = _clear_managed_account_app_metadata(auth_user.get("app_metadata"))
+        payload: dict[str, Any] = {"app_metadata": app_metadata}
+        if isinstance(new_password, str) and new_password:
+            payload["password"] = new_password
+        _supabase_update_user(user_id, payload)
     except Exception as exc:
         return _error_response("HANDOFF_COMPLETE_FAILED", str(exc), "user_id", status=400)
     _invalidate_access_runtime_caches(actor.get("workspace_id"), user_id)

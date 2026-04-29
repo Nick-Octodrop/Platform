@@ -193,6 +193,10 @@ function resolveActionLabel(action, manifest, views) {
   return translateRuntime("common.action");
 }
 
+function _conditionEvalContext(record) {
+  return { record: record || {} };
+}
+
 function collectConditionMissingFields(condition, record, missing) {
   if (!condition || typeof condition !== "object") return;
   const op = condition.op;
@@ -206,12 +210,32 @@ function collectConditionMissingFields(condition, record, missing) {
     }
     return;
   }
-  if ((op === "and" || op === "or") && Array.isArray(condition.conditions)) {
-    condition.conditions.forEach((child) => collectConditionMissingFields(child, record, missing));
+  if (typeof condition.field === "string" && ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"].includes(op)) {
+    if (!evalCondition(condition, _conditionEvalContext(record))) {
+      missing.add(condition.field);
+    }
+    return;
+  }
+  if (op === "and" && Array.isArray(condition.conditions)) {
+    condition.conditions.forEach((child) => {
+      if (!evalCondition(child, _conditionEvalContext(record))) {
+        collectConditionMissingFields(child, record, missing);
+      }
+    });
+    return;
+  }
+  if (op === "or" && Array.isArray(condition.conditions)) {
+    const children = condition.conditions.filter((child) => child && typeof child === "object");
+    if (children.some((child) => evalCondition(child, _conditionEvalContext(record)))) {
+      return;
+    }
+    children.forEach((child) => collectConditionMissingFields(child, record, missing));
     return;
   }
   if (op === "not" && condition.condition) {
-    collectConditionMissingFields(condition.condition, record, missing);
+    if (evalCondition(condition.condition, _conditionEvalContext(record))) {
+      collectConditionMissingFields(condition.condition, record, missing);
+    }
   }
 }
 
@@ -1064,6 +1088,10 @@ export default function AppShell({
       const ok = await confirmDialog({ title, body });
       if (!ok) return null;
     }
+    if (["update_record", "transform_record"].includes(action?.kind || "")) {
+      const saved = await flushPendingFormSave();
+      if (!saved) return null;
+    }
     try {
       if (previewMode && previewAllowNav) {
         if (action.kind === "create_record") {
@@ -1143,11 +1171,16 @@ export default function AppShell({
       }
       if (result.record_id) {
         if (actionKind === "transform_record") {
-          const resultEntityId = result.entity_id || action.entity_id;
-          if (resultEntityId) {
-            await navigateToEntityRecord(resultEntityId, result.record_id);
-          } else {
+          if (action?.stay_on_source_record === true) {
+            await refreshCurrentRecord();
             setRefreshTick((v) => v + 1);
+          } else {
+            const resultEntityId = result.entity_id || action.entity_id;
+            if (resultEntityId) {
+              await navigateToEntityRecord(resultEntityId, result.record_id);
+            } else {
+              setRefreshTick((v) => v + 1);
+            }
           }
           pushToast("success", translateRuntime("common.app_shell.action_complete"));
           return result;
@@ -1728,6 +1761,7 @@ function AppView({
   const autoSaveTimerRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const pendingAutoSaveRef = useRef(false);
+  const draftRef = useRef({});
   const actionRunningRef = useRef(false);
   const bootstrapUsedRef = useRef({ list: null, form: null });
   const perfMarkRef = useRef({ list: null, form: null });
@@ -2137,6 +2171,20 @@ function AppView({
     }
   }
 
+  async function flushPendingFormSave() {
+    if (kind !== "form" || previewMode || !effectiveRecordId || !isDirtyRef.current) return true;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    const errors = computeValidationErrors(draftRef.current || {});
+    if (Object.keys(errors).length > 0) {
+      setShowValidation(true);
+      return false;
+    }
+    return await handleSave(null, { force: true, silent: true });
+  }
+
   useEffect(() => {
     if (kind === "list") {
       if (previewMode && previewStore) {
@@ -2253,6 +2301,10 @@ function AppView({
   }, [isDirty]);
 
   useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
     return () => {
       if (draftNotifyTimerRef.current) {
         clearTimeout(draftNotifyTimerRef.current);
@@ -2320,6 +2372,16 @@ function AppView({
         }
         setState({ status: "ok", error: null });
         bootstrapUsedRef.current.form = bootstrapVersion;
+        if (recordEntityId && effectiveRecordId) {
+          apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
+            .then((res) => {
+              if (isDirtyRef.current || lastLoadedDraftKeyRef.current !== formDraftStorageKey) return;
+              const next = applyDraftComputed(res?.record || {});
+              setDraft(next);
+              setInitialDraft(next);
+            })
+            .catch(() => {});
+        }
         return;
       }
       if (bootstrapLoading) {
@@ -2434,20 +2496,24 @@ function AppView({
   }, [draft, onRecordDraftChange]);
 
   async function handleSave(validationErrors, opts = {}) {
-    if (!canWriteRecords) return;
+    if (!canWriteRecords) return false;
     setShowValidation(true);
-    if (validationErrors && Object.keys(validationErrors).length > 0) return;
+    const liveDraft = draftRef.current || {};
+    const nextValidationErrors =
+      validationErrors && typeof validationErrors === "object" ? validationErrors : computeValidationErrors(liveDraft);
+    if (nextValidationErrors && Object.keys(nextValidationErrors).length > 0) return false;
     const silent = opts.silent === true;
     if (saveInFlightRef.current && !opts.force) {
       pendingAutoSaveRef.current = true;
-      return;
+      return false;
     }
     try {
       saveInFlightRef.current = true;
-      const payload = normalizeManifestRecordPayload(fieldIndex, draft);
+      const payload = normalizeManifestRecordPayload(fieldIndex, liveDraft);
       if (previewMode && previewStore) {
         if (effectiveRecordId) {
           const updated = previewStore.upsert(recordEntityId, effectiveRecordId, payload);
+          setDraft(updated?.record || payload);
           setInitialDraft(updated?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
           if (!silent) pushToast("success", translateRuntime("common.saved_local_preview"));
@@ -2462,6 +2528,7 @@ function AppView({
               onNavigate(`view:${view.id}`, { recordId: newId });
             }
           }
+          setDraft(created?.record || payload);
           setInitialDraft(created?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
           if (!silent) pushToast("success", translateRuntime("common.created_local_preview"));
@@ -2506,8 +2573,9 @@ function AppView({
           } else {
             if (!silent) pushToast("success", translateRuntime("common.material_logged_finish_clockout"));
           }
+          setDraft(payload);
           setInitialDraft(payload);
-          return;
+          return true;
         }
         if (newId) {
           const formTarget = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, recordEntityId));
@@ -2519,18 +2587,21 @@ function AppView({
         }
         clearFormDraftSnapshot(formDraftStorageKey);
         if (!silent) pushToast("success", translateRuntime("common.created"));
+        setDraft(payload);
         setInitialDraft(payload);
       }
+      return true;
     } catch (err) {
       pushToast("error", err.message || translateRuntime("common.save_failed"));
+      return false;
     } finally {
       saveInFlightRef.current = false;
       if (pendingAutoSaveRef.current) {
         pendingAutoSaveRef.current = false;
         if (kind === "form" && view?.header?.auto_save && effectiveRecordId) {
-          const errors = computeValidationErrors(draft);
+          const errors = computeValidationErrors(draftRef.current || {});
           if (Object.keys(errors).length === 0) {
-            handleSave(errors, { force: true, silent: true });
+            handleSave(null, { force: true, silent: true });
           }
         }
       }
@@ -2605,15 +2676,15 @@ function AppView({
     const debounceMs = Number(view?.header?.auto_save_debounce_ms) || 750;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
-      const errors = computeValidationErrors(draft);
+      const errors = computeValidationErrors(draftRef.current || {});
       if (Object.keys(errors).length > 0) return;
       if (saveInFlightRef.current) {
         pendingAutoSaveRef.current = true;
         return;
       }
       setAutoSaveState("saving");
-      await handleSave(errors, { silent: true });
-      setAutoSaveState("saved");
+      const saved = await handleSave(null, { silent: true });
+      setAutoSaveState(saved ? "saved" : "idle");
     }, debounceMs);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);

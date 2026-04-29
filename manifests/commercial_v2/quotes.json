@@ -2049,6 +2049,7 @@
       "entity_id": "entity.biz_quote",
       "label": "Generate Document",
       "transformation_key": "quote_to_document",
+      "stay_on_source_record": true,
       "visible_when": {
         "op": "in",
         "field": "biz_quote.status",

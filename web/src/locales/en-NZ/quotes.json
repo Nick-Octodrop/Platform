@@ -210,9 +210,9 @@
       "label": "New Quote"
     },
     "action_quote_mark_sent": {
-      "label": "Mark Sent",
+      "label": "Send Quote",
       "confirm": {
-        "title": "Mark quote as sent?"
+        "title": "Send quote?"
       }
     },
     "action_quote_mark_accepted": {

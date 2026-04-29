@@ -558,6 +558,10 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
     html = render_html(source_template.get("html") or "", context)
     filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
     filename = render_template(filename_pattern, context, strict=True)
+    if isinstance(filename, str) and filename.lower().endswith(".pdf"):
+        filename = filename[:-4]
+    if not isinstance(filename, str) or not filename.strip():
+        filename = "document"
     header_html = source_template.get("header_html") or ""
     footer_html = source_template.get("footer_html") or ""
     if header_html:
