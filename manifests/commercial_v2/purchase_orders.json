@@ -174,6 +174,9 @@
                 "biz_purchase_order.supplier_reference": "biz_contact.supplier_reference",
                 "biz_purchase_order.incoterm": "biz_contact.supplier_incoterm_default"
               },
+              "skip_field_map_when_fields_present": [
+                "biz_purchase_order.supplier_contact_person_id"
+              ],
               "clear_fields": [
                 "biz_purchase_order.supplier_contact_person_id",
                 "biz_purchase_order.supplier_contact_name",
@@ -210,17 +213,20 @@
         {
           "id": "biz_purchase_order.supplier_contact_name",
           "type": "string",
-          "label": "Supplier Contact"
+          "label": "Supplier Contact",
+          "readonly": true
         },
         {
           "id": "biz_purchase_order.supplier_contact_email",
           "type": "string",
-          "label": "Supplier Contact Email"
+          "label": "Supplier Contact Email",
+          "readonly": true
         },
         {
           "id": "biz_purchase_order.supplier_contact_phone",
           "type": "string",
-          "label": "Supplier Contact Phone"
+          "label": "Supplier Contact Phone",
+          "readonly": true
         },
         {
           "id": "biz_purchase_order.purchasing_entity",

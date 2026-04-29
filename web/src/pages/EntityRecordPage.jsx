@@ -36,12 +36,16 @@ export default function EntityRecordPage() {
   const [error, setError] = useState(null);
   const [manifestError, setManifestError] = useState(null);
   const [showValidation, setShowValidation] = useState(false);
+  const [autoSaveState, setAutoSaveState] = useState("idle");
   const [devMode, setDevMode] = useState(getDevMode());
   const [manifestHash, setManifestHash] = useState(null);
   const { hasCapability } = useAccessContext();
   const canWriteRecords = hasCapability("records.write");
   const isDirtyRef = React.useRef(false);
   const lastLoadedDraftKeyRef = React.useRef(null);
+  const autoSaveTimerRef = React.useRef(null);
+  const saveInFlightRef = React.useRef(false);
+  const pendingAutoSaveRef = React.useRef(false);
 
   useEffect(() => {
     async function buildIndex() {
@@ -156,10 +160,11 @@ export default function EntityRecordPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  async function handleSave() {
+  async function handleSave(options = {}) {
     if (!selected) return;
     setShowValidation(true);
-    setLoading(true);
+    const silent = options?.silent === true;
+    if (!silent) setLoading(true);
     try {
       const payload = normalizeManifestRecordPayload(fieldIndex, draft);
       const res = await apiFetch(`/records/${entity}/${id}`, {
@@ -170,14 +175,42 @@ export default function EntityRecordPage() {
       setRecord(saved);
       setDraft(saved);
       clearFormDraftSnapshot(draftStorageKey);
-      pushToast("success", t("common.saved"));
+      if (!silent) pushToast("success", t("common.saved"));
     } catch (err) {
       setError(err.message || t("common.save_failed"));
       pushToast("error", err.message || t("common.save_failed"));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!viewForm?.header?.auto_save) return undefined;
+    if (!canWriteRecords || !id || !record || !isDirty) return undefined;
+    const debounceMs = Number(viewForm?.header?.auto_save_debounce_ms) || 750;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = window.setTimeout(async () => {
+      if (saveInFlightRef.current) {
+        pendingAutoSaveRef.current = true;
+        return;
+      }
+      saveInFlightRef.current = true;
+      setAutoSaveState("saving");
+      try {
+        await handleSave({ silent: true });
+        setAutoSaveState("saved");
+      } finally {
+        saveInFlightRef.current = false;
+        if (pendingAutoSaveRef.current) {
+          pendingAutoSaveRef.current = false;
+          setAutoSaveState("idle");
+        }
+      }
+    }, debounceMs);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [canWriteRecords, draft, id, isDirty, record, viewForm?.header?.auto_save, viewForm?.header?.auto_save_debounce_ms]);
 
   if (!entity || !id) {
     return <div className="alert">{t("common.select_record")}</div>;
@@ -244,8 +277,9 @@ export default function EntityRecordPage() {
                 recordId={id}
                 fieldIndex={fieldIndex}
                 record={draft}
+                autoSaveState={autoSaveState}
                 onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
-                onSave={handleSave}
+                onSave={() => handleSave()}
                 readonly={!canWriteRecords}
                 showValidation={showValidation}
                 header={viewForm.header || null}

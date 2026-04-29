@@ -330,6 +330,9 @@
                 "crm_lead.contact_email",
                 "crm_lead.contact_phone"
               ],
+              "skip_field_map_when_fields_present": [
+                "crm_lead.contact_person_id"
+              ],
               "clear_fields": [
                 "crm_lead.contact_person_id",
                 "crm_lead.contact_name",
@@ -383,18 +386,21 @@
           "id": "crm_lead.contact_name",
           "type": "string",
           "label": "Contact Name",
+          "readonly": true,
           "label_key": "crm.entities.crm_lead.fields.contact_name.label"
         },
         {
           "id": "crm_lead.contact_email",
           "type": "string",
           "label": "Contact Email",
+          "readonly": true,
           "label_key": "crm.entities.crm_lead.fields.contact_email.label"
         },
         {
           "id": "crm_lead.contact_phone",
           "type": "string",
           "label": "Contact Phone",
+          "readonly": true,
           "label_key": "crm.entities.crm_lead.fields.contact_phone.label"
         },
         {
@@ -557,6 +563,9 @@
                 "crm_opportunity.primary_contact_email",
                 "crm_opportunity.primary_contact_phone"
               ],
+              "skip_field_map_when_fields_present": [
+                "crm_opportunity.primary_contact_person_id"
+              ],
               "clear_fields": [
                 "crm_opportunity.primary_contact_person_id",
                 "crm_opportunity.primary_contact_name",
@@ -612,18 +621,21 @@
           "id": "crm_opportunity.primary_contact_name",
           "type": "string",
           "label": "Primary Contact",
+          "readonly": true,
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_name.label"
         },
         {
           "id": "crm_opportunity.primary_contact_email",
           "type": "string",
           "label": "Contact Email",
+          "readonly": true,
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_email.label"
         },
         {
           "id": "crm_opportunity.primary_contact_phone",
           "type": "string",
-          "label": "Contact Phone"
+          "label": "Contact Phone",
+          "readonly": true
         },
         {
           "id": "crm_opportunity.site_id",

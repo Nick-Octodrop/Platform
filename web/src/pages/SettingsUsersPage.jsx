@@ -39,7 +39,6 @@ export default function SettingsUsersPage() {
   const [stagedEmail, setStagedEmail] = useState("");
   const [stagedRole, setStagedRole] = useState("member");
   const [stagedPassword, setStagedPassword] = useState("");
-  const [stagedProfileIds, setStagedProfileIds] = useState([]);
   const [pendingHandoffMember, setPendingHandoffMember] = useState(null);
   const [handoffPasswordInput, setHandoffPasswordInput] = useState("");
   const [issuedHandoffPassword, setIssuedHandoffPassword] = useState("");
@@ -87,6 +86,11 @@ export default function SettingsUsersPage() {
   }, [accessLoading, context]);
 
   const actor = context?.actor || {};
+  const currentWorkspace = useMemo(
+    () => (context?.workspaces || []).find((item) => item?.workspace_id === actor?.workspace_id) || null,
+    [context, actor?.workspace_id],
+  );
+  const currentWorkspaceName = currentWorkspace?.workspace_name || actor?.workspace_id || "current workspace";
   const canManage = actor?.workspace_role === "admin" || actor?.platform_role === "superadmin";
   const canDeleteAuth = actor?.platform_role === "superadmin";
   const adminCount = useMemo(() => members.filter((m) => (m?.role || "") === "admin").length, [members]);
@@ -111,7 +115,6 @@ export default function SettingsUsersPage() {
     () => ({
       staged: { label: "Staged", tone: "badge-warning" },
       handoff_required: { label: "Handoff pending", tone: "badge-secondary" },
-      active: { label: "Managed account", tone: "badge-outline" },
     }),
     [],
   );
@@ -294,15 +297,13 @@ export default function SettingsUsersPage() {
           email: stagedEmail.trim().toLowerCase(),
           role: stagedRole,
           password: stagedPassword,
-          profile_ids: stagedProfileIds,
         },
       });
       setMembers(res?.members || []);
       setStagedEmail("");
       setStagedRole("member");
       setStagedPassword("");
-      setStagedProfileIds([]);
-      pushToast("success", "Staged user created.");
+      pushToast("success", `Staged user created in ${res?.workspace_name || currentWorkspaceName}.`);
     } catch (err) {
       setError(err?.message || "Failed to create staged user.");
     } finally {
@@ -361,9 +362,10 @@ export default function SettingsUsersPage() {
     <TabbedPaneShell
       tabs={tabs}
       contentContainer={true}
+      contentContainerClass="min-h-full overflow-x-hidden"
       pageScroll={true}
     >
-      <div className="space-y-4">
+      <div className="space-y-4 overflow-x-hidden">
         {error && <div className="alert alert-error text-sm">{error}</div>}
 
         <div className="space-y-4">
@@ -461,10 +463,10 @@ export default function SettingsUsersPage() {
           {actor.platform_role === "superadmin" ? (
             <SettingsSection
               title="Create Staged User"
-              description="Create a workspace user silently with a temporary password so you can test access before handoff."
+              description={`Create a workspace user silently with a temporary password so you can test access before handoff. This creates the user only in the current workspace: ${currentWorkspaceName}.`}
             >
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                <label className="form-control md:col-span-4">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-start">
+                <label className="form-control xl:col-span-4 min-w-0">
                   <span className="label-text text-sm">{t("settings.email")}</span>
                   <input
                     className="input input-bordered input-sm"
@@ -475,7 +477,7 @@ export default function SettingsUsersPage() {
                     onChange={(e) => setStagedEmail(e.target.value)}
                   />
                 </label>
-                <label className="form-control md:col-span-3">
+                <label className="form-control xl:col-span-3 min-w-0">
                   <span className="label-text text-sm">{t("settings.role")}</span>
                   <AppSelect
                     className="select select-bordered select-sm"
@@ -490,7 +492,7 @@ export default function SettingsUsersPage() {
                     ))}
                   </AppSelect>
                 </label>
-                <label className="form-control md:col-span-5">
+                <label className="form-control xl:col-span-5 min-w-0">
                   <span className="label-text text-sm">Temporary Password</span>
                   <input
                     className="input input-bordered input-sm"
@@ -500,47 +502,19 @@ export default function SettingsUsersPage() {
                     disabled={saving}
                     onChange={(e) => setStagedPassword(e.target.value)}
                   />
+                  <span className={`label-text mt-2 text-xs ${stagedPassword && stagedPassword.trim().length < 8 ? "text-error" : "opacity-70"}`}>
+                    Temporary passwords must be at least 8 characters. `adidas` is too short.
+                  </span>
                 </label>
               </div>
-              <div className="mt-4">
-                <div className="text-sm font-medium">Access Profiles</div>
-                <div className="text-xs opacity-70 mt-1">Assign profiles now so staged testing matches the final user access.</div>
-                <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {accessProfiles.length ? (
-                    accessProfiles.map((profile) => {
-                      const checked = stagedProfileIds.includes(profile.id);
-                      return (
-                        <label key={profile.id} className="flex items-start gap-3 rounded-box border border-base-300 bg-base-100 p-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="checkbox checkbox-sm mt-0.5"
-                            checked={checked}
-                            disabled={saving}
-                            onChange={(e) => {
-                              setStagedProfileIds((prev) => {
-                                const next = new Set(prev);
-                                if (e.target.checked) next.add(profile.id);
-                                else next.delete(profile.id);
-                                return Array.from(next);
-                              });
-                            }}
-                          />
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm">{profile.name || profile.id}</div>
-                            {profile.description ? <div className="text-xs opacity-70 mt-1">{profile.description}</div> : null}
-                          </div>
-                        </label>
-                      );
-                    })
-                  ) : (
-                    <div className="text-sm opacity-70">{t("settings.users.no_access_profiles")}</div>
-                  )}
-                </div>
-              </div>
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex items-start justify-between gap-3 flex-col sm:flex-row">
+                <p className="text-sm opacity-70 max-w-2xl">
+                  Access profiles are not assigned during staged creation. After the user exists in {currentWorkspaceName}, you can add workspace access from the existing `Access` action in the users list.
+                </p>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={saving || !stagedEmail.trim() || stagedPassword.trim().length < 8}
+                  title={!stagedEmail.trim() || stagedPassword.trim().length < 8 ? "Enter an email and a temporary password with at least 8 characters." : ""}
                   onClick={createStagedMember}
                   type="button"
                 >

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { getSafeSession, supabase } from "../supabase";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
@@ -16,6 +16,15 @@ export default function AuthSetPasswordPage({ user }) {
   const canSet = !!user;
   const email = useMemo(() => user?.email || "", [user]);
   const handoffRequired = user?.app_metadata?.octo_managed_account_state === "handoff_required";
+
+  async function exitToLogin() {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // ignore local sign-out failures and still return to login
+    }
+    navigate("/login", { replace: true });
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -36,6 +45,11 @@ export default function AuthSetPasswordPage({ user }) {
       if (handoffRequired) {
         await apiFetch("/access/password-handoff/complete", { method: "POST", body: {} });
         await getSafeSession({ forceRefresh: true });
+        setNotice(t("settings.auth.password_updated_redirecting"));
+        setTimeout(() => {
+          exitToLogin();
+        }, 700);
+        return;
       }
       setNotice(t("settings.auth.password_updated_redirecting"));
       setTimeout(() => navigate("/home", { replace: true }), 700);
@@ -82,9 +96,9 @@ export default function AuthSetPasswordPage({ user }) {
             </button>
           </form>
           <div className="text-sm mt-2">
-            <Link className="link link-primary" to="/login">
+            <button className="link link-primary" type="button" onClick={exitToLogin}>
               {t("settings.auth.back_to_login")}
-            </Link>
+            </button>
           </div>
         </div>
       </div>

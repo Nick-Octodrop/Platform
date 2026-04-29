@@ -338,11 +338,7 @@ export default function AppShell({
   const [modal, setModal] = useState(null);
   const [modalInput, setModalInput] = useState("");
   const modalResolveRef = useRef(null);
-  const [createModal, setCreateModal] = useState(null);
-  const [createDraft, setCreateDraft] = useState({});
-  const [createInitialDraft, setCreateInitialDraft] = useState({});
-  const [createShowValidation, setCreateShowValidation] = useState(false);
-  const [createSaving, setCreateSaving] = useState(false);
+  const [createModals, setCreateModals] = useState([]);
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapVersion, setBootstrapVersion] = useState(0);
   const [workspaceKey, setWorkspaceKey] = useState(() => getActiveWorkspaceId());
@@ -712,22 +708,43 @@ export default function AppShell({
     }
 
     return new Promise((resolve) => {
-      setCreateModal({
-        entityId: resolvedEntityId,
-        formViewId,
-        displayField: resolvedDisplayField,
-        initialValue,
-        defaults: defaults && typeof defaults === "object" ? defaults : null,
-        returnRoute: `${location.pathname}${location.search || ""}`,
-        resolve,
-        manifest: modalManifest,
-        compiled: modalCompiled,
-      });
+      setCreateModals((prev) => [
+        ...prev,
+        {
+          key: `create-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          entityId: resolvedEntityId,
+          formViewId,
+          displayField: resolvedDisplayField,
+          initialValue,
+          defaults: defaults && typeof defaults === "object" ? defaults : null,
+          returnRoute: `${location.pathname}${location.search || ""}`,
+          resolve,
+          manifest: modalManifest,
+          compiled: modalCompiled,
+          draft: {},
+          initialDraft: {},
+          showValidation: false,
+          saving: false,
+          initialized: false,
+        },
+      ]);
     });
+  }
+
+  const createModal = createModals.length ? createModals[createModals.length - 1] : null;
+
+  function updateCreateModalByKey(key, updater) {
+    setCreateModals((prev) =>
+      prev.map((item) => {
+        if (!item || item.key !== key) return item;
+        return typeof updater === "function" ? updater(item) : updater;
+      })
+    );
   }
 
   useEffect(() => {
     if (!createModal) return;
+    if (createModal.initialized) return;
     const nextDraft = createModal.defaults && typeof createModal.defaults === "object"
       ? { ...createModal.defaults }
       : {};
@@ -740,9 +757,14 @@ export default function AppShell({
       createModal?.entityId || null
     );
     const computedDraft = applyComputedFields(modalFieldIndex || {}, nextDraft);
-    setCreateDraft(computedDraft);
-    setCreateInitialDraft(computedDraft);
-    setCreateShowValidation(false);
+    updateCreateModalByKey(createModal.key, (current) => ({
+      ...current,
+      draft: computedDraft,
+      initialDraft: computedDraft,
+      showValidation: false,
+      saving: false,
+      initialized: true,
+    }));
   }, [createModal, manifest, compiled]);
 
   useEffect(() => {
@@ -1377,12 +1399,16 @@ export default function AppShell({
   const createEntityDef = createModal
     ? (createManifest?.entities || []).find((e) => e.id === createEntityId)
     : null;
+  const createDraft = createModal?.draft || {};
+  const createInitialDraft = createModal?.initialDraft || {};
+  const createShowValidation = Boolean(createModal?.showValidation);
+  const createSaving = Boolean(createModal?.saving);
   const createIsDirty = !formDraftValuesEqual(createDraft, createInitialDraft);
 
   function closeCreateModal(result = null) {
     const resolve = createModal?.resolve;
     const returnRoute = createModal?.returnRoute || "";
-    setCreateModal(null);
+    setCreateModals((prev) => prev.slice(0, -1));
     if (!previewMode && returnRoute) {
       const currentRoute = `${location.pathname}${location.search || ""}`;
       if (currentRoute !== returnRoute) {
@@ -1393,11 +1419,12 @@ export default function AppShell({
   }
 
   async function handleCreateSave(validationErrors) {
-    setCreateShowValidation(true);
+    if (!createModal) return;
+    updateCreateModalByKey(createModal.key, (current) => ({ ...current, showValidation: true }));
     if (validationErrors && Object.keys(validationErrors).length > 0) return;
     if (!createEntityId) return;
     if (createSaving) return;
-    setCreateSaving(true);
+    updateCreateModalByKey(createModal.key, (current) => ({ ...current, saving: true }));
     try {
       const payload = normalizeManifestRecordPayload(createFieldIndex, createDraft);
       const res = await apiFetch(`/records/${createEntityId}`, {
@@ -1415,7 +1442,9 @@ export default function AppShell({
     } catch (err) {
       pushToast("error", err?.message || translateRuntime("common.create_failed"));
     } finally {
-      setCreateSaving(false);
+      if (createModal) {
+        updateCreateModalByKey(createModal.key, (current) => ({ ...current, saving: false }));
+      }
     }
   }
 
@@ -1562,54 +1591,84 @@ export default function AppShell({
           document.body
         )}
 
-      {createModal &&
+      {createModals.length > 0 &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="modal modal-open">
-            <div className="modal-box max-w-4xl">
-              <h3 className="font-bold text-lg">
-                Create {createEntityDef?.label || humanizeEntityId(createEntityId)}
-              </h3>
-              <div className="mt-3 max-h-[70vh] overflow-y-auto overflow-x-hidden">
-                {createView ? (
-                  <FormViewRenderer
-                    view={createView}
-                    entityId={createEntityId}
-                    recordId={null}
-                    fieldIndex={createFieldIndex || {}}
-                    record={createDraft}
-                    entityLabel={createEntityDef?.label}
-                    displayField={createEntityDef?.display_field}
-                    autoSaveState="idle"
-                    hasRecord={false}
-                    onChange={(next) => setCreateDraft(applyComputedFields(createFieldIndex || {}, next))}
-                    onSave={handleCreateSave}
-                    onDiscard={() => closeCreateModal(null)}
-                    isDirty={createIsDirty}
-                    header={{ ...(createView?.header || {}), save_mode: "bottom", auto_save: false }}
-                    primaryActions={[]}
-                    secondaryActions={[]}
-                    onActionClick={null}
-                    readonly={!canWriteRecords}
-                    showValidation={createShowValidation}
-                    applyDefaults
-                    requiredFields={[]}
-                    hiddenFields={[]}
-                    previewMode={false}
-                    hideHeader
-                    bottomActionsMode="sticky_right"
+          <>
+            {createModals.map((modalEntry, index) => {
+              const isTop = index === createModals.length - 1;
+              const modalManifest = modalEntry?.manifest || manifest;
+              const modalCompiled = modalEntry?.compiled || compiled;
+              const modalEntityId = modalEntry?.entityId || null;
+              const modalView = (modalManifest?.views || []).find((view) => view.id === modalEntry?.formViewId) || null;
+              const modalFieldIndex = buildFieldIndex(modalManifest, modalCompiled, modalEntityId);
+              const modalEntityDef = (modalManifest?.entities || []).find((entity) => entity.id === modalEntityId) || null;
+              const modalDraft = modalEntry?.draft || {};
+              const modalInitialDraft = modalEntry?.initialDraft || {};
+              const modalIsDirty = !formDraftValuesEqual(modalDraft, modalInitialDraft);
+              return (
+                <div
+                  key={modalEntry.key}
+                  className="fixed inset-0 flex items-center justify-center px-3 py-3 sm:px-4 sm:py-4"
+                  style={{ zIndex: 320 + index * 10 }}
+                >
+                  <button
+                    type="button"
+                    className="absolute inset-0 bg-base-content/40"
+                    onClick={() => {
+                      if (isTop) closeCreateModal(null);
+                    }}
+                    aria-label="Close"
                   />
-                ) : (
-                  <div className="alert alert-error">Form view not found.</div>
-                )}
-              </div>
-            </div>
-            <button
-              className="modal-backdrop"
-              onClick={() => closeCreateModal(null)}
-              aria-label="Close"
-            />
-          </div>,
+                  <div className="relative flex h-full max-h-[calc(100dvh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-2xl">
+                    <div className="shrink-0 border-b border-base-300 px-4 py-3">
+                      <h3 className="font-bold text-lg">
+                        Create {modalEntityDef?.label || humanizeEntityId(modalEntityId)}
+                      </h3>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
+                      {modalView ? (
+                        <FormViewRenderer
+                          view={modalView}
+                          entityId={modalEntityId}
+                          recordId={null}
+                          fieldIndex={modalFieldIndex || {}}
+                          record={modalDraft}
+                          entityLabel={modalEntityDef?.label}
+                          displayField={modalEntityDef?.display_field}
+                          autoSaveState="idle"
+                          hasRecord={false}
+                          onChange={(next) =>
+                            updateCreateModalByKey(modalEntry.key, (current) => ({
+                              ...current,
+                              draft: applyComputedFields(modalFieldIndex || {}, next),
+                            }))
+                          }
+                          onSave={handleCreateSave}
+                          onDiscard={() => closeCreateModal(null)}
+                          isDirty={modalIsDirty}
+                          header={{ ...(modalView?.header || {}), save_mode: "bottom", auto_save: false }}
+                          primaryActions={[]}
+                          secondaryActions={[]}
+                          onActionClick={null}
+                          readonly={!canWriteRecords || modalEntry?.saving}
+                          showValidation={Boolean(modalEntry?.showValidation)}
+                          applyDefaults
+                          requiredFields={[]}
+                          hiddenFields={[]}
+                          previewMode={false}
+                          hideHeader
+                          bottomActionsMode="sticky_right"
+                        />
+                      ) : (
+                        <div className="alert alert-error">Form view not found.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </>,
           document.body
         )}
 
@@ -2378,6 +2437,7 @@ function AppView({
     if (!canWriteRecords) return;
     setShowValidation(true);
     if (validationErrors && Object.keys(validationErrors).length > 0) return;
+    const silent = opts.silent === true;
     if (saveInFlightRef.current && !opts.force) {
       pendingAutoSaveRef.current = true;
       return;
@@ -2390,7 +2450,7 @@ function AppView({
           const updated = previewStore.upsert(recordEntityId, effectiveRecordId, payload);
           setInitialDraft(updated?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
-          pushToast("success", translateRuntime("common.saved_local_preview"));
+          if (!silent) pushToast("success", translateRuntime("common.saved_local_preview"));
         } else {
           const created = previewStore.upsert(recordEntityId, null, payload);
           const newId = created?.record_id;
@@ -2404,7 +2464,7 @@ function AppView({
           }
           setInitialDraft(created?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
-          pushToast("success", translateRuntime("common.created_local_preview"));
+          if (!silent) pushToast("success", translateRuntime("common.created_local_preview"));
         }
       } else if (effectiveRecordId) {
         const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, {
@@ -2415,7 +2475,7 @@ function AppView({
         setDraft(savedRecord);
         setInitialDraft(savedRecord);
         clearFormDraftSnapshot(formDraftStorageKey);
-        pushToast("success", translateRuntime("common.saved"));
+        if (!silent) pushToast("success", translateRuntime("common.saved"));
       } else {
         const res = await apiFetch(`/records/${recordEntityId}`, {
           method: "POST",
@@ -2442,9 +2502,9 @@ function AppView({
             onNavigate(timeEntryFormTarget, { recordId: pendingMaterialGate.timeEntryId, preserveParams: true });
           }
           if (closeResult) {
-            pushToast("success", translateRuntime("common.material_logged_and_closed"));
+            if (!silent) pushToast("success", translateRuntime("common.material_logged_and_closed"));
           } else {
-            pushToast("success", translateRuntime("common.material_logged_finish_clockout"));
+            if (!silent) pushToast("success", translateRuntime("common.material_logged_finish_clockout"));
           }
           setInitialDraft(payload);
           return;
@@ -2458,7 +2518,7 @@ function AppView({
           }
         }
         clearFormDraftSnapshot(formDraftStorageKey);
-        pushToast("success", translateRuntime("common.created"));
+        if (!silent) pushToast("success", translateRuntime("common.created"));
         setInitialDraft(payload);
       }
     } catch (err) {
@@ -2470,7 +2530,7 @@ function AppView({
         if (kind === "form" && view?.header?.auto_save && effectiveRecordId) {
           const errors = computeValidationErrors(draft);
           if (Object.keys(errors).length === 0) {
-            handleSave(errors, { force: true });
+            handleSave(errors, { force: true, silent: true });
           }
         }
       }
@@ -2542,7 +2602,6 @@ function AppView({
     if (!view?.header?.auto_save) return;
     if (!effectiveRecordId) return;
     if (!isDirty) return;
-    if (isFormFieldFocused) return;
     const debounceMs = Number(view?.header?.auto_save_debounce_ms) || 750;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -2553,13 +2612,13 @@ function AppView({
         return;
       }
       setAutoSaveState("saving");
-      await handleSave(errors);
+      await handleSave(errors, { silent: true });
       setAutoSaveState("saved");
     }, debounceMs);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [kind, previewMode, canWriteRecords, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty, isFormFieldFocused]);
+  }, [kind, previewMode, canWriteRecords, view?.header?.auto_save, view?.header?.auto_save_debounce_ms, effectiveRecordId, draft, isDirty]);
 
   if (state.error) return <div className="alert alert-error">{state.error}</div>;
 

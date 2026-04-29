@@ -1001,16 +1001,30 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
     set_db_user_id(user_id)
     platform_role = get_platform_role(user_id)
     managed_account_state = _managed_account_state_from_claims(user.get("claims"))
+    auto_workspace_allowed = _workspace_auto_create_allowed_from_claims(user.get("claims"))
     user_email = user.get("email")
     if isinstance(user_email, str) and user_email:
         try:
-            claim_workspace_invites_for_email(user_id, user_email)
+            claimed_invites = claim_workspace_invites_for_email(user_id, user_email)
+            if claimed_invites:
+                with suppress(Exception):
+                    _supabase_set_auto_workspace_creation(user_id, enabled=False)
+                auto_workspace_allowed = False
         except Exception:
             pass
     memberships = list_memberships(user_id)
     user_workspaces = list_user_workspaces(user_id)
     workspace_header = request.headers.get("X-Workspace-Id")
     if not memberships:
+        auth_user = _find_auth_user_row_by_id(user_id)
+        if auth_user:
+            auto_workspace_allowed = _workspace_auto_create_allowed_from_metadata(auth_user.get("app_metadata"))
+        if not auto_workspace_allowed:
+            return _error_response(
+                "WORKSPACE_REQUIRED",
+                "User is not assigned to a workspace",
+                status=403,
+            )
         workspace_id = create_workspace_for_user(user)
         memberships = list_memberships(user_id)
         user_workspaces = list_user_workspaces(user_id)
@@ -1989,6 +2003,7 @@ _MANAGED_ACCOUNT_FLAG_KEY = "octo_managed_account"
 _MANAGED_ACCOUNT_STATE_KEY = "octo_managed_account_state"
 _MANAGED_ACCOUNT_WORKSPACE_KEY = "octo_managed_workspace_id"
 _MANAGED_ACCOUNT_CREATED_BY_KEY = "octo_managed_created_by"
+_AUTO_WORKSPACE_ON_EMPTY_KEY = "octo_auto_workspace_on_empty"
 _PASSWORD_HANDOFF_ALLOWED_PATHS = {
     "/access/password-handoff/complete",
 }
@@ -2044,6 +2059,26 @@ def _managed_account_state_from_actor(actor: dict | None) -> str | None:
     return _normalize_managed_account_state(actor.get("managed_account_state"))
 
 
+def _workspace_auto_create_allowed_from_metadata(metadata: Any) -> bool:
+    data = _coerce_json_object(metadata)
+    value = data.get(_AUTO_WORKSPACE_ON_EMPTY_KEY)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return True
+
+
+def _workspace_auto_create_allowed_from_claims(claims: Any) -> bool:
+    if not isinstance(claims, dict):
+        return True
+    return _workspace_auto_create_allowed_from_metadata(claims.get("app_metadata"))
+
+
 def _actor_requires_password_handoff(actor: dict | None) -> bool:
     return _managed_account_state_from_actor(actor) == "handoff_required"
 
@@ -2063,6 +2098,21 @@ def _merge_managed_account_app_metadata(
     if isinstance(created_by_user_id, str) and created_by_user_id.strip():
         merged[_MANAGED_ACCOUNT_CREATED_BY_KEY] = created_by_user_id.strip()
     return merged
+
+
+def _clear_managed_account_app_metadata(existing: Any) -> dict[str, Any]:
+    cleaned = _coerce_json_object(existing)
+    cleaned.pop(_MANAGED_ACCOUNT_FLAG_KEY, None)
+    cleaned.pop(_MANAGED_ACCOUNT_STATE_KEY, None)
+    cleaned.pop(_MANAGED_ACCOUNT_WORKSPACE_KEY, None)
+    cleaned.pop(_MANAGED_ACCOUNT_CREATED_BY_KEY, None)
+    return cleaned
+
+
+def _set_workspace_auto_create_app_metadata(existing: Any, *, enabled: bool) -> dict[str, Any]:
+    updated = _coerce_json_object(existing)
+    updated[_AUTO_WORKSPACE_ON_EMPTY_KEY] = bool(enabled)
+    return updated
 
 
 def _generate_temporary_password(length: int = 16) -> str:
@@ -2285,6 +2335,22 @@ def _supabase_update_managed_account_state(
     if email_confirm is not None:
         payload["email_confirm"] = bool(email_confirm)
     return _supabase_update_user(user_id, payload)
+
+
+def _supabase_clear_managed_account_state(user_id: str) -> dict:
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if not auth_user:
+        raise RuntimeError("auth_user_not_found")
+    app_metadata = _clear_managed_account_app_metadata(auth_user.get("app_metadata"))
+    return _supabase_update_user(user_id, {"app_metadata": app_metadata})
+
+
+def _supabase_set_auto_workspace_creation(user_id: str, *, enabled: bool) -> dict:
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if not auth_user:
+        raise RuntimeError("auth_user_not_found")
+    app_metadata = _set_workspace_auto_create_app_metadata(auth_user.get("app_metadata"), enabled=enabled)
+    return _supabase_update_user(user_id, {"app_metadata": app_metadata})
 
 
 def _password_handoff_required_response(actor: dict | None, path: str | None) -> JSONResponse | None:
@@ -51780,21 +51846,24 @@ async def create_staged_workspace_member(request: Request) -> dict:
     email = (body.get("email") or "").strip().lower()
     password = body.get("password")
     role = _normalize_workspace_role(body.get("role") or "member")
-    profile_ids = body.get("profile_ids")
     if "@" not in email:
         return _error_response("EMAIL_REQUIRED", "Valid email required", "email", status=400)
     if not isinstance(password, str) or len(password) < 8:
         return _error_response("PASSWORD_REQUIRED", "Temporary password must be at least 8 characters", "password", status=400)
     if not role:
         return _error_response("ROLE_INVALID", "Invalid role", "role", status=400)
-    if profile_ids is None:
-        profile_ids = []
-    if not isinstance(profile_ids, list):
-        return _error_response("INVALID_BODY", "profile_ids must be a list", "profile_ids", status=400)
     if _find_auth_user_id_by_email(email):
         return _error_response("USER_EXISTS", "A user with that email already exists", "email", status=400)
 
     workspace_id = actor.get("workspace_id")
+    workspace_name = next(
+        (
+            item.get("workspace_name")
+            for item in (actor.get("workspaces") or [])
+            if isinstance(item, dict) and item.get("workspace_id") == workspace_id
+        ),
+        None,
+    )
     created_user_id = ""
     try:
         created = _supabase_create_user(email, password, email_confirm=True)
@@ -51811,21 +51880,10 @@ async def create_staged_workspace_member(request: Request) -> dict:
             created_by_user_id=actor.get("user_id"),
             email_confirm=True,
         )
+        _supabase_set_auto_workspace_creation(created_user_id, enabled=False)
         member = add_workspace_member(workspace_id, created_user_id, role)
-        assigned_profiles = replace_workspace_user_access_profiles(workspace_id, created_user_id, profile_ids)
-    except ValueError as exc:
-        if created_user_id:
-            with suppress(Exception):
-                replace_workspace_user_access_profiles(workspace_id, created_user_id, [])
-            with suppress(Exception):
-                remove_workspace_member(workspace_id, created_user_id)
-            with suppress(Exception):
-                _supabase_delete_user(created_user_id)
-        return _error_response("PROFILE_INVALID", str(exc), "profile_ids", status=400)
     except Exception as exc:
         if created_user_id:
-            with suppress(Exception):
-                replace_workspace_user_access_profiles(workspace_id, created_user_id, [])
             with suppress(Exception):
                 remove_workspace_member(workspace_id, created_user_id)
             with suppress(Exception):
@@ -51840,7 +51898,8 @@ async def create_staged_workspace_member(request: Request) -> dict:
             "members": members,
             "user_id": created_user_id,
             "managed_account_state": "staged",
-            "assigned_profiles": assigned_profiles,
+            "workspace_id": workspace_id,
+            "workspace_name": workspace_name,
         }
     )
 
@@ -51885,6 +51944,8 @@ async def invite_workspace_member(request: Request) -> dict:
     invite_pending = False
     if isinstance(invited_user_id, str) and invited_user_id:
         member = add_workspace_member(actor.get("workspace_id"), invited_user_id, role)
+        with suppress(Exception):
+            _supabase_set_auto_workspace_creation(invited_user_id, enabled=False)
     else:
         member = create_workspace_invite(
             actor.get("workspace_id"),
@@ -52022,15 +52083,11 @@ async def complete_password_handoff(request: Request) -> dict:
     if current_state != "handoff_required":
         return _ok_response({"ok": True, "managed_account_state": current_state, "completed": False})
     try:
-        _supabase_update_managed_account_state(
-            user_id,
-            state="active",
-            workspace_id=actor.get("workspace_id"),
-        )
+        _supabase_clear_managed_account_state(user_id)
     except Exception as exc:
         return _error_response("HANDOFF_COMPLETE_FAILED", str(exc), "user_id", status=400)
     _invalidate_access_runtime_caches(actor.get("workspace_id"), user_id)
-    return _ok_response({"ok": True, "managed_account_state": "active", "completed": True})
+    return _ok_response({"ok": True, "managed_account_state": None, "completed": True})
 
 
 @app.patch("/access/members/{user_id}")
@@ -52088,10 +52145,13 @@ async def delete_member(request: Request, user_id: str) -> dict:
     ok = remove_workspace_member(workspace_id, user_id)
     if not ok:
         return _error_response("MEMBER_NOT_FOUND", "Member not found", "user_id", status=404)
+    user_workspaces = list_user_workspaces(user_id)
+    if not user_workspaces:
+        with suppress(Exception):
+            _supabase_set_auto_workspace_creation(user_id, enabled=False)
     raw_delete_auth = request.query_params.get("delete_auth_user", "")
     delete_auth_user = str(raw_delete_auth).strip().lower() in {"1", "true", "yes", "on"}
     if delete_auth_user:
-        user_workspaces = list_user_workspaces(user_id)
         if actor.get("platform_role") != "superadmin" and user_workspaces:
             return _error_response(
                 "FORBIDDEN",

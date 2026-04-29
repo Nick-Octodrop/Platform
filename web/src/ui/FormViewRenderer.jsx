@@ -141,6 +141,11 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
   const clearFields = Array.isArray(config.clear_fields)
     ? config.clear_fields.filter((fieldId) => typeof fieldId === "string" && fieldId)
     : [];
+  const skipFieldMapWhenFieldsPresent = new Set(
+    Array.isArray(config.skip_field_map_when_fields_present)
+      ? config.skip_field_map_when_fields_present.filter((fieldId) => typeof fieldId === "string" && fieldId)
+      : []
+  );
   const overwriteIfCurrentMatches =
     config.overwrite_if_current_matches && typeof config.overwrite_if_current_matches === "object"
       ? config.overwrite_if_current_matches
@@ -154,6 +159,13 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
   }
 
   if (lookupRecord && fieldMap && typeof fieldMap === "object") {
+    if (
+      !lookupValueChanged &&
+      skipFieldMapWhenFieldsPresent.size > 0 &&
+      Array.from(skipFieldMapWhenFieldsPresent).some((fieldId) => hasMeaningfulValue(getFieldValue(baseRecord || {}, fieldId)))
+    ) {
+      return nextRecord;
+    }
     for (const [targetFieldId, sourceFieldId] of Object.entries(fieldMap)) {
       if (typeof targetFieldId !== "string" || !targetFieldId || typeof sourceFieldId !== "string" || !sourceFieldId) continue;
       if (targetFieldId === lookupFieldId) continue;
@@ -1287,7 +1299,7 @@ function InlineLineItemsTable({
     parentRefreshTimerRef.current = window.setTimeout(() => {
       parentRefreshTimerRef.current = null;
       flushParentRefresh();
-    }, 1000);
+    }, 200);
   }, [flushParentRefresh, onRefreshParent, previewMode]);
 
   useEffect(() => {
@@ -1521,6 +1533,10 @@ function InlineLineItemsTable({
       }
     }
     if (descriptionField && !payload[descriptionField]) payload[descriptionField] = option.label || "";
+    const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticRecord = { ...payload };
+    setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
+    setLookupCache((prev) => ({ ...prev, [temporaryRowId]: option.label || option.value }));
     try {
       const created = await createRecord(childEntityId, payload);
       const createdId = created?.record_id;
@@ -1529,15 +1545,29 @@ function InlineLineItemsTable({
         : { ...payload, id: createdId || payload.id };
       if (createdId) {
         setRows((prev) => {
-          if (prev.some((row) => row.record_id === createdId)) return prev;
-          return [...prev, { record_id: createdId, record: createdRecord }];
+          if (prev.some((row) => row.record_id === createdId)) {
+            return prev.filter((row) => row.record_id !== temporaryRowId);
+          }
+          return prev.map((row) =>
+            row.record_id === temporaryRowId ? { record_id: createdId, record: createdRecord } : row
+          );
         });
-        setLookupCache((prev) => ({ ...prev, [createdId]: option.label || option.value }));
+        setLookupCache((prev) => {
+          const next = { ...prev, [createdId]: option.label || option.value };
+          delete next[temporaryRowId];
+          return next;
+        });
       }
       setAddLookupResetKey((prev) => prev + 1);
       void addParentActivity(`Line item added: ${option.label || option.value}.`);
       queueParentRefresh();
     } catch (err) {
+      setRows((prev) => prev.filter((row) => row.record_id !== temporaryRowId));
+      setLookupCache((prev) => {
+        const next = { ...prev };
+        delete next[temporaryRowId];
+        return next;
+      });
       setError(err?.message || translateRuntime("common.failed_to_add_line_item"));
     }
   }
@@ -1567,6 +1597,9 @@ function InlineLineItemsTable({
     if (unitAmountColumn?.field_id) {
       payload[unitAmountColumn.field_id] = coerceEditorValue(defaults?.[unitAmountColumn.field_id], "number") ?? 0;
     }
+    const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticRecord = { ...payload };
+    setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
     setCreatingCustomLine(true);
     try {
       const created = await createRecord(childEntityId, payload);
@@ -1576,14 +1609,19 @@ function InlineLineItemsTable({
         : { ...payload, id: createdId || payload.id };
       if (createdId) {
         setRows((prev) => {
-          if (prev.some((row) => row.record_id === createdId)) return prev;
-          return [...prev, { record_id: createdId, record: createdRecord }];
+          if (prev.some((row) => row.record_id === createdId)) {
+            return prev.filter((row) => row.record_id !== temporaryRowId);
+          }
+          return prev.map((row) =>
+            row.record_id === temporaryRowId ? { record_id: createdId, record: createdRecord } : row
+          );
         });
       }
       setAddLookupResetKey((prev) => prev + 1);
       void addParentActivity(`Custom line item added: ${description}.`);
       queueParentRefresh();
     } catch (err) {
+      setRows((prev) => prev.filter((row) => row.record_id !== temporaryRowId));
       setError(err?.message || translateRuntime("common.failed_to_add_custom_line"));
     } finally {
       setCreatingCustomLine(false);

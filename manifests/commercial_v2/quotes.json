@@ -318,6 +318,9 @@
                 "biz_quote.customer_contact_email",
                 "biz_quote.customer_contact_phone"
               ],
+              "skip_field_map_when_fields_present": [
+                "biz_quote.customer_contact_person_id"
+              ],
               "clear_fields": [
                 "biz_quote.customer_contact_person_id",
                 "biz_quote.customer_contact_name",
@@ -355,17 +358,20 @@
           "id": "biz_quote.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
+          "readonly": true,
           "label_key": "quotes.entities.biz_quote.fields.customer_contact_name.label"
         },
         {
           "id": "biz_quote.customer_contact_email",
           "type": "string",
-          "label": "Customer Contact Email"
+          "label": "Customer Contact Email",
+          "readonly": true
         },
         {
           "id": "biz_quote.customer_contact_phone",
           "type": "string",
-          "label": "Customer Contact Phone"
+          "label": "Customer Contact Phone",
+          "readonly": true
         },
         {
           "id": "biz_quote.customer_reference",
