@@ -39,6 +39,7 @@ def _load_env_file(path: Path) -> None:
 _load_env_file(ROOT / "app" / ".env")
 
 from app.email import get_provider, render_template
+from app.template_render import describe_template_render_error
 from app.integration_mapping_runtime import execute_integration_mapping
 from app.integrations_runtime import execute_connection_request, execute_connection_sync
 from app.secrets import SecretStoreError
@@ -555,19 +556,22 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         app_main._branding_context_for_org(org_id),
         localization=app_main._localization_context_for_actor(actor_context),
     )
-    html = render_html(source_template.get("html") or "", context)
-    filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
-    filename = render_template(filename_pattern, context, strict=True)
-    if isinstance(filename, str) and filename.lower().endswith(".pdf"):
-        filename = filename[:-4]
-    if not isinstance(filename, str) or not filename.strip():
-        filename = "document"
-    header_html = source_template.get("header_html") or ""
-    footer_html = source_template.get("footer_html") or ""
-    if header_html:
-        header_html = render_template(header_html, context, strict=True)
-    if footer_html:
-        footer_html = render_template(footer_html, context, strict=True)
+    try:
+        html = render_html(source_template.get("html") or "", context)
+        filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
+        filename = render_template(filename_pattern, context, strict=True)
+        if isinstance(filename, str) and filename.lower().endswith(".pdf"):
+            filename = filename[:-4]
+        if not isinstance(filename, str) or not filename.strip():
+            filename = "document"
+        header_html = source_template.get("header_html") or ""
+        footer_html = source_template.get("footer_html") or ""
+        if header_html:
+            header_html = render_template(header_html, context, strict=True)
+        if footer_html:
+            footer_html = render_template(footer_html, context, strict=True)
+    except Exception as exc:
+        raise RuntimeError(f"Document template render failed: {describe_template_render_error(exc)}") from exc
     margins = {
         "top": source_template.get("margin_top") or "12mm",
         "right": source_template.get("margin_right") or "12mm",

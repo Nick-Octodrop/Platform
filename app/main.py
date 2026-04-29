@@ -193,7 +193,7 @@ from app.integrations_runtime import (
 )
 from app.webhook_signing import verify_webhook_signature as verify_signed_webhook_payload
 from app.integration_mapping_runtime import preview_integration_mapping
-from app.template_render import collect_undeclared_vars, validate_templates
+from app.template_render import collect_undeclared_vars, describe_template_render_error, validate_templates
 from app.secrets import create_secret, encrypt_secret, get_secret, resolve_secret, rotate_secret, SecretStoreError
 from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
 from app.doc_render import render_html, render_pdf, normalize_margins
@@ -50190,6 +50190,10 @@ def _load_lookup_target_record(target_entity: str, record_id: str) -> tuple[dict
             target_record = maybe_record
             target_entity_def = _find_entity_def_global(candidate)
             break
+        if isinstance(target, dict):
+            target_record = target
+            target_entity_def = _find_entity_def_global(candidate)
+            break
     return target_record, target_entity_def
 
 
@@ -50213,6 +50217,111 @@ def _lookup_label_from_record(target_record: dict | None, display_field: str) ->
             continue
         return label if isinstance(label, str) else str(label)
     return None
+
+
+def _lookup_populate_values_equivalent(left: Any, right: Any) -> bool:
+    if isinstance(left, list) or isinstance(right, list):
+        left_list = left if isinstance(left, list) else []
+        right_list = right if isinstance(right, list) else []
+        return left_list == right_list
+    return str(left or "") == str(right or "")
+
+
+def _lookup_populate_has_value(value: Any) -> bool:
+    if value in (None, ""):
+        return False
+    if isinstance(value, list) and len(value) == 0:
+        return False
+    return True
+
+
+def _lookup_populate_config(field: dict | None) -> dict | None:
+    ui = field.get("ui") if isinstance(field, dict) else None
+    config = ui.get("populate_from_lookup") if isinstance(ui, dict) else None
+    return config if isinstance(config, dict) else None
+
+
+def _apply_lookup_populate_config_for_record(
+    entity_def: dict | None,
+    data: dict | None,
+    *,
+    before_record: dict | None = None,
+) -> dict | None:
+    if not isinstance(entity_def, dict) or not isinstance(data, dict):
+        return data
+    updated = dict(data)
+    base = before_record if isinstance(before_record, dict) else {}
+    for field in _field_list(entity_def):
+        field_id = field.get("id") if isinstance(field, dict) else None
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        if field.get("type") != "lookup":
+            continue
+        target_entity = field.get("entity")
+        if not isinstance(target_entity, str) or not target_entity:
+            continue
+        config = _lookup_populate_config(field)
+        if not config:
+            continue
+        selected_value = updated.get(field_id)
+        value_changed = not _lookup_populate_values_equivalent(base.get(field_id), selected_value)
+        clear_fields = config.get("clear_fields") if isinstance(config.get("clear_fields"), list) else []
+        if value_changed:
+            for target_field_id in clear_fields:
+                if not isinstance(target_field_id, str) or not target_field_id or target_field_id == field_id:
+                    continue
+                target_value = updated.get(target_field_id)
+                base_target_value = base.get(target_field_id)
+                if _lookup_populate_has_value(target_value) and not _lookup_populate_values_equivalent(target_value, base_target_value):
+                    continue
+                updated[target_field_id] = ""
+        if not isinstance(selected_value, str) or not selected_value.strip():
+            continue
+        field_map = config.get("field_map")
+        if not isinstance(field_map, dict) or not field_map:
+            continue
+        skip_when_present = {
+            item
+            for item in (config.get("skip_field_map_when_fields_present") or [])
+            if isinstance(item, str) and item
+        }
+        if (
+            not value_changed
+            and skip_when_present
+            and any(_lookup_populate_has_value(updated.get(field_id)) for field_id in skip_when_present)
+        ):
+            continue
+        lookup_record, _lookup_entity_def = _load_lookup_target_record(target_entity, selected_value)
+        if not isinstance(lookup_record, dict):
+            continue
+        only_when_empty = {
+            item
+            for item in (config.get("only_when_empty") or [])
+            if isinstance(item, str) and item
+        }
+        overwrite_if_current_matches = (
+            config.get("overwrite_if_current_matches")
+            if isinstance(config.get("overwrite_if_current_matches"), dict)
+            else {}
+        )
+        for target_field_id, source_field_id in field_map.items():
+            if not isinstance(target_field_id, str) or not target_field_id:
+                continue
+            if target_field_id == field_id:
+                continue
+            if not isinstance(source_field_id, str) or not source_field_id:
+                continue
+            current_value = updated.get(target_field_id)
+            if target_field_id in only_when_empty and _lookup_populate_has_value(current_value):
+                compare_field_id = overwrite_if_current_matches.get(target_field_id)
+                compare_value = updated.get(compare_field_id) if isinstance(compare_field_id, str) else None
+                if not (isinstance(compare_field_id, str) and _lookup_populate_values_equivalent(current_value, compare_value)):
+                    continue
+            if source_field_id not in lookup_record:
+                continue
+            mapped_value = lookup_record.get(source_field_id)
+            updated[target_field_id] = "" if mapped_value is None else mapped_value
+    return updated
 
 
 def _enrich_template_record(record: dict, entity_def: dict | None, *, expand_lookup_aliases: bool = True) -> dict:
@@ -51149,6 +51258,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
         return denied
     body = await _safe_json(request)
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
+    data = _apply_lookup_populate_config_for_record(found[1], data)
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
     errors, clean = _validate_record_payload(found[1], data, for_create=True, workflow=workflow)
     lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
@@ -51294,6 +51404,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     merged = dict(before_record)
     merged.update(data)
     merged.pop("id", None)
+    merged = _apply_lookup_populate_config_for_record(found[1], merged, before_record=before_record) or merged
     errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
     lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
     errors.extend(lookup_errors)
@@ -61311,7 +61422,7 @@ async def preview_email_template(request: Request, template_id: str) -> dict:
         rendered_text = render_template(source_template.get("body_text") or "", context, strict=False)
         rendered_subject = render_template(source_template.get("subject") or "", context, strict=True)
     except Exception as exc:
-        return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
+        return _error_response("TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), None, status=400)
     return _ok_response(
         {
             "rendered_html": rendered_html,
@@ -61625,7 +61736,7 @@ async def send_test_email_template(request: Request, template_id: str) -> dict:
         body_html = render_template(source_template.get("body_html") or "", context, strict=False)
         body_text = render_template(source_template.get("body_text") or "", context, strict=False)
     except Exception as exc:
-        return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
+        return _error_response("TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), None, status=400)
     if not str(subject or "").strip():
         return _error_response("SUBJECT_REQUIRED", "subject is required", "subject", status=400)
     if not body_text and body_html:
@@ -61803,19 +61914,19 @@ async def send_email(request: Request) -> dict:
         try:
             subject = render_template(subject, context, strict=False)
         except Exception as exc:
-            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", str(exc), "subject", status=400)
+            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), "subject", status=400)
     body_html = body.get("body_html") or (template.get("body_html") if template else None)
     body_text = body.get("body_text") or (template.get("body_text") if template else None)
     if body_html:
         try:
             body_html = render_template(body_html, context, strict=False)
         except Exception as exc:
-            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", str(exc), "body_html", status=400)
+            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), "body_html", status=400)
     if body_text:
         try:
             body_text = render_template(body_text, context, strict=False)
         except Exception as exc:
-            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", str(exc), "body_text", status=400)
+            return _error_response("EMAIL_TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), "body_text", status=400)
     if not body_text and body_html:
         body_text = _html_to_text(body_html)
     attachments_json = _resolve_outbox_attachments(
@@ -62041,7 +62152,7 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
         if footer_html:
             footer_html = render_template(footer_html, context, strict=True)
     except Exception as exc:
-        return _error_response("TEMPLATE_RENDER_FAILED", str(exc), None, status=400)
+        return _error_response("TEMPLATE_RENDER_FAILED", describe_template_render_error(exc), None, status=400)
     margins = {
         "top": source_template.get("margin_top") or "12mm",
         "right": source_template.get("margin_right") or "12mm",

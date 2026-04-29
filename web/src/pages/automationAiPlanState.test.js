@@ -41,6 +41,24 @@ test("getAutomationPlanSummary rejects the ready-to-apply fallback for invalid d
   );
 });
 
+test("getAutomationPlanSummary rejects the ready-to-apply fallback when no draft is returned", () => {
+  const result = {
+    summary: "Automation draft ready to apply.",
+  };
+  assert.equal(
+    getAutomationPlanSummary(result),
+    "Automation AI did not produce an applyable draft. Try again or describe the exact change you want.",
+  );
+});
+
+test("getAutomationPlanSummary surfaces failed stream payload errors", () => {
+  const result = {
+    ok: false,
+    errors: [{ code: "AI_PLAN_FAILED", message: "Planner request failed" }],
+  };
+  assert.equal(getAutomationPlanSummary(result), "Planner request failed");
+});
+
 test("getAutomationPlanAdvisories reads advisories before legacy warnings", () => {
   const result = {
     advisories: ["Likely issue: Missing email connection."],

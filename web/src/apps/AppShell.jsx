@@ -1174,7 +1174,9 @@ export default function AppShell({
       if (result.record_id) {
         if (actionKind === "transform_record") {
           if (action?.stay_on_source_record === true) {
-            await refreshCurrentRecord();
+            if (typeof runtimeContext?.refreshCurrentRecord === "function") {
+              await runtimeContext.refreshCurrentRecord();
+            }
             setRefreshTick((v) => v + 1);
           } else {
             const resultEntityId = result.entity_id || action.entity_id;
@@ -1796,7 +1798,7 @@ function AppView({
     const shouldShowActionPending = isWriteActionKind(action?.kind) || action?.kind === "transform_record";
     if (shouldShowActionPending) startActionPending(action);
     try {
-      return await onRunAction(action, { ...context, flushPendingFormSave });
+      return await onRunAction(action, { ...context, flushPendingFormSave, refreshCurrentRecord });
     } finally {
       if (shouldShowActionPending) clearActionPending();
     }
@@ -2409,6 +2411,25 @@ function AppView({
     setDraft(computedDraft);
     setInitialDraft(computedInitial);
   }
+
+  const applyOptimisticRecordPatch = useCallback((patch) => {
+    const compactPatch = compactWritePatch(patch);
+    const entries = Object.entries(compactPatch);
+    if (entries.length === 0) return;
+    invalidatePendingRecordLoads();
+    setDraft((prev) => {
+      const base = prev && typeof prev === "object" ? prev : {};
+      if (entries.every(([key, value]) => base[key] === value)) return prev;
+      const next = applyDraftComputed({ ...base, ...compactPatch });
+      draftRef.current = next;
+      return next;
+    });
+    setInitialDraft((prev) => {
+      const base = prev && typeof prev === "object" ? prev : {};
+      if (entries.every(([key, value]) => base[key] === value)) return prev;
+      return applyDraftComputed({ ...base, ...compactPatch });
+    });
+  }, [applyDraftComputed]);
 
   function applyServerLoadedDraft(nextDraft, nextInitial = nextDraft) {
     if (!canApplyServerRecord(nextDraft)) return false;
@@ -3338,6 +3359,7 @@ function AppView({
               canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
               onLookupCreate={onLookupCreate}
               onRefreshRecord={refreshCurrentRecord}
+              onOptimisticRecordPatch={applyOptimisticRecordPatch}
               onFieldFocusChange={setIsFormFieldFocused}
               renderBlocks={(blocks, nestedRecordContext = null) => (
                 <ContentBlocksRenderer

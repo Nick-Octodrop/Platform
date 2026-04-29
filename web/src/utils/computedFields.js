@@ -12,17 +12,78 @@ function asNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeEntityId(entityId) {
+  if (typeof entityId !== "string" || !entityId) return "";
+  return entityId.startsWith("entity.") ? entityId : `entity.${entityId}`;
+}
+
+function getByPath(data, path) {
+  if (!data || typeof data !== "object" || typeof path !== "string" || !path) return undefined;
+  if (path in data) return data[path];
+  let cur = data;
+  for (const part of path.split(".")) {
+    if (cur && typeof cur === "object" && part in cur) {
+      cur = cur[part];
+    } else {
+      return undefined;
+    }
+  }
+  return cur;
+}
+
 function resolveRef(ref, context) {
   if (typeof ref !== "string") return undefined;
   const current = context.current || {};
   const parent = context.parent || {};
   const record = context.record || current;
-  if (ref.startsWith("$current.")) return current[ref.slice("$current.".length)];
-  if (ref.startsWith("$parent.")) return parent[ref.slice("$parent.".length)];
-  if (ref.startsWith("$record.")) return record[ref.slice("$record.".length)];
+  if (ref.startsWith("$current.")) return getByPath(current, ref.slice("$current.".length));
+  if (ref.startsWith("$parent.")) return getByPath(parent, ref.slice("$parent.".length));
+  if (ref.startsWith("$record.")) return getByPath(record, ref.slice("$record.".length));
   if (ref in current) return current[ref];
   if (ref in record) return record[ref];
   if (ref in parent) return parent[ref];
+  const currentValue = getByPath(current, ref);
+  if (currentValue !== undefined) return currentValue;
+  const recordValue = getByPath(record, ref);
+  if (recordValue !== undefined) return recordValue;
+  const parentValue = getByPath(parent, ref);
+  if (parentValue !== undefined) return parentValue;
+  return undefined;
+}
+
+function simpleParentEqField(where) {
+  if (!where || typeof where !== "object") return "";
+  if (String(where.op || "").trim().toLowerCase() !== "eq") return "";
+  const fieldId = typeof where.field === "string" ? where.field.trim() : "";
+  const value = where.value;
+  if (!fieldId || !value || typeof value !== "object" || String(value.ref || "").trim() !== "$parent.id") return "";
+  return fieldId;
+}
+
+function rowMatchesAggregateWhere(where, row, parentRecord, parentField) {
+  if (!where || typeof where !== "object") return true;
+  const simpleParentField = simpleParentEqField(where);
+  if (simpleParentField && parentField && simpleParentField === parentField) {
+    const rowParent = getByPath(row, simpleParentField);
+    const parentId = parentRecord?.id;
+    if (rowParent === undefined || rowParent === null || rowParent === "" || parentId === undefined || parentId === null || parentId === "") {
+      return true;
+    }
+    return String(rowParent) === String(parentId);
+  }
+  return evalCondition(where, { record: row, current: row, parent: parentRecord });
+}
+
+function computeAggregateValue(aggregate, rows, parentRecord) {
+  const op = String(aggregate?.op || aggregate?.measure || "sum").trim().toLowerCase();
+  const fieldId = typeof aggregate?.field === "string" ? aggregate.field : "";
+  if (op === "count") return rows.length;
+  if (!fieldId) return undefined;
+  const numeric = rows.map((row) => asNumber(resolveRef(fieldId, { record: row, current: row, parent: parentRecord })));
+  if (op === "sum") return numeric.reduce((sum, value) => sum + value, 0);
+  if (op === "avg") return numeric.length ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length : 0;
+  if (op === "min") return numeric.length ? Math.min(...numeric) : 0;
+  if (op === "max") return numeric.length ? Math.max(...numeric) : 0;
   return undefined;
 }
 
@@ -120,4 +181,25 @@ export function applyComputedFields(fieldIndex, record) {
     if (!changed) break;
   }
   return next;
+}
+
+export function computeAggregateFieldPatchFromRows(fieldIndex, parentRecord, childEntityId, rows, options = {}) {
+  const fields = getFieldList(fieldIndex);
+  const normalizedChildEntityId = normalizeEntityId(childEntityId);
+  if (!fields.length || !normalizedChildEntityId) return {};
+  const parentField = typeof options.parentField === "string" ? options.parentField.trim() : "";
+  const rowRecords = (Array.isArray(rows) ? rows : []).filter((row) => row && typeof row === "object");
+  const patch = {};
+  for (const field of fields) {
+    const fieldId = typeof field?.id === "string" ? field.id : "";
+    const aggregate = field?.compute && typeof field.compute === "object" ? field.compute.aggregate : null;
+    if (!fieldId || !aggregate || typeof aggregate !== "object") continue;
+    if (normalizeEntityId(aggregate.entity) !== normalizedChildEntityId) continue;
+    const simpleParentField = simpleParentEqField(aggregate.where);
+    if (parentField && simpleParentField && simpleParentField !== parentField) continue;
+    const matchingRows = rowRecords.filter((row) => rowMatchesAggregateWhere(aggregate.where, row, parentRecord || {}, parentField));
+    const value = computeAggregateValue(aggregate, matchingRows, parentRecord || {});
+    if (value !== undefined) patch[fieldId] = value;
+  }
+  return patch;
 }

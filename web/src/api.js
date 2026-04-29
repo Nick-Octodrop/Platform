@@ -1229,6 +1229,16 @@ export function startArtifactAiPlanStream({ path, body, onEvent }) {
       err.transport = !sawAnyEvent;
       throw err;
     }
+    if (donePayload?.ok === false) {
+      const firstError = Array.isArray(donePayload?.errors) ? donePayload.errors[0] : null;
+      const message = firstError?.message || donePayload?.error || donePayload?.message || "Stream failed";
+      const err = new Error(message);
+      err.code = firstError?.code;
+      err.detail = firstError?.detail;
+      err.path = firstError?.path;
+      err.payload = donePayload;
+      throw err;
+    }
     return donePayload;
   })();
   return { cancel: () => controller.abort(), promise };

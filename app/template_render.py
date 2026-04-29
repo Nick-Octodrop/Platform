@@ -6,10 +6,13 @@ from functools import lru_cache
 from typing import Any, Iterable, Tuple
 
 from jinja2 import StrictUndefined, TemplateSyntaxError, UndefinedError, meta
+from jinja2.exceptions import SecurityError
 from jinja2.runtime import LoopContext
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 from app.rich_text import render_rich_text
+
+_ALLOWED_DICT_METHODS = {"get", "items", "keys", "values"}
 
 _ALLOWED_FILTERS = {
     "default",
@@ -35,6 +38,8 @@ _ALLOWED_TESTS = {
 
 class _LockedSandbox(ImmutableSandboxedEnvironment):
     def is_safe_attribute(self, obj, attr, value) -> bool:
+        if isinstance(obj, dict) and attr in _ALLOWED_DICT_METHODS:
+            return True
         if isinstance(obj, LoopContext) and attr in {
             "index",
             "index0",
@@ -48,6 +53,12 @@ class _LockedSandbox(ImmutableSandboxedEnvironment):
         return False
 
     def is_safe_callable(self, obj) -> bool:
+        if obj is range:
+            return True
+        owner = getattr(obj, "__self__", None)
+        name = getattr(obj, "__name__", "")
+        if isinstance(owner, dict) and name in _ALLOWED_DICT_METHODS:
+            return True
         return False
 
 
@@ -132,6 +143,22 @@ def _extract_undefined_var(message: str) -> str | None:
     return None
 
 
+def describe_template_render_error(exc: BaseException) -> str:
+    message = str(exc) or exc.__class__.__name__
+    if isinstance(exc, SecurityError) and "safely callable" in message:
+        if "Undefined is not safely callable" in message:
+            return (
+                "Template tried to call a missing or unsupported value. "
+                "Use field lookups like {{ record['field.id'] }}, record.get('field.id'), "
+                "record.items(), and filters; remove unsupported calls like helper(), now(), or custom functions."
+            )
+        return (
+            "Template tried to call an unsupported helper. "
+            "Only safe dictionary reads such as record.get('field.id') and record.items() are callable."
+        )
+    return message
+
+
 def validate_templates(
     templates: Iterable[Tuple[str, str | None]],
     context: dict[str, Any] | None = None,
@@ -163,6 +190,14 @@ def validate_templates(
                 var_name = _extract_undefined_var(str(exc))
                 if var_name:
                     actual_undefined.add(var_name)
+            except SecurityError as exc:
+                errors.append(
+                    {
+                        "message": f"{label}: {describe_template_render_error(exc)}",
+                        "line": getattr(exc, "lineno", None) or 1,
+                        "col": 1,
+                    }
+                )
             except TemplateSyntaxError as exc:
                 errors.append(
                     {

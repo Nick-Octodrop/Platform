@@ -3,7 +3,7 @@ import { MoreHorizontal, Trash2 } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
 import { apiFetch, createRecord, deleteRecord, googlePlaceDetails, googlePlacesAutocomplete, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
-import { applyComputedFields } from "../utils/computedFields.js";
+import { applyComputedFields, computeAggregateFieldPatchFromRows } from "../utils/computedFields.js";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
 import Tabs from "../components/Tabs.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
@@ -399,6 +399,7 @@ export default function FormViewRenderer({
   canCreateLookup,
   onLookupCreate,
   onRefreshRecord,
+  onOptimisticRecordPatch,
   onFieldFocusChange,
   bottomActionsMode = "inline",
   renderBlocks = null,
@@ -1002,11 +1003,13 @@ export default function FormViewRenderer({
                 parentEntityId={entityId}
                 parentRecordId={effectiveRecordId}
                 parentRecord={computedRecord}
+                parentFieldIndex={fieldIndex}
                 readonly={readonly}
                 previewMode={previewMode}
                 onLookupCreate={onLookupCreate}
                 canCreateLookup={canCreateLookup}
                 onRefreshParent={onRefreshRecord}
+                onParentAggregatePatch={onOptimisticRecordPatch}
               />
             ) : (() => {
               const layout = section.layout;
@@ -1202,11 +1205,13 @@ function InlineLineItemsTable({
   parentEntityId,
   parentRecordId,
   parentRecord,
+  parentFieldIndex = {},
   readonly,
   previewMode = false,
   onLookupCreate,
   canCreateLookup,
   onRefreshParent,
+  onParentAggregatePatch,
 }) {
   const { t } = useI18n();
   const childEntityId = config?.entity_id || null;
@@ -1264,6 +1269,7 @@ function InlineLineItemsTable({
   }, [itemDisplayField, itemField]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [rowsLoaded, setRowsLoaded] = useState(false);
   const [error, setError] = useState("");
   const [lookupCache, setLookupCache] = useState({});
   const [pendingDeleteRow, setPendingDeleteRow] = useState(null);
@@ -1353,6 +1359,27 @@ function InlineLineItemsTable({
     }, 200);
   }, [flushParentRefresh, onRefreshParent, previewMode]);
 
+  const rowRecords = useMemo(
+    () => rows.map((row) => row?.record).filter((row) => row && typeof row === "object"),
+    [rows]
+  );
+
+  const parentAggregatePatch = useMemo(() => {
+    if (!rowsLoaded || previewMode || !parentRecordId) return {};
+    return computeAggregateFieldPatchFromRows(parentFieldIndex, parentRecord || {}, childEntityId, rowRecords, {
+      parentField,
+    });
+  }, [childEntityId, parentField, parentFieldIndex, parentRecord, parentRecordId, previewMode, rowRecords, rowsLoaded]);
+
+  useEffect(() => {
+    if (previewMode || typeof onParentAggregatePatch !== "function") return;
+    const entries = Object.entries(parentAggregatePatch);
+    if (entries.length === 0) return;
+    const changed = entries.some(([fieldId, value]) => parentRecord?.[fieldId] !== value);
+    if (!changed) return;
+    onParentAggregatePatch(parentAggregatePatch);
+  }, [onParentAggregatePatch, parentAggregatePatch, parentRecord, previewMode]);
+
   useEffect(() => {
     return () => {
       if (typeof window !== "undefined" && parentRefreshTimerRef.current) {
@@ -1426,14 +1453,17 @@ function InlineLineItemsTable({
   const fetchRows = React.useCallback(async () => {
     if (!childEntityId || !parentField || !parentRecordId || previewMode) {
       setRows([]);
+      setRowsLoaded(false);
       return;
     }
     setLoading(true);
+    setRowsLoaded(false);
     setError("");
     try {
       const fieldIds = Array.from(
         new Set(
           [
+            parentField,
             ...columns.map((c) => c?.field_id).filter(Boolean),
             ...columns.map((c) => c?.currency_field).filter(Boolean),
             itemField,
@@ -1458,10 +1488,12 @@ function InlineLineItemsTable({
         record: applyLineComputed(r.record || {}),
       }));
       setRows(next);
+      setRowsLoaded(true);
       void hydrateLookupLabels(next);
     } catch (err) {
       setError(err?.message || translateRuntime("common.failed_to_load_line_items"));
       setRows([]);
+      setRowsLoaded(false);
     } finally {
       setLoading(false);
     }

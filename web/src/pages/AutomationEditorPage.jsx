@@ -40,6 +40,55 @@ function coerceStringArray(value) {
   return [String(value)];
 }
 
+const GENERATE_DOCUMENT_INPUT_KEYS = ["template_id", "entity_id", "record_id", "purpose", "idempotency_key"];
+
+function firstAutomationPlanErrorMessage(result) {
+  const errors = Array.isArray(result?.errors) ? result.errors : [];
+  for (const item of errors) {
+    if (typeof item === "string" && item.trim()) return item.trim();
+    if (item && typeof item === "object") {
+      const path = typeof item.path === "string" && item.path.trim() ? `${item.path.trim()}: ` : "";
+      const message = typeof item.message === "string" && item.message.trim()
+        ? item.message.trim()
+        : typeof item.code === "string" && item.code.trim()
+          ? item.code.trim()
+          : "";
+      const combined = `${path}${message}`.trim();
+      if (combined) return combined;
+    }
+  }
+  return "";
+}
+
+function buildActionSelectionPatch(step, actionValue, index) {
+  const currentInputs = step?.inputs && typeof step.inputs === "object" ? step.inputs : {};
+  let nextInputs = { ...currentInputs };
+  const patch = {};
+  if (actionValue === "system.generate_document") {
+    nextInputs = GENERATE_DOCUMENT_INPUT_KEYS.reduce((acc, key) => {
+      if (currentInputs[key] !== undefined && currentInputs[key] !== null && currentInputs[key] !== "") {
+        acc[key] = currentInputs[key];
+      }
+      return acc;
+    }, {});
+    if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
+    if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
+    if (step?.id === "step_notify") {
+      patch.id = index === 0 ? "step_generate_document" : `step_${index + 1}_generate_document`;
+    }
+  } else if (actionValue === "system.integration_request") {
+    if (!nextInputs.method) nextInputs.method = "GET";
+    if (!nextInputs.path) nextInputs.path = "/";
+  } else if (actionValue === "system.integration_sync") {
+    if (!nextInputs.scope_key) nextInputs.scope_key = "default";
+    if (!nextInputs.method) nextInputs.method = "GET";
+    if (!nextInputs.path) nextInputs.path = "/";
+  } else if (actionValue === "system.apply_integration_mapping") {
+    if (!nextInputs.source_record) nextInputs.source_record = "{{trigger.payload}}";
+  }
+  return { ...patch, inputs: nextInputs };
+}
+
 function normalizeIntegrationRequestTemplate(template, index = 0) {
   const raw = template && typeof template === "object" ? template : {};
   return {
@@ -1962,6 +2011,9 @@ export default function AutomationEditorPage({ user }) {
           setAutomationProgressEvents(res.progress.slice(-200));
         }
       }
+      if (res?.ok === false) {
+        throw new Error(firstAutomationPlanErrorMessage(res) || "Automation AI failed before producing a draft.");
+      }
       const requiredQuestions = Array.isArray(res?.required_questions) ? res.required_questions.filter((item) => typeof item === "string" && item.trim()) : [];
       const questionMeta = res?.required_question_meta && typeof res.required_question_meta === "object" ? res.required_question_meta : null;
       const decisionSlots = Array.isArray(res?.decision_slots)
@@ -2964,28 +3016,12 @@ export default function AutomationEditorPage({ user }) {
                   onChange={(e) => {
                     const value = e.target.value;
                     if (!value) return;
-                    const nextInputs = { ...(step.inputs || {}) };
-                    if (value === "system.generate_document") {
-                      if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
-                      if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
-                    }
-                    if (value === "system.integration_request") {
-                      if (!nextInputs.method) nextInputs.method = "GET";
-                      if (!nextInputs.path) nextInputs.path = "/";
-                    }
-                    if (value === "system.integration_sync") {
-                      if (!nextInputs.scope_key) nextInputs.scope_key = "default";
-                      if (!nextInputs.method) nextInputs.method = "GET";
-                      if (!nextInputs.path) nextInputs.path = "/";
-                    }
-                    if (value === "system.apply_integration_mapping") {
-                      if (!nextInputs.source_record) nextInputs.source_record = "{{trigger.payload}}";
-                    }
+                    const actionPatch = buildActionSelectionPatch(step, value, index);
                     if (value.includes("::")) {
                       const [moduleId, actionId] = value.split("::");
-                      updateStep(index, { action_id: actionId, module_id: moduleId, inputs: nextInputs });
+                      updateStep(index, { ...actionPatch, action_id: actionId, module_id: moduleId });
                     } else {
-                      updateStep(index, { action_id: value, module_id: undefined, inputs: nextInputs });
+                      updateStep(index, { ...actionPatch, action_id: value, module_id: undefined });
                     }
                   }}
                 >
@@ -5578,16 +5614,12 @@ export default function AutomationEditorPage({ user }) {
                         onChange={(e) => {
                           const value = e.target.value;
                           if (!value) return;
-                          const nextInputs = { ...(step.inputs || {}) };
-                          if (value === "system.generate_document") {
-                            if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
-                            if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
-                          }
+                          const actionPatch = buildActionSelectionPatch(step, value, index);
                           if (value.includes("::")) {
                             const [moduleId, actionId] = value.split("::");
-                            updateStep(index, { action_id: actionId, module_id: moduleId, inputs: nextInputs });
+                            updateStep(index, { ...actionPatch, action_id: actionId, module_id: moduleId });
                           } else {
-                            updateStep(index, { action_id: value, module_id: undefined, inputs: nextInputs });
+                            updateStep(index, { ...actionPatch, action_id: value, module_id: undefined });
                           }
                         }}
                       >

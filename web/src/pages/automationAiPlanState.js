@@ -36,6 +36,25 @@ function firstAutomationValidationMessage(result) {
   return "";
 }
 
+function firstAutomationErrorMessage(result) {
+  const errors = result?.errors;
+  if (!Array.isArray(errors)) return "";
+  for (const item of errors) {
+    if (typeof item === "string" && item.trim()) return item.trim();
+    if (item && typeof item === "object") {
+      const path = typeof item.path === "string" && item.path.trim() ? `${item.path.trim()}: ` : "";
+      const message = typeof item.message === "string" && item.message.trim()
+        ? item.message.trim()
+        : typeof item.code === "string" && item.code.trim()
+          ? item.code.trim()
+          : "";
+      const combined = `${path}${message}`.trim();
+      if (combined) return combined;
+    }
+  }
+  return "";
+}
+
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
@@ -116,15 +135,26 @@ export function getAutomationPlanSummary(result) {
   const rawSummary = typeof result?.summary === "string" ? result.summary.trim() : "";
   const advisories = getAutomationPlanAdvisories(result);
   const defaultReadySummary = "Automation draft ready to apply.";
-  if (result?.noop === true) {
-    if (rawSummary && rawSummary !== defaultReadySummary) return rawSummary;
-    if (advisories.length) return advisories[0];
-    return "No automation changes were proposed from this request yet. Describe the exact change you want.";
+  if (result?.ok === false) {
+    return firstAutomationErrorMessage(result)
+      || (rawSummary && rawSummary !== defaultReadySummary ? rawSummary : "")
+      || advisories[0]
+      || "Automation AI failed before producing a draft.";
   }
   if (hasAutomationPlanValidationIssues(result) && (!rawSummary || rawSummary === defaultReadySummary)) {
     return firstAutomationValidationMessage(result)
       || advisories[0]
       || "Automation draft needs fixes before apply.";
+  }
+  if (!result?.draft || typeof result.draft !== "object") {
+    if (rawSummary && rawSummary !== defaultReadySummary) return rawSummary;
+    if (advisories.length) return advisories[0];
+    return "Automation AI did not produce an applyable draft. Try again or describe the exact change you want.";
+  }
+  if (result?.noop === true) {
+    if (rawSummary && rawSummary !== defaultReadySummary) return rawSummary;
+    if (advisories.length) return advisories[0];
+    return "No automation changes were proposed from this request yet. Describe the exact change you want.";
   }
   return rawSummary || defaultReadySummary;
 }

@@ -17,6 +17,7 @@ os.environ["SUPABASE_URL"] = "http://localhost"
 
 from app.stores import MemoryJobStore
 from app.email import render_template
+from app.template_render import describe_template_render_error
 from app.secrets import resolve_secret
 from app import main
 from app import worker
@@ -54,6 +55,19 @@ class TestPhase1Jobs(unittest.TestCase):
             strict=True,
         )
         self.assertEqual(out, '"te-sleep-support-60-caps"')
+
+    def test_template_render_allows_safe_dict_read_helpers(self) -> None:
+        out = render_template(
+            "{% for key, value in record.items() %}{{ key }}={{ value }};{% endfor %}{{ record.get('missing', 'fallback') }}",
+            {"record": {"quote": "QUO-1001"}},
+            strict=True,
+        )
+        self.assertEqual(out, "quote=QUO-1001;fallback")
+
+    def test_template_render_keeps_custom_function_calls_blocked_with_clear_message(self) -> None:
+        with self.assertRaises(Exception) as raised:
+            render_template("{{ format_currency(100) }}", {"record": {}}, strict=True)
+        self.assertIn("unsupported value", describe_template_render_error(raised.exception))
 
     def test_secret_env_fallback(self) -> None:
         os.environ["APP_ENV"] = "dev"
