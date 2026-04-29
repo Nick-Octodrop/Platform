@@ -382,6 +382,7 @@ def crm_write_actions() -> list[RuleSpec]:
         action_rule("action.crm_opportunity_quote_stage", "hidden"),
         action_rule("action.crm_opportunity_create_quote", "hidden"),
         action_rule("action.crm_opportunity_negotiation", "hidden"),
+        action_rule("action.crm_opportunity_resume", "hidden"),
         action_rule("action.crm_opportunity_mark_won", "hidden"),
         action_rule("action.crm_opportunity_open_lost_modal", "hidden"),
         action_rule("action.crm_opportunity_create_order", "hidden"),

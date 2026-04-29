@@ -1503,9 +1503,12 @@ def _record_access_denied_response(
     denied = _entity_access_denied_response(actor, module_id, entity_def.get("id"), write=write)
     if denied:
         return denied
-    record = generic_records.get(_normalize_entity_id(entity_def.get("id") or entity_id), record_id)
-    if not record:
+    stored = generic_records.get(_normalize_entity_id(entity_def.get("id") or entity_id), record_id)
+    if not stored:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    record = stored.get("record") if isinstance(stored, dict) else None
+    if not isinstance(record, dict):
+        record = stored if isinstance(stored, dict) else {}
     if write:
         if not _record_write_allowed_for_actor(actor, module_id, entity_def.get("id"), record):
             return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
@@ -49500,6 +49503,10 @@ async def get_ui_prefs(request: Request) -> dict:
         workspace = {
             **workspace,
             "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_icon_url": branding.get("app_branding", {}).get("app_icon_url") or "",
+            "favicon_url": branding.get("app_branding", {}).get("favicon_url") or "",
+            "pwa_icon_url": branding.get("app_branding", {}).get("pwa_icon_url") or "",
             "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
             "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
             "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
@@ -51096,6 +51103,10 @@ async def set_ui_prefs(request: Request) -> dict:
         workspace = {
             **workspace,
             "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_icon_url": branding.get("app_branding", {}).get("app_icon_url") or "",
+            "favicon_url": branding.get("app_branding", {}).get("favicon_url") or "",
+            "pwa_icon_url": branding.get("app_branding", {}).get("pwa_icon_url") or "",
             "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
             "colors": branding.get("app_branding", {}).get("colors") if isinstance(branding.get("app_branding", {}).get("colors"), dict) else workspace.get("colors") or {},
             "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
@@ -51681,6 +51692,9 @@ async def add_activity_comment(request: Request) -> dict:
     found = _find_entity_def(request, normalized_entity)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    record_denied = _record_access_denied_response(request, actor, normalized_entity, record_id, write=True)
+    if record_denied:
+        return record_denied
     existing = generic_records.get(normalized_entity, record_id)
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
@@ -51757,6 +51771,9 @@ async def add_activity_attachment(
     found = _find_entity_def(request, normalized_entity)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    record_denied = _record_access_denied_response(request, actor, normalized_entity, record_id, write=True)
+    if record_denied:
+        return record_denied
     existing = generic_records.get(normalized_entity, record_id)
     if not existing:
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
@@ -51818,6 +51835,9 @@ async def add_chatter(request: Request, entity_id: str, record_id: str) -> dict:
     found = _find_entity_def(request, entity_id)
     if not found:
         return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    record_denied = _record_access_denied_response(request, actor_ctx, entity_id, record_id, write=True)
+    if record_denied:
+        return record_denied
     body = await _safe_json(request)
     text = body.get("body") if isinstance(body, dict) else None
     if not isinstance(text, str) or not text.strip():
@@ -64089,6 +64109,10 @@ async def delete_branding_asset(request: Request, asset_id: str) -> dict:
         workspace = {
             **workspace,
             "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "app_icon_url": branding.get("app_branding", {}).get("app_icon_url") or "",
+            "favicon_url": branding.get("app_branding", {}).get("favicon_url") or "",
+            "pwa_icon_url": branding.get("app_branding", {}).get("pwa_icon_url") or "",
             "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
             "colors": branding.get("app_branding", {}).get("colors")
             if isinstance(branding.get("app_branding", {}).get("colors"), dict)

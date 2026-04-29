@@ -705,43 +705,49 @@
           "ui": {
             "widget": "steps"
           },
-          "default": "new",
+          "default": "deal_qualification",
           "options": [
             {
-              "value": "new",
-              "label": "New",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.new",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.new"
+              "value": "deal_qualification",
+              "label": "Deal Qualification",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.deal_qualification",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.deal_qualification"
             },
             {
-              "value": "discovery",
-              "label": "Discovery",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.discovery",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.discovery"
+              "value": "meeting",
+              "label": "Meeting",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.meeting",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.meeting"
             },
             {
-              "value": "solution",
-              "label": "Solution Fit",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.solution",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.solution"
+              "value": "proposal",
+              "label": "Proposal",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.proposal",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.proposal"
             },
             {
-              "value": "quote",
-              "label": "Quote",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.quote",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.quote"
+              "value": "negotiation_commitment",
+              "label": "Negotiation & Commitment",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.negotiation_commitment",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.negotiation_commitment"
             },
             {
-              "value": "negotiation",
-              "label": "Negotiation",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.negotiation",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.negotiation"
+              "value": "on_hold",
+              "label": "On Hold",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.on_hold",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.on_hold"
             },
             {
               "value": "won",
-              "label": "Won",
-              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.won",
-              "label_key": "crm.entities.crm_opportunity.fields.stage.options.won"
+              "label": "Opportunity Won",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.opportunity_won",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.opportunity_won"
+            },
+            {
+              "value": "post_purchase",
+              "label": "Post Purchase",
+              "status_label_key": "crm.entities.crm_opportunity.fields.stage.options.post_purchase",
+              "label_key": "crm.entities.crm_opportunity.fields.stage.options.post_purchase"
             },
             {
               "value": "lost",
@@ -1355,44 +1361,50 @@
       "status_field": "crm_opportunity.stage",
       "states": [
         {
-          "id": "new",
-          "label": "New",
+          "id": "deal_qualification",
+          "label": "Deal Qualification",
           "required_fields": [
             "crm_opportunity.title",
             "crm_opportunity.company_id"
           ],
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.new.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.new.label"
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.deal_qualification.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.deal_qualification.label"
         },
         {
-          "id": "discovery",
-          "label": "Discovery",
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.discovery.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.discovery.label"
+          "id": "meeting",
+          "label": "Meeting",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.meeting.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.meeting.label"
         },
         {
-          "id": "solution",
-          "label": "Solution Fit",
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.solution.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.solution.label"
+          "id": "proposal",
+          "label": "Proposal",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.proposal.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.proposal.label"
         },
         {
-          "id": "quote",
-          "label": "Quote",
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.quote.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.quote.label"
+          "id": "negotiation_commitment",
+          "label": "Negotiation & Commitment",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.negotiation_commitment.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.negotiation_commitment.label"
         },
         {
-          "id": "negotiation",
-          "label": "Negotiation",
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.negotiation.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.negotiation.label"
+          "id": "on_hold",
+          "label": "On Hold",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.on_hold.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.on_hold.label"
         },
         {
           "id": "won",
-          "label": "Won",
-          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.won.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.won.label"
+          "label": "Opportunity Won",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.opportunity_won.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.opportunity_won.label"
+        },
+        {
+          "id": "post_purchase",
+          "label": "Post Purchase",
+          "status_label_key": "crm.workflows.crm_opportunity_stage_workflow.states.post_purchase.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.states.post_purchase.label"
         },
         {
           "id": "lost",
@@ -1403,85 +1415,99 @@
       ],
       "transitions": [
         {
-          "from": "new",
-          "to": "discovery",
-          "label": "Start Discovery",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.new_discovery.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.new_discovery.label"
+          "from": "deal_qualification",
+          "to": "meeting",
+          "label": "Move to Meeting",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.deal_qualification_meeting.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.deal_qualification_meeting.label"
         },
         {
-          "from": "discovery",
-          "to": "solution",
-          "label": "Solution Fit",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.discovery_solution.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.discovery_solution.label"
+          "from": "meeting",
+          "to": "proposal",
+          "label": "Move to Proposal",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_proposal.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_proposal.label"
         },
         {
-          "from": "solution",
-          "to": "quote",
-          "label": "Quote",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.solution_quote.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.solution_quote.label"
+          "from": "proposal",
+          "to": "negotiation_commitment",
+          "label": "Move to Negotiation & Commitment",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_negotiation_commitment.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_negotiation_commitment.label"
         },
         {
-          "from": "quote",
-          "to": "negotiation",
-          "label": "Negotiation",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_negotiation.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_negotiation.label"
+          "from": "negotiation_commitment",
+          "to": "on_hold",
+          "label": "Place On Hold",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_on_hold.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_on_hold.label"
         },
         {
-          "from": "quote",
+          "from": "on_hold",
+          "to": "negotiation_commitment",
+          "label": "Resume Negotiation",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.on_hold_negotiation_commitment.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.on_hold_negotiation_commitment.label"
+        },
+        {
+          "from": "proposal",
           "to": "won",
-          "label": "Mark Won",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_won.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_won.label"
+          "label": "Mark Opportunity Won",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_won.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_won.label"
         },
         {
-          "from": "negotiation",
+          "from": "negotiation_commitment",
           "to": "won",
-          "label": "Mark Won",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_won.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_won.label"
+          "label": "Mark Opportunity Won",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_won.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_won.label"
         },
         {
-          "from": "new",
-          "to": "lost",
-          "label": "Mark Lost",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.new_lost.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.new_lost.label"
+          "from": "won",
+          "to": "post_purchase",
+          "label": "Move to Post Purchase",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.won_post_purchase.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.won_post_purchase.label"
         },
         {
-          "from": "discovery",
+          "from": "deal_qualification",
           "to": "lost",
           "label": "Mark Lost",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.discovery_lost.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.discovery_lost.label"
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.deal_qualification_lost.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.deal_qualification_lost.label"
         },
         {
-          "from": "solution",
+          "from": "meeting",
           "to": "lost",
           "label": "Mark Lost",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.solution_lost.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.solution_lost.label"
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_lost.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_lost.label"
         },
         {
-          "from": "quote",
+          "from": "proposal",
           "to": "lost",
           "label": "Mark Lost",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_lost.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.quote_lost.label"
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_lost.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_lost.label"
         },
         {
-          "from": "negotiation",
+          "from": "negotiation_commitment",
           "to": "lost",
           "label": "Mark Lost",
-          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_lost.label",
-          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_lost.label"
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_lost.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_lost.label"
+        },
+        {
+          "from": "on_hold",
+          "to": "lost",
+          "label": "Mark Lost",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.on_hold_lost.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.on_hold_lost.label"
         }
       ],
       "required_fields_by_state": {
-        "quote": [
+        "proposal": [
           "crm_opportunity.company_id"
         ],
         "lost": [
@@ -1597,19 +1623,19 @@
     },
     {
       "id": "biz_crm.action.crm_opportunity_discovery.clicked",
-      "label": "Start Discovery clicked",
+      "label": "Move to Meeting clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_discovery"
     },
     {
       "id": "biz_crm.action.crm_opportunity_solution.clicked",
-      "label": "Solution Fit clicked",
+      "label": "Move to Proposal clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_solution"
     },
     {
       "id": "biz_crm.action.crm_opportunity_quote_stage.clicked",
-      "label": "Move To Quote clicked",
+      "label": "Move to Negotiation & Commitment clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_quote_stage"
     },
@@ -1621,13 +1647,19 @@
     },
     {
       "id": "biz_crm.action.crm_opportunity_negotiation.clicked",
-      "label": "Move To Negotiation clicked",
+      "label": "Place On Hold clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_negotiation"
     },
     {
+      "id": "biz_crm.action.crm_opportunity_resume.clicked",
+      "label": "Resume Negotiation clicked",
+      "event": "action.clicked",
+      "action_id": "action.crm_opportunity_resume"
+    },
+    {
       "id": "biz_crm.action.crm_opportunity_mark_won.clicked",
-      "label": "Mark Won clicked",
+      "label": "Mark Opportunity Won clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_mark_won"
     },
@@ -1705,13 +1737,13 @@
           "from": "crm_lead.notes"
         },
         "crm_opportunity.stage": {
-          "value": "discovery"
+          "value": "deal_qualification"
         },
         "crm_opportunity.status": {
           "value": "open"
         },
         "crm_opportunity.probability": {
-          "value": 25
+          "value": 10
         },
         "crm_opportunity.quote_state": {
           "value": "unquoted"
@@ -1789,7 +1821,7 @@
       },
       "source_update": {
         "patch": {
-          "crm_opportunity.stage": "quote",
+          "crm_opportunity.stage": "proposal",
           "crm_opportunity.quote_state": "quoted",
           "crm_opportunity.probability": 60
         }
@@ -1852,7 +1884,7 @@
       },
       "source_update": {
         "patch": {
-          "crm_opportunity.stage": "won",
+          "crm_opportunity.stage": "post_purchase",
           "crm_opportunity.status": "won",
           "crm_opportunity.probability": 100
         }
@@ -1971,43 +2003,26 @@
       "id": "action.crm_opportunity_discovery",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
-      "label": "Start Discovery",
+      "label": "Move to Meeting",
       "patch": {
-        "crm_opportunity.stage": "discovery",
+        "crm_opportunity.stage": "meeting",
         "crm_opportunity.status": "open",
         "crm_opportunity.probability": 25
       },
       "visible_when": {
         "op": "eq",
         "field": "crm_opportunity.stage",
-        "value": "new"
+        "value": "deal_qualification"
       },
-      "action_label_key": "crm.actions.action_crm_opportunity_discovery.label"
+      "action_label_key": "crm.actions.action_crm_opportunity_move_to_meeting.label"
     },
     {
       "id": "action.crm_opportunity_solution",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
-      "label": "Solution Fit",
+      "label": "Move to Proposal",
       "patch": {
-        "crm_opportunity.stage": "solution",
-        "crm_opportunity.status": "open",
-        "crm_opportunity.probability": 40
-      },
-      "visible_when": {
-        "op": "eq",
-        "field": "crm_opportunity.stage",
-        "value": "discovery"
-      },
-      "action_label_key": "crm.actions.action_crm_opportunity_solution.label"
-    },
-    {
-      "id": "action.crm_opportunity_quote_stage",
-      "kind": "update_record",
-      "entity_id": "entity.crm_opportunity",
-      "label": "Move To Quote",
-      "patch": {
-        "crm_opportunity.stage": "quote",
+        "crm_opportunity.stage": "proposal",
         "crm_opportunity.status": "open",
         "crm_opportunity.quote_state": "quote_needed",
         "crm_opportunity.probability": 55
@@ -2015,9 +2030,26 @@
       "visible_when": {
         "op": "eq",
         "field": "crm_opportunity.stage",
-        "value": "solution"
+        "value": "meeting"
       },
-      "action_label_key": "crm.actions.action_crm_opportunity_quote_stage.label"
+      "action_label_key": "crm.actions.action_crm_opportunity_move_to_proposal.label"
+    },
+    {
+      "id": "action.crm_opportunity_quote_stage",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Move to Negotiation & Commitment",
+      "patch": {
+        "crm_opportunity.stage": "negotiation_commitment",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.probability": 75
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "crm_opportunity.stage",
+        "value": "proposal"
+      },
+      "action_label_key": "crm.actions.action_crm_opportunity_move_to_negotiation_commitment.label"
     },
     {
       "id": "action.crm_opportunity_create_quote",
@@ -2032,9 +2064,8 @@
             "op": "in",
             "field": "crm_opportunity.stage",
             "value": [
-              "solution",
-              "quote",
-              "negotiation"
+              "proposal",
+              "negotiation_commitment"
             ]
           },
           {
@@ -2056,24 +2087,44 @@
       "id": "action.crm_opportunity_negotiation",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
-      "label": "Move To Negotiation",
+      "label": "Place On Hold",
       "patch": {
-        "crm_opportunity.stage": "negotiation",
+        "crm_opportunity.stage": "on_hold",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.probability": 25
+      },
+      "visible_when": {
+        "op": "in",
+        "field": "crm_opportunity.stage",
+        "value": [
+          "proposal",
+          "negotiation_commitment"
+        ]
+      },
+      "action_label_key": "crm.actions.action_crm_opportunity_place_on_hold.label"
+    },
+    {
+      "id": "action.crm_opportunity_resume",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Resume Negotiation",
+      "patch": {
+        "crm_opportunity.stage": "negotiation_commitment",
         "crm_opportunity.status": "open",
         "crm_opportunity.probability": 75
       },
       "visible_when": {
         "op": "eq",
         "field": "crm_opportunity.stage",
-        "value": "quote"
+        "value": "on_hold"
       },
-      "action_label_key": "crm.actions.action_crm_opportunity_negotiation.label"
+      "action_label_key": "crm.actions.action_crm_opportunity_resume.label"
     },
     {
       "id": "action.crm_opportunity_mark_won",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
-      "label": "Mark Won",
+      "label": "Mark Opportunity Won",
       "patch": {
         "crm_opportunity.stage": "won",
         "crm_opportunity.status": "won",
@@ -2084,11 +2135,12 @@
         "op": "in",
         "field": "crm_opportunity.stage",
         "value": [
-          "quote",
-          "negotiation"
+          "proposal",
+          "negotiation_commitment",
+          "on_hold"
         ]
       },
-      "action_label_key": "crm.actions.action_crm_opportunity_mark_won.label"
+      "action_label_key": "crm.actions.action_crm_opportunity_mark_opportunity_won.label"
     },
     {
       "id": "action.crm_opportunity_open_lost_modal",
@@ -2100,11 +2152,11 @@
         "op": "in",
         "field": "crm_opportunity.stage",
         "value": [
-          "new",
-          "discovery",
-          "solution",
-          "quote",
-          "negotiation"
+          "deal_qualification",
+          "meeting",
+          "proposal",
+          "negotiation_commitment",
+          "on_hold"
         ]
       },
       "action_label_key": "crm.actions.action_crm_opportunity_open_lost_modal.label"
@@ -2470,11 +2522,11 @@
               "op": "in",
               "field": "crm_opportunity.stage",
               "value": [
-                "new",
-                "discovery",
-                "solution",
-                "quote",
-                "negotiation"
+                "deal_qualification",
+                "meeting",
+                "proposal",
+                "negotiation_commitment",
+                "on_hold"
               ]
             },
             "label_key": "crm.views.list.filters.open.label"
@@ -2517,11 +2569,23 @@
             "id": "won",
             "label": "Won",
             "domain": {
-              "op": "eq",
+              "op": "in",
               "field": "crm_opportunity.stage",
-              "value": "won"
+              "value": [
+                "won",
+                "post_purchase"
+              ]
             },
             "label_key": "crm.views.list.filters.won.label"
+          },
+          {
+            "id": "post_purchase",
+            "label": "Post Purchase",
+            "domain": {
+              "op": "eq",
+              "field": "crm_opportunity.stage",
+              "value": "post_purchase"
+            }
           },
           {
             "id": "lost",
@@ -2639,6 +2703,9 @@
           },
           {
             "action_id": "action.crm_opportunity_negotiation"
+          },
+          {
+            "action_id": "action.crm_opportunity_resume"
           },
           {
             "action_id": "action.crm_opportunity_mark_won"
@@ -3052,7 +3119,7 @@
                     "crm_opportunity.sales_entity": {
                       "ref": "$record.crm_site.sales_entity"
                     },
-                    "crm_opportunity.stage": "new",
+                    "crm_opportunity.stage": "deal_qualification",
                     "crm_opportunity.status": "open"
                   }
                 }
@@ -3139,11 +3206,11 @@
                 "op": "in",
                 "field": "crm_opportunity.stage",
                 "value": [
-                  "new",
-                  "discovery",
-                  "solution",
-                  "quote",
-                  "negotiation"
+                  "deal_qualification",
+                  "meeting",
+                  "proposal",
+                  "negotiation_commitment",
+                  "on_hold"
                 ]
               },
               "icon": "lucide:TrendingUp",
@@ -3162,11 +3229,11 @@
                 "op": "in",
                 "field": "crm_opportunity.stage",
                 "value": [
-                  "new",
-                  "discovery",
-                  "solution",
-                  "quote",
-                  "negotiation"
+                  "deal_qualification",
+                  "meeting",
+                  "proposal",
+                  "negotiation_commitment",
+                  "on_hold"
                 ]
               },
               "icon": "lucide:Scale",

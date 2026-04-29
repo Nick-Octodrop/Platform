@@ -22,6 +22,7 @@ import {
   SUPPORTED_LOCALES,
   getTimezoneOptions,
 } from "./options.js";
+import { applyWorkspaceAppMetadata } from "../branding/appMetadata.js";
 
 const CORE_NAMESPACES = ["common", "empty", "navigation", "settings", "validation"];
 const I18N_BOOTSTRAP_STORAGE_KEY = "octo_i18n_bootstrap_v1";
@@ -40,6 +41,10 @@ function buildResolvedPrefs(payload) {
       ...workspace,
       workspace_name: appBranding.workspace_name || workspace.workspace_name || "",
       logo_url: appBranding.app_logo_url || appBranding.logo_url || workspace.logo_url || "",
+      app_logo_url: appBranding.app_logo_url || appBranding.logo_url || workspace.logo_url || "",
+      app_icon_url: appBranding.app_icon_url || workspace.app_icon_url || "",
+      favicon_url: appBranding.favicon_url || workspace.favicon_url || "",
+      pwa_icon_url: appBranding.pwa_icon_url || workspace.pwa_icon_url || "",
       nav_logo_url: appBranding.nav_logo_url || workspace.nav_logo_url || "",
       app_logo_asset_id: appBranding.app_logo_asset_id || workspace.app_logo_asset_id || "",
       app_icon_asset_id: appBranding.app_icon_asset_id || workspace.app_icon_asset_id || "",
@@ -109,8 +114,16 @@ function isI18nRelevantPrefsPayload(payload) {
     if (
       "workspace_name" in appBranding
       || "app_logo_asset_id" in appBranding
+      || "app_icon_asset_id" in appBranding
+      || "favicon_asset_id" in appBranding
+      || "pwa_icon_asset_id" in appBranding
       || "nav_logo_asset_id" in appBranding
       || "homepage_brand_asset_id" in appBranding
+      || "app_logo_url" in appBranding
+      || "app_icon_url" in appBranding
+      || "favicon_url" in appBranding
+      || "pwa_icon_url" in appBranding
+      || "nav_logo_url" in appBranding
       || "primary_color" in appBranding
       || "secondary_color" in appBranding
       || "accent_color" in appBranding
@@ -206,6 +219,10 @@ export function LocalizationProvider({ children, user }) {
     window.addEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
     return () => window.removeEventListener("octo:ui-prefs-updated", handleUiPrefsUpdated);
   }, [reload]);
+
+  useEffect(() => {
+    applyWorkspaceAppMetadata(prefs.workspace);
+  }, [prefs.workspace]);
 
   useEffect(() => {
     function handleRuntimeChanged() {

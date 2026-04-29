@@ -133,6 +133,9 @@ const APP_BRANDING_DEFAULTS = {
   accent_color: DEFAULT_BRAND_COLORS.accent,
   text_color: TEXT_COLOR_FALLBACK,
   app_logo_url: "",
+  app_icon_url: "",
+  favicon_url: "",
+  pwa_icon_url: "",
   nav_logo_url: "",
 };
 const TEMPLATE_BRANDING_DEFAULTS = {
@@ -266,6 +269,9 @@ function normalizeAppBranding(appBranding, workspace) {
     accent_color: normalizeHexColor(appBranding?.accent_color || workspace?.colors?.accent, DEFAULT_BRAND_COLORS.accent),
     text_color: normalizeHexColor(appBranding?.text_color, TEXT_COLOR_FALLBACK),
     app_logo_url: textValue(appBranding?.app_logo_url || appBranding?.logo_url || workspace?.logo_url),
+    app_icon_url: textValue(appBranding?.app_icon_url || workspace?.app_icon_url),
+    favicon_url: textValue(appBranding?.favicon_url || workspace?.favicon_url),
+    pwa_icon_url: textValue(appBranding?.pwa_icon_url || workspace?.pwa_icon_url),
     nav_logo_url: textValue(appBranding?.nav_logo_url || workspace?.nav_logo_url),
   };
 }

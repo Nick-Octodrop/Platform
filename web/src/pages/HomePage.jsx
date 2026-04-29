@@ -106,6 +106,7 @@ export default function HomePage({ user }) {
   const canSeeOctoAi = Boolean(isSuperadmin);
   const canReorderApps = hasCapability("modules.manage");
   const homeLoading = loading;
+  const showInitialModuleLoading = homeLoading && modules.length === 0;
   const transitioningToApp = Boolean(openingAppId);
 
   useEffect(() => {
@@ -308,7 +309,8 @@ export default function HomePage({ user }) {
   return (
     <div className="w-full overflow-x-hidden min-h-full md:h-full flex justify-center overflow-y-auto md:overflow-hidden">
       {transitioningToApp && <LoadingSpinner className="min-h-full w-full" />}
-      {!transitioningToApp && (
+      {!transitioningToApp && showInitialModuleLoading && <LoadingSpinner className="min-h-[70vh] w-full" />}
+      {!transitioningToApp && !showInitialModuleLoading && (
         <div className="w-full flex justify-center items-start pt-4 sm:pt-[12vh] pb-6 sm:pb-0">
           {allApps.length === 0 ? (
             <div className="card bg-base-100 shadow p-6">

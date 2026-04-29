@@ -1573,7 +1573,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
                 "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "nlight_sales",
-                "crm_opportunity.stage": "won",
+                "crm_opportunity.stage": "post_purchase",
                 "crm_opportunity.status": "won",
                 "crm_opportunity.currency": "EUR",
                 "crm_opportunity.value": 66730,
@@ -1600,7 +1600,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.site_id": {"$ref": "site.desert_bloom.dubai"},
                 "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "nlight_sales",
-                "crm_opportunity.stage": "quote",
+                "crm_opportunity.stage": "proposal",
                 "crm_opportunity.status": "open",
                 "crm_opportunity.currency": "USD",
                 "crm_opportunity.value": 87600,
@@ -1653,7 +1653,7 @@ def crm_specs(aliases: dict[str, CreatedRecord]) -> list[dict[str, Any]]:
                 "crm_opportunity.site_id": {"$ref": "site.greengrow.aalsmeer"},
                 "crm_opportunity.owner_user_id": "Joost",
                 "crm_opportunity.pipeline": "after_sales",
-                "crm_opportunity.stage": "solution",
+                "crm_opportunity.stage": "proposal",
                 "crm_opportunity.status": "open",
                 "crm_opportunity.currency": "EUR",
                 "crm_opportunity.value": 18450,
@@ -1960,7 +1960,16 @@ def generated_demo_specs(count: int) -> list[dict[str, Any]]:
     activity_owners = ["Joost", "Joram", "Shelly", "Walter", "Tamzin"]
     lead_statuses = ["new", "contacted", "qualified", "disqualified"]
     lead_sources = ["website", "referral", "trade_show", "repeat_customer", "manual", "pipedrive_import"]
-    stages = ["new", "discovery", "solution", "quote", "negotiation", "won", "lost"]
+    stages = [
+        "deal_qualification",
+        "meeting",
+        "proposal",
+        "negotiation_commitment",
+        "on_hold",
+        "won",
+        "post_purchase",
+        "lost",
+    ]
     activity_types = ["call", "meeting", "task", "email_follow_up", "site_visit", "quote_follow_up"]
     task_types = ["follow_up", "quote", "order_handoff", "procurement", "finance", "document", "site_visit", "internal"]
     calendar_types = ["call", "meeting", "site_visit", "quote_follow_up", "order_handoff", "supplier_check_in", "finance_review"]
@@ -1982,9 +1991,24 @@ def generated_demo_specs(count: int) -> list[dict[str, Any]]:
         activity_owner = activity_owners[(index - 1) % len(activity_owners)]
         lead_status = lead_statuses[(index - 1) % len(lead_statuses)]
         stage = stages[(index - 1) % len(stages)]
-        status = "won" if stage == "won" else "lost" if stage == "lost" else "open"
-        probability = {"new": 15, "discovery": 25, "solution": 40, "quote": 55, "negotiation": 75, "won": 100, "lost": 0}[stage]
-        quote_state = "accepted" if stage == "won" else "quoted" if stage in {"quote", "negotiation", "lost"} else "quote_needed" if stage == "solution" else "unquoted"
+        status = "won" if stage in {"won", "post_purchase"} else "lost" if stage == "lost" else "open"
+        probability = {
+            "deal_qualification": 10,
+            "meeting": 25,
+            "proposal": 55,
+            "negotiation_commitment": 75,
+            "on_hold": 25,
+            "won": 100,
+            "post_purchase": 100,
+            "lost": 0,
+        }[stage]
+        quote_state = (
+            "accepted"
+            if stage in {"won", "post_purchase"}
+            else "quoted"
+            if stage in {"proposal", "negotiation_commitment", "on_hold", "lost"}
+            else "unquoted"
+        )
         lead_value = 18000 + (index * 1750)
         opportunity_value = 24000 + (index * 2250)
         close_day = ((index - 1) % 24) + 1
