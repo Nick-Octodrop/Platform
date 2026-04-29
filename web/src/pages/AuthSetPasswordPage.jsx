@@ -4,6 +4,21 @@ import { apiFetch } from "../api";
 import { clearStoredSupabaseSession, supabase } from "../supabase";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
+const HANDOFF_COMPLETED_STORAGE_KEY = "octo_password_handoff_completed_users";
+
+function markPasswordHandoffCompleted(userId) {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    const raw = window.localStorage.getItem(HANDOFF_COMPLETED_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const users = Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
+    if (!users.includes(userId)) users.push(userId);
+    window.localStorage.setItem(HANDOFF_COMPLETED_STORAGE_KEY, JSON.stringify(users.slice(-25)));
+  } catch {
+    // ignore storage failures; the backend state is still authoritative
+  }
+}
+
 export default function AuthSetPasswordPage({ user }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -43,6 +58,7 @@ export default function AuthSetPasswordPage({ user }) {
     try {
       if (handoffRequired) {
         await apiFetch("/access/password-handoff/complete", { method: "POST", body: { password } });
+        markPasswordHandoffCompleted(user?.id);
         setNotice(t("settings.auth.password_updated_redirecting"));
         setTimeout(() => {
           exitToLogin();

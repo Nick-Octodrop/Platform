@@ -140,7 +140,11 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
   const singleFillBlock = safeBlocks.length === 1 && blockPrefersFill(safeBlocks[0]);
   const fullHeight = !mobileRecordPage && (isMobile ? singleFillBlock : (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks)));
   const inherited = useContext(RecordScopeContext);
-  const baseContext = inherited || recordContext || (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null);
+  const fallbackContext = useMemo(
+    () => (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null),
+    [recordId]
+  );
+  const baseContext = inherited || recordContext || fallbackContext;
   const { hasCapability } = useAccessContext();
   const effectiveCanWriteRecords =
     typeof canWriteRecords === "boolean"
@@ -892,7 +896,7 @@ function RecordScopeProvider({ entityId, recordId, children, previewMode = false
       try {
         setLoading(true);
         setError(null);
-        const res = await apiFetch(`/records/${entityId}/${recordId}`);
+        const res = await apiFetch(`/records/${entityId}/${recordId}`, { cacheTtl: 5000 });
         setRecord(res.record || null);
         setLoading(false);
       } catch {
@@ -959,6 +963,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
   const latestSeenAtRef = useRef(null);
   const burstUntilRef = useRef(0);
   const lastAttachmentRefreshAtRef = useRef(0);
+  const lastPollAtRef = useRef(0);
 
   const DEFAULT_POLL_MS = 15000;
   const BURST_POLL_MS = 3000;
@@ -1021,10 +1026,9 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
       setLoading(true);
       setError("");
       try {
-        const serverItems = await fetchActivity();
+        const [serverItems, nextAtt] = await Promise.all([fetchActivity(), fetchAttachments()]);
         setItems(serverItems);
         latestSeenAtRef.current = serverItems[0]?.created_at || null;
-        const nextAtt = await fetchAttachments();
         setAttachments(nextAtt);
         lastAttachmentRefreshAtRef.current = Date.now();
       } catch (err) {
@@ -1065,6 +1069,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
     async function tick() {
       // Avoid fighting local optimistic UI. We'll still merge in local temps.
       try {
+        lastPollAtRef.current = Date.now();
         if (activeTab === "activity") {
           const since = latestSeenAtRef.current;
           const incoming = await fetchActivity(since ? { since } : undefined);
@@ -1097,11 +1102,11 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
       }
     }
 
-    // Prime quickly when switching tabs/records.
-    tick();
+    scheduleNext();
 
     function onVisibility() {
       if (document.visibilityState !== "visible") return;
+      if (Date.now() - (lastPollAtRef.current || 0) < 5000) return;
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
       tick();

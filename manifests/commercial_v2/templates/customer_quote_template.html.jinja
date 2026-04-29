@@ -418,6 +418,12 @@
   .detail-table th.detail-value {
     text-align: right;
   }
+  .line-specs {
+    margin-top: 2px;
+    font-size: 9.5px;
+    line-height: 1.35;
+    color: #64748b;
+  }
   .summary-note {
     margin-top: 3mm;
     font-size: 10.4px;
@@ -749,8 +755,18 @@
                       </thead>
                       <tbody>
                         {% for line in quote_lines %}
+                        {% set spec_parts = [] %}
+                        {% if line is defined and line and line['biz_quote_line.wattage_snapshot'] is defined and line['biz_quote_line.wattage_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.wattage_snapshot'] ~ 'W') %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.spectrum_snapshot'] is defined and line['biz_quote_line.spectrum_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.spectrum_snapshot']) %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.input_voltage_snapshot'] is defined and line['biz_quote_line.input_voltage_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.input_voltage_snapshot']) %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ppf_umol_s_snapshot'] is defined and line['biz_quote_line.ppf_umol_s_snapshot'] %}{% set _ = spec_parts.append('PPF ' ~ line['biz_quote_line.ppf_umol_s_snapshot']) %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ppe_umol_per_w_snapshot'] is defined and line['biz_quote_line.ppe_umol_per_w_snapshot'] %}{% set _ = spec_parts.append('PPE ' ~ line['biz_quote_line.ppe_umol_per_w_snapshot']) %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ip_rating_snapshot'] is defined and line['biz_quote_line.ip_rating_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.ip_rating_snapshot']) %}{% endif %}
                         <tr>
-                          <td>{{ line['biz_quote_line.description'] if line is defined and line and line['biz_quote_line.description'] is defined and line['biz_quote_line.description'] else '' }}</td>
+                          <td>
+                            <div>{{ line['biz_quote_line.description'] if line is defined and line and line['biz_quote_line.description'] is defined and line['biz_quote_line.description'] else '' }}</div>
+                            {% if spec_parts %}<div class="line-specs">{{ spec_parts|join(' | ') }}</div>{% endif %}
+                          </td>
                           <td class="detail-value">{{ line['biz_quote_line.quantity'] if line is defined and line and line['biz_quote_line.quantity'] is defined and line['biz_quote_line.quantity'] else '' }}</td>
                           <td class="detail-value">{{ line['biz_quote_line.uom'] if line is defined and line and line['biz_quote_line.uom'] is defined and line['biz_quote_line.uom'] else '' }}</td>
                           <td class="detail-value">{% if currency_symbol %}{{ currency_symbol }}{% endif %}{{ line['biz_quote_line.unit_price'] if line is defined and line and line['biz_quote_line.unit_price'] is defined and line['biz_quote_line.unit_price'] else '' }}{% if not currency_symbol and currency_code %} {{ currency_code }}{% endif %}</td>

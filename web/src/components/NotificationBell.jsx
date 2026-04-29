@@ -17,6 +17,7 @@ export default function NotificationBell() {
   const [clearing, setClearing] = useState(false);
   const panelRef = useRef(null);
   const latestSeenAtRef = useRef(null);
+  const openRef = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
   const deferCount = useMemo(() => {
@@ -61,6 +62,10 @@ export default function NotificationBell() {
 
   async function pollIncremental() {
     try {
+      if (!openRef.current) {
+        await loadCount();
+        return;
+      }
       const since = latestSeenAtRef.current;
       const qs = since
         ? `/notifications?unread_only=0&limit=20&since=${encodeURIComponent(String(since))}`
@@ -78,18 +83,23 @@ export default function NotificationBell() {
   }
 
   useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
     if (deferCount) return undefined;
     loadCount();
-    loadItems();
     const interval = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       pollIncremental();
-    }, 8000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [deferCount]);
 
   useEffect(() => {
-    if (open) loadItems();
+    if (!open) return;
+    loadCount();
+    loadItems();
   }, [open]);
 
   useEffect(() => {

@@ -950,7 +950,76 @@ def _emit_external_webhook_subscriptions(event_name: str, payload: dict, meta: d
             logger.warning("external_webhook_enqueue_failed subscription_id=%s event=%s error=%s", subscription.get("id"), event_name, exc)
 
 
+_ACTOR_CACHE: dict[str, dict] = {}
+_ACTOR_CACHE_TTL_S = max(0.0, float(os.getenv("OCTO_ACTOR_CACHE_TTL", "5") or "5"))
+
+
+def _actor_cache_key(request: Request, user: dict) -> str | None:
+    user_id = user.get("id")
+    if not isinstance(user_id, str) or not user_id:
+        return None
+    workspace_header = request.headers.get("X-Workspace-Id") or ""
+    claims = user.get("claims") if isinstance(user.get("claims"), dict) else {}
+    claims_fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "iat": claims.get("iat"),
+                "app_metadata": claims.get("app_metadata") or claims.get("app_meta_data"),
+                "user_metadata": claims.get("user_metadata") or claims.get("user_meta_data"),
+                "role": claims.get("role"),
+                "email": user.get("email"),
+            },
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"{user_id}:{workspace_header}:{claims_fingerprint}"
+
+
+def _actor_cache_get(cache_key: str | None) -> dict | None:
+    if not cache_key or _ACTOR_CACHE_TTL_S <= 0:
+        return None
+    entry = _ACTOR_CACHE.get(cache_key)
+    if not isinstance(entry, dict):
+        return None
+    if time.time() - float(entry.get("ts") or 0) > _ACTOR_CACHE_TTL_S:
+        _ACTOR_CACHE.pop(cache_key, None)
+        return None
+    actor = entry.get("actor")
+    return copy.deepcopy(actor) if isinstance(actor, dict) else None
+
+
+def _actor_cache_set(cache_key: str | None, actor: dict) -> dict:
+    if cache_key and _ACTOR_CACHE_TTL_S > 0:
+        _ACTOR_CACHE[cache_key] = {"ts": time.time(), "actor": copy.deepcopy(actor)}
+    return actor
+
+
+def _actor_cache_invalidate(workspace_id: str | None = None, user_id: str | None = None) -> None:
+    if not workspace_id and not user_id:
+        _ACTOR_CACHE.clear()
+        return
+    workspace_marker = f":{workspace_id}:" if isinstance(workspace_id, str) and workspace_id else None
+    for key, entry in list(_ACTOR_CACHE.items()):
+        actor = entry.get("actor") if isinstance(entry, dict) else None
+        if not isinstance(actor, dict):
+            _ACTOR_CACHE.pop(key, None)
+            continue
+        if user_id and actor.get("user_id") == user_id:
+            _ACTOR_CACHE.pop(key, None)
+            continue
+        if workspace_id and (
+            actor.get("workspace_id") == workspace_id
+            or any(isinstance(item, dict) and item.get("workspace_id") == workspace_id for item in actor.get("workspaces") or [])
+            or (workspace_marker and workspace_marker in key)
+        ):
+            _ACTOR_CACHE.pop(key, None)
+
+
 def _resolve_actor(request: Request) -> dict | JSONResponse:
+    cached_actor = getattr(request.state, "actor", None)
+    if isinstance(cached_actor, dict):
+        return cached_actor
     api_credential = getattr(request.state, "api_credential", None)
     if isinstance(api_credential, dict) and api_credential.get("org_id"):
         workspace_id = str(api_credential.get("org_id"))
@@ -999,9 +1068,18 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         }
     user_id = user.get("id")
     set_db_user_id(user_id)
+    actor_cache_key = _actor_cache_key(request, user)
+    cached_actor = _actor_cache_get(actor_cache_key)
+    if cached_actor is not None:
+        return cached_actor
     platform_role = get_platform_role(user_id)
     managed_account_state = _managed_account_state_from_claims(user.get("claims"))
     auto_workspace_allowed = _workspace_auto_create_allowed_from_claims(user.get("claims"))
+    auth_user = _find_auth_user_row_by_id(user_id)
+    if auth_user:
+        live_managed_account_state = _managed_account_state_from_metadata(auth_user.get("app_metadata"))
+        if live_managed_account_state != managed_account_state:
+            managed_account_state = live_managed_account_state
     user_email = user.get("email")
     if isinstance(user_email, str) and user_email:
         try:
@@ -1016,7 +1094,6 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
     user_workspaces = list_user_workspaces(user_id)
     workspace_header = request.headers.get("X-Workspace-Id")
     if not memberships:
-        auth_user = _find_auth_user_row_by_id(user_id)
         if auth_user:
             auto_workspace_allowed = _workspace_auto_create_allowed_from_metadata(auth_user.get("app_metadata"))
         if not auto_workspace_allowed:
@@ -1029,7 +1106,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         memberships = list_memberships(user_id)
         user_workspaces = list_user_workspaces(user_id)
         role = "admin"
-        return {
+        return _actor_cache_set(actor_cache_key, {
             "user_id": user_id,
             "email": user.get("email"),
             "role": role,
@@ -1039,7 +1116,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
             "workspaces": user_workspaces,
             "managed_account_state": managed_account_state,
             "claims": user.get("claims"),
-        }
+        })
     if workspace_header:
         membership = get_membership(user_id, workspace_header)
         if not membership and platform_role != "superadmin":
@@ -1075,7 +1152,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         else:
             workspace_id = memberships[0].get("workspace_id")
             role = memberships[0].get("role") or "member"
-    return {
+    return _actor_cache_set(actor_cache_key, {
         "user_id": user_id,
         "email": user.get("email"),
         "role": role,
@@ -1085,7 +1162,7 @@ def _resolve_actor(request: Request) -> dict | JSONResponse:
         "workspaces": user_workspaces,
         "managed_account_state": managed_account_state,
         "claims": user.get("claims"),
-    }
+    })
 
 
 _CAPABILITIES_BY_ROLE = {
@@ -1152,6 +1229,7 @@ def _uploaded_file_too_large(data: bytes | bytearray | None) -> bool:
 
 def _invalidate_access_runtime_caches(workspace_id: str | None = None, user_id: str | None = None) -> None:
     invalidate_access_policy_cache(workspace_id, user_id)
+    _actor_cache_invalidate(workspace_id, user_id)
     _cache_invalidate("modules")
     _cache_invalidate("registry_list")
     _cache_invalidate("manifest")
@@ -2342,7 +2420,25 @@ def _supabase_clear_managed_account_state(user_id: str) -> dict:
     if not auth_user:
         raise RuntimeError("auth_user_not_found")
     app_metadata = _clear_managed_account_app_metadata(auth_user.get("app_metadata"))
-    return _supabase_update_user(user_id, {"app_metadata": app_metadata})
+    updated = _supabase_update_user(user_id, {"app_metadata": app_metadata})
+    _update_auth_user_app_metadata_direct(user_id, app_metadata)
+    return updated
+
+
+def _update_auth_user_app_metadata_direct(user_id: str, app_metadata: dict[str, Any]) -> None:
+    if not isinstance(user_id, str) or not user_id.strip() or not isinstance(app_metadata, dict):
+        return
+    with get_conn() as conn:
+        execute(
+            conn,
+            """
+            update auth.users
+            set raw_app_meta_data=%s::jsonb
+            where id::text=%s
+            """,
+            [json.dumps(app_metadata), user_id.strip()],
+            query_name="auth_users.update_app_metadata_direct",
+        )
 
 
 def _supabase_set_auto_workspace_creation(user_id: str, *, enabled: bool) -> dict:
@@ -15636,7 +15732,7 @@ async def page_bootstrap(
 
     if not isinstance(view_obj, dict):
         cached_resp = _ok_response(payload)
-        _resp_cache_put(cache_key, cached_resp)
+        _resp_cache_set(cache_key, cached_resp)
         return cached_resp
 
     kind = view_obj.get("kind") or view_obj.get("type")
@@ -24194,6 +24290,7 @@ def _run_transform_record_action(
         generic_records.delete(target_entity, target_id)
         return _sequence_error_response(exc)
     _resp_cache_invalidate_entity(target_entity)
+    _resp_cache_invalidate_module_bootstrap(module_id)
     phase_ms["transform_create_target"] = (time.perf_counter() - t0) * 1000
 
     created_children: list[tuple[str, str]] = []
@@ -24268,6 +24365,7 @@ def _run_transform_record_action(
                 created_children.append((target_child_entity, created_child_id))
                 child_created_count += 1
         _resp_cache_invalidate_entity(target_child_entity)
+        _resp_cache_invalidate_module_bootstrap(module_id)
 
     source_patch: dict = {}
     if isinstance(source_to_target_field, str) and source_to_target_field:
@@ -24358,6 +24456,7 @@ def _run_transform_record_action(
                     status_field=status_field,
                 )
         _resp_cache_invalidate_entity(source_entity)
+        _resp_cache_invalidate_module_bootstrap(module_id)
 
     target_to_source_field = link_fields.get("target_to_source")
     if isinstance(target_to_source_field, str) and target_to_source_field:
@@ -24388,6 +24487,7 @@ def _run_transform_record_action(
             return _sequence_error_response(exc)
         _resp_cache_invalidate_record(target_entity, target_id)
         _resp_cache_invalidate_entity(target_entity)
+        _resp_cache_invalidate_module_bootstrap(module_id)
 
     activity_cfg = transformation.get("activity") if isinstance(transformation.get("activity"), dict) else {}
     source_record_ids = [row.get("record_id") for row in selected_rows if isinstance(row.get("record_id"), str)]
@@ -24699,6 +24799,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 extra_payload={"record_created": True},
             )
         _resp_cache_invalidate_entity(entity_id)
+        _resp_cache_invalidate_module_bootstrap(module_id)
         phase_ms["write"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms})
@@ -24804,6 +24905,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         _add_chatter_entry(target_entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
         _resp_cache_invalidate_record(target_entity_id, record_id)
         _resp_cache_invalidate_entity(target_entity_id)
+        _resp_cache_invalidate_module_bootstrap(module_id)
         phase_ms["write"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms})
@@ -25035,6 +25137,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                         status_field=status_field,
                     )
         _resp_cache_invalidate_entity(entity_id)
+        _resp_cache_invalidate_module_bootstrap(module_id)
         phase_ms["bulk_total"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms, "updated": updated_count})
@@ -48222,6 +48325,16 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     limit = body.get("limit") if isinstance(body, dict) else None
     domain = body.get("domain") if isinstance(body, dict) else None
     record_context = body.get("record_context") if isinstance(body, dict) else None
+    requested_fields = body.get("fields") if isinstance(body, dict) else None
+    requested_lookup_fields = list(
+        dict.fromkeys(
+            [
+                str(item).strip()
+                for item in (requested_fields if isinstance(requested_fields, list) else [])
+                if isinstance(item, str) and str(item).strip()
+            ]
+        )
+    )
     limit_cap = limit if isinstance(limit, int) and limit > 0 else 50
     if limit_cap > 200:
         limit_cap = 200
@@ -48230,9 +48343,13 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
     if isinstance(q, str) and len(q.strip()) < 2:
         return _ok_response({"records": []})
     display_field = found[1].get("display_field") if isinstance(found[1], dict) else None
+    lookup_fields: list[str] = []
+    if requested_lookup_fields:
+        base_lookup_fields = [display_field.strip()] if isinstance(display_field, str) and display_field.strip() else []
+        lookup_fields = list(dict.fromkeys([*base_lookup_fields, *requested_lookup_fields]))
     cache_key = (
         f"lookup:{get_org_id()}:{entity_id}:{display_field}:{limit_cap}:{q or ''}:"
-        f"{_domain_hash(domain)}:{_context_hash(record_context)}:{_context_hash(actor_ctx)}"
+        f"{_domain_hash(domain)}:{_context_hash(record_context)}:{_context_hash(actor_ctx)}:{_context_hash(lookup_fields)}"
     )
     cached = _resp_cache_get(cache_key)
     if cached is not None:
@@ -48243,6 +48360,25 @@ async def lookup_options(request: Request, entity_id: str) -> dict:
         items = generic_records.list(entity_id, limit=prefetch, q=q, search_fields=[display_field] if display_field else None)
     else:
         items = generic_records.list_lookup(entity_id, display_field, limit=limit_cap, q=q)
+        if lookup_fields:
+            ordered_ids = [
+                str(item.get("record_id") or (item.get("record") or {}).get("id") or "").strip()
+                for item in items
+                if isinstance(item, dict)
+            ]
+            ordered_ids = [record_id for record_id in ordered_ids if record_id]
+            rich_items = generic_records.get_many(entity_id, ordered_ids, fields=lookup_fields)
+            rich_by_id = {
+                str(item.get("record_id") or (item.get("record") or {}).get("id") or "").strip(): item
+                for item in rich_items
+                if isinstance(item, dict)
+            }
+            if rich_by_id:
+                enriched_items = []
+                for item in items:
+                    record_id = str(item.get("record_id") or (item.get("record") or {}).get("id") or "").strip() if isinstance(item, dict) else ""
+                    enriched_items.append(rich_by_id.get(record_id, item))
+                items = enriched_items
     if domain:
         items = _filter_records_by_domain(items, domain, record_context or {}, actor_ctx)
     items = _filter_record_items_for_actor(actor, found[0], found[1], items)
@@ -50094,6 +50230,10 @@ def _load_lookup_target_record(target_entity: str, record_id: str) -> tuple[dict
 
 def _lookup_label(target_entity: str, display_field: str, record_id: str) -> str | None:
     target_record, _target_entity_def = _load_lookup_target_record(target_entity, record_id)
+    return _lookup_label_from_record(target_record, display_field)
+
+
+def _lookup_label_from_record(target_record: dict | None, display_field: str) -> str | None:
     if not isinstance(target_record, dict):
         return None
     field_candidates = [display_field]
@@ -50133,7 +50273,7 @@ def _enrich_template_record(record: dict, entity_def: dict | None, *, expand_loo
             continue
         target_entity = target[7:] if target.startswith("entity.") else target
         target_record, target_entity_def = _load_lookup_target_record(target_entity, value)
-        label = _lookup_label(target_entity, display_field, value)
+        label = _lookup_label_from_record(target_record, display_field)
         if not label:
             if not expand_lookup_aliases or not isinstance(target_record, dict):
                 continue
@@ -50239,20 +50379,43 @@ def _template_related_line_config(entity_name: str | None) -> dict | None:
     return None
 
 
-def _load_template_related_lines(line_entity_id: str, parent_field_id: str, parent_record_id: str) -> list[dict]:
-    line_entity_def = _find_entity_def_global(line_entity_id)
+def _list_template_line_rows(line_entity_id: str, parent_field_id: str, parent_record_id: str) -> list[dict]:
+    if hasattr(generic_records, "list_by_field_value"):
+        try:
+            return generic_records.list_by_field_value(line_entity_id, parent_field_id, parent_record_id, limit=1000)
+        except TypeError:
+            try:
+                return generic_records.list_by_field_value(line_entity_id, parent_field_id, parent_record_id)
+            except Exception:
+                pass
+        except Exception:
+            # Preserve document rendering if the optional indexed path is unavailable.
+            pass
     try:
         rows = generic_records.list(line_entity_id, limit=1000)
     except TypeError:
         rows = generic_records.list(line_entity_id)
+    filtered_rows: list[dict] = []
+    for row in rows if isinstance(rows, list) else []:
+        record = row.get("record") if isinstance(row, dict) else None
+        if not isinstance(record, dict) and isinstance(row, dict):
+            record = row
+        if isinstance(record, dict) and record.get(parent_field_id) == parent_record_id:
+            filtered_rows.append(row)
+    return filtered_rows
+
+
+def _load_template_related_lines(line_entity_id: str, parent_field_id: str, parent_record_id: str) -> list[dict]:
+    line_entity_def = _find_entity_def_global(line_entity_id)
+    rows = _list_template_line_rows(line_entity_id, parent_field_id, parent_record_id)
     items: list[dict] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         record = row.get("record")
         if not isinstance(record, dict):
-            continue
-        if record.get(parent_field_id) != parent_record_id:
+            record = row
+        if not isinstance(record, dict):
             continue
         if isinstance(line_entity_def, dict):
             record = _recompute_record_for_entity(line_entity_def, record)
@@ -50266,18 +50429,15 @@ def _load_template_related_lines(line_entity_id: str, parent_field_id: str, pare
 def _load_invoice_template_lines(invoice_id: str) -> list[dict]:
     line_entity_id = "entity.billing_invoice_line"
     line_entity_def = _find_entity_def_global(line_entity_id)
-    try:
-        rows = generic_records.list(line_entity_id, limit=1000)
-    except TypeError:
-        rows = generic_records.list(line_entity_id)
+    rows = _list_template_line_rows(line_entity_id, "billing_invoice_line.invoice_id", invoice_id)
     items: list[dict] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         record = row.get("record")
         if not isinstance(record, dict):
-            continue
-        if record.get("billing_invoice_line.invoice_id") != invoice_id:
+            record = row
+        if not isinstance(record, dict):
             continue
         if isinstance(line_entity_def, dict):
             record = _recompute_record_for_entity(line_entity_def, record)
@@ -51063,6 +51223,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
             return _sequence_error_response(exc)
         _resp_cache_invalidate_record(entity_id, record_id)
         _resp_cache_invalidate_entity(entity_id)
+        _resp_cache_invalidate_module_bootstrap(found[0])
         _add_chatter_entry(entity_id, record_id, "system", "Record created", getattr(request.state, "user", None))
         _activity_add_record_created_event(found[1], record_id, record_payload, actor=getattr(request.state, "user", None))
         created_snapshot = _automation_record_snapshot(record_payload, found[1])
@@ -51217,6 +51378,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
             return _sequence_error_response(exc)
         _resp_cache_invalidate_record(entity_id, record_id)
         _resp_cache_invalidate_entity(entity_id)
+        _resp_cache_invalidate_module_bootstrap(found[0])
         activity_cfg = _activity_view_config(found[2], found[1].get("id"))
         if isinstance(activity_cfg, dict) and activity_cfg.get("show_changes", True) is not False:
             tracked_fields = activity_cfg.get("tracked_fields") if isinstance(activity_cfg.get("tracked_fields"), list) else None
@@ -51311,6 +51473,7 @@ async def delete_generic_record(request: Request, entity_id: str, record_id: str
     _recompute_aggregate_dependents(request, entity_id, source_records=[before_record] if isinstance(before_record, dict) else None)
     _resp_cache_invalidate_record(entity_id, record_id)
     _resp_cache_invalidate_entity(entity_id)
+    _resp_cache_invalidate_module_bootstrap(found[0])
     return _ok_response({"deleted": True})
 
 
@@ -52102,6 +52265,7 @@ async def complete_password_handoff(request: Request) -> dict:
         if isinstance(new_password, str) and new_password:
             payload["password"] = new_password
         _supabase_update_user(user_id, payload)
+        _update_auth_user_app_metadata_direct(user_id, app_metadata)
     except Exception as exc:
         return _error_response("HANDOFF_COMPLETE_FAILED", str(exc), "user_id", status=400)
     _invalidate_access_runtime_caches(actor.get("workspace_id"), user_id)
@@ -61871,6 +62035,10 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
         html = render_template(source_template.get("html") or "", context, strict=True)
         filename_pattern = source_template.get("filename_pattern") or source_template.get("name") or "document"
         filename = render_template(filename_pattern, context, strict=True)
+        if isinstance(filename, str) and filename.lower().endswith(".pdf"):
+            filename = filename[:-4]
+        if not isinstance(filename, str) or not filename.strip():
+            filename = "document"
         header_html = source_template.get("header_html") or ""
         footer_html = source_template.get("footer_html") or ""
         if header_html:

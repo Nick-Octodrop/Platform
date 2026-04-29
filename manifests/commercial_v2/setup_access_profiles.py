@@ -328,6 +328,8 @@ def sales_hidden_fields() -> list[RuleSpec]:
         "biz_product.default_buy_price",
         "biz_product.default_quote_cost_currency",
         "biz_product.default_quote_cost_price",
+        "biz_product.intercompany_cost_currency",
+        "biz_product.intercompany_cost_price",
         "biz_product.preferred_supplier_id",
         "biz_product.supplier_factory_reference",
         "biz_product.internal_notes",

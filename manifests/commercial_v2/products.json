@@ -89,6 +89,38 @@
           "label_key": "products.entities.biz_product.fields.category.label"
         },
         {
+          "id": "biz_product.product_type",
+          "type": "enum",
+          "label": "Product Type",
+          "default": "catalogue_item",
+          "options": [
+            {
+              "value": "led_fixture",
+              "label": "LED Fixture"
+            },
+            {
+              "value": "accessory",
+              "label": "Accessory"
+            },
+            {
+              "value": "service_charge",
+              "label": "Service Charge"
+            },
+            {
+              "value": "delivery_charge",
+              "label": "Delivery Charge"
+            },
+            {
+              "value": "catalogue_item",
+              "label": "Catalogue Item"
+            },
+            {
+              "value": "custom",
+              "label": "Custom"
+            }
+          ]
+        },
+        {
           "id": "biz_product.uom",
           "type": "enum",
           "label": "UOM",
@@ -135,6 +167,10 @@
               "label": "Meter",
               "status_label_key": "products.entities.biz_product.fields.uom.options.m",
               "label_key": "products.entities.biz_product.fields.uom.options.m"
+            },
+            {
+              "value": "HOUR",
+              "label": "Hour"
             }
           ],
           "label_key": "products.entities.biz_product.fields.uom.label"
@@ -176,6 +212,7 @@
           "id": "biz_product.default_sales_price",
           "type": "number",
           "label": "Sales Price",
+          "help_text": "Default customer sell price copied onto quote lines. It can still be adjusted per quote line.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -188,6 +225,7 @@
           "id": "biz_product.default_quote_cost_currency",
           "type": "enum",
           "label": "Quote Cost Currency",
+          "help_text": "Currency for the default quote cost of sale. For the NLight catalogue this is EUR from the workbook cost-of-sale column.",
           "default": "EUR",
           "options": [
             {
@@ -212,6 +250,7 @@
           "id": "biz_product.default_quote_cost_price",
           "type": "number",
           "label": "Quote Cost",
+          "help_text": "Default cost of sale used for quote margin calculations. For NLight this is the EUR cost copied to quote lines, not the direct supplier purchase cost.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -220,9 +259,31 @@
           }
         },
         {
+          "id": "biz_product.quote_cost_mode",
+          "type": "enum",
+          "label": "Quote Cost Mode",
+          "help_text": "Controls how quote costing should be handled: use catalogue cost, require manual cost per quote, or pass the cost through with no markup.",
+          "default": "catalogue",
+          "options": [
+            {
+              "value": "catalogue",
+              "label": "Catalogue"
+            },
+            {
+              "value": "manual_per_quote",
+              "label": "Manual Per Quote"
+            },
+            {
+              "value": "pass_through",
+              "label": "Pass Through"
+            }
+          ]
+        },
+        {
           "id": "biz_product.default_purchase_currency",
           "type": "enum",
           "label": "Purchase Currency",
+          "help_text": "Currency used for purchasing from the actual supplier/factory. This feeds supplier and purchase order costing.",
           "default": "USD",
           "options": [
             {
@@ -256,6 +317,7 @@
           "id": "biz_product.default_buy_price",
           "type": "number",
           "label": "Buy Price",
+          "help_text": "Direct supplier/factory purchase cost. For NLight this is EcoTech's USD supplier cost from the catalogue, separate from quote cost.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -265,9 +327,47 @@
           "label_key": "products.entities.biz_product.fields.default_buy_price.label"
         },
         {
+          "id": "biz_product.intercompany_cost_currency",
+          "type": "enum",
+          "label": "Intercompany Cost Currency",
+          "help_text": "Currency for the internal transfer price between entities. For NLight this is the USD price charged from EcoTech to NLight BV.",
+          "default": "USD",
+          "options": [
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
+          ]
+        },
+        {
+          "id": "biz_product.intercompany_cost_price",
+          "type": "number",
+          "label": "Intercompany Cost",
+          "help_text": "Internal transfer cost between entities. For NLight this is column N in the catalogue and is hidden from Sales users.",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_product.intercompany_cost_currency",
+            "precision": 2
+          }
+        },
+        {
           "id": "biz_product.fulfilment_mode",
           "type": "enum",
           "label": "Fulfilment Mode",
+          "help_text": "Use made to order for factory-supplied catalogue items, stocked for inventory items, and hybrid when both are possible.",
           "default": "made_to_order",
           "options": [
             {
@@ -376,6 +476,7 @@
           "id": "biz_product.lead_time_weeks",
           "type": "number",
           "label": "Lead Time (Weeks)",
+          "help_text": "Expected supplier/factory lead time copied onto quote and order lines for internal planning.",
           "default": 0,
           "label_key": "products.entities.biz_product.fields.lead_time_weeks.label"
         },
@@ -383,6 +484,7 @@
           "id": "biz_product.minimum_order_quantity",
           "type": "number",
           "label": "Minimum Order Quantity",
+          "help_text": "Minimum quantity normally required by the supplier. Copied to quote and order lines for purchasing reference.",
           "default": 1,
           "label_key": "products.entities.biz_product.fields.minimum_order_quantity.label"
         },
@@ -440,6 +542,7 @@
           "id": "biz_product.preferred_supplier_id",
           "type": "lookup",
           "label": "Preferred Supplier",
+          "help_text": "Internal supplier/factory used for purchasing defaults. Hidden from Sales access profiles.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "label_key": "products.entities.biz_product.fields.preferred_supplier_id.label"
@@ -448,7 +551,77 @@
           "id": "biz_product.supplier_factory_reference",
           "type": "string",
           "label": "Supplier / Factory Ref",
+          "help_text": "Supplier SKU or factory reference used by procurement. Hidden from Sales access profiles.",
           "label_key": "products.entities.biz_product.fields.supplier_factory_reference.label"
+        },
+        {
+          "id": "biz_product.catalog_source",
+          "type": "string",
+          "label": "Catalogue Source",
+          "help_text": "Reference to the source file or import that created the catalogue item."
+        },
+        {
+          "id": "biz_product.catalog_row_number",
+          "type": "number",
+          "label": "Catalogue Row Number",
+          "help_text": "Source row number from the supplier/customer catalogue import for audit and re-import checks."
+        },
+        {
+          "id": "biz_product.manufacturer_model",
+          "type": "string",
+          "label": "Manufacturer Model",
+          "help_text": "Original supplier/manufacturer model code. This can differ from the internal product code."
+        },
+        {
+          "id": "biz_product.wattage",
+          "type": "number",
+          "label": "Wattage",
+          "help_text": "Fixture wattage used for quoting, specifications, and customer-facing document detail."
+        },
+        {
+          "id": "biz_product.spectrum",
+          "type": "string",
+          "label": "Spectrum",
+          "help_text": "Light spectrum or LED mix, copied onto quote/order line snapshots."
+        },
+        {
+          "id": "biz_product.input_voltage",
+          "type": "string",
+          "label": "Input Voltage",
+          "help_text": "Electrical input voltage specification copied onto quote/order line snapshots."
+        },
+        {
+          "id": "biz_product.ppe_umol_per_w",
+          "type": "string",
+          "label": "PPE (umol/s/W)",
+          "help_text": "Photosynthetic photon efficacy. Stored as text because some catalogue rows include notes or combined values."
+        },
+        {
+          "id": "biz_product.ppf_umol_s",
+          "type": "number",
+          "label": "PPF (umol/s)",
+          "help_text": "Photosynthetic photon flux output used in lighting specifications."
+        },
+        {
+          "id": "biz_product.dimmable",
+          "type": "string",
+          "label": "Dimmable"
+        },
+        {
+          "id": "biz_product.ip_rating",
+          "type": "string",
+          "label": "IP Rating"
+        },
+        {
+          "id": "biz_product.max_ambient_temp",
+          "type": "string",
+          "label": "Max Ambient Temp"
+        },
+        {
+          "id": "biz_product.modules",
+          "type": "string",
+          "label": "Modules",
+          "help_text": "Fixture module count or catalogue module note. Kept as text because some accessory rows are not numeric."
         },
         {
           "id": "biz_product.stock_notes",
@@ -528,6 +701,7 @@
           "id": "biz_product_supplier.supplier_id",
           "type": "lookup",
           "label": "Supplier",
+          "help_text": "Actual supplier/factory for this source row. Sales profiles should not have access to this entity.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
@@ -558,12 +732,14 @@
         {
           "id": "biz_product_supplier.supplier_sku",
           "type": "string",
-          "label": "Supplier SKU / Factory Ref"
+          "label": "Supplier SKU / Factory Ref",
+          "help_text": "Supplier's own product reference used on purchase orders."
         },
         {
           "id": "biz_product_supplier.purchase_description",
           "type": "text",
-          "label": "Purchase Description"
+          "label": "Purchase Description",
+          "help_text": "Description to use internally or on supplier purchase orders if it differs from the sales description."
         },
         {
           "id": "biz_product_supplier.uom_snapshot",
@@ -577,13 +753,15 @@
             { "value": "LOT", "label": "Lot" },
             { "value": "PALLET", "label": "Pallet" },
             { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" }
+            { "value": "M", "label": "Meter" },
+            { "value": "HOUR", "label": "Hour" }
           ]
         },
         {
           "id": "biz_product_supplier.purchase_currency",
           "type": "enum",
           "label": "Purchase Currency",
+          "help_text": "Currency this supplier charges in for this item.",
           "default": "USD",
           "options": [
             { "value": "EUR", "label": "EUR" },
@@ -596,6 +774,7 @@
           "id": "biz_product_supplier.unit_cost",
           "type": "number",
           "label": "Unit Cost",
+          "help_text": "Supplier purchase unit cost for this source row. Hidden from Sales.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -607,23 +786,27 @@
           "id": "biz_product_supplier.minimum_order_quantity",
           "type": "number",
           "label": "MOQ",
+          "help_text": "Minimum order quantity for this supplier source.",
           "default": 1
         },
         {
           "id": "biz_product_supplier.lead_time_weeks",
           "type": "number",
           "label": "Lead Time (Weeks)",
+          "help_text": "Expected lead time from this supplier source.",
           "default": 0
         },
         {
           "id": "biz_product_supplier.supplier_incoterm",
           "type": "string",
-          "label": "Supplier Incoterm"
+          "label": "Supplier Incoterm",
+          "help_text": "Default purchase/shipping term for this supplier source."
         },
         {
           "id": "biz_product_supplier.is_primary",
           "type": "bool",
           "label": "Primary Supplier",
+          "help_text": "When active, this supplier row can sync defaults back onto the product.",
           "default": false
         },
         {
@@ -692,6 +875,9 @@
           "field_id": "biz_product.name"
         },
         {
+          "field_id": "biz_product.product_type"
+        },
+        {
           "field_id": "biz_product.default_sales_price"
         },
         {
@@ -735,7 +921,9 @@
           "fields": [
             "biz_product.code",
             "biz_product.name",
-            "biz_product.description"
+            "biz_product.description",
+            "biz_product.manufacturer_model",
+            "biz_product.spectrum"
           ],
           "placeholder_key": "products.views.list.search.placeholder"
         },
@@ -860,6 +1048,7 @@
             "biz_product.code",
             "biz_product.name",
             "biz_product.category",
+            "biz_product.product_type",
             "biz_product.uom",
             "biz_product.description",
             "biz_product.is_active"
@@ -876,8 +1065,11 @@
             "biz_product.default_sales_price",
             "biz_product.default_quote_cost_currency",
             "biz_product.default_quote_cost_price",
+            "biz_product.quote_cost_mode",
             "biz_product.default_purchase_currency",
-            "biz_product.default_buy_price"
+            "biz_product.default_buy_price",
+            "biz_product.intercompany_cost_currency",
+            "biz_product.intercompany_cost_price"
           ],
           "section_title_key": "products.views.form.sections.pricing.title"
         },
@@ -897,6 +1089,26 @@
             "biz_product.internal_notes"
           ],
           "section_title_key": "products.views.form.sections.purchasing.title"
+        },
+        {
+          "id": "specifications",
+          "title": "Specifications",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "biz_product.catalog_source",
+            "biz_product.catalog_row_number",
+            "biz_product.manufacturer_model",
+            "biz_product.wattage",
+            "biz_product.spectrum",
+            "biz_product.input_voltage",
+            "biz_product.ppe_umol_per_w",
+            "biz_product.ppf_umol_s",
+            "biz_product.dimmable",
+            "biz_product.ip_rating",
+            "biz_product.max_ambient_temp",
+            "biz_product.modules"
+          ]
         },
         {
           "id": "inventory",
@@ -947,6 +1159,13 @@
               "tab_label_key": "common.purchasing",
               "sections": [
                 "purchasing"
+              ]
+            },
+            {
+              "id": "specifications",
+              "label": "Specifications",
+              "sections": [
+                "specifications"
               ]
             },
             {
@@ -1019,13 +1238,17 @@
           "biz_product.name",
           "biz_product.description",
           "biz_product.category",
+          "biz_product.product_type",
           "biz_product.uom",
           "biz_product.default_sales_currency",
           "biz_product.default_sales_price",
           "biz_product.default_quote_cost_currency",
           "biz_product.default_quote_cost_price",
+          "biz_product.quote_cost_mode",
           "biz_product.default_purchase_currency",
           "biz_product.default_buy_price",
+          "biz_product.intercompany_cost_currency",
+          "biz_product.intercompany_cost_price",
           "biz_product.fulfilment_mode",
           "biz_product.on_hand_qty",
           "biz_product.reserved_qty",
@@ -1035,6 +1258,18 @@
           "biz_product.minimum_order_quantity",
           "biz_product.preferred_supplier_id",
           "biz_product.supplier_factory_reference",
+          "biz_product.catalog_source",
+          "biz_product.catalog_row_number",
+          "biz_product.manufacturer_model",
+          "biz_product.wattage",
+          "biz_product.spectrum",
+          "biz_product.input_voltage",
+          "biz_product.ppe_umol_per_w",
+          "biz_product.ppf_umol_s",
+          "biz_product.dimmable",
+          "biz_product.ip_rating",
+          "biz_product.max_ambient_temp",
+          "biz_product.modules",
           "biz_product.stock_notes",
           "biz_product.internal_notes",
           "biz_product.is_active"

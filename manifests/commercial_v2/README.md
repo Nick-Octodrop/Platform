@@ -14,20 +14,42 @@ Contents:
 - `tasks.json`
 - `calendar.json`
 
+Planning:
+- `UAT_PHASES_AND_TODOS.md`
+
 Scripts:
 - `python3 manifests/commercial_v2/install_all.py`
 - `python3 manifests/commercial_v2/cleanup_removed_modules.py`
+- `python3 manifests/commercial_v2/setup_uat_workspace.py`
+- `python3 manifests/commercial_v2/clear_workspace_data.py --dry-run`
 - `python3 manifests/commercial_v2/setup_document_numbering.py`
 - `python3 manifests/commercial_v2/setup_xero_phase1.py --connection-name "<your xero connection>" --sales-entity "<your sales entity>"`
+- `python3 manifests/commercial_v2/seed_catalog_items.py`
 - `python3 manifests/commercial_v2/seed_dummy_examples.py`
 - `python3 manifests/commercial_v2/setup_access_profiles.py --skip-assignments`
 
 Recommended setup order:
+- `python3 manifests/commercial_v2/setup_uat_workspace.py --dry-run`
+- `python3 manifests/commercial_v2/setup_uat_workspace.py --clear-records --publish-automations`
+
+Manual setup order:
 - `python3 manifests/commercial_v2/install_all.py`
+- `python3 manifests/commercial_v2/setup_document_registry_metadata.py`
 - `python3 manifests/commercial_v2/setup_document_numbering.py`
+- `python3 manifests/commercial_v2/setup_quote_document_templates.py`
+- `python3 manifests/commercial_v2/setup_quote_scripts.py`
+- `python3 manifests/commercial_v2/seed_catalog_items.py`
+- `python3 manifests/commercial_v2/setup_access_profiles.py`
+- `python3 manifests/commercial_v2/setup_commercial_automations.py --quote-document-template-id "<template id>" --publish`
 - `python3 manifests/commercial_v2/setup_xero_phase1.py --connection-name "<your xero connection>" --sales-entity "<your sales entity>"`
 - `python3 manifests/commercial_v2/seed_dummy_examples.py`
-- `python3 manifests/commercial_v2/setup_access_profiles.py`
+
+Catalogue seed notes:
+- `seed_catalog_items.py` creates/updates supplier contacts, product catalogue rows, and product supplier source rows from the NLight catalogue workbook.
+- Supplier contacts, supplier source rows, purchase costs, intercompany costs, quote costs, and margins are hidden from Sales through the commercial access profiles.
+- LED fixture/specification fields are copied from products onto quote/order line snapshots so generated quote documents remain stable if the catalogue changes later.
+- Delivery charge is seeded with `Quote Cost Mode = Manual Per Quote`; head office must enter the cost-of-sale on each quote.
+- Disposal fee is seeded as a pass-through service item with matching sales price and quote cost.
 
 Xero phase 1 notes:
 - Pass an explicit `--sales-account-code` and `--default-tax-type` for the target Xero tenant instead of relying on generic defaults.

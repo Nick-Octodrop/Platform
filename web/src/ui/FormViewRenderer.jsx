@@ -129,6 +129,16 @@ function recordHasField(record, fieldId) {
   return Object.prototype.hasOwnProperty.call(record, fieldId);
 }
 
+function buildEntityFieldIndex(entityDefs, entityId) {
+  if (!Array.isArray(entityDefs) || !entityId) return {};
+  const entity = entityDefs.find((item) => item?.id === entityId);
+  const index = {};
+  for (const field of entity?.fields || []) {
+    if (field?.id) index[field.id] = field;
+  }
+  return index;
+}
+
 function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, lookupRecord, config) {
   let nextRecord = setFieldValueIfChanged(baseRecord || {}, lookupFieldId, selectedValue);
   if (!config || typeof config !== "object") return nextRecord;
@@ -361,6 +371,7 @@ function AddressAutocompleteField({ field, value, onChange, onRecordChange, read
 export default function FormViewRenderer({
   view,
   fieldIndex,
+  entityDefs = [],
   record,
   entityLabel,
   displayField,
@@ -987,6 +998,7 @@ export default function FormViewRenderer({
             {lineEditorConfig ? (
               <InlineLineItemsTable
                 config={lineEditorConfig}
+                entityDefs={entityDefs}
                 parentEntityId={entityId}
                 parentRecordId={effectiveRecordId}
                 parentRecord={computedRecord}
@@ -1186,6 +1198,7 @@ function coerceEditorValue(value, type) {
 
 function InlineLineItemsTable({
   config,
+  entityDefs = [],
   parentEntityId,
   parentRecordId,
   parentRecord,
@@ -1220,6 +1233,26 @@ function InlineLineItemsTable({
     [config?.custom_line_defaults]
   );
   const columns = Array.isArray(config?.columns) ? config.columns : [];
+  const childFieldIndex = useMemo(
+    () => buildEntityFieldIndex(entityDefs, childEntityId),
+    [entityDefs, childEntityId]
+  );
+  const applyLineComputed = React.useCallback(
+    (lineRecord) => applyComputedFields(childFieldIndex, lineRecord || {}),
+    [childFieldIndex]
+  );
+  const itemLookupFields = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            itemDisplayField,
+            ...Object.values(itemFieldMap || {}).filter((fieldId) => typeof fieldId === "string" && fieldId),
+          ].filter(Boolean)
+        )
+      ),
+    [itemDisplayField, itemFieldMap]
+  );
   const itemPrefix = useMemo(() => {
     if (typeof itemDisplayField === "string" && itemDisplayField.includes(".")) {
       return itemDisplayField.split(".")[0];
@@ -1242,6 +1275,7 @@ function InlineLineItemsTable({
   const parentRefreshInFlightRef = useRef(false);
   const parentRefreshQueuedRef = useRef(false);
   const parentRefreshTimerRef = useRef(null);
+  const rowMutationSeqRef = useRef({});
   const uomColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".uom"));
   const quantityColumn = columns.find((col) => typeof col?.field_id === "string" && col.field_id.endsWith(".quantity"));
   const unitAmountColumn = columns.find(
@@ -1254,10 +1288,11 @@ function InlineLineItemsTable({
       label: translateRuntime("common.add_item"),
       entity: itemEntityId,
       display_field: itemDisplayField,
+      lookup_fields: itemLookupFields,
       domain: itemLookupDomain,
       placeholder: translateRuntime("common.add_line_item"),
     }),
-    [itemDisplayField, itemEntityId, itemField, itemLookupDomain]
+    [itemDisplayField, itemEntityId, itemField, itemLookupDomain, itemLookupFields]
   );
 
   async function addParentActivity(message) {
@@ -1326,6 +1361,17 @@ function InlineLineItemsTable({
     };
   }, []);
 
+  function nextRowMutationSeq(recordId) {
+    if (!recordId) return 0;
+    const nextSeq = (rowMutationSeqRef.current[recordId] || 0) + 1;
+    rowMutationSeqRef.current[recordId] = nextSeq;
+    return nextSeq;
+  }
+
+  function isLatestRowMutation(recordId, seq) {
+    return Boolean(recordId) && rowMutationSeqRef.current[recordId] === seq;
+  }
+
   function rowLabel(rowOrRecord) {
     const recordId = rowOrRecord?.record_id;
     const record = rowOrRecord?.record || rowOrRecord || {};
@@ -1336,14 +1382,23 @@ function InlineLineItemsTable({
     lookupCacheRef.current = lookupCache;
   }, [lookupCache]);
 
-  const resolveItemLabel = React.useCallback(async (itemId) => {
-    if (!itemEntityId || !itemId || previewMode) return String(itemId || "");
+  const resolveItemLabelsBatch = React.useCallback(async (itemIds) => {
+    const normalizedIds = Array.from(
+      new Set((itemIds || []).map((itemId) => String(itemId || "").trim()).filter(Boolean))
+    );
+    if (!itemEntityId || normalizedIds.length === 0 || previewMode) return {};
     try {
-      const res = await apiFetch(`/records/${itemEntityId}/${itemId}`);
-      const itemRecord = res?.record || res || {};
-      return itemRecord?.[itemDisplayField] || itemRecord?.id || String(itemId);
+      const res = await apiFetch(`/lookup/${itemEntityId}/labels`, {
+        method: "POST",
+        body: {
+          ids: normalizedIds,
+          label_field: itemDisplayField || undefined,
+        },
+        cacheTtl: 60000,
+      });
+      return res?.labels && typeof res.labels === "object" ? res.labels : {};
     } catch {
-      return String(itemId);
+      return {};
     }
   }, [itemDisplayField, itemEntityId, previewMode]);
 
@@ -1357,54 +1412,16 @@ function InlineLineItemsTable({
     if (missingEntries.length === 0) return;
     const unresolved = missingEntries.filter(({ recordId }) => !lookupCacheRef.current[recordId]);
     if (unresolved.length === 0) return;
-    const resolvedPairs = await Promise.all(
-      unresolved.map(async ({ recordId, itemId }) => [recordId, await resolveItemLabel(itemId)])
-    );
+    const labels = await resolveItemLabelsBatch(unresolved.map(({ itemId }) => itemId));
     setLookupCache((prev) => {
       const next = { ...prev };
-      for (const [recordId, label] of resolvedPairs) {
+      for (const { recordId, itemId } of unresolved) {
+        const label = labels[String(itemId)] || String(itemId || "");
         if (recordId && label) next[recordId] = label;
       }
       return next;
     });
-  }, [itemField, resolveItemLabel]);
-
-  const buildRowPayload = React.useCallback((rowRecord, overrides = {}) => {
-    const nextRecord = { ...(rowRecord || {}), ...(overrides || {}) };
-    const fieldIds = new Set([
-      parentField,
-      itemField,
-      descriptionField,
-      ...Object.keys(defaults || {}),
-      ...Object.keys(itemFieldMap || {}),
-      ...Object.keys(parentFieldMap || {}),
-      ...columns.map((column) => column?.field_id).filter(Boolean),
-    ]);
-    const payload = {};
-    for (const fieldId of fieldIds) {
-      if (!fieldId) continue;
-      if (fieldId === parentField) {
-        payload[fieldId] = nextRecord[fieldId] ?? parentRecordId;
-        continue;
-      }
-      if (fieldId.endsWith(".line_total")) continue;
-      const parentSourceField = parentFieldMap?.[fieldId];
-      if (
-        typeof parentSourceField === "string" &&
-        !Object.prototype.hasOwnProperty.call(nextRecord, fieldId)
-      ) {
-        const mapped = parentRecord?.[parentSourceField];
-        if (mapped !== undefined && mapped !== null && mapped !== "") {
-          payload[fieldId] = mapped;
-          continue;
-        }
-      }
-      if (Object.prototype.hasOwnProperty.call(nextRecord, fieldId)) {
-        payload[fieldId] = nextRecord[fieldId];
-      }
-    }
-    return payload;
-  }, [columns, defaults, descriptionField, itemField, itemFieldMap, parentFieldMap, parentField, parentRecord, parentRecordId]);
+  }, [itemField, resolveItemLabelsBatch]);
 
   const fetchRows = React.useCallback(async () => {
     if (!childEntityId || !parentField || !parentRecordId || previewMode) {
@@ -1438,7 +1455,7 @@ function InlineLineItemsTable({
       const res = await apiFetch(`/records/${childEntityId}?${qs.toString()}`);
       const next = (res?.records || []).map((r) => ({
         record_id: r.record_id,
-        record: r.record || {},
+        record: applyLineComputed(r.record || {}),
       }));
       setRows(next);
       void hydrateLookupLabels(next);
@@ -1448,7 +1465,7 @@ function InlineLineItemsTable({
     } finally {
       setLoading(false);
     }
-  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, parentFieldMap, hydrateLookupLabels]);
+  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, parentFieldMap, hydrateLookupLabels, applyLineComputed]);
 
   useEffect(() => {
     fetchRows();
@@ -1459,27 +1476,30 @@ function InlineLineItemsTable({
     const currentRow = rows.find((row) => row.record_id === recordId);
     const beforeValue = currentRow?.record?.[fieldId];
     if (beforeValue === value) return;
-    const nextRecord = { ...(currentRow?.record || {}), [fieldId]: value };
+    const nextRecord = applyLineComputed({ ...(currentRow?.record || {}), [fieldId]: value });
     setRows((prev) =>
       prev.map((row) =>
         row.record_id === recordId
-          ? { ...row, record: { ...row.record, [fieldId]: value } }
+          ? { ...row, record: nextRecord }
           : row
       )
     );
+    const mutationSeq = nextRowMutationSeq(recordId);
     try {
-      const updated = await updateRecord(childEntityId, recordId, buildRowPayload(nextRecord));
-      const updatedRecord = updated?.record && typeof updated.record === "object" ? updated.record : nextRecord;
-      setRows((prev) =>
-        prev.map((row) =>
-          row.record_id === recordId ? { ...row, record: updatedRecord } : row
-        )
-      );
+      const updated = await updateRecord(childEntityId, recordId, { [fieldId]: value });
+      const updatedRecord = applyLineComputed(updated?.record && typeof updated.record === "object" ? updated.record : nextRecord);
+      if (isLatestRowMutation(recordId, mutationSeq)) {
+        setRows((prev) =>
+          prev.map((row) =>
+            row.record_id === recordId ? { ...row, record: updatedRecord } : row
+          )
+        );
+      }
       const column = columns.find((col) => col?.field_id === fieldId);
       void addParentActivity(`Line item updated: ${rowLabel(currentRow)} (${column?.label || fieldId}).`);
       queueParentRefresh();
     } catch {
-      fetchRows();
+      if (isLatestRowMutation(recordId, mutationSeq)) fetchRows();
     }
   }
 
@@ -1500,10 +1520,17 @@ function InlineLineItemsTable({
     }
   }
 
+  function lookupRecordMissingSources(lookupRecord) {
+    if (!lookupRecord || typeof lookupRecord !== "object") return true;
+    return Object.values(itemFieldMap || {}).some(
+      (sourceField) => typeof sourceField === "string" && sourceField && !recordHasField(lookupRecord, sourceField)
+    );
+  }
+
   async function addRowFromOption(option) {
     if (!option?.value || !parentRecordId) return;
     let itemRecord = option?.record && typeof option.record === "object" ? option.record : null;
-    if (!itemRecord) {
+    if (!itemRecord || lookupRecordMissingSources(itemRecord)) {
       try {
         const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
         itemRecord = itemRes?.record || itemRes || null;
@@ -1550,15 +1577,15 @@ function InlineLineItemsTable({
     }
     if (descriptionField && !payload[descriptionField]) payload[descriptionField] = option.label || "";
     const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticRecord = { ...payload };
+    const optimisticRecord = applyLineComputed({ ...payload });
     setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
     setLookupCache((prev) => ({ ...prev, [temporaryRowId]: option.label || option.value }));
     try {
       const created = await createRecord(childEntityId, payload);
       const createdId = created?.record_id;
       const createdRecord = created?.record && typeof created.record === "object"
-        ? created.record
-        : { ...payload, id: createdId || payload.id };
+        ? applyLineComputed(created.record)
+        : applyLineComputed({ ...payload, id: createdId || payload.id });
       if (createdId) {
         setRows((prev) => {
           if (prev.some((row) => row.record_id === createdId)) {
@@ -1614,15 +1641,15 @@ function InlineLineItemsTable({
       payload[unitAmountColumn.field_id] = coerceEditorValue(defaults?.[unitAmountColumn.field_id], "number") ?? 0;
     }
     const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticRecord = { ...payload };
+    const optimisticRecord = applyLineComputed({ ...payload });
     setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
     setCreatingCustomLine(true);
     try {
       const created = await createRecord(childEntityId, payload);
       const createdId = created?.record_id;
       const createdRecord = created?.record && typeof created.record === "object"
-        ? created.record
-        : { ...payload, id: createdId || payload.id };
+        ? applyLineComputed(created.record)
+        : applyLineComputed({ ...payload, id: createdId || payload.id });
       if (createdId) {
         setRows((prev) => {
           if (prev.some((row) => row.record_id === createdId)) {
@@ -1745,17 +1772,23 @@ function InlineLineItemsTable({
                             type: "lookup",
                             entity: itemEntityId,
                             display_field: itemDisplayField,
+                            lookup_fields: itemLookupFields,
                             placeholder: translateRuntime("common.search_items"),
                           }}
                           value={raw || null}
-                          onChange={async (nextItemId) => {
+                          onChange={async (nextItemId, selectedOption = null) => {
                             if (!nextItemId) return;
-                            let itemRecord = null;
-                            try {
-                              const itemRes = await apiFetch(`/records/${itemEntityId}/${nextItemId}`);
-                              itemRecord = itemRes?.record || itemRes || null;
-                            } catch {
-                              itemRecord = null;
+                            let itemRecord =
+                              selectedOption?.record && typeof selectedOption.record === "object"
+                                ? selectedOption.record
+                                : null;
+                            if (!itemRecord || lookupRecordMissingSources(itemRecord)) {
+                              try {
+                                const itemRes = await apiFetch(`/records/${itemEntityId}/${nextItemId}`);
+                                itemRecord = itemRes?.record || itemRes || null;
+                              } catch {
+                                itemRecord = null;
+                              }
                             }
                             const mappedValues = {};
                             for (const [targetField, sourceField] of Object.entries(itemFieldMap || {})) {
@@ -1765,6 +1798,10 @@ function InlineLineItemsTable({
                                 mappedValues[targetField] = mapped;
                               }
                             }
+                            const updatePayload = {
+                              ...mappedValues,
+                              [itemField]: nextItemId,
+                            };
                             const nextRecord = {
                               ...row.record,
                               ...mappedValues,
@@ -1772,26 +1809,38 @@ function InlineLineItemsTable({
                             };
                             if (descriptionField && !mappedValues[descriptionField] && itemRecord?.[itemDisplayField]) {
                               nextRecord[descriptionField] = itemRecord[itemDisplayField];
+                              updatePayload[descriptionField] = itemRecord[itemDisplayField];
                             }
+                            const computedNextRecord = applyLineComputed(nextRecord);
+                            const nextLabel =
+                              selectedOption?.label ||
+                              itemRecord?.[itemDisplayField] ||
+                              computedNextRecord?.[descriptionField] ||
+                              nextItemId;
                             setRows((prev) =>
                               prev.map((current) =>
-                                current.record_id === row.record_id ? { ...current, record: nextRecord } : current
+                                current.record_id === row.record_id ? { ...current, record: computedNextRecord } : current
                               )
                             );
+                            setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                            const mutationSeq = nextRowMutationSeq(row.record_id);
                             try {
-                              const updated = await updateRecord(childEntityId, row.record_id, buildRowPayload(nextRecord));
-                              const updatedRecord = updated?.record && typeof updated.record === "object" ? updated.record : nextRecord;
-                              const nextLabel = await resolveItemLabel(nextItemId);
-                              setRows((prev) =>
-                                prev.map((current) =>
-                                  current.record_id === row.record_id ? { ...current, record: updatedRecord } : current
-                                )
+                              const updated = await updateRecord(childEntityId, row.record_id, updatePayload);
+                              const updatedRecord = applyLineComputed(
+                                updated?.record && typeof updated.record === "object" ? updated.record : computedNextRecord
                               );
-                              setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                              if (isLatestRowMutation(row.record_id, mutationSeq)) {
+                                setRows((prev) =>
+                                  prev.map((current) =>
+                                    current.record_id === row.record_id ? { ...current, record: updatedRecord } : current
+                                  )
+                                );
+                                setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                              }
                               void addParentActivity(`Line item changed: ${rowLabel(row)} -> ${nextLabel || nextItemId}.`);
                               queueParentRefresh();
                             } catch {
-                              fetchRows();
+                              if (isLatestRowMutation(row.record_id, mutationSeq)) fetchRows();
                             }
                           }}
                           readonly={readonly || col.readonly}
@@ -1817,7 +1866,7 @@ function InlineLineItemsTable({
                             setRows((prev) =>
                               prev.map((r) =>
                                 r.record_id === row.record_id
-                                  ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                  ? { ...r, record: applyLineComputed({ ...r.record, [fieldId]: next }) }
                                   : r
                               )
                             );
@@ -1866,7 +1915,7 @@ function InlineLineItemsTable({
                               setRows((prev) =>
                                 prev.map((r) =>
                                   r.record_id === row.record_id
-                                    ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                    ? { ...r, record: applyLineComputed({ ...r.record, [fieldId]: next }) }
                                     : r
                                 )
                               );
@@ -1893,7 +1942,7 @@ function InlineLineItemsTable({
                           setRows((prev) =>
                             prev.map((r) =>
                               r.record_id === row.record_id
-                                ? { ...r, record: { ...r.record, [fieldId]: next } }
+                                ? { ...r, record: applyLineComputed({ ...r.record, [fieldId]: next }) }
                                 : r
                             )
                           );
@@ -1927,10 +1976,13 @@ function InlineLineItemsTable({
                     key={addLookupResetKey}
                     field={addLookupField}
                     value={null}
-                    onChange={async (nextItemId) => {
+                    onChange={async (nextItemId, selectedOption = null) => {
                       if (!nextItemId) return;
-                      const nextLabel = await resolveItemLabel(nextItemId);
-                      await addRowFromOption({ value: nextItemId, label: nextLabel || nextItemId });
+                      await addRowFromOption({
+                        value: nextItemId,
+                        label: selectedOption?.label || nextItemId,
+                        record: selectedOption?.record || null,
+                      });
                     }}
                     readonly={readonly}
                     record={parentRecord}
@@ -2417,7 +2469,7 @@ function LookupField({
   const containerRef = useRef(null);
   const cacheRef = useRef(new Map());
   const lastKeyRef = useRef(null);
-  const latestRecordRef = useRef(record && typeof record === "object" ? record : {});
+  const selectedLabelKeyRef = useRef("");
   const entityId = field?.entity || null;
   const placeholder = field?.search_placeholder || field?.placeholder || translateRuntime("common.search");
   const recordContext = useMemo(() => buildRecordContext(field?.domain || null, record), [field?.domain, record]);
@@ -2429,10 +2481,17 @@ function LookupField({
     field?.ui?.populate_from_lookup && typeof field.ui.populate_from_lookup === "object"
       ? field.ui.populate_from_lookup
       : null;
-
-  useEffect(() => {
-    latestRecordRef.current = record && typeof record === "object" ? record : {};
-  }, [record]);
+  const lookupFields = useMemo(() => {
+    const explicitFields = Array.isArray(field?.lookup_fields)
+      ? field.lookup_fields.filter((fieldId) => typeof fieldId === "string" && fieldId)
+      : [];
+    const mappedSourceFields =
+      populateFromLookup?.field_map && typeof populateFromLookup.field_map === "object"
+        ? Object.values(populateFromLookup.field_map).filter((fieldId) => typeof fieldId === "string" && fieldId)
+        : [];
+    return Array.from(new Set([...explicitFields, ...mappedSourceFields].filter(Boolean)));
+  }, [field?.lookup_fields, populateFromLookup]);
+  const lookupFieldsKey = useMemo(() => JSON.stringify(lookupFields), [lookupFields]);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search), 150);
@@ -2452,6 +2511,7 @@ function LookupField({
         q: trimmed || null,
         domain: field?.domain || null,
         recordContextKey,
+        lookupFieldsKey,
       });
       if (requestKey === lastKeyRef.current) return;
       lastKeyRef.current = requestKey;
@@ -2467,6 +2527,7 @@ function LookupField({
           body: JSON.stringify({
             q: trimmed || null,
             limit: 50,
+            fields: lookupFields.length ? lookupFields : undefined,
             domain: field.domain || null,
             record_context: recordContext,
           }),
@@ -2502,29 +2563,26 @@ function LookupField({
     return () => {
       cancelled = true;
     };
-  }, [entityId, field.display_field, field?.id, debouncedSearch, field.domain, recordContextKey, opened, previewMode]);
+  }, [entityId, field.display_field, field?.id, debouncedSearch, field.domain, recordContextKey, lookupFieldsKey, lookupFields, opened, previewMode]);
 
   const labelField = field.display_field;
 
   useEffect(() => {
     if (!value) {
       setSelectedLabel("");
+      selectedLabelKeyRef.current = "";
       return;
     }
     const match = options.find((opt) => opt.value === value);
     if (match) {
       setSelectedLabel(match.label || "");
-      if (populateFromLookup && typeof onRecordChange === "function" && match.record && typeof match.record === "object") {
-        const currentRecord = latestRecordRef.current || {};
-        const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, match.record, populateFromLookup);
-        if (nextRecord !== currentRecord) onRecordChange(nextRecord);
-      }
+      selectedLabelKeyRef.current = `${entityId || ""}:${value}:${labelField || ""}`;
       return;
     }
     if (!selectedLabel && !isUuidLike(value)) {
       setSelectedLabel(value);
     }
-  }, [value, options, selectedLabel, populateFromLookup, onRecordChange, field?.id]);
+  }, [entityId, value, labelField, options, selectedLabel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2533,21 +2591,27 @@ function LookupField({
       if (previewMode) return;
       const match = options.find((opt) => opt.value === value);
       if (match) return;
+      const selectedKey = `${entityId}:${value}:${labelField || ""}`;
+      if (selectedLabel && selectedLabelKeyRef.current === selectedKey) return;
       try {
-        const res = await apiFetch(`/records/${entityId}/${value}`);
-        const selectedRecord = res?.record || res;
-        const label = (labelField && selectedRecord && selectedRecord[labelField]) || (isUuidLike(value) ? "" : value);
+        const res = await apiFetch(`/lookup/${entityId}/labels`, {
+          method: "POST",
+          body: {
+            ids: [value],
+            label_field: labelField || undefined,
+          },
+          cacheTtl: 60000,
+        });
+        const rawLabel = res?.labels?.[value];
+        const label = rawLabel && rawLabel !== value ? rawLabel : (isUuidLike(value) ? "" : value);
         if (!cancelled) {
           setSelectedLabel(label);
-          if (populateFromLookup && typeof onRecordChange === "function" && selectedRecord && typeof selectedRecord === "object") {
-            const currentRecord = latestRecordRef.current || {};
-            const nextRecord = applyLookupPopulateConfig(currentRecord, field?.id, value, selectedRecord, populateFromLookup);
-            if (nextRecord !== currentRecord) onRecordChange(nextRecord);
-          }
+          selectedLabelKeyRef.current = selectedKey;
         }
       } catch {
         if (!cancelled) {
           setSelectedLabel(isUuidLike(value) ? "" : value);
+          selectedLabelKeyRef.current = selectedKey;
         }
       }
     }
@@ -2555,7 +2619,7 @@ function LookupField({
     return () => {
       cancelled = true;
     };
-  }, [entityId, value, labelField, options, previewMode, populateFromLookup, onRecordChange, field?.id]);
+  }, [entityId, value, labelField, selectedLabel, options, previewMode]);
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -2579,7 +2643,7 @@ function LookupField({
       onRecordChange(applyLookupPopulateConfig(record, field?.id, option.value || null, option.record || null, populateFromLookup));
       return;
     }
-    onChange(option.value || null);
+    onChange(option.value || null, option);
   }
 
   function handleExtraAction(action) {
@@ -2667,9 +2731,13 @@ function LookupField({
                         setSelectedLabel(result.label || "");
                         setSearch(result.label || "");
                         if (populateFromLookup && typeof onRecordChange === "function") {
-                          onRecordChange(applyLookupPopulateConfig(record, field?.id, result.record_id, null, populateFromLookup));
+                          onRecordChange(applyLookupPopulateConfig(record, field?.id, result.record_id, result.record || null, populateFromLookup));
                         } else {
-                          onChange(result.record_id);
+                          onChange(result.record_id, {
+                            value: result.record_id,
+                            label: result.label || result.record_id,
+                            record: result.record || null,
+                          });
                         }
                       }
                     }}
@@ -2754,7 +2822,15 @@ function LookupField({
                         if (result?.record_id) {
                           setSelectedLabel(result.label || "");
                           setSearch(result.label || "");
-                          onChange(result.record_id);
+                          if (populateFromLookup && typeof onRecordChange === "function") {
+                            onRecordChange(applyLookupPopulateConfig(record, field?.id, result.record_id, result.record || null, populateFromLookup));
+                          } else {
+                            onChange(result.record_id, {
+                              value: result.record_id,
+                              label: result.label || result.record_id,
+                              record: result.record || null,
+                            });
+                          }
                           setOpened(false);
                         }
                       }}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import argparse
 from pathlib import Path
 from urllib import parse as urlparse
 
@@ -16,14 +17,24 @@ REMOVED_MODULES = ["biz_dashboard", "biz_settings"]
 
 
 def main() -> int:
-    base_url = os.environ.get("OCTO_BASE_URL", "").strip().rstrip("/")
-    token = os.environ.get("OCTO_API_TOKEN", "").strip() or None
-    workspace_id = os.environ.get("OCTO_WORKSPACE_ID", "").strip() or None
+    parser = argparse.ArgumentParser(description="Archive commercial_v2 modules that were removed from the bundle.")
+    parser.add_argument("--base-url", default=os.environ.get("OCTO_BASE_URL", "").strip(), help="Octodrop API base URL")
+    parser.add_argument("--token", default=os.environ.get("OCTO_API_TOKEN", "").strip(), help="Bearer token")
+    parser.add_argument("--workspace-id", default=os.environ.get("OCTO_WORKSPACE_ID", "").strip(), help="Workspace ID")
+    parser.add_argument("--dry-run", action="store_true", help="Print planned archive operations without writing")
+    args = parser.parse_args()
+
+    base_url = args.base_url.strip().rstrip("/")
+    token = args.token.strip() or None
+    workspace_id = args.workspace_id.strip() or None
     if not base_url:
         raise SystemExit("OCTO_BASE_URL is required")
-    if not token:
+    if not token and not args.dry_run:
         raise SystemExit("OCTO_API_TOKEN is required")
     for module_id in REMOVED_MODULES:
+        if args.dry_run:
+            print(f"[cleanup] would archive {module_id}")
+            continue
         status, payload = api_call(
             "DELETE",
             f"{base_url}/modules/{urlparse.quote(module_id, safe='')}?archive=true",

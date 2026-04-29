@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 import psycopg2
 import psycopg2.extras
-from psycopg2.pool import SimpleConnectionPool
+from psycopg2.pool import ThreadedConnectionPool
 import threading
 import logging
 
@@ -22,7 +22,7 @@ def get_db_url() -> str:
     return url
 
 
-_POOL: SimpleConnectionPool | None = None
+_POOL: ThreadedConnectionPool | None = None
 _DB_MS = 0.0
 _DB_LOCK = threading.Lock()
 _logger = logging.getLogger("octo.db")
@@ -95,7 +95,7 @@ def init_pool(minconn: int | None = None, maxconn: int | None = None) -> None:
             minconn = int(os.getenv("OCTO_DB_POOL_MIN", "1"))
         if maxconn is None:
             maxconn = int(os.getenv("OCTO_DB_POOL_MAX", "10"))
-        _POOL = SimpleConnectionPool(minconn, maxconn, dsn=get_db_url())
+        _POOL = ThreadedConnectionPool(minconn, maxconn, dsn=get_db_url())
 
 
 def reset_db_ms() -> None:
@@ -154,7 +154,7 @@ def get_db_ms() -> float:
         return _DB_MS
 
 
-def _get_pool() -> SimpleConnectionPool:
+def _get_pool() -> ThreadedConnectionPool:
     if _POOL is None:
         init_pool()
     return _POOL

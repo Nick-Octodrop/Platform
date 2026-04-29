@@ -249,6 +249,53 @@ function safeOpaqueLabel(value, fallback = "") {
   return isUuidLike(text) ? fallback : text;
 }
 
+async function fetchLookupLabelEntries(pending, fallbackForId = () => "") {
+  const requests = Array.isArray(pending) ? pending : [];
+  if (!requests.length) return [];
+  const groups = new Map();
+  for (const item of requests) {
+    const targetEntityId = String(item?.targetEntityId || "").trim();
+    const recordId = String(item?.recordId || "").trim();
+    if (!targetEntityId || !recordId) continue;
+    const labelField = String(item?.labelField || "").trim();
+    const groupKey = `${targetEntityId}:${labelField}`;
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, { targetEntityId, labelField, ids: new Set(), items: [] });
+    }
+    const group = groups.get(groupKey);
+    group.ids.add(recordId);
+    group.items.push({ ...item, recordId });
+  }
+  const entries = [];
+  await Promise.all(
+    Array.from(groups.values()).map(async (group) => {
+      const ids = Array.from(group.ids);
+      let labels = {};
+      try {
+        const res = await apiFetch(`/lookup/${encodeURIComponent(group.targetEntityId)}/labels`, {
+          method: "POST",
+          body: {
+            ids,
+            label_field: group.labelField || undefined,
+          },
+          cacheTtl: 60000,
+        });
+        labels = res?.labels && typeof res.labels === "object" ? res.labels : {};
+      } catch {
+        labels = {};
+      }
+      for (const item of group.items) {
+        const label = labels[item.recordId];
+        entries.push([
+          item.cacheKey,
+          String(label && label !== item.recordId ? label : fallbackForId(item.recordId)),
+        ]);
+      }
+    }),
+  );
+  return entries;
+}
+
 function formatGroupedFieldValue(fieldDef, rawValue, lookupLabels = {}, memberLabels = {}) {
   if (rawValue === null || rawValue === undefined || rawValue === "") return "";
   if (!fieldDef) return isUuidLike(rawValue) ? "" : String(rawValue);
@@ -2403,18 +2450,7 @@ export default function ViewModesBlock({
     }
     if (!pending.length) return undefined;
     (async () => {
-      const resolved = await Promise.all(
-        pending.map(async ({ cacheKey, targetEntityId, recordId, labelField }) => {
-          try {
-            const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
-            const rec = res?.record || {};
-            const label = (labelField && rec?.[labelField]) || rec?.display_name || rec?.full_name || rec?.name || "";
-            return [cacheKey, String(label || "")];
-          } catch {
-            return [cacheKey, ""];
-          }
-        }),
-      );
+      const resolved = await fetchLookupLabelEntries(pending, () => "");
       if (!cancelled) setGroupLookupLabels((prev) => ({ ...prev, ...Object.fromEntries(resolved) }));
     })();
     return () => {
@@ -2852,23 +2888,9 @@ export default function ViewModesBlock({
       }
     }
     if (!pending.length) return {};
-    const resolved = await Promise.all(
-      pending.map(async ({ fieldId, targetEntityId, labelField, recordId }) => {
-        const cacheKey = `${fieldId}:${recordId}`;
-        try {
-          const res = await apiFetch(`/records/${encodeURIComponent(targetEntityId)}/${encodeURIComponent(recordId)}`);
-          const rec = res?.record || {};
-          const label =
-            (labelField && rec?.[labelField]) ||
-            rec?.display_name ||
-            rec?.full_name ||
-            rec?.name ||
-            safeOpaqueLabel(recordId, "");
-          return [cacheKey, String(label)];
-        } catch {
-          return [cacheKey, safeOpaqueLabel(recordId, "")];
-        }
-      }),
+    const resolved = await fetchLookupLabelEntries(
+      pending.map((item) => ({ ...item, cacheKey: `${item.fieldId}:${item.recordId}` })),
+      (recordId) => safeOpaqueLabel(recordId, ""),
     );
     return Object.fromEntries(resolved);
   }

@@ -86,7 +86,7 @@ def desired_templates() -> list[dict[str, Any]]:
         {
             "name": "Customer Quote Template",
             "description": "Customer-facing quote template styled after the Simpro reference, with full-bleed branded background, commercial summary, and quote-script sections.",
-            "filename_pattern": "quote_{{ record['biz_quote.quote_number'] if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] else 'draft' }}.pdf",
+            "filename_pattern": "quote_{{ record['biz_quote.quote_number'] if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] else 'draft' }}",
             "html": read_text("customer_quote_template.html.jinja"),
             "header_html": "",
             "footer_html": "",

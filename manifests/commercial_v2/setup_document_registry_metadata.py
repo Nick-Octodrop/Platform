@@ -296,6 +296,9 @@ def main() -> None:
     if not args.base_url:
         raise SystemExit("Missing base URL. Set OCTO_BASE_URL or pass --base-url.")
     if not args.token:
+        if args.dry_run:
+            print("[documents] dry-run skipped record inspection because no API token was provided")
+            return
         raise SystemExit("Missing API token. Set OCTO_API_TOKEN or pass --token.")
 
     base_url = args.base_url.rstrip("/")

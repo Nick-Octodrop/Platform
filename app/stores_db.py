@@ -9,6 +9,7 @@ import uuid
 import logging
 import os
 import psycopg2
+import psycopg2.extras
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -80,6 +81,153 @@ def _deepcopy(value):
 
 def _is_undefined_table(exc: Exception) -> bool:
     return isinstance(exc, psycopg2.Error) and getattr(exc, "pgcode", "") == "42P01"
+
+
+_RECORD_FIELD_INDEX_AVAILABLE: bool | None = None
+_RECORD_FIELD_INDEX_DISABLED = False
+_RECORD_FIELD_INDEX_SAVEPOINT = "octo_record_field_index"
+
+
+def _disable_record_field_index(reason: str, exc: Exception | None = None) -> None:
+    global _RECORD_FIELD_INDEX_AVAILABLE, _RECORD_FIELD_INDEX_DISABLED
+    _RECORD_FIELD_INDEX_AVAILABLE = False
+    _RECORD_FIELD_INDEX_DISABLED = True
+    if exc is not None:
+        logger.warning("records_generic field index disabled: %s", reason, exc_info=True)
+    else:
+        logger.warning("records_generic field index disabled: %s", reason)
+
+
+def _record_field_index_available(conn) -> bool:
+    global _RECORD_FIELD_INDEX_AVAILABLE
+    if _RECORD_FIELD_INDEX_DISABLED:
+        return False
+    if _RECORD_FIELD_INDEX_AVAILABLE is True:
+        return True
+    row = fetch_one(
+        conn,
+        "select to_regclass('public.records_generic_field_values') is not null as available",
+        [],
+        query_name="records_generic.field_index_available",
+    )
+    available = bool(row and row.get("available"))
+    if available:
+        _RECORD_FIELD_INDEX_AVAILABLE = True
+    return available
+
+
+def _record_field_scalar(value: Any) -> tuple[str | None, str | None, bool | None] | None:
+    if value is None:
+        return None, None, None
+    if isinstance(value, bool):
+        return ("true" if value else "false"), None, value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value), str(value), None
+    if isinstance(value, str):
+        return value, None, None
+    return None
+
+
+def _record_field_index_rows(
+    *,
+    tenant_id: str,
+    entity_id: str,
+    record_id: str,
+    record: dict,
+    updated_at: str,
+) -> list[tuple[str, str, str, str, str | None, str | None, bool | None, str]]:
+    if not isinstance(record, dict):
+        return []
+    rows: list[tuple[str, str, str, str, str | None, str | None, bool | None, str]] = []
+    for field_id, value in record.items():
+        if not isinstance(field_id, str) or not field_id:
+            continue
+        scalar = _record_field_scalar(value)
+        if scalar is None:
+            continue
+        value_text, value_num, value_bool = scalar
+        rows.append((tenant_id, entity_id, record_id, field_id, value_text, value_num, value_bool, updated_at))
+    return rows
+
+
+def _release_record_field_index_savepoint(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(f"release savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
+
+
+def _rollback_record_field_index_savepoint(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(f"rollback to savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
+        cur.execute(f"release savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
+
+
+def _replace_record_field_index(conn, tenant_id: str, entity_id: str, record_id: str, record: dict, updated_at: str) -> None:
+    if not _record_field_index_available(conn):
+        return
+    rows = _record_field_index_rows(
+        tenant_id=tenant_id,
+        entity_id=entity_id,
+        record_id=record_id,
+        record=record,
+        updated_at=updated_at,
+    )
+    with conn.cursor() as cur:
+        cur.execute(f"savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
+    try:
+        execute(
+            conn,
+            """
+            delete from records_generic_field_values
+            where tenant_id=%s and entity_id=%s and record_id=%s
+            """,
+            [tenant_id, entity_id, record_id],
+            query_name="records_generic.field_index.delete_record",
+        )
+        if rows:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    insert into records_generic_field_values (
+                        tenant_id, entity_id, record_id, field_id,
+                        value_text, value_num, value_bool, updated_at
+                    )
+                    values %s
+                    on conflict (tenant_id, entity_id, record_id, field_id)
+                    do update set
+                        value_text = excluded.value_text,
+                        value_num = excluded.value_num,
+                        value_bool = excluded.value_bool,
+                        updated_at = excluded.updated_at
+                    """,
+                    rows,
+                    page_size=500,
+                )
+        _release_record_field_index_savepoint(conn)
+    except Exception as exc:
+        _rollback_record_field_index_savepoint(conn)
+        _disable_record_field_index("write failed; falling back to JSONB scans", exc)
+
+
+def _delete_record_field_index(conn, tenant_id: str, entity_id: str, record_id: str) -> None:
+    if not _record_field_index_available(conn):
+        return
+    with conn.cursor() as cur:
+        cur.execute(f"savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
+    try:
+        execute(
+            conn,
+            """
+            delete from records_generic_field_values
+            where tenant_id=%s and entity_id=%s and record_id=%s
+            """,
+            [tenant_id, entity_id, record_id],
+            query_name="records_generic.field_index.delete_record",
+        )
+        _release_record_field_index_savepoint(conn)
+    except Exception as exc:
+        _rollback_record_field_index_savepoint(conn)
+        _disable_record_field_index("delete failed; relying on records_generic cascade or JSONB scans", exc)
 
 
 class _TxContext:
@@ -1603,6 +1751,43 @@ class DbGenericRecordStore:
             scalar = value
         else:
             return []
+        try:
+            with get_conn() as conn:
+                if _record_field_index_available(conn):
+                    params: list[Any] = [tenant_id, entity_id, field_id.strip()]
+                    if scalar is None:
+                        value_clause = "idx.value_text is null"
+                    else:
+                        value_clause = "md5(idx.value_text) = md5(%s) and idx.value_text = %s"
+                        params.extend([scalar, scalar])
+                    params.extend([limit, offset])
+                    rows = fetch_all(
+                        conn,
+                        f"""
+                        select r.id, r.data
+                        from records_generic_field_values idx
+                        join records_generic r
+                          on r.tenant_id=idx.tenant_id
+                         and r.entity_id=idx.entity_id
+                         and r.id::text=idx.record_id
+                        where idx.tenant_id=%s
+                          and idx.entity_id=%s
+                          and idx.field_id=%s
+                          and {value_clause}
+                        order by idx.updated_at desc, idx.record_id desc
+                        limit %s offset %s
+                        """,
+                        params,
+                        query_name="records_generic.list_by_field_value_indexed",
+                    )
+                    items: list[dict] = []
+                    for row in rows:
+                        record = _deepcopy(row.get("data") or {})
+                        record["id"] = str(row.get("id"))
+                        items.append({"record_id": str(row.get("id")), "record": record})
+                    return items
+        except Exception as exc:
+            _disable_record_field_index("read failed; falling back to JSONB scans", exc)
         params: list[Any] = [tenant_id, entity_id, field_id.strip()]
         where = "where tenant_id=%s and entity_id=%s and data ->> %s = %s"
         if scalar is None:
@@ -1640,6 +1825,39 @@ class DbGenericRecordStore:
     ) -> list[dict]:
         tenant_id = tenant_id or get_org_id()
         q_lower = str(q).strip().lower() if isinstance(q, str) else None
+        if display_field and q_lower and len(q_lower) <= 512:
+            try:
+                with get_conn() as conn:
+                    if _record_field_index_available(conn):
+                        rows = fetch_all(
+                            conn,
+                            """
+                            select idx.record_id as id, idx.value_text as label
+                            from records_generic_field_values idx
+                            join records_generic r
+                              on r.tenant_id=idx.tenant_id
+                             and r.entity_id=idx.entity_id
+                             and r.id::text=idx.record_id
+                            where idx.tenant_id=%s
+                              and idx.entity_id=%s
+                              and idx.field_id=%s
+                              and idx.value_text is not null
+                              and left(lower(idx.value_text), 512) like %s
+                            order by idx.updated_at desc, idx.record_id desc
+                            limit %s
+                            """,
+                            [tenant_id, entity_id, display_field, f"{q_lower}%", limit],
+                            query_name="records_generic.list_lookup_indexed",
+                        )
+                        return [
+                            {
+                                "record_id": str(row.get("id")),
+                                "record": {display_field: row.get("label"), "id": str(row.get("id"))},
+                            }
+                            for row in rows
+                        ]
+            except Exception as exc:
+                _disable_record_field_index("lookup read failed; falling back to JSONB scans", exc)
         params: list = []
         where = "where tenant_id=%s and entity_id=%s"
         if display_field:
@@ -1709,6 +1927,7 @@ class DbGenericRecordStore:
         record_id = str(provided_id).strip() if isinstance(provided_id, str) and str(provided_id).strip() else str(uuid.uuid4())
         record = _deepcopy(data)
         record["id"] = record_id
+        now = _now()
         with get_conn() as conn:
             execute(
                 conn,
@@ -1716,15 +1935,17 @@ class DbGenericRecordStore:
                 insert into records_generic (tenant_id, entity_id, id, data, created_at, updated_at)
                 values (%s,%s,%s,%s,%s,%s)
                 """,
-                [tenant_id, entity_id, record_id, json.dumps(record), _now(), _now()],
+                [tenant_id, entity_id, record_id, json.dumps(record), now, now],
                 query_name="records_generic.create",
             )
+            _replace_record_field_index(conn, tenant_id, entity_id, record_id, record, now)
         return {"record_id": record_id, "record": record}
 
     def update(self, entity_id: str, record_id: str, data: dict, tenant_id: str | None = None) -> dict:
         tenant_id = tenant_id or get_org_id()
         record = _deepcopy(data)
         record["id"] = record_id
+        now = _now()
         with get_conn() as conn:
             execute(
                 conn,
@@ -1733,14 +1954,16 @@ class DbGenericRecordStore:
                 set data=%s, updated_at=%s
                 where tenant_id=%s and entity_id=%s and id=%s
                 """,
-                [json.dumps(record), _now(), tenant_id, entity_id, record_id],
+                [json.dumps(record), now, tenant_id, entity_id, record_id],
                 query_name="records_generic.update",
             )
+            _replace_record_field_index(conn, tenant_id, entity_id, record_id, record, now)
         return {"record_id": record_id, "record": record}
 
     def delete(self, entity_id: str, record_id: str, tenant_id: str | None = None) -> None:
         tenant_id = tenant_id or get_org_id()
         with get_conn() as conn:
+            _delete_record_field_index(conn, tenant_id, entity_id, record_id)
             execute(
                 conn,
                 "delete from records_generic where tenant_id=%s and entity_id=%s and id=%s",

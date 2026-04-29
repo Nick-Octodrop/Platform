@@ -1253,6 +1253,10 @@
               "label": "Meter",
               "status_label_key": "orders.entities.biz_order_line.fields.uom.options.m",
               "label_key": "orders.entities.biz_order_line.fields.uom.options.m"
+            },
+            {
+              "value": "HOUR",
+              "label": "Hour"
             }
           ],
           "label_key": "orders.entities.biz_order_line.fields.uom.label"
@@ -1268,6 +1272,7 @@
           "id": "biz_order_line.unit_price",
           "type": "number",
           "label": "Unit Price",
+          "help_text": "Customer sell price carried from the accepted quote or entered directly on the order.",
           "default": 0,
           "label_key": "orders.entities.biz_order_line.fields.unit_price.label"
         },
@@ -1302,6 +1307,7 @@
           "id": "biz_order_line.unit_cost_snapshot",
           "type": "number",
           "label": "Unit Cost Snapshot",
+          "help_text": "Internal cost snapshot used for order margin/procurement. From quotes this carries the quote cost; selecting a supplier source can replace it with supplier purchase cost.",
           "default": 0,
           "label_key": "orders.entities.biz_order_line.fields.unit_cost_snapshot.label"
         },
@@ -1316,6 +1322,7 @@
           "id": "biz_order_line.buy_currency_snapshot",
           "type": "enum",
           "label": "Buy Currency Snapshot",
+          "help_text": "Currency for the internal cost snapshot on this order line.",
           "default": "USD",
           "options": [
             {
@@ -1340,6 +1347,7 @@
           "id": "biz_order_line.procurement_supplier_id",
           "type": "lookup",
           "label": "Procurement Supplier",
+          "help_text": "Actual supplier/factory used by operations/procurement. Hidden from Sales users.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "domain": {
@@ -1365,6 +1373,7 @@
           "id": "biz_order_line.product_supplier_id",
           "type": "lookup",
           "label": "Supplier Source",
+          "help_text": "Specific supplier source row for this product. Selecting it can refresh supplier, cost, MOQ, SKU, and lead time snapshots.",
           "entity": "entity.biz_product_supplier",
           "display_field": "biz_product_supplier.product_name_snapshot",
           "domain": {
@@ -1408,6 +1417,7 @@
           "id": "biz_order_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU Snapshot",
+          "help_text": "Supplier/factory product reference copied for purchase order preparation.",
           "readonly": true
         },
         {
@@ -1425,9 +1435,77 @@
           "default": 0
         },
         {
+          "id": "biz_order_line.product_type_snapshot",
+          "type": "string",
+          "label": "Product Type",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.quote_cost_mode_snapshot",
+          "type": "string",
+          "label": "Quote Cost Mode",
+          "help_text": "Copied from the source quote/product so operations can see whether costing came from catalogue, manual quote cost, or pass-through.",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.wattage_snapshot",
+          "type": "number",
+          "label": "Wattage",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.spectrum_snapshot",
+          "type": "string",
+          "label": "Spectrum",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.input_voltage_snapshot",
+          "type": "string",
+          "label": "Input Voltage",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.ppe_umol_per_w_snapshot",
+          "type": "string",
+          "label": "PPE (umol/s/W)",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.ppf_umol_s_snapshot",
+          "type": "number",
+          "label": "PPF (umol/s)",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.dimmable_snapshot",
+          "type": "string",
+          "label": "Dimmable",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.ip_rating_snapshot",
+          "type": "string",
+          "label": "IP Rating",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.max_ambient_temp_snapshot",
+          "type": "string",
+          "label": "Max Ambient Temp",
+          "readonly": true
+        },
+        {
+          "id": "biz_order_line.modules_snapshot",
+          "type": "string",
+          "label": "Modules",
+          "readonly": true
+        },
+        {
           "id": "biz_order_line.buy_total",
           "type": "number",
           "label": "Buy Total",
+          "help_text": "Internal cost total before conversion into the order currency. Hidden from Sales users.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1455,12 +1533,14 @@
           "id": "biz_order_line.buy_fx_to_order_rate",
           "type": "number",
           "label": "Buy FX To Order",
+          "help_text": "Exchange rate used to convert internal cost into the order currency for profitability reporting.",
           "default": 1
         },
         {
           "id": "biz_order_line.buy_total_order_currency",
           "type": "number",
           "label": "Buy Total (Order Currency)",
+          "help_text": "Internal cost total converted into the customer order currency for margin/profitability.",
           "readonly": true,
           "default": 0,
           "format": {
@@ -1492,6 +1572,7 @@
           "id": "biz_order_line.procurement_quantity_required",
           "type": "number",
           "label": "Qty To Procure",
+          "help_text": "Calculated quantity still requiring purchase based on procurement route and available stock.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -3306,7 +3387,18 @@
               "biz_order_line.buy_currency_snapshot": "biz_product.default_purchase_currency",
               "biz_order_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
               "biz_order_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
-              "biz_order_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks"
+              "biz_order_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks",
+              "biz_order_line.product_type_snapshot": "biz_product.product_type",
+              "biz_order_line.quote_cost_mode_snapshot": "biz_product.quote_cost_mode",
+              "biz_order_line.wattage_snapshot": "biz_product.wattage",
+              "biz_order_line.spectrum_snapshot": "biz_product.spectrum",
+              "biz_order_line.input_voltage_snapshot": "biz_product.input_voltage",
+              "biz_order_line.ppe_umol_per_w_snapshot": "biz_product.ppe_umol_per_w",
+              "biz_order_line.ppf_umol_s_snapshot": "biz_product.ppf_umol_s",
+              "biz_order_line.dimmable_snapshot": "biz_product.dimmable",
+              "biz_order_line.ip_rating_snapshot": "biz_product.ip_rating",
+              "biz_order_line.max_ambient_temp_snapshot": "biz_product.max_ambient_temp",
+              "biz_order_line.modules_snapshot": "biz_product.modules"
             },
             "parent_field_map": {
               "biz_order_line.sales_entity_snapshot": "biz_order.sales_entity",
@@ -3325,7 +3417,8 @@
               "biz_order_line.unit_cost_snapshot": 0,
               "biz_order_line.available_stock_snapshot": 0,
               "biz_order_line.minimum_order_quantity_snapshot": 1,
-              "biz_order_line.lead_time_weeks_snapshot": 0
+              "biz_order_line.lead_time_weeks_snapshot": 0,
+              "biz_order_line.quote_cost_mode_snapshot": "catalogue"
             },
             "columns": [
               {
@@ -3382,6 +3475,10 @@
                     "value": "M",
                     "label": "Meter",
                     "label_key": "common.meter"
+                  },
+                  {
+                    "value": "HOUR",
+                    "label": "Hour"
                   }
                 ]
               },
@@ -3794,6 +3891,17 @@
             "biz_order_line.supplier_sku_snapshot",
             "biz_order_line.minimum_order_quantity_snapshot",
             "biz_order_line.lead_time_weeks_snapshot",
+            "biz_order_line.product_type_snapshot",
+            "biz_order_line.quote_cost_mode_snapshot",
+            "biz_order_line.wattage_snapshot",
+            "biz_order_line.spectrum_snapshot",
+            "biz_order_line.input_voltage_snapshot",
+            "biz_order_line.ppe_umol_per_w_snapshot",
+            "biz_order_line.ppf_umol_s_snapshot",
+            "biz_order_line.dimmable_snapshot",
+            "biz_order_line.ip_rating_snapshot",
+            "biz_order_line.max_ambient_temp_snapshot",
+            "biz_order_line.modules_snapshot",
             "biz_order_line.buy_total",
             "biz_order_line.buy_total_order_currency",
             "biz_order_line.procurement_quantity_required",
@@ -3833,6 +3941,17 @@
           "biz_order_line.supplier_sku_snapshot",
           "biz_order_line.minimum_order_quantity_snapshot",
           "biz_order_line.lead_time_weeks_snapshot",
+          "biz_order_line.product_type_snapshot",
+          "biz_order_line.quote_cost_mode_snapshot",
+          "biz_order_line.wattage_snapshot",
+          "biz_order_line.spectrum_snapshot",
+          "biz_order_line.input_voltage_snapshot",
+          "biz_order_line.ppe_umol_per_w_snapshot",
+          "biz_order_line.ppf_umol_s_snapshot",
+          "biz_order_line.dimmable_snapshot",
+          "biz_order_line.ip_rating_snapshot",
+          "biz_order_line.max_ambient_temp_snapshot",
+          "biz_order_line.modules_snapshot",
           "biz_order_line.buy_total",
           "biz_order_line.buy_total_order_currency",
           "biz_order_line.procurement_quantity_required",

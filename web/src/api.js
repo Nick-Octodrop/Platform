@@ -42,6 +42,7 @@ const REQUEST_POLICIES = [
   { pattern: /^\/access\/members$/, methods: ["GET"], ttl: 10000 },
   { pattern: /^\/access\/profiles(?:\/[^/]+)?$/, methods: ["GET"], ttl: 15000 },
   { pattern: /^\/settings\/provider-status(?:\?.*)?$/, methods: ["GET"], ttl: 10000 },
+  { pattern: /^\/notifications\/unread_count$/, methods: ["GET"], ttl: 15000 },
   { pattern: /^\/prefs\/ui$/, methods: ["GET"], ttl: 10000 },
   { pattern: /^\/templates\/meta$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/system\/interfaces\/sources(?:\?.*)?$/, methods: ["GET"], ttl: 30000 },
@@ -58,10 +59,11 @@ const REQUEST_POLICIES = [
   { pattern: /^\/studio2\/registry$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/studio2\/modules\/[^/]+\/manifest$/, methods: ["GET"], ttl: 30000 },
   { pattern: /^\/modules\/[^/]+\/manifest$/, methods: ["GET"], ttl: 30000 },
-  { pattern: /^\/page\/bootstrap$/, methods: ["GET"], ttl: 30000 },
-  { pattern: /^\/records\/[^/]+$/, methods: ["GET"], ttl: 30000 },
-  { pattern: /^\/records\/[^/]+\/[^/]+$/, methods: ["GET"], ttl: 30000 },
+  { pattern: /^\/page\/bootstrap$/, methods: ["GET"], ttl: 0 },
+  { pattern: /^\/records\/[^/]+$/, methods: ["GET"], ttl: 0 },
+  { pattern: /^\/records\/[^/]+\/[^/]+$/, methods: ["GET"], ttl: 0 },
   { pattern: /^\/lookup\/[^/]+\/options$/, methods: ["POST"], ttl: 60000 },
+  { pattern: /^\/lookup\/[^/]+\/labels$/, methods: ["POST"], ttl: 60000 },
 ];
 
 function notifyWorkspaceChanged(workspaceId, scope = "local") {
@@ -141,8 +143,11 @@ function invalidateRecordCache(entityId, recordId = null) {
   if (!entityId) return;
   if (recordId) {
     invalidateRequestPrefix(`/records/${entityId}/${recordId}`);
+    invalidateRequestPrefix(`lookup-record:${entityId}:${recordId}`);
   }
   invalidateRequestPrefix(`/records/${entityId}`);
+  invalidateRequestPrefix(`lookup-record:${entityId}:`);
+  invalidateRequestPrefix(`/lookup/${entityId}`);
   invalidateRequestPrefix(`/page/bootstrap`);
 }
 
@@ -381,6 +386,10 @@ export async function apiFetch(path, options = {}) {
           invalidateRequestPrefix("/access/members");
           invalidateRequestPrefix("/access/context");
         }
+        if (path.startsWith("/access/password-handoff")) {
+          invalidateRequestPrefix("/access/members");
+          invalidateRequestPrefix("/access/context");
+        }
         if (path.startsWith("/access/profiles")) {
           invalidateRequestPrefix("/access/profiles");
           invalidateRequestPrefix("/access/context");
@@ -393,6 +402,9 @@ export async function apiFetch(path, options = {}) {
         }
         if (path.startsWith("/prefs/ui")) {
           invalidateRequestPrefix("/prefs/ui");
+        }
+        if (path.startsWith("/notifications")) {
+          invalidateRequestPrefix("/notifications");
         }
         if (path.startsWith("/settings/api-credentials")) {
           invalidateRequestPrefix("/settings/api-credentials");

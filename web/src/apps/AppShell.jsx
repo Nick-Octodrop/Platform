@@ -1088,8 +1088,10 @@ export default function AppShell({
       const ok = await confirmDialog({ title, body });
       if (!ok) return null;
     }
-    if (["update_record", "transform_record"].includes(action?.kind || "")) {
-      const saved = await flushPendingFormSave();
+    const flushCurrentFormSave =
+      typeof runtimeContext?.flushPendingFormSave === "function" ? runtimeContext.flushPendingFormSave : null;
+    if (["update_record", "transform_record"].includes(action?.kind || "") && flushCurrentFormSave) {
+      const saved = await flushCurrentFormSave();
       if (!saved) return null;
     }
     try {
@@ -1666,6 +1668,7 @@ export default function AppShell({
                           entityId={modalEntityId}
                           recordId={null}
                           fieldIndex={modalFieldIndex || {}}
+                          entityDefs={modalManifest?.entities || []}
                           record={modalDraft}
                           entityLabel={modalEntityDef?.label}
                           displayField={modalEntityDef?.display_field}
@@ -1793,7 +1796,7 @@ function AppView({
     const shouldShowActionPending = isWriteActionKind(action?.kind) || action?.kind === "transform_record";
     if (shouldShowActionPending) startActionPending(action);
     try {
-      return await onRunAction(action, context);
+      return await onRunAction(action, { ...context, flushPendingFormSave });
     } finally {
       if (shouldShowActionPending) clearActionPending();
     }
@@ -2017,9 +2020,13 @@ function AppView({
       const resolvedPatch = resolveTemplateRefs(resolvedAction.patch, modalDraft);
       const prevDraft = draft || {};
       const prevInitial = initialDraft || {};
-      const optimistic = { ...prevDraft, ...resolvedPatch };
+      const optimistic = applyDraftComputed({ ...prevDraft, ...resolvedPatch });
+      const writeSeq = beginRecordWriteGuard(resolvedPatch);
+      draftRevisionRef.current += 1;
+      invalidatePendingRecordLoads();
+      draftRef.current = optimistic;
       setDraft(optimistic);
-      setInitialDraft({ ...prevInitial, ...resolvedPatch });
+      setInitialDraft(applyDraftComputed({ ...prevInitial, ...resolvedPatch }));
       setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
       const run = onRunAction?.(resolvedAction, {
         recordId: effectiveRecordId,
@@ -2027,23 +2034,34 @@ function AppView({
         selectedIds,
         skipConfirm: true,
         inlineAction: !resolvedAction.id,
+        flushPendingFormSave,
       });
       Promise.resolve(run)
         .then((result) => {
+          if (latestWriteSeqRef.current !== writeSeq) return;
           if (!result) {
+            clearRecordWriteGuard(writeSeq);
+            draftRef.current = prevDraft;
             setDraft(prevDraft);
             setInitialDraft(prevInitial);
             setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
             return;
           }
           if (result.record) {
-            setDraft(result.record);
-            setInitialDraft(result.record);
+            const next = applyDraftComputed(result.record);
+            finishRecordWriteGuard(writeSeq, next);
+            applyLoadedDraft(next);
+          } else {
+            finishRecordWriteGuard(writeSeq, optimistic);
+            applyLoadedDraft(optimistic);
           }
           if (closeOnSuccess) setActiveManifestModal(null);
           else setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
         })
         .catch((err) => {
+          if (latestWriteSeqRef.current !== writeSeq) return;
+          clearRecordWriteGuard(writeSeq);
+          draftRef.current = prevDraft;
           setDraft(prevDraft);
           setInitialDraft(prevInitial);
           setActiveManifestModal((prev) =>
@@ -2126,10 +2144,14 @@ function AppView({
       const resolvedPatch = resolveTemplateRefs(action.patch, draft || {});
       const prevDraft = draft || {};
       const prevInitial = initialDraft || {};
-      const optimistic = { ...prevDraft, ...resolvedPatch };
+      const optimistic = applyDraftComputed({ ...prevDraft, ...resolvedPatch });
+      const writeSeq = beginRecordWriteGuard(resolvedPatch);
       startActionPending(action);
+      draftRevisionRef.current += 1;
+      invalidatePendingRecordLoads();
+      draftRef.current = optimistic;
       setDraft(optimistic);
-      setInitialDraft({ ...prevInitial, ...resolvedPatch });
+      setInitialDraft(applyDraftComputed({ ...prevInitial, ...resolvedPatch }));
       const run = onRunAction?.(action, {
         recordId: effectiveRecordId,
         recordDraft: draft || {},
@@ -2138,17 +2160,27 @@ function AppView({
       });
       Promise.resolve(run)
         .then((result) => {
+          if (latestWriteSeqRef.current !== writeSeq) return;
           if (!result) {
+            clearRecordWriteGuard(writeSeq);
+            draftRef.current = prevDraft;
             setDraft(prevDraft);
             setInitialDraft(prevInitial);
             return;
           }
           if (result.record) {
-            setDraft(result.record);
-            setInitialDraft(result.record);
+            const next = applyDraftComputed(result.record);
+            finishRecordWriteGuard(writeSeq, next);
+            applyLoadedDraft(next);
+          } else {
+            finishRecordWriteGuard(writeSeq, optimistic);
+            applyLoadedDraft(optimistic);
           }
         })
         .catch(() => {
+          if (latestWriteSeqRef.current !== writeSeq) return;
+          clearRecordWriteGuard(writeSeq);
+          draftRef.current = prevDraft;
           setDraft(prevDraft);
           setInitialDraft(prevInitial);
         })
@@ -2295,6 +2327,103 @@ function AppView({
   const isDirtyRef = useRef(false);
   const draftNotifyTimerRef = useRef(null);
   const lastLoadedDraftKeyRef = useRef(null);
+  const draftRevisionRef = useRef(0);
+  const recordLoadSeqRef = useRef(0);
+  const latestWriteSeqRef = useRef(0);
+  const pendingWriteGuardRef = useRef(null);
+
+  function invalidatePendingRecordLoads() {
+    recordLoadSeqRef.current += 1;
+  }
+
+  function compactWritePatch(patch) {
+    if (!patch || typeof patch !== "object") return {};
+    const compact = {};
+    Object.entries(patch).forEach(([key, value]) => {
+      if (key === "id" || key === "record_id") return;
+      compact[key] = value;
+    });
+    return compact;
+  }
+
+  function recordMatchesPatch(record, patch) {
+    if (!patch || typeof patch !== "object") return true;
+    if (!record || typeof record !== "object") return false;
+    return Object.entries(patch).every(([key, value]) => record[key] === value);
+  }
+
+  function recordMatchesWriteGuard(record) {
+    const guard = pendingWriteGuardRef.current;
+    return recordMatchesPatch(record, guard?.patch);
+  }
+
+  function currentWriteGuardPatch() {
+    const patch = pendingWriteGuardRef.current?.patch;
+    return patch && typeof patch === "object" ? { ...patch } : null;
+  }
+
+  function beginRecordWriteGuard(patch) {
+    const seq = latestWriteSeqRef.current + 1;
+    latestWriteSeqRef.current = seq;
+    pendingWriteGuardRef.current = {
+      seq,
+      patch: compactWritePatch(patch),
+      startedAt: Date.now(),
+    };
+    invalidatePendingRecordLoads();
+    return seq;
+  }
+
+  function finishRecordWriteGuard(seq, record = null) {
+    if (latestWriteSeqRef.current !== seq) return false;
+    if (record && typeof record === "object" && !recordMatchesWriteGuard(record)) return false;
+    if (pendingWriteGuardRef.current?.seq === seq) {
+      pendingWriteGuardRef.current = null;
+    }
+    return true;
+  }
+
+  function clearRecordWriteGuard(seq) {
+    if (pendingWriteGuardRef.current?.seq === seq) {
+      pendingWriteGuardRef.current = null;
+    }
+  }
+
+  function canApplyServerRecord(record) {
+    if (isDirtyRef.current || saveInFlightRef.current || actionRunningRef.current) return false;
+    return recordMatchesWriteGuard(record);
+  }
+
+  const applyUserDraftChange = useCallback((next) => {
+    const computed = applyDraftComputed(next);
+    draftRevisionRef.current += 1;
+    invalidatePendingRecordLoads();
+    draftRef.current = computed;
+    setDraft(computed);
+  }, [applyDraftComputed]);
+
+  function applyLoadedDraft(nextDraft, nextInitial = nextDraft) {
+    const computedDraft = applyDraftComputed(nextDraft);
+    const computedInitial = applyDraftComputed(nextInitial);
+    draftRef.current = computedDraft;
+    setDraft(computedDraft);
+    setInitialDraft(computedInitial);
+  }
+
+  function applyServerLoadedDraft(nextDraft, nextInitial = nextDraft) {
+    if (!canApplyServerRecord(nextDraft)) return false;
+    applyLoadedDraft(nextDraft, nextInitial);
+    return true;
+  }
+
+  function canApplyRecordLoad(loadSeq, draftRevisionAtStart, record = null, writeGuardPatchAtStart = null) {
+    return (
+      recordLoadSeqRef.current === loadSeq &&
+      draftRevisionRef.current === draftRevisionAtStart &&
+      recordMatchesPatch(record, writeGuardPatchAtStart) &&
+      canApplyServerRecord(record)
+    );
+  }
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -2327,8 +2456,7 @@ function AppView({
       if (!effectiveRecordId) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
         const resolvedDraft = resolvePersistedFormDraft({}, persisted, applyDraftComputed);
-        setDraft(resolvedDraft.draft);
-        setInitialDraft(resolvedDraft.initialDraft);
+        applyLoadedDraft(resolvedDraft.draft, resolvedDraft.initialDraft);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
           clearFormDraftSnapshot(formDraftStorageKey);
@@ -2339,16 +2467,14 @@ function AppView({
       if (previewMode && previewStore) {
         const entry = previewStore.get(recordEntityId, effectiveRecordId);
         const next = applyDraftComputed(entry?.record || {});
-        setDraft(next);
-        setInitialDraft(next);
+        applyLoadedDraft(next);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         setState({ status: "ok", error: null });
         return;
       }
       if (previewMode) {
         const next = applyDraftComputed(recordContext?.record || {});
-        setDraft(next);
-        setInitialDraft(next);
+        applyLoadedDraft(next);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         setState({ status: "ok", error: null });
         return;
@@ -2364,24 +2490,13 @@ function AppView({
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
         const baseRecord = bootstrapRecord?.record || {};
         const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
-        setDraft(resolvedDraft.draft);
-        setInitialDraft(resolvedDraft.initialDraft);
+        applyServerLoadedDraft(resolvedDraft.draft, resolvedDraft.initialDraft);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
           clearFormDraftSnapshot(formDraftStorageKey);
         }
         setState({ status: "ok", error: null });
         bootstrapUsedRef.current.form = bootstrapVersion;
-        if (recordEntityId && effectiveRecordId) {
-          apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
-            .then((res) => {
-              if (isDirtyRef.current || lastLoadedDraftKeyRef.current !== formDraftStorageKey) return;
-              const next = applyDraftComputed(res?.record || {});
-              setDraft(next);
-              setInitialDraft(next);
-            })
-            .catch(() => {});
-        }
         return;
       }
       if (bootstrapLoading) {
@@ -2401,8 +2516,7 @@ function AppView({
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
         const baseRecord = recordContext?.record || {};
         const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
-        setDraft(resolvedDraft.draft);
-        setInitialDraft(resolvedDraft.initialDraft);
+        applyServerLoadedDraft(resolvedDraft.draft, resolvedDraft.initialDraft);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
           clearFormDraftSnapshot(formDraftStorageKey);
@@ -2411,13 +2525,16 @@ function AppView({
         return;
       }
       setState({ status: "running", error: null });
-      apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`)
+      const loadSeq = ++recordLoadSeqRef.current;
+      const draftRevisionAtStart = draftRevisionRef.current;
+      const writeGuardPatchAtStart = currentWriteGuardPatch();
+      apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, { cacheTtl: 0 })
         .then((res) => {
           const persisted = loadFormDraftSnapshot(formDraftStorageKey);
           const baseRecord = res.record || {};
           const resolvedDraft = resolvePersistedFormDraft(baseRecord, persisted, applyDraftComputed);
-          setDraft(resolvedDraft.draft);
-          setInitialDraft(resolvedDraft.initialDraft);
+          if (!canApplyRecordLoad(loadSeq, draftRevisionAtStart, resolvedDraft.draft, writeGuardPatchAtStart)) return;
+          applyLoadedDraft(resolvedDraft.draft, resolvedDraft.initialDraft);
           lastLoadedDraftKeyRef.current = formDraftStorageKey;
           if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
             clearFormDraftSnapshot(formDraftStorageKey);
@@ -2507,14 +2624,19 @@ function AppView({
       pendingAutoSaveRef.current = true;
       return false;
     }
+    let writeSeq = null;
+    const saveRevisionAtStart = draftRevisionRef.current;
     try {
       saveInFlightRef.current = true;
+      invalidatePendingRecordLoads();
       const payload = normalizeManifestRecordPayload(fieldIndex, liveDraft);
+      if (!previewMode && effectiveRecordId) {
+        writeSeq = beginRecordWriteGuard(payload);
+      }
       if (previewMode && previewStore) {
         if (effectiveRecordId) {
           const updated = previewStore.upsert(recordEntityId, effectiveRecordId, payload);
-          setDraft(updated?.record || payload);
-          setInitialDraft(updated?.record || payload);
+          applyLoadedDraft(updated?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
           if (!silent) pushToast("success", translateRuntime("common.saved_local_preview"));
         } else {
@@ -2528,8 +2650,7 @@ function AppView({
               onNavigate(`view:${view.id}`, { recordId: newId });
             }
           }
-          setDraft(created?.record || payload);
-          setInitialDraft(created?.record || payload);
+          applyLoadedDraft(created?.record || payload);
           clearFormDraftSnapshot(formDraftStorageKey);
           if (!silent) pushToast("success", translateRuntime("common.created_local_preview"));
         }
@@ -2539,9 +2660,15 @@ function AppView({
           body: JSON.stringify(payload),
         });
         const savedRecord = applyDraftComputed(res?.record || payload);
-        setDraft(savedRecord);
-        setInitialDraft(savedRecord);
-        clearFormDraftSnapshot(formDraftStorageKey);
+        if (!finishRecordWriteGuard(writeSeq, savedRecord)) {
+          clearRecordWriteGuard(writeSeq);
+        }
+        if (draftRevisionRef.current === saveRevisionAtStart) {
+          applyLoadedDraft(savedRecord);
+          clearFormDraftSnapshot(formDraftStorageKey);
+        } else {
+          setInitialDraft(savedRecord);
+        }
         if (!silent) pushToast("success", translateRuntime("common.saved"));
       } else {
         const res = await apiFetch(`/records/${recordEntityId}`, {
@@ -2573,8 +2700,7 @@ function AppView({
           } else {
             if (!silent) pushToast("success", translateRuntime("common.material_logged_finish_clockout"));
           }
-          setDraft(payload);
-          setInitialDraft(payload);
+          applyLoadedDraft(payload);
           return true;
         }
         if (newId) {
@@ -2587,11 +2713,11 @@ function AppView({
         }
         clearFormDraftSnapshot(formDraftStorageKey);
         if (!silent) pushToast("success", translateRuntime("common.created"));
-        setDraft(payload);
-        setInitialDraft(payload);
+        applyLoadedDraft(payload);
       }
       return true;
     } catch (err) {
+      if (writeSeq !== null) clearRecordWriteGuard(writeSeq);
       pushToast("error", err.message || translateRuntime("common.save_failed"));
       return false;
     } finally {
@@ -2610,11 +2736,14 @@ function AppView({
 
   const refreshCurrentRecord = useCallback(async () => {
     if (!recordEntityId || !effectiveRecordId || previewMode) return;
+    const loadSeq = ++recordLoadSeqRef.current;
+    const draftRevisionAtStart = draftRevisionRef.current;
+    const writeGuardPatchAtStart = currentWriteGuardPatch();
     try {
-      const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`);
+      const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, { cacheTtl: 0 });
       const next = applyDraftComputed(res?.record || {});
-      setDraft(next);
-      setInitialDraft(next);
+      if (!canApplyRecordLoad(loadSeq, draftRevisionAtStart, next, writeGuardPatchAtStart)) return;
+      applyLoadedDraft(next);
     } catch {
       // Keep the current draft if the parent refetch fails.
     }
@@ -2684,7 +2813,7 @@ function AppView({
       }
       setAutoSaveState("saving");
       const saved = await handleSave(null, { silent: true });
-      setAutoSaveState(saved ? "saved" : "idle");
+      setAutoSaveState(saved && !isDirtyRef.current ? "saved" : "idle");
     }, debounceMs);
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -3184,12 +3313,13 @@ function AppView({
               entityId={recordEntityId}
               recordId={effectiveRecordId || null}
               fieldIndex={fieldIndex}
+              entityDefs={manifest?.entities || []}
               record={draft}
               entityLabel={entityDef?.label}
               displayField={entityDef?.display_field}
               autoSaveState={autoSaveState}
               hasRecord={Boolean(effectiveRecordId)}
-              onChange={(next) => setDraft(applyDraftComputed(next))}
+              onChange={applyUserDraftChange}
               onSave={handleSave}
               onDiscard={handleDiscard}
               isDirty={isDirty}

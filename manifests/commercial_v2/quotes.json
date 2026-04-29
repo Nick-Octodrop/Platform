@@ -274,12 +274,14 @@
           "id": "biz_quote.expiry_date",
           "type": "date",
           "label": "Expiry Date",
+          "help_text": "Required before generating the customer quote PDF.",
           "label_key": "quotes.entities.biz_quote.fields.expiry_date.label"
         },
         {
           "id": "biz_quote.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
+          "help_text": "Controls entity-specific access, numbering, reporting, and which sales team should see this quote.",
           "default": "NLight BV",
           "options": [
             {
@@ -446,6 +448,7 @@
           "id": "biz_quote.document_language",
           "type": "enum",
           "label": "Document Language",
+          "help_text": "Language used for quote document text and selected script content.",
           "default": "EN",
           "options": [
             {
@@ -479,6 +482,7 @@
           "id": "biz_quote.script_template_id",
           "type": "lookup",
           "label": "Quote Script Template",
+          "help_text": "Selects a standard script and fills the editable quote text sections. Existing edited text is preserved unless it still matches the previous template.",
           "entity": "entity.biz_quote_script",
           "display_field": "biz_quote_script.script_name",
           "ui": {
@@ -671,6 +675,7 @@
           "id": "biz_quote.quote_script_body",
           "type": "rich_text",
           "label": "Quote Script",
+          "help_text": "Editable customer-facing script copied from the selected template and included in the generated quote document.",
           "label_key": "quotes.entities.biz_quote.fields.quote_script_body.label"
         },
         {
@@ -714,6 +719,7 @@
           "id": "biz_quote.primary_document_id",
           "type": "lookup",
           "label": "Primary Document",
+          "help_text": "Linked document record created by the Generate Document action. The generated PDF is attached back to this quote.",
           "entity": "entity.biz_document",
           "display_field": "biz_document.name",
           "readonly": true,
@@ -727,6 +733,7 @@
           "id": "biz_quote.generated_files",
           "type": "attachments",
           "label": "Generated Files",
+          "help_text": "Generated quote PDFs and related customer-facing files attached to this quote.",
           "label_key": "quotes.entities.biz_quote.fields.generated_files.label"
         },
         {
@@ -1173,6 +1180,10 @@
               "label": "Meter",
               "status_label_key": "quotes.entities.biz_quote_line.fields.uom.options.m",
               "label_key": "quotes.entities.biz_quote_line.fields.uom.options.m"
+            },
+            {
+              "value": "HOUR",
+              "label": "Hour"
             }
           ],
           "label_key": "quotes.entities.biz_quote_line.fields.uom.label"
@@ -1188,6 +1199,7 @@
           "id": "biz_quote_line.unit_price",
           "type": "number",
           "label": "Unit Price",
+          "help_text": "Customer sell price for this quote line. Sales users can adjust this per quote.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.unit_price.label"
         },
@@ -1249,6 +1261,7 @@
           "id": "biz_quote_line.default_buy_price_snapshot",
           "type": "number",
           "label": "Buy Price Snapshot",
+          "help_text": "Quote cost snapshot copied from the product Quote Cost. Used for margin calculations and hidden from Sales users.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.default_buy_price_snapshot.label"
         },
@@ -1256,6 +1269,7 @@
           "id": "biz_quote_line.buy_currency_snapshot",
           "type": "enum",
           "label": "Buy Currency Snapshot",
+          "help_text": "Currency for the quote cost snapshot. Usually the quote cost currency from the selected product.",
           "default": "USD",
           "options": [
             {
@@ -1289,6 +1303,7 @@
           "id": "biz_quote_line.procurement_supplier_id",
           "type": "lookup",
           "label": "Procurement Supplier",
+          "help_text": "Internal supplier/factory reference for operations and procurement. Hidden from Sales users.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "domain": {
@@ -1304,6 +1319,7 @@
           "id": "biz_quote_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU Snapshot",
+          "help_text": "Supplier/factory product reference copied at quote time for internal procurement. Hidden from Sales users.",
           "readonly": true
         },
         {
@@ -1321,15 +1337,84 @@
           "default": 0
         },
         {
+          "id": "biz_quote_line.product_type_snapshot",
+          "type": "string",
+          "label": "Product Type",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.quote_cost_mode_snapshot",
+          "type": "string",
+          "label": "Quote Cost Mode",
+          "help_text": "Copied from the product to explain whether this line uses catalogue cost, manual quote cost, or pass-through costing.",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.wattage_snapshot",
+          "type": "number",
+          "label": "Wattage",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.spectrum_snapshot",
+          "type": "string",
+          "label": "Spectrum",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.input_voltage_snapshot",
+          "type": "string",
+          "label": "Input Voltage",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.ppe_umol_per_w_snapshot",
+          "type": "string",
+          "label": "PPE (umol/s/W)",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.ppf_umol_s_snapshot",
+          "type": "number",
+          "label": "PPF (umol/s)",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.dimmable_snapshot",
+          "type": "string",
+          "label": "Dimmable",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.ip_rating_snapshot",
+          "type": "string",
+          "label": "IP Rating",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.max_ambient_temp_snapshot",
+          "type": "string",
+          "label": "Max Ambient Temp",
+          "readonly": true
+        },
+        {
+          "id": "biz_quote_line.modules_snapshot",
+          "type": "string",
+          "label": "Modules",
+          "readonly": true
+        },
+        {
           "id": "biz_quote_line.buy_fx_to_quote_rate",
           "type": "number",
           "label": "Buy FX To Quote",
+          "help_text": "Exchange rate used to convert the quote cost into the quote currency for margin calculations.",
           "default": 1
         },
         {
           "id": "biz_quote_line.buy_total",
           "type": "number",
           "label": "Buy Total",
+          "help_text": "Internal cost total before quote-currency conversion. Hidden from Sales users.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1357,6 +1442,7 @@
           "id": "biz_quote_line.buy_total_quote_currency",
           "type": "number",
           "label": "Buy Total (Quote Currency)",
+          "help_text": "Internal cost total converted into the quote currency for margin calculations. Hidden from Sales users.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1383,6 +1469,7 @@
           "id": "biz_quote_line.estimated_margin_amount",
           "type": "number",
           "label": "Estimated Margin Amount",
+          "help_text": "Estimated margin for this quote line after quote cost conversion. Hidden from Sales users.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1410,6 +1497,7 @@
           "id": "biz_quote_line.estimated_margin_percent",
           "type": "number",
           "label": "Estimated Margin %",
+          "help_text": "Estimated margin percentage for this quote line. Hidden from Sales users.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1472,6 +1560,17 @@
           "biz_quote_line.supplier_sku_snapshot",
           "biz_quote_line.minimum_order_quantity_snapshot",
           "biz_quote_line.lead_time_weeks_snapshot",
+          "biz_quote_line.product_type_snapshot",
+          "biz_quote_line.quote_cost_mode_snapshot",
+          "biz_quote_line.wattage_snapshot",
+          "biz_quote_line.spectrum_snapshot",
+          "biz_quote_line.input_voltage_snapshot",
+          "biz_quote_line.ppe_umol_per_w_snapshot",
+          "biz_quote_line.ppf_umol_s_snapshot",
+          "biz_quote_line.dimmable_snapshot",
+          "biz_quote_line.ip_rating_snapshot",
+          "biz_quote_line.max_ambient_temp_snapshot",
+          "biz_quote_line.modules_snapshot",
           "biz_quote_line.buy_fx_to_quote_rate",
           "biz_quote_line.buy_total"
         ]
@@ -1820,6 +1919,39 @@
             },
             "biz_order_line.lead_time_weeks_snapshot": {
               "from": "biz_quote_line.lead_time_weeks_snapshot"
+            },
+            "biz_order_line.product_type_snapshot": {
+              "from": "biz_quote_line.product_type_snapshot"
+            },
+            "biz_order_line.quote_cost_mode_snapshot": {
+              "from": "biz_quote_line.quote_cost_mode_snapshot"
+            },
+            "biz_order_line.wattage_snapshot": {
+              "from": "biz_quote_line.wattage_snapshot"
+            },
+            "biz_order_line.spectrum_snapshot": {
+              "from": "biz_quote_line.spectrum_snapshot"
+            },
+            "biz_order_line.input_voltage_snapshot": {
+              "from": "biz_quote_line.input_voltage_snapshot"
+            },
+            "biz_order_line.ppe_umol_per_w_snapshot": {
+              "from": "biz_quote_line.ppe_umol_per_w_snapshot"
+            },
+            "biz_order_line.ppf_umol_s_snapshot": {
+              "from": "biz_quote_line.ppf_umol_s_snapshot"
+            },
+            "biz_order_line.dimmable_snapshot": {
+              "from": "biz_quote_line.dimmable_snapshot"
+            },
+            "biz_order_line.ip_rating_snapshot": {
+              "from": "biz_quote_line.ip_rating_snapshot"
+            },
+            "biz_order_line.max_ambient_temp_snapshot": {
+              "from": "biz_quote_line.max_ambient_temp_snapshot"
+            },
+            "biz_order_line.modules_snapshot": {
+              "from": "biz_quote_line.modules_snapshot"
             },
             "biz_order_line.source_quote_line_ref": {
               "ref": "$source.id"
@@ -2454,7 +2586,18 @@
               "biz_quote_line.procurement_supplier_id": "biz_product.preferred_supplier_id",
               "biz_quote_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
               "biz_quote_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
-              "biz_quote_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks"
+              "biz_quote_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks",
+              "biz_quote_line.product_type_snapshot": "biz_product.product_type",
+              "biz_quote_line.quote_cost_mode_snapshot": "biz_product.quote_cost_mode",
+              "biz_quote_line.wattage_snapshot": "biz_product.wattage",
+              "biz_quote_line.spectrum_snapshot": "biz_product.spectrum",
+              "biz_quote_line.input_voltage_snapshot": "biz_product.input_voltage",
+              "biz_quote_line.ppe_umol_per_w_snapshot": "biz_product.ppe_umol_per_w",
+              "biz_quote_line.ppf_umol_s_snapshot": "biz_product.ppf_umol_s",
+              "biz_quote_line.dimmable_snapshot": "biz_product.dimmable",
+              "biz_quote_line.ip_rating_snapshot": "biz_product.ip_rating",
+              "biz_quote_line.max_ambient_temp_snapshot": "biz_product.max_ambient_temp",
+              "biz_quote_line.modules_snapshot": "biz_product.modules"
             },
             "parent_field_map": {
               "biz_quote_line.sales_entity_snapshot": "biz_quote.sales_entity",
@@ -2471,7 +2614,8 @@
               "biz_quote_line.default_buy_price_snapshot": 0,
               "biz_quote_line.buy_currency_snapshot": "USD",
               "biz_quote_line.minimum_order_quantity_snapshot": 1,
-              "biz_quote_line.lead_time_weeks_snapshot": 0
+              "biz_quote_line.lead_time_weeks_snapshot": 0,
+              "biz_quote_line.quote_cost_mode_snapshot": "catalogue"
             },
             "custom_line_defaults": {
               "biz_quote_line.line_type": "custom"
@@ -2531,6 +2675,10 @@
                     "value": "M",
                     "label": "Meter",
                     "label_key": "common.meter"
+                  },
+                  {
+                    "value": "HOUR",
+                    "label": "Hour"
                   }
                 ]
               },
@@ -2885,6 +3033,17 @@
             "biz_quote_line.supplier_sku_snapshot",
             "biz_quote_line.minimum_order_quantity_snapshot",
             "biz_quote_line.lead_time_weeks_snapshot",
+            "biz_quote_line.product_type_snapshot",
+            "biz_quote_line.quote_cost_mode_snapshot",
+            "biz_quote_line.wattage_snapshot",
+            "biz_quote_line.spectrum_snapshot",
+            "biz_quote_line.input_voltage_snapshot",
+            "biz_quote_line.ppe_umol_per_w_snapshot",
+            "biz_quote_line.ppf_umol_s_snapshot",
+            "biz_quote_line.dimmable_snapshot",
+            "biz_quote_line.ip_rating_snapshot",
+            "biz_quote_line.max_ambient_temp_snapshot",
+            "biz_quote_line.modules_snapshot",
             "biz_quote_line.buy_fx_to_quote_rate",
             "biz_quote_line.buy_total",
             "biz_quote_line.buy_total_quote_currency",
@@ -2917,6 +3076,17 @@
           "biz_quote_line.supplier_sku_snapshot",
           "biz_quote_line.minimum_order_quantity_snapshot",
           "biz_quote_line.lead_time_weeks_snapshot",
+          "biz_quote_line.product_type_snapshot",
+          "biz_quote_line.quote_cost_mode_snapshot",
+          "biz_quote_line.wattage_snapshot",
+          "biz_quote_line.spectrum_snapshot",
+          "biz_quote_line.input_voltage_snapshot",
+          "biz_quote_line.ppe_umol_per_w_snapshot",
+          "biz_quote_line.ppf_umol_s_snapshot",
+          "biz_quote_line.dimmable_snapshot",
+          "biz_quote_line.ip_rating_snapshot",
+          "biz_quote_line.max_ambient_temp_snapshot",
+          "biz_quote_line.modules_snapshot",
           "biz_quote_line.buy_fx_to_quote_rate",
           "biz_quote_line.buy_total",
           "biz_quote_line.buy_total_quote_currency",

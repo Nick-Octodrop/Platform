@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Any, Iterable, Tuple
 
 from jinja2 import StrictUndefined, TemplateSyntaxError, UndefinedError, meta
@@ -75,6 +76,7 @@ def _slugify(value: Any) -> str:
     return slug
 
 
+@lru_cache(maxsize=2)
 def _env(strict: bool) -> _LockedSandbox:
     if strict:
         undefined_cls = _StrictChainableUndefined
@@ -88,6 +90,12 @@ def _env(strict: bool) -> _LockedSandbox:
     env.filters["richtext"] = render_rich_text
     env.tests = {key: val for key, val in env.tests.items() if key in _ALLOWED_TESTS}
     return env
+
+
+@lru_cache(maxsize=256)
+def _compiled_template(strict: bool, text: str):
+    env = _env(strict=strict)
+    return env.from_string(text or "")
 
 
 def _sanitize_value(value: Any) -> Any:
@@ -167,6 +175,5 @@ def validate_templates(
 
 
 def render_template(text: str | None, context: dict[str, Any], strict: bool = True) -> str:
-    env = _env(strict=strict)
-    tmpl = env.from_string(text or "")
+    tmpl = _compiled_template(strict, text or "")
     return tmpl.render(_sanitize_context(context))

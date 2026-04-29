@@ -3,20 +3,33 @@ import { FALLBACK_LOCALE } from "./options.js";
 let localeModules = null;
 let preloadedFallbackCoreModules = null;
 try {
-  localeModules = import.meta.glob("../locales/*/*.json", { import: "default" });
+  localeModules = import.meta.glob(
+    [
+      "../locales/*/*.json",
+      "!../locales/en-NZ/common.json",
+      "!../locales/en-NZ/empty.json",
+      "!../locales/en-NZ/navigation.json",
+      "!../locales/en-NZ/settings.json",
+      "!../locales/en-NZ/validation.json",
+    ],
+    { import: "default" },
+  );
 } catch {
   localeModules = null;
 }
 try {
   // Keep the first paint responsive by only preloading the fallback locale's
   // core copy. Other locales still load on demand immediately after bootstrap.
-  preloadedFallbackCoreModules = {
-    ...import.meta.glob("../locales/en-NZ/common.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/en-NZ/empty.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/en-NZ/navigation.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/en-NZ/settings.json", { import: "default", eager: true }),
-    ...import.meta.glob("../locales/en-NZ/validation.json", { import: "default", eager: true }),
-  };
+  preloadedFallbackCoreModules = import.meta.glob(
+    [
+      "../locales/en-NZ/common.json",
+      "../locales/en-NZ/empty.json",
+      "../locales/en-NZ/navigation.json",
+      "../locales/en-NZ/settings.json",
+      "../locales/en-NZ/validation.json",
+    ],
+    { import: "default", eager: true },
+  );
 } catch {
   preloadedFallbackCoreModules = null;
 }
@@ -87,6 +100,12 @@ export async function loadNamespaceMessages(locale, namespace) {
     return inflight.get(key);
   }
   const path = `../locales/${normalizedLocale}/${safeNamespace}.json`;
+  const preloaded = preloadedFallbackCoreModules?.[path];
+  if (normalizedLocale === "en-NZ" && FALLBACK_LOCALE === "en-NZ" && preloaded && typeof preloaded === "object") {
+    const messages = normalizeNamespaceMessages(safeNamespace, preloaded);
+    messageCache.set(key, messages);
+    return messages;
+  }
   const loader = localeModules ? localeModules[path] : null;
   const request = (async () => {
     if (!loader) {
