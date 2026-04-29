@@ -139,7 +139,8 @@
           "id": "biz_quote_script.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose which sales entity this script is available to.",
           "options": [
             {
               "value": "NLight BV",
@@ -282,7 +283,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "help_text": "Controls entity-specific access, numbering, reporting, and which sales team should see this quote.",
-          "default": "NLight BV",
+          "required": true,
           "options": [
             {
               "value": "NLight BV",

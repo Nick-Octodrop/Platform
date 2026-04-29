@@ -288,12 +288,16 @@ def in_condition(field_id: str, values: list[Any]) -> dict[str, Any]:
     return {"op": "in", "field": field_id, "value": values}
 
 
-def contains_condition(field_id: str, value: Any) -> dict[str, Any]:
-    return {"op": "contains", "field": field_id, "value": value}
-
-
 def and_condition(*conditions: dict[str, Any]) -> dict[str, Any]:
     return {"op": "and", "conditions": list(conditions)}
+
+
+def sales_own_entity_condition(field_id: str, entity_scope: str) -> dict[str, Any]:
+    return eq_condition(field_id, entity_scope)
+
+
+def sales_shared_entity_condition(field_id: str) -> dict[str, Any]:
+    return eq_condition(field_id, "Shared")
 
 
 def modules_visible(include_settings: bool) -> list[RuleSpec]:
@@ -597,7 +601,15 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
                     "write",
                     and_condition(
                         eq_condition("biz_contact.contact_type", "customer"),
-                        contains_condition("biz_contact.company_entity_scope", entity_scope),
+                        sales_own_entity_condition("biz_contact.company_entity_scope", entity_scope),
+                    ),
+                ),
+                entity_rule(
+                    "entity.biz_contact",
+                    "read",
+                    and_condition(
+                        eq_condition("biz_contact.contact_type", "customer"),
+                        sales_shared_entity_condition("biz_contact.company_entity_scope"),
                     ),
                 )
             ]
@@ -607,7 +619,15 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
                     "write",
                     and_condition(
                         eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"),
-                        contains_condition("biz_contact_person.company_entity_scope_snapshot", entity_scope),
+                        sales_own_entity_condition("biz_contact_person.company_entity_scope_snapshot", entity_scope),
+                    ),
+                ),
+                entity_rule(
+                    "entity.biz_contact_person",
+                    "read",
+                    and_condition(
+                        eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"),
+                        sales_shared_entity_condition("biz_contact_person.company_entity_scope_snapshot"),
                     ),
                 )
             ]

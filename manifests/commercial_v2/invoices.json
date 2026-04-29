@@ -316,7 +316,8 @@
           "id": "biz_invoice.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity for this invoice. Invoices created from orders copy this automatically.",
           "options": [
             {
               "value": "NLight BV",

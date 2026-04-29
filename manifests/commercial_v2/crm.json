@@ -129,7 +129,8 @@
           "id": "crm_site.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity for this record. Sales users only retain access to records in their assigned entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -348,7 +349,8 @@
           "id": "crm_lead.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity before saving. NLight BV and EcoTech/CIS sales teams only see records assigned to their own entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -583,7 +585,8 @@
           "id": "crm_opportunity.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity for this opportunity. Qualified leads copy this automatically.",
           "options": [
             {
               "value": "NLight BV",
@@ -1170,7 +1173,8 @@
           "id": "crm_activity.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity for this activity. Activities created from leads, opportunities, or sites copy this automatically.",
           "options": [
             {
               "value": "NLight BV",

@@ -247,7 +247,8 @@
           "id": "biz_order.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the selling entity for this customer order. Orders created from quotes copy this automatically.",
           "options": [
             {
               "value": "NLight BV",

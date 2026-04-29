@@ -335,7 +335,8 @@
           "id": "biz_document.sales_entity",
           "type": "enum",
           "label": "Entity",
-          "default": "NLight BV",
+          "required": true,
+          "help_text": "Choose the entity this document belongs to. Documents created from quotes, orders, or invoices copy this automatically.",
           "options": [
             {
               "value": "NLight BV",

@@ -51150,6 +51150,8 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     if errors:
         _log_record_validation_errors(entity_id, data if isinstance(data, dict) else {}, errors, workflow)
         return _validation_response(errors, [])
+    if not _record_write_allowed_for_actor(actor, found[0], entity_id, clean if isinstance(clean, dict) else {}):
+        return _error_response("FORBIDDEN", "Record write access denied", "record", status=403)
     try:
         record = _create_record_with_computed_fields(request, entity_id, found[1], clean)
     except Exception as exc:

@@ -224,7 +224,7 @@ def main() -> int:
         values={
             "biz_contact.name": args.contact_name,
             "biz_contact.contact_type": "customer",
-            "biz_contact.company_entity_scope": [args.sales_entity],
+            "biz_contact.company_entity_scope": args.sales_entity,
             "biz_contact.email": "test-only-xero-trial@example.invalid",
             "biz_contact.country": "Netherlands",
             "biz_contact.currency_preference": args.currency,

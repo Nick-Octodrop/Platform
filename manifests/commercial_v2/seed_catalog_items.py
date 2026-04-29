@@ -343,7 +343,7 @@ def main() -> None:
                 "biz_contact.legal_name": supplier_name,
                 "biz_contact.contact_type": "supplier",
                 "biz_contact.currency_preference": "USD",
-                "biz_contact.company_entity_scope": ["EcoTech FZCO"],
+                "biz_contact.company_entity_scope": "EcoTech FZCO",
                 "biz_contact.notes": "Seeded supplier from NLight catalogue. Hidden from Sales by access profile scope.",
                 "biz_contact.is_active": True,
             }

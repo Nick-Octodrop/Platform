@@ -81,6 +81,7 @@
           "type": "enum",
           "label_key": "contacts.fields.contact_type",
           "label": "Type",
+          "help_text": "Sales users only see Customer contacts. Supplier and Factory Partner contacts are hidden from sales profiles.",
           "required": true,
           "default": "customer",
           "options": [
@@ -106,9 +107,25 @@
         },
         {
           "id": "biz_contact.company_entity_scope",
-          "type": "tags",
+          "type": "enum",
           "label_key": "contacts.fields.company_entity_scope",
-          "label": "Entity Scope"
+          "label": "Sales Entity Visibility",
+          "required": true,
+          "help_text": "Controls which entity owns this contact. For customers, it also controls which sales team can see and use the contact. Choose Shared when both teams need access.",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV Sales"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech/CIS Sales"
+            },
+            {
+              "value": "Shared",
+              "label": "Shared - NLight BV + EcoTech/CIS"
+            }
+          ]
         },
         {
           "id": "biz_contact.currency_preference",
@@ -395,6 +412,7 @@
           "id": "biz_contact_person.company_id",
           "type": "lookup",
           "label": "Company / Account",
+          "help_text": "Person visibility follows the selected company type and entity scope. If the company scope changes later, reselect the company here to refresh the snapshots.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "ui": {
@@ -429,9 +447,24 @@
         },
         {
           "id": "biz_contact_person.company_entity_scope_snapshot",
-          "type": "tags",
-          "label": "Entity Scope Snapshot",
-          "readonly": true
+          "type": "enum",
+          "label": "Sales Entity Visibility Snapshot",
+          "help_text": "Copied from the company so access profiles can filter people by NLight BV, EcoTech/CIS, or shared visibility.",
+          "readonly": true,
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV Sales"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech/CIS Sales"
+            },
+            {
+              "value": "Shared",
+              "label": "Shared - NLight BV + EcoTech/CIS"
+            }
+          ]
         },
         {
           "id": "biz_contact_person.display_name",
@@ -643,6 +676,9 @@
           "field_id": "biz_contact.contact_type"
         },
         {
+          "field_id": "biz_contact.company_entity_scope"
+        },
+        {
           "field_id": "biz_contact.country"
         },
         {
@@ -697,6 +733,30 @@
               "op": "eq",
               "field": "biz_contact.contact_type",
               "value": "customer"
+            }
+          },
+          {
+            "id": "nlight_bv",
+            "label": "NLight BV",
+            "domain": {
+              "op": "in",
+              "field": "biz_contact.company_entity_scope",
+              "value": [
+                "NLight BV",
+                "Shared"
+              ]
+            }
+          },
+          {
+            "id": "ecotech_fzco",
+            "label": "EcoTech FZCO",
+            "domain": {
+              "op": "in",
+              "field": "biz_contact.company_entity_scope",
+              "value": [
+                "EcoTech FZCO",
+                "Shared"
+              ]
             }
           },
           {
@@ -1159,6 +1219,8 @@
         "allow_attachments": true,
         "tracked_fields": [
           "biz_contact_person.company_id",
+          "biz_contact_person.company_contact_type_snapshot",
+          "biz_contact_person.company_entity_scope_snapshot",
           "biz_contact_person.display_name",
           "biz_contact_person.first_name",
           "biz_contact_person.last_name",
