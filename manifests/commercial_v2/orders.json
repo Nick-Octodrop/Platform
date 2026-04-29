@@ -1438,6 +1438,7 @@
           "id": "biz_order_line.product_type_snapshot",
           "type": "string",
           "label": "Product Type",
+          "help_text": "Read-only product type copied from the quote or product so the order stays stable if the catalogue changes later.",
           "readonly": true
         },
         {
@@ -2179,6 +2180,9 @@
             "biz_purchase_order_line.product_id": {
               "from": "biz_order_line.product_id"
             },
+            "biz_purchase_order_line.product_name_snapshot": {
+              "from": "biz_order_line.description"
+            },
             "biz_purchase_order_line.product_supplier_id": {
               "from": "biz_order_line.product_supplier_id"
             },
@@ -2264,6 +2268,9 @@
           "field_mappings": {
             "biz_purchase_order_line.product_id": {
               "from": "biz_order_line.product_id"
+            },
+            "biz_purchase_order_line.product_name_snapshot": {
+              "from": "biz_order_line.description"
             },
             "biz_purchase_order_line.product_supplier_id": {
               "from": "biz_order_line.product_supplier_id"

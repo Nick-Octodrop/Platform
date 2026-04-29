@@ -1340,6 +1340,7 @@
           "id": "biz_quote_line.product_type_snapshot",
           "type": "string",
           "label": "Product Type",
+          "help_text": "Read-only product type copied at quote time so the quote stays stable if the catalogue changes later.",
           "readonly": true
         },
         {

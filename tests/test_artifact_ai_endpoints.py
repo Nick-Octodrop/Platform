@@ -2431,6 +2431,61 @@ class TestArtifactAiEndpoints(unittest.TestCase):
         self.assertEqual(preview_res.status_code, 200, body)
         self.assertEqual(body.get("filename"), "supplier-order-SO-1001.pdf")
 
+    def test_document_template_preview_renders_placeholder_when_no_record_selected(self) -> None:
+        client = TestClient(main.app)
+        fake_entity = {
+            "id": "entity.te_purchase_order",
+            "label": "Purchase Order",
+            "fields": [
+                {"id": "te_purchase_order.po_number", "label": "PO Number", "type": "string"},
+            ],
+        }
+
+        def fake_find_entity_in_registry(_registry, _get_snapshot, entity_id):
+            if entity_id == "entity.te_purchase_order":
+                return ("commercial", fake_entity, "hash")
+            return None
+
+        with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
+            created = client.post(
+                "/documents/templates",
+                json={
+                    "name": "Purchase Order",
+                    "description": "",
+                    "html": "<h1>{{ record['te_purchase_order.po_number'] }}</h1>",
+                    "filename_pattern": "po-{{ record['te_purchase_order.po_number'] }}",
+                    "variables_schema": {"entity_id": "entity.te_purchase_order"},
+                },
+            ).json()
+            template_id = created["template"]["id"]
+
+        captured: dict[str, object] = {}
+        fake_pdf = b"%PDF-1.4\nplaceholder-preview\n%%EOF"
+        with (
+            patch.object(main, "_resolve_actor", lambda _request: _template_manager_actor()),
+            patch.object(main, "_find_entity_def_in_registry", fake_find_entity_in_registry),
+            patch.object(main, "using_supabase_storage", lambda: True),
+            patch.object(
+                main,
+                "render_pdf",
+                lambda html, paper_size, margins, header_html, footer_html: (captured.setdefault("html", html), fake_pdf)[1],
+            ),
+        ):
+            preview_res = client.post(
+                f"/docs/templates/{template_id}/preview",
+                json={
+                    "sample": {
+                        "entity_id": "entity.te_purchase_order",
+                    },
+                },
+            )
+
+        body = preview_res.json()
+        self.assertEqual(preview_res.status_code, 200, body)
+        self.assertIn("pdf_base64", body)
+        self.assertEqual(captured.get("html"), "<h1>{{ te_purchase_order.po_number }}</h1>")
+        self.assertEqual(body.get("filename"), "po-{{ te_purchase_order.po_number }}.pdf")
+
     def test_document_template_preview_renders_selected_record_values_from_store(self) -> None:
         client = TestClient(main.app)
         fake_quote_entity = {
@@ -3626,7 +3681,7 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             self.assertTrue(any("No active email connection is configured" in item for item in advisories), advisories)
             self.assertTrue(any("not limited to brand new orders" in item for item in advisories), advisories)
 
-    def test_automation_ai_plan_rejects_create_new_automation_prompt_in_scoped_editor(self) -> None:
+    def test_automation_ai_plan_handles_create_new_automation_prompt_as_current_draft_update(self) -> None:
         client = TestClient(main.app)
         with patch.object(main, "_resolve_actor", lambda _request: _superadmin_actor()):
             created = client.post(
@@ -3651,10 +3706,35 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             automation_id = created["automation"]["id"]
 
             def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                next_draft = {
+                    **created["automation"],
+                    "name": "Order Notification Email",
+                    "trigger": {"kind": "event", "event_types": ["record.created"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "New order received",
+                                "body": "A new order arrived.",
+                            },
+                        },
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        },
+                    ],
+                }
                 return _fake_response(
                     {
-                        "summary": "Automation draft ready to apply.",
-                        "draft": created["automation"],
+                        "summary": "Reshaped the current draft into an order notification and email automation.",
+                        "draft": next_draft,
                         "assumptions": [],
                         "warnings": [],
                     }
@@ -3672,8 +3752,10 @@ class TestArtifactAiEndpoints(unittest.TestCase):
             body = res.json()
             self.assertEqual(res.status_code, 200, body)
             self.assertTrue(body.get("ok"), body)
-            self.assertTrue(body.get("noop"), body)
-            self.assertIn("This editor can only update the current automation", body.get("summary", ""))
+            self.assertFalse(body.get("noop"), body)
+            self.assertEqual(body.get("draft", {}).get("name"), "Order Notification Email")
+            self.assertEqual(len(body.get("draft", {}).get("steps") or []), 2)
+            self.assertNotIn("This editor can only update the current automation", body.get("summary", ""))
 
     def test_automation_ai_plan_does_not_report_ready_when_changed_draft_is_invalid(self) -> None:
         client = TestClient(main.app)

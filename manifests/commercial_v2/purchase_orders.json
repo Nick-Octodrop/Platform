@@ -164,6 +164,7 @@
           "id": "biz_purchase_order.supplier_id",
           "type": "lookup",
           "label": "Supplier",
+          "help_text": "Actual supplier/factory for this purchase order. Hidden from Sales profiles.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
@@ -232,6 +233,7 @@
           "id": "biz_purchase_order.purchasing_entity",
           "type": "enum",
           "label": "Purchasing Entity",
+          "help_text": "Entity placing the purchase order. For factory purchases this will normally be EcoTech FZCO.",
           "default": "EcoTech FZCO",
           "options": [
             {
@@ -253,6 +255,7 @@
           "id": "biz_purchase_order.source_customer_order_id",
           "type": "lookup",
           "label": "Source Order",
+          "help_text": "Customer order this purchase order was created from, keeping the quote/order/PO chain linked.",
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
           "readonly": true,
@@ -279,6 +282,7 @@
           "id": "biz_purchase_order.currency",
           "type": "enum",
           "label": "Currency",
+          "help_text": "Supplier purchase currency for this PO. Usually inherited from the supplier.",
           "default": "USD",
           "options": [
             {
@@ -312,12 +316,14 @@
           "id": "biz_purchase_order.supplier_reference",
           "type": "string",
           "label": "Supplier Reference",
+          "help_text": "Supplier account/reference number or factory reference for the purchase order.",
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.supplier_reference.label"
         },
         {
           "id": "biz_purchase_order.incoterm",
           "type": "string",
           "label": "Incoterm",
+          "help_text": "Purchase/shipping term agreed with the supplier for this order.",
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.incoterm.label"
         },
         {
@@ -613,14 +619,53 @@
           "label": "Product",
           "entity": "entity.biz_product",
           "display_field": "biz_product.name",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_purchase_order_line.product_name_snapshot": "biz_product.name",
+                "biz_purchase_order_line.product_code_snapshot": "biz_product.code"
+              }
+            }
+          },
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.product_id.label"
         },
         {
           "id": "biz_purchase_order_line.product_supplier_id",
           "type": "lookup",
           "label": "Supplier Source",
+          "help_text": "Specific supplier source row used to create this purchase line and preserve the supplier cost reference.",
           "entity": "entity.biz_product_supplier",
-          "display_field": "biz_product_supplier.product_name_snapshot"
+          "display_field": "biz_product_supplier.product_name_snapshot",
+          "ui": {
+            "populate_from_lookup": {
+              "field_map": {
+                "biz_purchase_order_line.product_id": "biz_product_supplier.product_id",
+                "biz_purchase_order_line.product_name_snapshot": "biz_product_supplier.product_name_snapshot",
+                "biz_purchase_order_line.product_code_snapshot": "biz_product_supplier.product_code_snapshot",
+                "biz_purchase_order_line.description": "biz_product_supplier.purchase_description",
+                "biz_purchase_order_line.uom": "biz_product_supplier.uom_snapshot",
+                "biz_purchase_order_line.unit_cost": "biz_product_supplier.unit_cost",
+                "biz_purchase_order_line.currency_snapshot": "biz_product_supplier.purchase_currency",
+                "biz_purchase_order_line.supplier_sku_snapshot": "biz_product_supplier.supplier_sku",
+                "biz_purchase_order_line.minimum_order_quantity_snapshot": "biz_product_supplier.minimum_order_quantity",
+                "biz_purchase_order_line.lead_time_weeks_snapshot": "biz_product_supplier.lead_time_weeks"
+              }
+            }
+          }
+        },
+        {
+          "id": "biz_purchase_order_line.product_code_snapshot",
+          "type": "string",
+          "label": "Product Code",
+          "help_text": "Readable product code copied onto the PO line so the supplier line does not show an internal product ID.",
+          "readonly": true
+        },
+        {
+          "id": "biz_purchase_order_line.product_name_snapshot",
+          "type": "string",
+          "label": "Product Name",
+          "help_text": "Readable product name copied onto the PO line for stable display and supplier documents.",
+          "readonly": true
         },
         {
           "id": "biz_purchase_order_line.description",
@@ -633,6 +678,7 @@
           "id": "biz_purchase_order_line.purchasing_entity_snapshot",
           "type": "enum",
           "label": "Purchasing Entity Snapshot",
+          "help_text": "Purchasing entity copied from the PO header so line reporting stays stable if the header changes later.",
           "default": "EcoTech FZCO",
           "options": [
             {
@@ -654,6 +700,7 @@
           "id": "biz_purchase_order_line.currency_snapshot",
           "type": "enum",
           "label": "Currency Snapshot",
+          "help_text": "Purchase currency copied from the PO header for line totals.",
           "default": "USD",
           "options": [
             {
@@ -751,6 +798,7 @@
           "id": "biz_purchase_order_line.unit_cost",
           "type": "number",
           "label": "Unit Cost",
+          "help_text": "Supplier/factory purchase unit cost used on this purchase order line.",
           "default": 0,
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.unit_cost.label"
         },
@@ -758,6 +806,7 @@
           "id": "biz_purchase_order_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU",
+          "help_text": "Supplier/factory product reference copied from the supplier source.",
           "readonly": true
         },
         {
@@ -1713,6 +1762,8 @@
             },
             "item_field_map": {
               "biz_purchase_order_line.product_id": "biz_product_supplier.product_id",
+              "biz_purchase_order_line.product_name_snapshot": "biz_product_supplier.product_name_snapshot",
+              "biz_purchase_order_line.product_code_snapshot": "biz_product_supplier.product_code_snapshot",
               "biz_purchase_order_line.description": "biz_product_supplier.purchase_description",
               "biz_purchase_order_line.uom": "biz_product_supplier.uom_snapshot",
               "biz_purchase_order_line.unit_cost": "biz_product_supplier.unit_cost",
@@ -1737,11 +1788,17 @@
             "description_field": "biz_purchase_order_line.description",
             "columns": [
               {
-                "field_id": "biz_purchase_order_line.product_id",
+                "field_id": "biz_purchase_order_line.product_code_snapshot",
+                "label": "Product Code",
+                "readonly": true,
+                "width": 150
+              },
+              {
+                "field_id": "biz_purchase_order_line.product_name_snapshot",
                 "label": "Product",
                 "label_key": "common.product",
                 "readonly": true,
-                "width": 220
+                "width": 240
               },
               {
                 "field_id": "biz_purchase_order_line.description",
@@ -2033,7 +2090,10 @@
           "field_id": "biz_purchase_order_line.purchase_order_id"
         },
         {
-          "field_id": "biz_purchase_order_line.product_id"
+          "field_id": "biz_purchase_order_line.product_code_snapshot"
+        },
+        {
+          "field_id": "biz_purchase_order_line.product_name_snapshot"
         },
         {
           "field_id": "biz_purchase_order_line.supplier_sku_snapshot"
@@ -2060,6 +2120,8 @@
           "enabled": true,
           "placeholder": "Search PO lines...",
           "fields": [
+            "biz_purchase_order_line.product_code_snapshot",
+            "biz_purchase_order_line.product_name_snapshot",
             "biz_purchase_order_line.description",
             "biz_purchase_order_line.source_order_line_ref"
           ],
@@ -2079,8 +2141,9 @@
           "columns": 2,
           "fields": [
             "biz_purchase_order_line.purchase_order_id",
-            "biz_purchase_order_line.product_id",
             "biz_purchase_order_line.product_supplier_id",
+            "biz_purchase_order_line.product_code_snapshot",
+            "biz_purchase_order_line.product_name_snapshot",
             "biz_purchase_order_line.supplier_sku_snapshot",
             "biz_purchase_order_line.description",
             "biz_purchase_order_line.uom",
@@ -2107,6 +2170,8 @@
           "biz_purchase_order_line.purchase_order_id",
           "biz_purchase_order_line.product_id",
           "biz_purchase_order_line.product_supplier_id",
+          "biz_purchase_order_line.product_code_snapshot",
+          "biz_purchase_order_line.product_name_snapshot",
           "biz_purchase_order_line.supplier_sku_snapshot",
           "biz_purchase_order_line.description",
           "biz_purchase_order_line.uom",

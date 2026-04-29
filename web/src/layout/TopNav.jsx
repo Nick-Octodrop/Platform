@@ -817,14 +817,19 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     setWorkspaceNavLogoFailed(false);
   }, [workspaceNavLogoUrl]);
   const showWorkspaceNavLogo = Boolean(workspaceNavLogoUrl) && !workspaceNavLogoFailed;
-  const workspaceNavLogoClass = "h-6 max-h-6 max-w-[8.5rem] w-auto object-contain object-left shrink-0";
-  const desktopNavLogo = showWorkspaceNavLogo ? (
-    <img
-      src={workspaceNavLogoUrl}
-      alt={`${workspaceDisplayName} logo`}
-      className={workspaceNavLogoClass}
-      onError={() => setWorkspaceNavLogoFailed(true)}
-    />
+  const workspaceNavLogoBoxClass = isMobile
+    ? "flex h-12 max-w-[11rem] shrink-0 items-center justify-start px-2 py-1"
+    : "flex h-10 max-w-[12rem] shrink-0 items-center justify-start px-2 py-1";
+  const workspaceNavLogoImageClass = "block h-full max-h-full w-auto max-w-full object-contain object-left";
+  const workspaceNavLogo = showWorkspaceNavLogo ? (
+    <span className={workspaceNavLogoBoxClass}>
+      <img
+        src={workspaceNavLogoUrl}
+        alt={`${workspaceDisplayName} logo`}
+        className={workspaceNavLogoImageClass}
+        onError={() => setWorkspaceNavLogoFailed(true)}
+      />
+    </span>
   ) : null;
   const homeCrumbContent = t("navigation.home");
   const mobileTitle = useMemo(() => {
@@ -1169,12 +1174,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
           <Menu className="w-4 h-4" />
         </button>
         {showWorkspaceNavLogo ? (
-          <img
-            src={workspaceNavLogoUrl}
-            alt={`${workspaceDisplayName} logo`}
-            className={workspaceNavLogoClass}
-            onError={() => setWorkspaceNavLogoFailed(true)}
-          />
+          workspaceNavLogo
         ) : (
           <div className="text-sm font-semibold truncate">{mobileTitle}</div>
         )}
@@ -1182,12 +1182,7 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     ) : (
       <div className="min-w-0">
         {showWorkspaceNavLogo ? (
-          <img
-            src={workspaceNavLogoUrl}
-            alt={`${workspaceDisplayName} logo`}
-            className={workspaceNavLogoClass}
-            onError={() => setWorkspaceNavLogoFailed(true)}
-          />
+          workspaceNavLogo
         ) : (
           <div className="text-sm font-semibold truncate">{workspaceDisplayName}</div>
         )}

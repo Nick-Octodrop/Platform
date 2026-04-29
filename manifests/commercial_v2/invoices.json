@@ -726,30 +726,35 @@
           "id": "biz_invoice.xero_invoice_id",
           "type": "string",
           "label": "Xero Invoice ID",
+          "help_text": "Identifier returned by Xero after this invoice is exported. Leave blank manually; it is managed by sync.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_credit_note_id",
           "type": "string",
           "label": "Xero Credit Note ID",
+          "help_text": "Identifier returned by Xero for linked credit-note exports. Managed by sync.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_status",
           "type": "string",
           "label": "Xero Sync Status",
+          "help_text": "Latest Xero sync result for this invoice, such as exported, paid, failed, or skipped.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_at",
           "type": "datetime",
           "label": "Xero Last Sync At",
+          "help_text": "When this invoice was last exported to or refreshed from Xero.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_error",
           "type": "text",
           "label": "Xero Sync Error",
+          "help_text": "Last Xero error message if export or payment refresh failed.",
           "readonly": true
         }
       ],

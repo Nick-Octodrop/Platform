@@ -685,7 +685,7 @@ class TestAgentStreamEndpoint(unittest.TestCase):
         self.assertIn("Likely issue:", final_payload.get("summary", ""))
         self.assertTrue(final_payload.get("required_questions"), final_payload)
 
-    def test_automation_ai_plan_stream_done_payload_rejects_create_new_automation_prompt_in_scoped_editor(self) -> None:
+    def test_automation_ai_plan_stream_done_payload_handles_create_new_automation_prompt_as_current_draft_update(self) -> None:
         actor = {
             "user_id": "user-1",
             "email": "automation@example.com",
@@ -720,13 +720,38 @@ class TestAgentStreamEndpoint(unittest.TestCase):
             automation_id = created["automation"]["id"]
 
             def fake_openai(_messages, model=None, temperature=0.2, response_format=None):
+                next_draft = {
+                    **created["automation"],
+                    "name": "Order Notification Email",
+                    "trigger": {"kind": "event", "event_types": ["record.created"], "filters": []},
+                    "steps": [
+                        {
+                            "kind": "action",
+                            "action_id": "system.notify",
+                            "inputs": {
+                                "recipient_user_id": "user-1",
+                                "title": "New order received",
+                                "body": "A new order arrived.",
+                            },
+                        },
+                        {
+                            "kind": "action",
+                            "action_id": "system.send_email",
+                            "inputs": {
+                                "to_internal_emails": ["ops@example.com"],
+                                "subject": "New order received",
+                                "body_text": "A new order arrived.",
+                            },
+                        },
+                    ],
+                }
                 return {
                     "choices": [{
                         "message": {
                             "content": json.dumps(
                                 {
-                                    "summary": "Automation draft ready to apply.",
-                                    "draft": created["automation"],
+                                    "summary": "Reshaped the current draft into an order notification and email automation.",
+                                    "draft": next_draft,
                                     "assumptions": [],
                                     "warnings": [],
                                 }
@@ -748,8 +773,10 @@ class TestAgentStreamEndpoint(unittest.TestCase):
 
         done_frame = next(payload for event_name, payload in frames if event_name == "done")
         final_payload = done_frame.get("data", {}).get("final_payload", {})
-        self.assertTrue(final_payload.get("noop"), final_payload)
-        self.assertIn("This editor can only update the current automation", final_payload.get("summary", ""))
+        self.assertFalse(final_payload.get("noop"), final_payload)
+        self.assertEqual(final_payload.get("draft", {}).get("name"), "Order Notification Email")
+        self.assertEqual(len(final_payload.get("draft", {}).get("steps") or []), 2)
+        self.assertNotIn("This editor can only update the current automation", final_payload.get("summary", ""))
 
     def test_automation_ai_plan_stream_done_payload_rejects_ready_summary_for_invalid_changed_draft(self) -> None:
         actor = {

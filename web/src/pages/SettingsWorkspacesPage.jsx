@@ -522,6 +522,7 @@ export default function SettingsWorkspacesPage() {
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [assetUploading, setAssetUploading] = useState(false);
+  const [assetDeletingId, setAssetDeletingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeWorkspaceId, setActive] = useState(getActiveWorkspaceId());
@@ -751,7 +752,7 @@ export default function SettingsWorkspacesPage() {
   }
 
   function closeAssetDrawer() {
-    if (assetUploading) return;
+    if (assetUploading || assetDeletingId) return;
     setAssetDrawerOpen(false);
     resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
   }
@@ -827,6 +828,7 @@ export default function SettingsWorkspacesPage() {
   }
 
   async function submitAssetDrawer() {
+    if (assetDeletingId) return;
     if (!assetUpload.name.trim() || !assetUpload.reference_key.trim()) return;
     if (!assetUpload.id && !assetUploadFile) return;
     setAssetUploading(true);
@@ -892,6 +894,43 @@ export default function SettingsWorkspacesPage() {
     }
   }
 
+  async function deleteBrandingAsset(asset) {
+    const assetId = textValue(asset?.id);
+    if (!assetId || assetDeletingId || assetUploading || settingsSaving) return;
+    const assetName = asset?.name || asset?.reference_key || "this asset";
+    if (!window.confirm(`Delete ${assetName}? This removes it from branding slots and deletes the stored file.`)) return;
+    setAssetDeletingId(assetId);
+    try {
+      const response = await apiFetch(`/prefs/branding/assets/${encodeURIComponent(assetId)}`, { method: "DELETE" });
+      const nextAssets = sortBrandingAssets(response?.branding_assets || []);
+      const nextAppBranding = normalizeAppBranding(response?.app_branding, response?.workspace);
+      const nextTemplateBranding = normalizeTemplateBranding(response?.template_branding, nextAppBranding);
+      setBrandingAssets(nextAssets);
+      setAppBranding(nextAppBranding);
+      setTemplateBranding(nextTemplateBranding);
+      setWorkspacePrefs((prev) => ({
+        ...prev,
+        logo_url: response?.workspace?.logo_url || "",
+        nav_logo_url: response?.app_branding?.nav_logo_url || response?.workspace?.nav_logo_url || "",
+        colors: response?.workspace?.colors || prev.colors,
+      }));
+      if (response?.workspace?.colors) {
+        setBrandColors(response.workspace.colors);
+        applyBrandColors(response.workspace.colors);
+      }
+      if (assetUpload.id === assetId) {
+        setAssetDrawerOpen(false);
+        resetAssetUpload(BRANDING_ASSET_UPLOAD_DEFAULTS.type);
+      }
+      await reloadI18n(response);
+      pushToast("success", "Branding asset deleted.");
+    } catch (err) {
+      pushToast("error", err?.message || "Failed to delete branding asset.");
+    } finally {
+      setAssetDeletingId("");
+    }
+  }
+
   const showSettingsActions = canEditWorkspaceSettings && activeTab !== "workspaces";
   const headerActions = showSettingsActions ? (
     <div className="flex items-center gap-2">
@@ -899,7 +938,7 @@ export default function SettingsWorkspacesPage() {
         type="button"
         className="btn btn-primary btn-sm"
         onClick={saveWorkspaceSettings}
-        disabled={settingsSaving || assetUploading || !appBranding.workspace_name.trim()}
+        disabled={settingsSaving || assetUploading || Boolean(assetDeletingId) || !appBranding.workspace_name.trim()}
       >
         {settingsSaving ? t("common.saving") : t("common.save")}
       </button>
@@ -911,7 +950,7 @@ export default function SettingsWorkspacesPage() {
           label: settingsSaving ? t("common.saving") : t("common.save"),
           className: "btn btn-primary btn-sm",
           onClick: saveWorkspaceSettings,
-          disabled: settingsSaving || assetUploading || !appBranding.workspace_name.trim(),
+          disabled: settingsSaving || assetUploading || Boolean(assetDeletingId) || !appBranding.workspace_name.trim(),
         },
       ]
     : [];
@@ -1111,7 +1150,7 @@ export default function SettingsWorkspacesPage() {
                       type="button"
                       className="btn btn-outline btn-sm"
                       onClick={() => openAssetDrawer()}
-                      disabled={assetUploading || settingsSaving}
+                      disabled={assetUploading || settingsSaving || Boolean(assetDeletingId)}
                     >
                       Upload Asset
                     </button>
@@ -1129,7 +1168,7 @@ export default function SettingsWorkspacesPage() {
                                 <th>Reference Key</th>
                                 <th>Type</th>
                                 <th>Status</th>
-                                <th className="w-24">Actions</th>
+                                <th className="w-36">Actions</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1143,8 +1182,21 @@ export default function SettingsWorkspacesPage() {
                                   <td className="whitespace-nowrap">{asset.type || "other"}</td>
                                   <td className="whitespace-nowrap">{asset.is_active === false ? "Inactive" : "Active"}</td>
                                   <td className="whitespace-nowrap">
-                                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => openAssetDrawer(asset.type || BRANDING_ASSET_UPLOAD_DEFAULTS.type, asset)}>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-xs"
+                                      onClick={() => openAssetDrawer(asset.type || BRANDING_ASSET_UPLOAD_DEFAULTS.type, asset)}
+                                      disabled={assetUploading || Boolean(assetDeletingId)}
+                                    >
                                       Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-xs text-error"
+                                      onClick={() => deleteBrandingAsset(asset)}
+                                      disabled={assetUploading || settingsSaving || Boolean(assetDeletingId)}
+                                    >
+                                      {assetDeletingId === asset.id ? "Deleting..." : "Delete"}
                                     </button>
                                   </td>
                                 </tr>
@@ -1177,7 +1229,7 @@ export default function SettingsWorkspacesPage() {
                             className="select select-bordered select-sm"
                             value={assetUpload.type}
                             onChange={(event) => setAssetUpload((prev) => ({ ...prev, type: event.target.value }))}
-                            disabled={assetUploading}
+                            disabled={assetUploading || Boolean(assetDeletingId)}
                             aria-label="Asset type"
                           >
                             {BRANDING_ASSET_TYPE_OPTIONS.map((option) => (
@@ -1198,7 +1250,7 @@ export default function SettingsWorkspacesPage() {
                               type="file"
                               className="file-input file-input-bordered file-input-sm w-full"
                               onChange={(event) => setAssetUploadFile(event.target.files?.[0] || null)}
-                              disabled={assetUploading}
+                              disabled={assetUploading || Boolean(assetDeletingId)}
                             />
                             <span className="label-text-alt mt-1 opacity-70">Upload the original file once, then reuse it anywhere in workspace branding.</span>
                           </label>
@@ -1227,7 +1279,7 @@ export default function SettingsWorkspacesPage() {
                             className="input input-bordered input-sm"
                             value={assetUpload.name}
                             onChange={(event) => setAssetUpload((prev) => ({ ...prev, name: event.target.value }))}
-                            disabled={assetUploading}
+                            disabled={assetUploading || Boolean(assetDeletingId)}
                           />
                           <span className="label-text-alt mt-1 opacity-70">Clear internal label for admins choosing assets later.</span>
                         </label>
@@ -1238,7 +1290,7 @@ export default function SettingsWorkspacesPage() {
                             className="input input-bordered input-sm"
                             value={assetUpload.reference_key}
                             onChange={(event) => setAssetUpload((prev) => ({ ...prev, reference_key: event.target.value }))}
-                            disabled={assetUploading}
+                            disabled={assetUploading || Boolean(assetDeletingId)}
                           />
                           <span className="label-text-alt mt-1 opacity-70">Stable identifier templates and AI can reference consistently.</span>
                         </label>
@@ -1249,7 +1301,7 @@ export default function SettingsWorkspacesPage() {
                             className="input input-bordered input-sm"
                             value={assetUpload.alt_text}
                             onChange={(event) => setAssetUpload((prev) => ({ ...prev, alt_text: event.target.value }))}
-                            disabled={assetUploading}
+                            disabled={assetUploading || Boolean(assetDeletingId)}
                           />
                           <span className="label-text-alt mt-1 opacity-70">Useful for accessibility and descriptive output.</span>
                         </label>
@@ -1262,7 +1314,7 @@ export default function SettingsWorkspacesPage() {
                             onChange={(event) =>
                               setAssetUpload((prev) => ({ ...prev, sort_order: Number(event.target.value || 0) }))
                             }
-                            disabled={assetUploading}
+                            disabled={assetUploading || Boolean(assetDeletingId)}
                           />
                           <span className="label-text-alt mt-1 opacity-70">Lower numbers appear earlier in filtered asset lists.</span>
                         </label>
@@ -1273,7 +1325,7 @@ export default function SettingsWorkspacesPage() {
                           className="textarea textarea-bordered textarea-sm min-h-24"
                           value={assetUpload.notes}
                           onChange={(event) => setAssetUpload((prev) => ({ ...prev, notes: event.target.value }))}
-                          disabled={assetUploading}
+                          disabled={assetUploading || Boolean(assetDeletingId)}
                         />
                         <span className="label-text-alt mt-1 opacity-70">Use notes to explain where this asset should be used.</span>
                       </label>
@@ -1283,19 +1335,29 @@ export default function SettingsWorkspacesPage() {
                           className="checkbox checkbox-sm"
                           checked={assetUpload.is_active}
                           onChange={(event) => setAssetUpload((prev) => ({ ...prev, is_active: event.target.checked }))}
-                          disabled={assetUploading}
+                          disabled={assetUploading || Boolean(assetDeletingId)}
                         />
                         <span className="label-text">Asset is active</span>
                       </label>
 
                       <div className="flex items-center justify-end gap-3">
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={closeAssetDrawer} disabled={assetUploading}>
+                        {assetUpload.id ? (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm text-error"
+                            onClick={() => deleteBrandingAsset(assetMap.get(assetUpload.id) || assetUpload)}
+                            disabled={assetUploading || settingsSaving || Boolean(assetDeletingId)}
+                          >
+                            {assetDeletingId === assetUpload.id ? "Deleting..." : "Delete Asset"}
+                          </button>
+                        ) : null}
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={closeAssetDrawer} disabled={assetUploading || Boolean(assetDeletingId)}>
                           {t("common.cancel")}
                         </button>
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          disabled={assetUploading || (!assetUpload.id && !assetUploadFile) || !assetUpload.name.trim() || !assetUpload.reference_key.trim()}
+                          disabled={assetUploading || Boolean(assetDeletingId) || (!assetUpload.id && !assetUploadFile) || !assetUpload.name.trim() || !assetUpload.reference_key.trim()}
                           onClick={submitAssetDrawer}
                         >
                           {assetUploading ? t("common.saving") : assetUpload.id ? "Save Asset" : "Upload Asset"}

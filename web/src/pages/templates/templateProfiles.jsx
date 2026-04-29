@@ -678,11 +678,14 @@ function DocPreviewTab({
           rightAction={
             <button
               className="btn btn-sm"
-              disabled={!effectiveEntityId || !effectiveSample?.record_id || rendering}
+              disabled={!effectiveEntityId || rendering}
               onClick={async () => {
                 setRendering(true);
                 try {
-                  const res = await runPreviewOnce(effectiveSample);
+                  const res = await runPreviewOnce({
+                    ...(effectiveSample || {}),
+                    placeholder: !effectiveSample?.record_id,
+                  });
                   if (res) setPreviewState?.(res);
                 } finally {
                   setRendering(false);

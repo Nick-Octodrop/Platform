@@ -40906,7 +40906,10 @@ def _artifact_ai_apply_scoped_automation_hints(
                 else None
             )
             if not isinstance(send_email_entity_id, str) or not send_email_entity_id:
-                send_email_entity_id = _artifact_ai_trigger_entity_id(normalized_draft)
+                send_email_entity_id = _artifact_ai_automation_trigger_entity_id(
+                    meta,
+                    normalized_draft.get("trigger") if isinstance(normalized_draft.get("trigger"), dict) else None,
+                )
             inferred_literal_emails = _artifact_ai_email_addresses(prompt)
             matched_send_email_hint = _ai_find_send_email_recipient_step_hint(answer_hints, normalized_draft, step) if send_email_recipient_step_hints else None
             if isinstance(matched_send_email_hint, dict):
@@ -43522,51 +43525,6 @@ def _artifact_ai_is_diagnostic_prompt(prompt: Any) -> bool:
         "fix the send",
     )
     return any(phrase in text for phrase in diagnostic_phrases)
-
-
-def _artifact_ai_requests_new_automation(prompt: Any) -> bool:
-    text = str(prompt or "").strip().lower()
-    if not text:
-        return False
-    text = re.sub(r"\s+", " ", text)
-    patterns = (
-        r"\b(?:create|build|make)\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?automation\b",
-        r"\bnew\s+automation\b",
-    )
-    return any(re.search(pattern, text) for pattern in patterns)
-
-
-def _artifact_ai_is_placeholder_automation_draft(draft: Any) -> bool:
-    if not isinstance(draft, dict):
-        return False
-    name = str(draft.get("name") or "").strip().lower()
-    description = str(draft.get("description") or "").strip()
-    trigger = draft.get("trigger") if isinstance(draft.get("trigger"), dict) else {}
-    trigger_kind = str(trigger.get("kind") or "event").strip().lower()
-    event_types = [
-        str(item).strip()
-        for item in (trigger.get("event_types") or [])
-        if isinstance(item, str) and str(item).strip()
-    ]
-    filters = trigger.get("filters") if isinstance(trigger.get("filters"), list) else []
-    steps = draft.get("steps") if isinstance(draft.get("steps"), list) else []
-    if steps:
-        return False
-    if description:
-        return False
-    if filters:
-        return False
-    if trigger_kind == "event" and not event_types:
-        return name in {"", "new automation"}
-    if trigger_kind == "schedule":
-        raw_every_minutes = trigger.get("every_minutes")
-        try:
-            every_minutes = int(raw_every_minutes) if raw_every_minutes not in (None, "") else None
-        except (TypeError, ValueError):
-            every_minutes = None
-        default_schedule = every_minutes in {None, 60}
-        return default_schedule and name in {"", "new automation"}
-    return False
 
 
 def _artifact_ai_automation_diagnostic_advisories(draft: dict | None, meta: dict | None) -> list[str]:
@@ -60306,6 +60264,10 @@ def _artifact_ai_prompt_context(
         safe_jinja_examples = _artifact_ai_template_safe_jinja_examples(selected_entity)
         return {
             "kind": kind,
+            "editor_scope": {
+                "mode": "scoped_current_artifact",
+                "mutation_policy": "return_updated_draft_not_new_top_level_record",
+            },
             "current_draft": current,
             "current_validation": current_validation,
             "requested_focus": requested_focus,
@@ -60342,6 +60304,10 @@ def _artifact_ai_prompt_context(
     if kind == "email_template":
         return {
             "kind": kind,
+            "editor_scope": {
+                "mode": "scoped_current_artifact",
+                "mutation_policy": "return_updated_draft_not_new_top_level_record",
+            },
             "current_draft": current,
             "entities": entities,
             "selected_entity_id": selected_entity.get("id") if isinstance(selected_entity, dict) else (selected_entity_id.strip() if isinstance(selected_entity_id, str) and selected_entity_id.strip() else None),
@@ -60376,6 +60342,10 @@ def _artifact_ai_prompt_context(
         }
     return {
         "kind": kind,
+        "editor_scope": {
+            "mode": "scoped_current_artifact",
+            "mutation_policy": "return_updated_draft_not_new_top_level_record",
+        },
         "current_draft": current,
         "entities": entities,
         "selected_entity_id": selected_entity.get("id") if isinstance(selected_entity, dict) else (selected_entity_id.strip() if isinstance(selected_entity_id, str) and selected_entity_id.strip() else None),
@@ -60484,6 +60454,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "You design OCTO automation drafts for business admins. "
             "Return strict JSON only with keys {summary,draft,assumptions,warnings}. "
             "draft must be a complete automation object using keys {name,description,trigger,steps,status}. "
+            "This is a scoped current-draft editor: when the user describes the automation they want, reshape context.current_draft into that desired automation rather than refusing or proposing a separate top-level artifact. "
             "Use context.current_validation to understand existing deterministic issues and resolve them in the returned draft whenever possible. "
             "Use only supported trigger kinds event or schedule and supported step kinds action, condition, delay, foreach. "
             "Use trigger ids from meta.event_catalog[].id for trigger.event_types whenever possible. "
@@ -60520,6 +60491,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
             "You design OCTO email template drafts. "
             "Return strict JSON only with keys {summary,draft,assumptions,warnings}. "
             "draft must be a complete email template object using keys {name,description,subject,body_html,body_text,default_connection_id,variables_schema}. "
+            "This is a scoped current-draft editor: when the user describes the template they want, reshape context.current_draft into that desired template rather than refusing or proposing a separate top-level artifact. "
             "Use context.current_validation to understand existing deterministic issues and resolve them in the returned draft whenever possible. "
             "When context.selected_entity or context.selected_entity_id is present, treat that as the target entity. "
             "Set draft.variables_schema.entity_id to that entity id unless the user clearly asks for a different entity. "
@@ -60561,6 +60533,7 @@ def _artifact_ai_system_prompt(kind: str) -> str:
         "You design OCTO document template drafts. "
         "Return strict JSON only with keys {summary,draft,assumptions,warnings}. "
         "draft must be a complete document template object using keys {name,description,filename_pattern,html,header_html,footer_html,paper_size,margin_top,margin_right,margin_bottom,margin_left,variables_schema}. "
+        "This is a scoped current-draft editor: when the user describes the document template they want, reshape context.current_draft into that desired template rather than refusing or proposing a separate top-level artifact. "
         "Use context.current_validation to understand existing deterministic issues and resolve them in the returned draft whenever possible. "
         "When context.selected_entity or context.selected_entity_id is present, treat that as the target entity. "
         "Set draft.variables_schema.entity_id to that entity id unless the user clearly asks for a different entity. "
@@ -62677,56 +62650,6 @@ async def _automation_ai_plan_run(
     if not isinstance(prompt, str) or not prompt.strip():
         return _error_response("PROMPT_REQUIRED", "prompt is required", "prompt", status=400)
     current = body.get("draft") if isinstance(body.get("draft"), dict) else item
-    if _artifact_ai_requests_new_automation(prompt) and not _artifact_ai_is_placeholder_automation_draft(current):
-        summary = (
-            "No automation changes were proposed from this request. "
-            "This editor can only update the current automation; create a new automation from the Automations screen."
-        )
-        response = {
-            "summary": summary,
-            "draft": current,
-            "assumptions": [],
-            "warnings": [],
-            "advisories": [summary],
-            "required_questions": [],
-            "required_question_meta": None,
-            "decision_slots": [],
-            "noop": True,
-            "validation": _artifact_ai_validate_automation_draft(current, _artifact_ai_automation_meta(request, actor)),
-            "errors": [],
-        }
-        if progress:
-            progress.emit("stage_started", "planning", None, {"stage": "planning"})
-            progress.emit(
-                "plan_result",
-                "planning",
-                None,
-                {
-                    "artifact_kind": "automation",
-                    "requested_focus": _artifact_ai_requested_focus("automation", body.get("focus"), prompt),
-                    "requested_focus_label": _artifact_ai_progress_focus_label("automation", _artifact_ai_requested_focus("automation", body.get("focus"), prompt)),
-                    "required_questions": 0,
-                    "decision_slots": 0,
-                    "summary": summary,
-                },
-            )
-            progress.emit("stage_done", "planning", None, {"stage": "planning"})
-            progress.emit("stage_started", "validating", None, {"stage": "validating"})
-            validation_counts = _artifact_ai_progress_validation_counts(response.get("validation"))
-            progress.emit(
-                "validate_result",
-                "validating",
-                None,
-                {
-                    "artifact_kind": "automation",
-                    "error_counts": validation_counts,
-                    "summary": _artifact_ai_validation_progress_summary("automation", validation_counts, required_questions=0),
-                },
-            )
-            progress.emit("stage_done", "validating", None, {"stage": "validating"})
-            if include_progress:
-                response["progress"] = progress.to_progress_list()
-        return _ok_response(response)
     answer_hints = body.get("hints") if isinstance(body.get("hints"), dict) else {}
     user_hint_count = _artifact_ai_progress_user_hint_count(answer_hints)
     requested_focus = _artifact_ai_requested_focus("automation", body.get("focus"), prompt)
@@ -64086,6 +64009,108 @@ async def update_branding_asset(request: Request, asset_id: str) -> dict:
         ) or {}
     _invalidate_prefs_ui_runtime_caches(org_id)
     return _ok_response({"asset": _branding_asset_payload(row)})
+
+
+@app.delete("/prefs/branding/assets/{asset_id}")
+async def delete_branding_asset(request: Request, asset_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_admin(actor)
+    if denied:
+        return denied
+    org_id = get_org_id()
+    storage_key = ""
+    with get_conn() as conn:
+        current = fetch_one(
+            conn,
+            """
+            select id, workspace_id, storage_key
+            from branding_assets
+            where id=%s and workspace_id=%s
+            """,
+            [asset_id, org_id],
+            query_name="branding_assets.delete_current",
+        ) or {}
+        if not current:
+            return _error_response("BRANDING_ASSET_NOT_FOUND", "branding asset not found", "asset_id", status=404)
+        storage_key = _trimmed_text(current.get("storage_key"))
+        execute(
+            conn,
+            """
+            update workspace_ui_prefs
+            set app_logo_asset_id = case when app_logo_asset_id=%s then null else app_logo_asset_id end,
+                app_icon_asset_id = case when app_icon_asset_id=%s then null else app_icon_asset_id end,
+                favicon_asset_id = case when favicon_asset_id=%s then null else favicon_asset_id end,
+                pwa_icon_asset_id = case when pwa_icon_asset_id=%s then null else pwa_icon_asset_id end,
+                nav_logo_asset_id = case when nav_logo_asset_id=%s then null else nav_logo_asset_id end,
+                homepage_brand_asset_id = case when homepage_brand_asset_id=%s then null else homepage_brand_asset_id end,
+                logo_url = case when app_logo_asset_id=%s then null else logo_url end,
+                updated_at=%s
+            where org_id=%s
+            """,
+            [asset_id, asset_id, asset_id, asset_id, asset_id, asset_id, asset_id, _now(), org_id],
+            query_name="workspace_ui_prefs.clear_deleted_branding_asset",
+        )
+        execute(
+            conn,
+            """
+            update workspace_template_branding
+            set primary_logo_asset_id = case when primary_logo_asset_id=%s then null else primary_logo_asset_id end,
+                secondary_logo_asset_id = case when secondary_logo_asset_id=%s then null else secondary_logo_asset_id end,
+                header_graphic_asset_id = case when header_graphic_asset_id=%s then null else header_graphic_asset_id end,
+                footer_graphic_asset_id = case when footer_graphic_asset_id=%s then null else footer_graphic_asset_id end,
+                default_background_graphic_asset_id = case when default_background_graphic_asset_id=%s then null else default_background_graphic_asset_id end,
+                default_email_banner_asset_id = case when default_email_banner_asset_id=%s then null else default_email_banner_asset_id end,
+                default_watermark_asset_id = case when default_watermark_asset_id=%s then null else default_watermark_asset_id end,
+                updated_at=%s
+            where org_id=%s
+            """,
+            [asset_id, asset_id, asset_id, asset_id, asset_id, asset_id, asset_id, _now(), org_id],
+            query_name="workspace_template_branding.clear_deleted_branding_asset",
+        )
+        execute(
+            conn,
+            "delete from branding_assets where id=%s and workspace_id=%s",
+            [asset_id, org_id],
+            query_name="branding_assets.delete",
+        )
+    if storage_key:
+        deleted = delete_storage(org_id, storage_key, bucket=branding_bucket())
+        if not deleted:
+            logger.warning("branding_asset_storage_delete_failed asset_id=%s storage_key=%s", asset_id, storage_key)
+    _invalidate_prefs_ui_runtime_caches(org_id)
+    branding = _branding_domains_for_org(org_id)
+    user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    workspace, user = _load_ui_pref_settings(org_id, user_id if isinstance(user_id, str) else None)
+    if isinstance(workspace, dict):
+        workspace = {
+            **workspace,
+            "logo_url": branding.get("app_branding", {}).get("app_logo_url") or workspace.get("logo_url") or "",
+            "nav_logo_url": branding.get("app_branding", {}).get("nav_logo_url") or "",
+            "colors": branding.get("app_branding", {}).get("colors")
+            if isinstance(branding.get("app_branding", {}).get("colors"), dict)
+            else workspace.get("colors") or {},
+            "workspace_name": branding.get("workspace_name") or workspace.get("workspace_name") or "",
+            "app_logo_asset_id": branding.get("app_branding", {}).get("app_logo_asset_id") or workspace.get("app_logo_asset_id") or "",
+            "app_icon_asset_id": branding.get("app_branding", {}).get("app_icon_asset_id") or workspace.get("app_icon_asset_id") or "",
+            "favicon_asset_id": branding.get("app_branding", {}).get("favicon_asset_id") or workspace.get("favicon_asset_id") or "",
+            "pwa_icon_asset_id": branding.get("app_branding", {}).get("pwa_icon_asset_id") or workspace.get("pwa_icon_asset_id") or "",
+            "nav_logo_asset_id": branding.get("app_branding", {}).get("nav_logo_asset_id") or workspace.get("nav_logo_asset_id") or "",
+            "homepage_brand_asset_id": branding.get("app_branding", {}).get("homepage_brand_asset_id") or workspace.get("homepage_brand_asset_id") or "",
+        }
+    return _ok_response(
+        {
+            "ok": True,
+            "deleted_asset_id": asset_id,
+            "app_branding": branding.get("app_branding") or {},
+            "template_branding": branding.get("template_branding") or {},
+            "branding_assets": branding.get("branding_assets") or [],
+            "workspace": workspace or {},
+            "user": user or {},
+            "resolved": build_locale_context(workspace=workspace, user=user),
+        }
+    )
 
 
 @app.post("/ops/attachments/cleanup")

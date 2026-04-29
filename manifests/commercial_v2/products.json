@@ -967,69 +967,6 @@
               "value": "USD"
             },
             "label_key": "products.views.list.filters.usd_sales.label"
-          },
-          {
-            "id": "stocked",
-            "label": "Stocked Items",
-            "domain": {
-              "op": "in",
-              "field": "biz_product.fulfilment_mode",
-              "value": [
-                "stocked",
-                "hybrid"
-              ]
-            }
-          },
-          {
-            "id": "unsourced",
-            "label": "Unsourced Buy Items",
-            "domain": {
-              "op": "and",
-              "conditions": [
-                {
-                  "op": "in",
-                  "field": "biz_product.fulfilment_mode",
-                  "value": [
-                    "made_to_order",
-                    "hybrid"
-                  ]
-                },
-                {
-                  "op": "eq",
-                  "field": "biz_product.active_supplier_source_count",
-                  "value": 0
-                }
-              ]
-            }
-          },
-          {
-            "id": "low_stock",
-            "label": "Low Stock",
-            "domain": {
-              "op": "and",
-              "conditions": [
-                {
-                  "op": "in",
-                  "field": "biz_product.fulfilment_mode",
-                  "value": [
-                    "stocked",
-                    "hybrid"
-                  ]
-                },
-                {
-                  "op": "gt",
-                  "field": "biz_product.reorder_point_qty",
-                  "value": 0
-                },
-                {
-                  "op": "lte",
-                  "field": "biz_product.available_qty",
-                  "value": {
-                    "ref": "$current.biz_product.reorder_point_qty"
-                  }
-                }
-              ]
-            }
           }
         ]
       }
@@ -1458,99 +1395,51 @@
               "tone": "primary",
               "format": "number"
             },
-          {
-            "id": "stocked_products",
-            "label": "Stocked SKUs",
-            "subtitle": "Stocked and hybrid items",
-              "entity_id": "entity.biz_product",
-              "measure": "count",
-              "domain": {
-                "op": "in",
-                "field": "biz_product.fulfilment_mode",
-                "value": [
-                  "stocked",
-                  "hybrid"
-                ]
-              },
-              "icon": "lucide:Boxes",
-              "tone": "success",
-              "format": "number"
-            },
             {
-              "id": "unsourced_products",
-              "label": "Unsourced Products",
-              "subtitle": "Buy-side items without active supplier rows",
-              "entity_id": "entity.biz_product",
-              "measure": "count",
-              "domain": {
-                "op": "and",
-                "conditions": [
-                  {
-                    "op": "in",
-                    "field": "biz_product.fulfilment_mode",
-                    "value": [
-                      "made_to_order",
-                      "hybrid"
-                    ]
-                  },
-                  {
-                    "op": "eq",
-                    "field": "biz_product.active_supplier_source_count",
-                    "value": 0
-                  }
-                ]
-              },
-              "icon": "lucide:Link2Off",
-              "tone": "warning",
-              "format": "number"
-            },
-            {
-              "id": "low_stock_products",
-              "label": "Low Stock",
-              "subtitle": "At or below reorder point",
-              "entity_id": "entity.biz_product",
-              "measure": "count",
-              "domain": {
-                "op": "and",
-                "conditions": [
-                  {
-                    "op": "in",
-                    "field": "biz_product.fulfilment_mode",
-                    "value": [
-                      "stocked",
-                      "hybrid"
-                    ]
-                  },
-                  {
-                    "op": "gt",
-                    "field": "biz_product.reorder_point_qty",
-                    "value": 0
-                  },
-                  {
-                    "op": "lte",
-                    "field": "biz_product.available_qty",
-                    "value": {
-                      "ref": "$current.biz_product.reorder_point_qty"
-                    }
-                  }
-                ]
-              },
-              "icon": "lucide:TriangleAlert",
-              "tone": "warning",
-              "format": "number"
-            },
-            {
-              "id": "inactive_products",
-              "label": "Inactive",
-              "subtitle": "Removed from new quoting",
+              "id": "led_fixtures",
+              "label": "LED Fixtures",
+              "subtitle": "Fixture catalogue items",
               "entity_id": "entity.biz_product",
               "measure": "count",
               "domain": {
                 "op": "eq",
-                "field": "biz_product.is_active",
-                "value": false
+                "field": "biz_product.product_type",
+                "value": "led_fixture"
               },
-              "icon": "lucide:Archive",
+              "icon": "lucide:Lightbulb",
+              "tone": "success",
+              "format": "number"
+            },
+            {
+              "id": "accessories",
+              "label": "Accessories",
+              "subtitle": "Non-fixture catalogue items",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "biz_product.product_type",
+                "value": "accessory"
+              },
+              "icon": "lucide:PackagePlus",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "charges",
+              "label": "Charges",
+              "subtitle": "Service and delivery line items",
+              "entity_id": "entity.biz_product",
+              "measure": "count",
+              "domain": {
+                "op": "in",
+                "field": "biz_product.product_type",
+                "value": [
+                  "service_charge",
+                  "delivery_charge"
+                ]
+              },
+              "icon": "lucide:ReceiptText",
               "tone": "accent",
               "format": "number"
             }
@@ -1731,6 +1620,35 @@
       ]
     }
   ],
+  "interfaces": {
+    "dashboardable": [
+      {
+        "entity_id": "entity.biz_product",
+        "enabled": true,
+        "scope": "module_and_global",
+        "measures": [
+          "count",
+          "sum:biz_product.default_sales_price"
+        ],
+        "group_bys": [
+          "biz_product.product_type",
+          "biz_product.category",
+          "biz_product.default_sales_currency",
+          "biz_product.is_active"
+        ],
+        "default_widgets": [
+          {
+            "id": "products_by_type",
+            "type": "group",
+            "title": "Products by Type",
+            "title_key": "products.dashboard.products_by_type",
+            "group_by": "biz_product.product_type",
+            "measure": "count"
+          }
+        ]
+      }
+    ]
+  },
   "triggers": [
     {
       "id": "biz_products.record.biz_product.created",

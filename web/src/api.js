@@ -400,7 +400,7 @@ export async function apiFetch(path, options = {}) {
         if (path.startsWith("/settings/secrets") || path.startsWith("/settings/provider-status")) {
           invalidateRequestPrefix("/settings/provider-status");
         }
-        if (path.startsWith("/prefs/ui")) {
+        if (path.startsWith("/prefs/ui") || path.startsWith("/prefs/branding")) {
           invalidateRequestPrefix("/prefs/ui");
         }
         if (path.startsWith("/notifications")) {

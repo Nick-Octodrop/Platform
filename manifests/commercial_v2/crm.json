@@ -235,6 +235,7 @@
           "id": "crm_lead.status",
           "type": "enum",
           "label": "Status",
+          "help_text": "Lead workflow status. Use the status bar/actions to move the lead through the CRM process.",
           "ui": {
             "widget": "steps"
           },
@@ -697,6 +698,7 @@
           "id": "crm_opportunity.stage",
           "type": "enum",
           "label": "Stage",
+          "help_text": "Main opportunity workflow stage. This drives the status bar, kanban columns, workflow buttons, and reporting.",
           "ui": {
             "widget": "steps"
           },
@@ -751,6 +753,7 @@
           "id": "crm_opportunity.status",
           "type": "enum",
           "label": "Status",
+          "help_text": "Derived lifecycle state used for imports/reporting. In normal use, move opportunities with the Stage bar and action buttons instead.",
           "default": "open",
           "options": [
             {
@@ -2569,7 +2572,6 @@
           "fields": [
             "crm_opportunity.title",
             "crm_opportunity.stage",
-            "crm_opportunity.status",
             "crm_opportunity.company_id",
             "crm_opportunity.primary_contact_person_id",
             "crm_opportunity.primary_contact_name",
