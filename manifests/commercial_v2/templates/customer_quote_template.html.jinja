@@ -756,12 +756,12 @@
                       <tbody>
                         {% for line in quote_lines %}
                         {% set spec_parts = [] %}
-                        {% if line is defined and line and line['biz_quote_line.wattage_snapshot'] is defined and line['biz_quote_line.wattage_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.wattage_snapshot'] ~ 'W') %}{% endif %}
-                        {% if line is defined and line and line['biz_quote_line.spectrum_snapshot'] is defined and line['biz_quote_line.spectrum_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.spectrum_snapshot']) %}{% endif %}
-                        {% if line is defined and line and line['biz_quote_line.input_voltage_snapshot'] is defined and line['biz_quote_line.input_voltage_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.input_voltage_snapshot']) %}{% endif %}
-                        {% if line is defined and line and line['biz_quote_line.ppf_umol_s_snapshot'] is defined and line['biz_quote_line.ppf_umol_s_snapshot'] %}{% set _ = spec_parts.append('PPF ' ~ line['biz_quote_line.ppf_umol_s_snapshot']) %}{% endif %}
-                        {% if line is defined and line and line['biz_quote_line.ppe_umol_per_w_snapshot'] is defined and line['biz_quote_line.ppe_umol_per_w_snapshot'] %}{% set _ = spec_parts.append('PPE ' ~ line['biz_quote_line.ppe_umol_per_w_snapshot']) %}{% endif %}
-                        {% if line is defined and line and line['biz_quote_line.ip_rating_snapshot'] is defined and line['biz_quote_line.ip_rating_snapshot'] %}{% set _ = spec_parts.append(line['biz_quote_line.ip_rating_snapshot']) %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.wattage_snapshot'] is defined and line['biz_quote_line.wattage_snapshot'] %}{% set spec_parts = spec_parts + [line['biz_quote_line.wattage_snapshot'] ~ 'W'] %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.spectrum_snapshot'] is defined and line['biz_quote_line.spectrum_snapshot'] %}{% set spec_parts = spec_parts + [line['biz_quote_line.spectrum_snapshot']] %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.input_voltage_snapshot'] is defined and line['biz_quote_line.input_voltage_snapshot'] %}{% set spec_parts = spec_parts + [line['biz_quote_line.input_voltage_snapshot']] %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ppf_umol_s_snapshot'] is defined and line['biz_quote_line.ppf_umol_s_snapshot'] %}{% set spec_parts = spec_parts + ['PPF ' ~ line['biz_quote_line.ppf_umol_s_snapshot']] %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ppe_umol_per_w_snapshot'] is defined and line['biz_quote_line.ppe_umol_per_w_snapshot'] %}{% set spec_parts = spec_parts + ['PPE ' ~ line['biz_quote_line.ppe_umol_per_w_snapshot']] %}{% endif %}
+                        {% if line is defined and line and line['biz_quote_line.ip_rating_snapshot'] is defined and line['biz_quote_line.ip_rating_snapshot'] %}{% set spec_parts = spec_parts + [line['biz_quote_line.ip_rating_snapshot']] %}{% endif %}
                         <tr>
                           <td>
                             <div>{{ line['biz_quote_line.description'] if line is defined and line and line['biz_quote_line.description'] is defined and line['biz_quote_line.description'] else '' }}</div>

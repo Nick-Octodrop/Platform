@@ -21,6 +21,7 @@ _ALLOWED_FILTERS = {
     "title",
     "trim",
     "replace",
+    "join",
     "round",
     "length",
     "int",
@@ -40,6 +41,8 @@ class _LockedSandbox(ImmutableSandboxedEnvironment):
     def is_safe_attribute(self, obj, attr, value) -> bool:
         if isinstance(obj, dict) and attr in _ALLOWED_DICT_METHODS:
             return True
+        if isinstance(obj, list) and attr == "append":
+            return True
         if isinstance(obj, LoopContext) and attr in {
             "index",
             "index0",
@@ -58,6 +61,8 @@ class _LockedSandbox(ImmutableSandboxedEnvironment):
         owner = getattr(obj, "__self__", None)
         name = getattr(obj, "__name__", "")
         if isinstance(owner, dict) and name in _ALLOWED_DICT_METHODS:
+            return True
+        if isinstance(owner, list) and name == "append":
             return True
         return False
 

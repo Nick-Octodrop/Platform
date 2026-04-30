@@ -9846,6 +9846,454 @@ def _ai_build_status_notification_automation_candidate(
     }
 
 
+def _ai_extract_record_update_assignment(message: str) -> tuple[str, str] | None:
+    if not isinstance(message, str) or not message.strip():
+        return None
+    match = re.search(
+        r"\b(?:set|sets|setting|update|updates|change|changes)\s+(?:the\s+)?(?P<field>[a-zA-Z0-9 _/-]{1,80}?)\s+(?:field\s+)?(?:to|as|=)\s+(?P<value>[^.;,\n]+)",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    field_ref = re.sub(r"\s+", " ", (match.group("field") or "")).strip(" .,-")
+    raw_value = re.sub(r"\s+", " ", (match.group("value") or "")).strip(" .,-")
+    raw_value = re.split(r"\s+\b(?:and|then|also)\b\s+", raw_value, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .,-")
+    if not field_ref or not raw_value:
+        return None
+    return field_ref, raw_value.strip("\"'")
+
+
+def _ai_match_record_update_field(entity: dict, field_ref: str) -> dict | None:
+    if not isinstance(entity, dict) or not isinstance(field_ref, str) or not field_ref.strip():
+        return None
+    direct = _ai_match_field_in_entity(entity, field_ref)
+    if isinstance(direct, dict):
+        return direct
+    stop_tokens = {"the", "a", "an", "field", "value", "number", "new", "record", "contact", "customer"}
+    query_tokens = {
+        token
+        for token in _ai_norm_token(field_ref).split()
+        if token and token not in stop_tokens
+    }
+    if not query_tokens:
+        return None
+    matches: list[dict] = []
+    for field in entity.get("fields") if isinstance(entity.get("fields"), list) else []:
+        if not isinstance(field, dict):
+            continue
+        label = field.get("label") if isinstance(field.get("label"), str) else ""
+        field_id = field.get("id") if isinstance(field.get("id"), str) else ""
+        tail = field_id.split(".")[-1] if field_id else ""
+        haystack_tokens = set(_ai_norm_token(f"{label} {field_id} {tail}").split())
+        if query_tokens and query_tokens.issubset(haystack_tokens):
+            matches.append(field)
+    return copy.deepcopy(matches[0]) if len(matches) == 1 else None
+
+
+def _ai_coerce_record_update_value(raw_value: str, field: dict) -> Any:
+    if not isinstance(raw_value, str):
+        return raw_value
+    value = raw_value.strip()
+    field_type = field.get("type") if isinstance(field, dict) and isinstance(field.get("type"), str) else ""
+    if field_type in {"number", "integer", "currency"}:
+        try:
+            numeric = float(value.replace(",", ""))
+            return int(numeric) if numeric.is_integer() else numeric
+        except Exception:
+            return value
+    if field_type in {"bool", "boolean"}:
+        normalized = _ai_norm_token(value)
+        if normalized in {"true", "yes", "y", "1", "on", "active"}:
+            return True
+        if normalized in {"false", "no", "n", "0", "off", "inactive"}:
+            return False
+    return value
+
+
+def _ai_build_record_created_update_automation_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    entity_id: str,
+    answer_hints: dict | None = None,
+    workspace_id: str | None = None,
+    request: Request | None = None,
+) -> dict | None:
+    if not all(isinstance(item, str) and item.strip() for item in (message, module_id, entity_id)):
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(when|if)\b", lower):
+        return None
+    if not re.search(r"\b(create|created|creating|new)\b", lower):
+        return None
+    if not re.search(r"\b(set|sets|setting|update|updates|change|changes)\b", lower):
+        return None
+    assignment = _ai_extract_record_update_assignment(message)
+    if not isinstance(assignment, tuple):
+        return None
+    field_ref, raw_value = assignment
+    entity = next(
+        (
+            item
+            for item in (manifest.get("entities") if isinstance(manifest.get("entities"), list) else [])
+            if isinstance(item, dict) and item.get("id") == entity_id
+        ),
+        None,
+    )
+    field = _ai_match_record_update_field(entity or {}, field_ref)
+    if not isinstance(field, dict) or not isinstance(field.get("id"), str):
+        return None
+    field_id = field.get("id")
+    update_value = _ai_coerce_record_update_value(raw_value, field)
+    wants_notification = bool(re.search(r"\b(notify|notification|alert|send)\b", lower))
+
+    recipient_hint = None
+    if isinstance(answer_hints, dict):
+        for key in ("recipient_user_id", "recipient_email", "selected_option_value", "answer_text"):
+            value = answer_hints.get(key)
+            if isinstance(value, str) and value.strip():
+                recipient_hint = value.strip()
+                break
+    if not isinstance(recipient_hint, str):
+        recipients = _ai_extract_email_addresses(message)
+        if recipients:
+            recipient_hint = recipients[0]
+
+    members = _ai_workspace_members_for_request(request, workspace_id)
+    member_options = _ai_workspace_member_decision_options_from_members(members)
+    entity_label = _ai_entity_label_from_manifest(manifest, entity_id)
+    module_name = _ai_module_name_from_manifest(module_id, manifest)
+    field_label = _ai_manifest_field_label(manifest, field_id) or _ai_display_field_reference(field_id) or field_id
+    entity_slug = entity_id.split(".")[-1] if "." in entity_id else entity_id
+    field_slug = field_id.split(".")[-1] if "." in field_id else field_id
+    automation_key = f"ai_auto_{module_id}_{entity_slug}_created_set_{field_slug}"[:100]
+
+    if wants_notification and not isinstance(recipient_hint, str):
+        return {
+            "candidate_ops": [],
+            "questions": ["Who should receive this notification?"],
+            "question_meta": {
+                "id": "automation_notify_recipient",
+                "kind": "decision_slot",
+                "slot_kind": "notify_recipient",
+                "label": "Notification recipient",
+                "prompt": "Who should receive this notification?",
+                "why_needed": "The automation can update the record, but the notification step still needs a workspace recipient before apply.",
+                "required_before": "apply",
+                "allow_create_new": False,
+                "allow_free_text": True,
+                "hint_field": "recipient_email",
+                "options": member_options,
+            },
+            "assumptions": [f"Matched '{field_ref}' to field '{field_id}'."],
+            "advisories": [],
+            "planner_state": {
+                "intent": "create_automation_record",
+                "module_id": module_id,
+                "entity_id": entity_id,
+                "event": "record.created",
+                "field_id": field_id,
+                "field_label": field_label,
+                "update_value": update_value,
+                "automation_name": f"{module_name} {entity_label} Created Update",
+            },
+        }
+
+    steps = [
+        {
+            "id": "step_update_record",
+            "kind": "action",
+            "action_id": "system.update_record",
+            "inputs": {
+                "entity_id": entity_id,
+                "record_id": "{{trigger.record_id}}",
+                "patch": {field_id: update_value},
+            },
+        }
+    ]
+    if wants_notification:
+        notify_inputs = {
+            "recipient_user_ids": [recipient_hint],
+            "title": f"New {entity_label}",
+            "body": f"A new {entity_label.lower()} was created and {field_label} was set to {update_value}.",
+        }
+        _artifact_ai_resolve_notify_recipients(notify_inputs, {"members": members}, fallback_current_user=False)
+        if not _artifact_ai_notify_step_has_recipient(notify_inputs):
+            return {
+                "candidate_ops": [],
+                "questions": ["Who should receive this notification?"],
+                "question_meta": {
+                    "id": "automation_notify_recipient",
+                    "kind": "decision_slot",
+                    "slot_kind": "notify_recipient",
+                    "label": "Notification recipient",
+                    "prompt": "Who should receive this notification?",
+                    "why_needed": "The automation can update the record, but the notification step still needs a workspace recipient before apply.",
+                    "required_before": "apply",
+                    "allow_create_new": False,
+                    "allow_free_text": True,
+                    "hint_field": "recipient_email",
+                    "options": member_options,
+                },
+                "assumptions": [f"Matched '{field_ref}' to field '{field_id}'."],
+                "advisories": [],
+                "planner_state": {
+                    "intent": "create_automation_record",
+                    "module_id": module_id,
+                    "entity_id": entity_id,
+                    "event": "record.created",
+                    "field_id": field_id,
+                    "field_label": field_label,
+                    "update_value": update_value,
+                    "automation_name": f"{module_name} {entity_label} Created Update",
+                },
+            }
+        steps.append(
+            {
+                "id": "step_send_notify",
+                "kind": "action",
+                "action_id": "system.notify",
+                "inputs": notify_inputs,
+            }
+        )
+
+    return {
+        "candidate_ops": [
+            {
+                "op": "create_automation_record",
+                "artifact_type": "automation",
+                "artifact_id": automation_key,
+                "automation": {
+                    "name": f"{module_name} {entity_label} Created Update",
+                    "description": f"When a new {entity_label.lower()} is created in {module_name}, set {field_label} to {update_value}.",
+                    "status": "draft",
+                    "trigger": {
+                        "kind": "event",
+                        "event_types": ["record.created"],
+                        "filters": [{"path": "entity_id", "op": "eq", "value": entity_id}],
+                    },
+                    "steps": steps,
+                },
+            }
+        ],
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [f"Matched '{field_ref}' to field '{field_id}'."],
+        "advisories": ["Sandbox will keep this automation as a draft until you publish it."],
+        "planner_state": {
+            "intent": "create_automation_record",
+            "module_id": module_id,
+            "entity_id": entity_id,
+            "event": "record.created",
+            "field_id": field_id,
+            "field_label": field_label,
+            "update_value": update_value,
+            "automation_name": f"{module_name} {entity_label} Created Update",
+        },
+    }
+
+
+def _ai_build_field_true_notification_candidate(
+    message: str,
+    module_id: str,
+    manifest: dict,
+    entity_id: str,
+    answer_hints: dict | None = None,
+    workspace_id: str | None = None,
+    request: Request | None = None,
+) -> dict | None:
+    if not all(isinstance(item, str) and item.strip() for item in (message, module_id, entity_id)):
+        return None
+    lower = re.sub(r"\s+", " ", message.lower()).strip()
+    if not re.search(r"\b(?:when|if)\b", lower):
+        return None
+    if not re.search(r"\b(?:notify|notification|alert|send)\b", lower):
+        return None
+    if not re.search(r"\b(?:field|checkbox|toggle|flag)\b", lower):
+        return None
+    if not re.search(r"\b(?:this|that|the)?\s*(?:field|checkbox|toggle|flag)\s+(?:is|becomes|gets|goes|turns|changes to)\s+(?:true|checked|on|yes|enabled|active)\b", lower):
+        return None
+
+    entity = next(
+        (
+            item
+            for item in (manifest.get("entities") if isinstance(manifest.get("entities"), list) else [])
+            if isinstance(item, dict) and item.get("id") == entity_id
+        ),
+        None,
+    )
+    if not isinstance(entity, dict):
+        return None
+
+    field_label = _ai_extract_field_label(message, answer_hints=answer_hints)
+    if not isinstance(field_label, str) or not field_label.strip():
+        called_match = re.search(
+            r"\b(?:field|checkbox|toggle|flag)\b(?:\s+\w+){0,6}?\s+(?:called|named|call)\s+[\"']?([a-zA-Z0-9 _-]{1,80})",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if called_match:
+            field_label = called_match.group(1).strip()
+    if not isinstance(field_label, str) or not field_label.strip():
+        return None
+    field_label = re.sub(r"\s+", " ", field_label).strip(" .,-_")
+    if not field_label:
+        return None
+
+    entity_tail = entity_id.split(".")[-1] if "." in entity_id else entity_id
+    safe_name = re.sub(r"[^a-zA-Z0-9_]+", "_", field_label.strip().lower()).strip("_")
+    if not safe_name:
+        return None
+    proposed_field_id = f"{entity_tail}.{safe_name}"
+
+    existing_field = _ai_match_record_update_field(entity, field_label)
+    if not isinstance(existing_field, dict):
+        existing_field = next(
+            (
+                field
+                for field in (entity.get("fields") if isinstance(entity.get("fields"), list) else [])
+                if isinstance(field, dict) and field.get("id") == proposed_field_id
+            ),
+            None,
+        )
+    field_id = (
+        existing_field.get("id")
+        if isinstance(existing_field, dict) and isinstance(existing_field.get("id"), str) and existing_field.get("id").strip()
+        else proposed_field_id
+    )
+    resolved_field_label = (
+        existing_field.get("label")
+        if isinstance(existing_field, dict) and isinstance(existing_field.get("label"), str) and existing_field.get("label").strip()
+        else field_label.replace("_", " ").strip().title()
+    )
+
+    ops: list[dict] = []
+    if isinstance(existing_field, dict):
+        existing_type = existing_field.get("type") if isinstance(existing_field.get("type"), str) else ""
+        if existing_type not in {"bool", "boolean"}:
+            ops.append(
+                {
+                    "op": "update_field",
+                    "artifact_type": "module",
+                    "artifact_id": module_id,
+                    "field_id": field_id,
+                    "changes": {"type": "bool"},
+                }
+            )
+    else:
+        ops.append(
+            {
+                "op": "add_field",
+                "artifact_type": "module",
+                "artifact_id": module_id,
+                "entity_id": entity_id,
+                "field": {"id": field_id, "type": "bool", "label": resolved_field_label},
+            }
+        )
+
+    recipient_hint = None
+    if isinstance(answer_hints, dict):
+        for key in ("recipient_user_id", "recipient_email", "selected_option_value", "answer_text"):
+            value = answer_hints.get(key)
+            if isinstance(value, str) and value.strip():
+                recipient_hint = value.strip()
+                break
+    if not isinstance(recipient_hint, str):
+        recipients = _ai_extract_email_addresses(message)
+        if recipients:
+            recipient_hint = recipients[0]
+
+    members = _ai_workspace_members_for_request(request, workspace_id)
+    member_options = _ai_workspace_member_decision_options_from_members(members)
+    module_name = _ai_module_name_from_manifest(module_id, manifest)
+    entity_label = _ai_entity_label_from_manifest(manifest, entity_id)
+    entity_slug = entity_id.split(".")[-1] if "." in entity_id else entity_id
+    field_slug = field_id.split(".")[-1] if "." in field_id else field_id
+    automation_key = f"ai_auto_{module_id}_{entity_slug}_{field_slug}_true_notify"[:100]
+    planner_state = {
+        "intent": "field_true_notification",
+        "module_id": module_id,
+        "entity_id": entity_id,
+        "event": "record.updated",
+        "field_id": field_id,
+        "field_label": resolved_field_label,
+        "field_type": "bool",
+        "automation_name": f"{module_name} {resolved_field_label} Notification",
+    }
+
+    def _needs_recipient_response() -> dict:
+        return {
+            "candidate_ops": ops,
+            "questions": ["Who should receive this notification?"],
+            "question_meta": {
+                "id": "automation_notify_recipient",
+                "kind": "decision_slot",
+                "slot_kind": "notify_recipient",
+                "label": "Notification recipient",
+                "prompt": "Who should receive this notification?",
+                "why_needed": "The field change is ready, but the notification step needs a workspace recipient before apply.",
+                "required_before": "apply",
+                "allow_create_new": False,
+                "allow_free_text": True,
+                "hint_field": "recipient_email",
+                "options": member_options,
+            },
+            "assumptions": [f"Treated '{resolved_field_label}' as a boolean field because the request says it becomes true."],
+            "advisories": [],
+            "planner_state": planner_state,
+        }
+
+    if not isinstance(recipient_hint, str) or not recipient_hint:
+        return _needs_recipient_response()
+
+    notify_inputs = {
+        "recipient_user_ids": [recipient_hint],
+        "title": f"{resolved_field_label} is true",
+        "body": f"{resolved_field_label} was set to true on a {entity_label.lower()} record.",
+    }
+    _artifact_ai_resolve_notify_recipients(notify_inputs, {"members": members}, fallback_current_user=False)
+    if not _artifact_ai_notify_step_has_recipient(notify_inputs):
+        return _needs_recipient_response()
+
+    ops.append(
+        {
+            "op": "create_automation_record",
+            "artifact_type": "automation",
+            "artifact_id": automation_key,
+            "automation": {
+                "name": f"{module_name} {resolved_field_label} Notification",
+                "description": f"When {resolved_field_label} is changed to true on a {entity_label.lower()}, send a workspace notification.",
+                "status": "draft",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": ["record.updated"],
+                    "filters": [
+                        {"path": "entity_id", "op": "eq", "value": entity_id},
+                        {"path": field_id, "op": "changed_to", "value": True},
+                    ],
+                },
+                "steps": [
+                    {
+                        "id": "step_send_notify",
+                        "kind": "action",
+                        "action_id": "system.notify",
+                        "inputs": notify_inputs,
+                    }
+                ],
+            },
+        }
+    )
+    return {
+        "candidate_ops": ops,
+        "questions": [],
+        "question_meta": None,
+        "assumptions": [f"Treated '{resolved_field_label}' as a boolean field because the request says it becomes true."],
+        "advisories": ["Sandbox will keep this automation as a draft until you publish it."],
+        "planner_state": planner_state,
+    }
+
+
 def _ai_build_record_notification_automation_candidate(
     message: str,
     module_id: str,
@@ -9864,12 +10312,24 @@ def _ai_build_record_notification_automation_candidate(
         return None
     if not re.search(r"\b(create|created|creating|new)\b", lower):
         return None
+    field_creation_request = bool(
+        re.search(r"\b(?:add|create|make)\s+(?:a\s+|an\s+)?(?:new\s+)?(?:field|attribute|checkbox|toggle|flag)\b", lower)
+        or re.search(r"\b(?:field|attribute|checkbox|toggle|flag)\s+(?:called|named|call)\b", lower)
+    )
+    explicit_record_created = bool(
+        re.search(r"\b(?:record|row|entry)\s+(?:is\s+)?(?:created|added|made)\b", lower)
+        or re.search(r"\bnew\s+(?:record|row|entry)\b", lower)
+        or re.search(r"\b(?:contact|customer|lead|opportunity|quote|order|invoice|activity|site)\s+(?:is\s+)?(?:created|added|made)\b", lower)
+        or re.search(r"\bnew\s+(?:contact|customer|lead|opportunity|quote|order|invoice|activity|site)\b", lower)
+    )
+    if field_creation_request and not explicit_record_created:
+        return None
     if re.search(r"\b(status|stage|state|mark|marked|set|sets|setting|change|changes|changed)\b", lower):
         return None
 
     recipient_hint = None
     if isinstance(answer_hints, dict):
-        for key in ("recipient_email", "selected_option_value"):
+        for key in ("recipient_user_id", "recipient_email", "selected_option_value", "answer_text"):
             value = answer_hints.get(key)
             if isinstance(value, str) and value.strip():
                 recipient_hint = value.strip()
@@ -10713,22 +11173,28 @@ def _ai_apply_automation_record(operation: dict, *, publish: bool, actor_id: str
         return None, validation_errors
     op_name = operation.get("op")
     automation_id = normalized.get("id")
-    existing = automation_store.get(automation_id) if automation_store else None
+    existing = _ai_safe_automation_get(automation_id)
+    if op_name == "create_automation_record" and not existing:
+        existing = _ai_find_matching_automation_record(normalized)
+    update_payload = {key: copy.deepcopy(value) for key, value in normalized.items() if key != "id"}
     if op_name == "create_automation_record":
         if existing:
-            updated = automation_store.update(automation_id, normalized) if automation_store else None
+            persisted_id = existing.get("id") if isinstance(existing.get("id"), str) and existing.get("id").strip() else automation_id
+            updated = automation_store.update(persisted_id, update_payload) if automation_store else None
             item = updated
         else:
             item = automation_store.create(normalized) if automation_store else None
     else:
         if not existing:
             return None, [{"code": "AUTOMATION_NOT_FOUND", "message": "automation not found", "path": "operation.artifact_id"}]
-        item = automation_store.update(automation_id, normalized) if automation_store else None
+        persisted_id = existing.get("id") if isinstance(existing.get("id"), str) and existing.get("id").strip() else automation_id
+        item = automation_store.update(persisted_id, update_payload) if automation_store else None
     if not isinstance(item, dict):
         return None, [{"code": "AUTOMATION_APPLY_FAILED", "message": "failed to persist automation", "path": "operation"}]
     if publish:
+        persisted_id = item.get("id") if isinstance(item.get("id"), str) and item.get("id").strip() else automation_id
         item = automation_store.update(
-            automation_id,
+            persisted_id,
             {
                 "status": "published",
                 "published_at": _now(),
@@ -10751,6 +11217,10 @@ def _ai_artifact_record_version(item: dict | None) -> str | None:
         value = item.get(key)
         if isinstance(value, str) and value.strip():
             return value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
     return None
 
 
@@ -11048,6 +11518,71 @@ def _ai_missing_snapshot_payload() -> dict:
 
 def _ai_snapshot_represents_missing(snapshot_json: Any) -> bool:
     return isinstance(snapshot_json, dict) and snapshot_json.get("__ai_missing__") is True
+
+
+def _ai_is_uuid_like(value: str | None) -> bool:
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        uuid.UUID(value.strip())
+        return True
+    except Exception:
+        return False
+
+
+def _ai_safe_automation_get(automation_id: str | None) -> dict | None:
+    if not isinstance(automation_id, str) or not automation_id.strip() or not automation_store:
+        return None
+    # The DB-backed automation store uses a UUID primary key. AI draft ops may use
+    # stable slug artifact keys before the record exists, so don't let a DB UUID
+    # cast failure turn a new draft automation into a 500.
+    if automation_store.__class__.__name__ == "DbAutomationStore" and not _ai_is_uuid_like(automation_id):
+        return None
+    try:
+        return automation_store.get(automation_id)
+    except Exception:
+        logger.warning("automation_lookup_failed automation_id=%s", automation_id, exc_info=True)
+        return None
+
+
+def _ai_normalize_automation_compare_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return copy.deepcopy(value)
+
+
+def _ai_automation_payload_signature(value: Any) -> str:
+    return json.dumps(_ai_normalize_automation_compare_payload(value), sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _ai_find_matching_automation_record(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict) or not automation_store:
+        return None
+    name = payload.get("name") if isinstance(payload.get("name"), str) and payload.get("name").strip() else None
+    if not isinstance(name, str):
+        return None
+    trigger_signature = _ai_automation_payload_signature(payload.get("trigger") or {})
+    steps_signature = _ai_automation_payload_signature(payload.get("steps") or [])
+    try:
+        candidates = automation_store.list() or []
+    except Exception:
+        logger.warning("automation_list_failed_for_ai_match", exc_info=True)
+        return None
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        candidate_name = candidate.get("name") if isinstance(candidate.get("name"), str) else None
+        if candidate_name != name:
+            continue
+        if _ai_automation_payload_signature(candidate.get("trigger") or {}) != trigger_signature:
+            continue
+        if _ai_automation_payload_signature(candidate.get("steps") or []) != steps_signature:
+            continue
+        return candidate
+    return None
 
 
 def _ai_build_workflow_comment_requirement_spec(
@@ -32222,6 +32757,42 @@ def _ai_slot_based_plan(
         result["planner_state"] = planner_state
         return result
 
+    field_true_notification_candidate = _ai_build_field_true_notification_candidate(
+        combined,
+        matched_module,
+        manifest,
+        entity_id,
+        answer_hints=answer_hints,
+        workspace_id=workspace_id,
+        request=request,
+    )
+    if isinstance(field_true_notification_candidate, dict):
+        result["candidate_ops"] = [op for op in (field_true_notification_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        result["questions"] = [item for item in (field_true_notification_candidate.get("questions") or []) if isinstance(item, str) and item.strip()]
+        result["question_meta"] = field_true_notification_candidate.get("question_meta") if isinstance(field_true_notification_candidate.get("question_meta"), dict) else None
+        result["assumptions"] = [item for item in (field_true_notification_candidate.get("assumptions") or []) if isinstance(item, str)]
+        result["advisories"] = [item for item in (field_true_notification_candidate.get("advisories") or []) if isinstance(item, str)]
+        result["planner_state"] = field_true_notification_candidate.get("planner_state") if isinstance(field_true_notification_candidate.get("planner_state"), dict) else None
+        return result
+
+    record_update_candidate = _ai_build_record_created_update_automation_candidate(
+        combined,
+        matched_module,
+        manifest,
+        entity_id,
+        answer_hints=answer_hints,
+        workspace_id=workspace_id,
+        request=request,
+    )
+    if isinstance(record_update_candidate, dict):
+        result["candidate_ops"] = [op for op in (record_update_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        result["questions"] = [item for item in (record_update_candidate.get("questions") or []) if isinstance(item, str) and item.strip()]
+        result["question_meta"] = record_update_candidate.get("question_meta") if isinstance(record_update_candidate.get("question_meta"), dict) else None
+        result["assumptions"] = [item for item in (record_update_candidate.get("assumptions") or []) if isinstance(item, str)]
+        result["advisories"] = [item for item in (record_update_candidate.get("advisories") or []) if isinstance(item, str)]
+        result["planner_state"] = record_update_candidate.get("planner_state") if isinstance(record_update_candidate.get("planner_state"), dict) else None
+        return result
+
     automation_candidate = _ai_build_status_notification_automation_candidate(
         combined,
         matched_module,
@@ -33948,6 +34519,48 @@ def _ai_extract_candidate_ops(
             {"id": "entity_target", "kind": "text", "prompt": f"Could not infer an entity in module '{matched_module}'."},
         )
         return candidate_ops, questions, question_meta
+
+    field_true_notification_candidate = _ai_build_field_true_notification_candidate(
+        msg,
+        matched_module,
+        manifest,
+        entity_id,
+        answer_hints=answer_hints,
+        workspace_id=workspace_id,
+        request=request,
+    )
+    if isinstance(field_true_notification_candidate, dict):
+        candidate_ops.extend(
+            [op for op in (field_true_notification_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        )
+        questions.extend(
+            [item for item in (field_true_notification_candidate.get("questions") or []) if isinstance(item, str) and item.strip()]
+        )
+        if isinstance(field_true_notification_candidate.get("question_meta"), dict):
+            question_meta = field_true_notification_candidate.get("question_meta")
+        if candidate_ops or questions:
+            return candidate_ops, questions, question_meta
+
+    record_update_candidate = _ai_build_record_created_update_automation_candidate(
+        msg,
+        matched_module,
+        manifest,
+        entity_id,
+        answer_hints=answer_hints,
+        workspace_id=workspace_id,
+        request=request,
+    )
+    if isinstance(record_update_candidate, dict):
+        candidate_ops.extend(
+            [op for op in (record_update_candidate.get("candidate_ops") or []) if isinstance(op, dict)]
+        )
+        questions.extend(
+            [item for item in (record_update_candidate.get("questions") or []) if isinstance(item, str) and item.strip()]
+        )
+        if isinstance(record_update_candidate.get("question_meta"), dict):
+            question_meta = record_update_candidate.get("question_meta")
+        if candidate_ops or questions:
+            return candidate_ops, questions, question_meta
 
     automation_candidate = _ai_build_status_notification_automation_candidate(
         msg,
@@ -43266,7 +43879,8 @@ def _ai_persist_plan_result(session_id: str, plan: dict, context: dict, derived:
         for item in (persisted_plan.get("required_questions") or [])
         if isinstance(item, str) and item.strip()
     ]
-    if quality_messages and not existing_questions and not persisted_plan.get("resolved_without_changes"):
+    skip_quality_questions = bool(isinstance(derived, dict) and derived.get("skip_quality_questions"))
+    if quality_messages and not skip_quality_questions and not existing_questions and not persisted_plan.get("resolved_without_changes"):
         question_meta = _ai_plan_quality_question_meta(quality_issues) or {}
         prompt = (
             question_meta.get("prompt")
@@ -43434,11 +44048,20 @@ def _ai_should_preserve_latest_concrete_plan(
         return False
     if new_intent not in {"preview_only_plan", "preview_only_noop"} or not new_has_questions:
         return False
-    normalized_message = _ai_norm_token(_ai_focus_request_text(message_text))
+    focused_message = _ai_focus_request_text(message_text)
+    normalized_message = _ai_norm_token(focused_message)
     latest_request_summary = ""
     if isinstance(latest_context, dict) and isinstance(latest_context.get("request_summary"), str):
         latest_request_summary = _ai_norm_token(_ai_focus_request_text(latest_context.get("request_summary")))
     same_request = bool(normalized_message and latest_request_summary and normalized_message == latest_request_summary)
+    message_confirms_existing_plan = bool(
+        _ai_text_is_approval_response(focused_message)
+        or _ai_text_requests_patchset_generation(focused_message)
+        or re.fullmatch(r"(?:apply|continue|proceed|same|that|this|it|do it|use it)", normalized_message)
+        or re.search(r"\b(?:apply|continue|proceed)\b.*\b(?:plan|patchset|sandbox|it|this|that)\b", normalized_message)
+    )
+    if _ai_answer_looks_like_fresh_request(focused_message) and not same_request and not message_confirms_existing_plan:
+        return False
     latest_scope_tokens = _ai_plan_scope_tokens(latest_plan)
     new_scope_tokens = _ai_plan_scope_tokens(new_plan)
     same_scope = bool(latest_scope_tokens and new_scope_tokens and latest_scope_tokens == new_scope_tokens)
@@ -43447,7 +44070,7 @@ def _ai_should_preserve_latest_concrete_plan(
         and _ai_plan_primary_module_name(latest_plan)
         and _ai_plan_primary_module_name(latest_plan) == _ai_plan_primary_module_name(new_plan)
     )
-    return same_request or same_scope or same_create_module
+    return same_request or (same_scope and message_confirms_existing_plan) or same_create_module
 
 
 def _ai_reuse_existing_plan_result(
@@ -44222,19 +44845,62 @@ def _ai_latest_applied_patchset_for_session(session_id: str) -> dict | None:
     )
 
 
+_AI_PLAN_QUESTION_SUPERSEDING_PATCHSET_STATUSES = {"validated", "approved", "applied"}
+
+
+def _ai_patchset_question_superseding_marker(patchset: dict) -> datetime | None:
+    if not isinstance(patchset, dict):
+        return None
+    for marker in (
+        patchset.get("applied_at"),
+        patchset.get("validated_at"),
+        patchset.get("updated_at"),
+        patchset.get("created_at"),
+    ):
+        parsed = _to_datetime(marker)
+        if parsed and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        if parsed:
+            return parsed
+    return None
+
+
+def _ai_latest_question_superseding_patchset_for_session(session_id: str) -> dict | None:
+    latest: dict | None = None
+    latest_marker: datetime | None = None
+    latest_position = -1
+    sources = list(_ai_list_records(_AI_ENTITY_PATCHSET, limit=2000))
+    if _AI_ENTITY_PATCHSET in _AI_RECOVERABLE_ENTITY_IDS:
+        sources.extend(_ai_list_records_anywhere(_AI_ENTITY_PATCHSET, limit=2000))
+    for position, item in enumerate(sources):
+        data = _ai_record_data(item)
+        if data.get("session_id") != session_id:
+            continue
+        if data.get("status") not in _AI_PLAN_QUESTION_SUPERSEDING_PATCHSET_STATUSES:
+            continue
+        marker = _ai_patchset_question_superseding_marker(data)
+        if not marker:
+            continue
+        if latest is None or latest_marker is None or (marker, position) >= (latest_marker, latest_position):
+            latest = data
+            latest_marker = marker
+            latest_position = position
+    return latest
+
+
 def _ai_plan_question_superseded_by_apply(session_id: str, latest_plan: dict | None) -> bool:
     if not isinstance(latest_plan, dict):
         return False
-    plan_created_at = latest_plan.get("created_at") if isinstance(latest_plan.get("created_at"), str) else ""
+    plan_created_at = _to_datetime(latest_plan.get("created_at"))
     if not plan_created_at:
         return False
-    latest_applied = _ai_latest_applied_patchset_for_session(session_id)
-    if not isinstance(latest_applied, dict):
+    if plan_created_at.tzinfo is None:
+        plan_created_at = plan_created_at.replace(tzinfo=timezone.utc)
+    latest_patchset = _ai_latest_question_superseding_patchset_for_session(session_id)
+    if not isinstance(latest_patchset, dict):
         return False
-    applied_at = latest_applied.get("applied_at") if isinstance(latest_applied.get("applied_at"), str) else None
-    patchset_created_at = latest_applied.get("created_at") if isinstance(latest_applied.get("created_at"), str) else None
-    latest_apply_marker = applied_at or patchset_created_at or ""
-    return bool(latest_apply_marker and latest_apply_marker >= plan_created_at)
+    latest_marker = _ai_patchset_question_superseding_marker(latest_patchset)
+    return bool(latest_marker and latest_marker >= plan_created_at)
 
 
 def _ai_active_question_for_session(session_id: str) -> str | None:
@@ -45838,7 +46504,7 @@ def _ai_validate_patchset_against_workspace(request: Request, patchset_record: d
         if validation_errors:
             errors.extend(validation_errors)
             continue
-        existing = automation_store.get(automation_id) if automation_store else None
+        existing = _ai_safe_automation_get(automation_id)
         current_version = _ai_automation_record_version(existing)
         expected_version = base_by_artifact.get(("automation", automation_id))
         if isinstance(expected_version, str) and expected_version and expected_version != current_version:
@@ -46954,6 +47620,7 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
             context = _ai_context_package(request, session_data, replan_prompt, answer_hints=answer_hints)
             derived = {
                 "status": "ready_to_apply" if (plan.get("candidate_operations") or plan.get("resolved_without_changes")) else "planning",
+                "skip_quality_questions": True,
                 "affected_modules": [
                     item.get("artifact_id")
                     for item in (plan.get("affected_artifacts") or [])
@@ -46990,6 +47657,7 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
                     plan["decision_slots"] = []
                 derived = {
                     "status": "ready_to_apply" if (plan.get("candidate_operations") or plan.get("resolved_without_changes")) else "planning",
+                    "skip_quality_questions": True,
                     "affected_modules": [
                         item.get("artifact_id")
                         for item in (plan.get("affected_artifacts") or [])
@@ -47009,7 +47677,8 @@ async def octo_ai_answer_question(request: Request, session_id: str) -> dict:
             message_style = "ready_revision"
         latest_plan_record = _ai_latest_plan_for_session(session_id)
         latest_context = _ai_plan_context_from_record_data(latest_plan_record)
-        if _ai_should_preserve_latest_concrete_plan(replan_prompt, latest_plan_record, plan, latest_context):
+        confirmed_latest_plan = bool(question_kind == "confirm_plan" and hint_payload.get("confirm_plan") is True)
+        if not confirmed_latest_plan and _ai_should_preserve_latest_concrete_plan(replan_prompt, latest_plan_record, plan, latest_context):
             latest_patchset = _ai_latest_patchset_for_plan(
                 session_id,
                 latest_plan_record.get("id") if isinstance(latest_plan_record, dict) and isinstance(latest_plan_record.get("id"), str) else "",
@@ -47157,7 +47826,7 @@ async def octo_ai_generate_patchset(request: Request, session_id: str) -> dict:
                 seen_artifacts.add(artifact_key)
                 continue
             if artifact_type == "automation":
-                existing_automation = automation_store.get(artifact_id) if automation_store else None
+                existing_automation = _ai_safe_automation_get(artifact_id)
                 base_refs.append(
                     {
                         "artifact_type": "automation",
@@ -47289,6 +47958,18 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
             return _error_response("AI_PATCHSET_NOT_FOUND", "Patchset not found", "patchset_id", status=404)
         patchset, _workspace_id = bound
         patch_data = _ai_record_data(patchset)
+        if patch_data.get("status") == "applied":
+            return _ok_response(
+                {
+                    "patchset": patch_data,
+                    "apply": {
+                        "ok": True,
+                        "noop": True,
+                        "scope": "sandbox",
+                        "already_applied": True,
+                    },
+                }
+            )
         if patch_data.get("status") not in {"draft", "validated", "approved"}:
             return _error_response("AI_PATCHSET_NOT_VALIDATED", "Patchset must be validated before apply", "status", status=400)
         body = await _safe_json(request)
@@ -47366,7 +48047,7 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
                     operation = artifact_result.get("operation") if isinstance(artifact_result.get("operation"), dict) else None
                     if not isinstance(automation_id, str) or not isinstance(operation, dict):
                         continue
-                    existing_automation = automation_store.get(automation_id) if automation_store else None
+                    existing_automation = _ai_safe_automation_get(automation_id)
                     _ai_create_record(
                         _AI_ENTITY_SNAPSHOT,
                         {
@@ -47396,7 +48077,7 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
                             "automation_id": automation_id,
                             "ok": True,
                             "status": item.get("status") if isinstance(item, dict) else "draft",
-                            "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                            "updated_at": _ai_artifact_record_version(item),
                         }
                     )
                     continue
@@ -47434,7 +48115,7 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
                             "artifact_type": "email_template",
                             "template_id": template_id,
                             "ok": True,
-                            "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                            "updated_at": _ai_artifact_record_version(item),
                         }
                     )
                     continue
@@ -47472,7 +48153,7 @@ async def octo_ai_apply_patchset(request: Request, patchset_id: str) -> dict:
                             "artifact_type": "document_template",
                             "template_id": template_id,
                             "ok": True,
-                            "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                            "updated_at": _ai_artifact_record_version(item),
                         }
                     )
                     continue
@@ -47602,7 +48283,7 @@ async def octo_ai_rollback_patchset(request: Request, patchset_id: str) -> dict:
                     if not isinstance(artifact_key, str) or not artifact_key:
                         continue
                     snapshot_json = snap.get("snapshot_json")
-                    current = automation_store.get(artifact_key) if automation_store else None
+                    current = _ai_safe_automation_get(artifact_key)
                     if _ai_snapshot_represents_missing(snapshot_json):
                         if isinstance(current, dict) and automation_store:
                             automation_store.delete(artifact_key)
@@ -47892,7 +48573,7 @@ async def octo_ai_promote_release(request: Request, release_id: str) -> dict:
                         operation = artifact_result.get("operation") if isinstance(artifact_result.get("operation"), dict) else None
                         if not isinstance(automation_id, str) or not isinstance(operation, dict):
                             continue
-                        existing_automation = automation_store.get(automation_id) if automation_store else None
+                        existing_automation = _ai_safe_automation_get(automation_id)
                         _ai_create_record(
                             _AI_ENTITY_SNAPSHOT,
                             {
@@ -47957,7 +48638,7 @@ async def octo_ai_promote_release(request: Request, release_id: str) -> dict:
                                 "artifact_type": "email_template",
                                 "template_id": template_id,
                                 "ok": True,
-                                "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                                "updated_at": _ai_artifact_record_version(item),
                             }
                         )
                         continue
@@ -47994,7 +48675,7 @@ async def octo_ai_promote_release(request: Request, release_id: str) -> dict:
                                 "artifact_type": "document_template",
                                 "template_id": template_id,
                                 "ok": True,
-                                "updated_at": item.get("updated_at") if isinstance(item, dict) else None,
+                                "updated_at": _ai_artifact_record_version(item),
                             }
                         )
                         continue
@@ -48109,7 +48790,7 @@ async def octo_ai_rollback_release(request: Request, release_id: str) -> dict:
                         if not isinstance(artifact_key, str) or not artifact_key:
                             continue
                         snapshot_json = snap.get("snapshot_json")
-                        current = automation_store.get(artifact_key) if automation_store else None
+                        current = _ai_safe_automation_get(artifact_key)
                         if _ai_snapshot_represents_missing(snapshot_json):
                             if isinstance(current, dict) and automation_store:
                                 automation_store.delete(artifact_key)

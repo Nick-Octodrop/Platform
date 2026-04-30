@@ -31,9 +31,9 @@ import { getArtifactQuickActions } from "../aiCapabilities.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import {
   hasPendingPlanQuestion,
+  latestPatchsetFromList,
   latestPlanFromList,
   latestPlanQuestionPrompt,
-  questionSupersededByAppliedRevision,
 } from "./octoAiSessionState.js";
 import { summarizePlanOperations } from "./octoAiPlanPreview.js";
 
@@ -136,49 +136,6 @@ function summarizePatchsetRevision(patchset, t) {
     }
   }
   return labels.slice(0, 2).join(" • ") || t("revision.change_count", { count: ops.length });
-}
-
-function patchsetActivityTimestamp(patchset) {
-  if (!patchset || typeof patchset !== "object") return 0;
-  const candidates = [
-    patchset.applied_at,
-    patchset.validated_at,
-    patchset.updated_at,
-    patchset.created_at,
-  ];
-  for (const value of candidates) {
-    if (typeof value !== "string" || !value) continue;
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function patchsetStatusRank(patchset) {
-  const status = typeof patchset?.status === "string" ? patchset.status : "";
-  if (status === "applied") return 5;
-  if (status === "approved") return 4;
-  if (status === "validated") return 3;
-  if (status === "invalid") return 2;
-  if (status === "draft") return 1;
-  return 0;
-}
-
-function comparePatchsetsNewestFirst(left, right) {
-  const timestampDelta = patchsetActivityTimestamp(right) - patchsetActivityTimestamp(left);
-  if (timestampDelta !== 0) return timestampDelta;
-  const rankDelta = patchsetStatusRank(right) - patchsetStatusRank(left);
-  if (rankDelta !== 0) return rankDelta;
-  const leftId = typeof left?.id === "string" ? left.id : "";
-  const rightId = typeof right?.id === "string" ? right.id : "";
-  return rightId.localeCompare(leftId);
-}
-
-function latestPatchsetFromList(patchsets, planId = "") {
-  if (!Array.isArray(patchsets) || patchsets.length === 0) return null;
-  const scoped = planId ? patchsets.filter((item) => item?.plan_id === planId) : patchsets;
-  const candidates = scoped.length > 0 ? scoped : patchsets;
-  return [...candidates].sort(comparePatchsetsNewestFirst)[0] || null;
 }
 
 function DetailsDrawer({ open, onClose, activeTab, onTabChange, sections, t }) {
@@ -514,17 +471,10 @@ export default function OctoAiWorkspacePage() {
     return null;
   }, [latestPlan]);
   const rawQuestion = useMemo(() => {
-    const direct = Array.isArray(latestPlan?.questions_json) ? latestPlan.questions_json : [];
-    if (direct.length > 0 && typeof direct[0] === "string" && direct[0].trim()) return direct[0].trim();
-    const nested = Array.isArray(latestPlan?.plan_json?.plan?.required_questions) ? latestPlan.plan_json.plan.required_questions : [];
-    if (nested.length > 0 && typeof nested[0] === "string" && nested[0].trim()) return nested[0].trim();
-    return "";
+    return latestPlanQuestionPrompt(latestPlan);
   }, [latestPlan]);
   const rawDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
-  const hasPendingQuestion = useMemo(() => {
-    if (!rawQuestion) return false;
-    return !questionSupersededByAppliedRevision(latestPlan, latestPatchset);
-  }, [rawQuestion, latestPatchset, latestPlan]);
+  const hasPendingQuestion = useMemo(() => hasPendingPlanQuestion(latestPlan, latestPatchset), [latestPatchset, latestPlan]);
   const activeQuestionMeta = useMemo(() => (hasPendingQuestion ? rawQuestionMeta : null), [hasPendingQuestion, rawQuestionMeta]);
   const activeQuestion = useMemo(() => (hasPendingQuestion ? rawQuestion : ""), [hasPendingQuestion, rawQuestion]);
   const activeDecisionSlots = useMemo(() => (hasPendingQuestion ? rawDecisionSlots : []), [hasPendingQuestion, rawDecisionSlots]);
@@ -839,21 +789,21 @@ export default function OctoAiWorkspacePage() {
     window.open(liveWorkspaceFrameSrc, "_blank", "noopener,noreferrer");
   }
 
-  async function ensureValidatedRevision() {
+  async function ensureValidatedRevision(initialPayload = null) {
     if (!sessionId) return "";
-    let payload = data;
-    if (!data.session?.sandbox_workspace_id) {
+    let payload = initialPayload || data;
+    if (!payload?.session?.sandbox_workspace_id) {
       await ensureOctoAiSandbox(sessionId);
       payload = (await refreshSession({ showLoading: false })) || payload;
     }
-    let plan = Array.isArray(payload?.plans) && payload.plans.length > 0 ? payload.plans[0] : null;
+    let plan = latestPlanFromList(payload?.plans);
     let patchset = latestPatchsetFromList(payload?.patchsets, plan?.id || "");
     if (hasPendingPlanQuestion(plan, patchset)) {
       throw new Error(latestPlanQuestionPrompt(plan) || octoT("errors.prepare_latest_revision"));
     }
     await generateOctoAiPatchset(sessionId, { plan_id: plan?.id || undefined });
     payload = (await refreshSession({ showLoading: false })) || payload;
-    plan = Array.isArray(payload?.plans) && payload.plans.length > 0 ? payload.plans[0] : null;
+    plan = latestPlanFromList(payload?.plans);
     patchset = latestPatchsetFromList(payload?.patchsets, plan?.id || "");
     if (hasPendingPlanQuestion(plan, patchset)) {
       throw new Error(latestPlanQuestionPrompt(plan) || octoT("errors.prepare_latest_revision"));
@@ -898,13 +848,13 @@ export default function OctoAiWorkspacePage() {
         question_id: activeQuestionMeta?.id || undefined,
       });
       const refreshed = await refreshSession({ showLoading: false });
-      const refreshedPlan = Array.isArray(refreshed?.plans) && refreshed.plans.length > 0 ? refreshed.plans[0] : null;
+      const refreshedPlan = latestPlanFromList(refreshed?.plans);
       const refreshedPatchset = latestPatchsetFromList(refreshed?.patchsets, refreshedPlan?.id || "");
       if (hasPendingPlanQuestion(refreshedPlan, refreshedPatchset)) {
         setPreviewNotice("");
         return;
       }
-      const patchsetId = await ensureValidatedRevision();
+      const patchsetId = await ensureValidatedRevision(refreshed);
       if (!patchsetId) {
         throw new Error(octoT("errors.no_validated_revision_apply"));
       }
@@ -929,15 +879,20 @@ export default function OctoAiWorkspacePage() {
     setPreviewNotice(octoT("preview.applying_revision"));
     try {
       const refreshed = (await refreshSession({ showLoading: false })) || data;
-      const refreshedPlan = Array.isArray(refreshed?.plans) && refreshed.plans.length > 0 ? refreshed.plans[0] : null;
+      const refreshedPlan = latestPlanFromList(refreshed?.plans);
       const refreshedPatchset = latestPatchsetFromList(refreshed?.patchsets, refreshedPlan?.id || latestPlan?.id || "");
       if (hasPendingPlanQuestion(refreshedPlan, refreshedPatchset)) {
         setPreviewNotice("");
         return;
       }
+      if (refreshedPatchset?.status === "applied") {
+        setPreviewNonce((value) => value + 1);
+        setPreviewNotice(octoT("preview.sandbox_updated"));
+        return;
+      }
       const patchsetId = ["validated", "approved", "applied"].includes(String(refreshedPatchset?.status || ""))
         ? refreshedPatchset.id
-        : await ensureValidatedRevision();
+        : await ensureValidatedRevision(refreshed);
       await applyOctoAiPatchset(patchsetId, true);
       await refreshSession({ showLoading: false });
       setPreviewNonce((value) => value + 1);

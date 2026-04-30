@@ -16,7 +16,7 @@ import {
 } from "../api.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
-import { hasPendingPlanQuestion, latestPlanFromList, latestPlanQuestionPrompt } from "../pages/octoAiSessionState.js";
+import { hasPendingPlanQuestion, latestPatchsetFromList, latestPlanFromList, latestPlanQuestionPrompt } from "../pages/octoAiSessionState.js";
 import { summarizePlanOperations } from "../pages/octoAiPlanPreview.js";
 
 function questionKind(meta) {
@@ -150,49 +150,6 @@ function AssistantNarrative({ text }) {
       ))}
     </div>
   );
-}
-
-function patchsetActivityTimestamp(patchset) {
-  if (!patchset || typeof patchset !== "object") return 0;
-  const candidates = [
-    patchset.applied_at,
-    patchset.validated_at,
-    patchset.updated_at,
-    patchset.created_at,
-  ];
-  for (const value of candidates) {
-    if (typeof value !== "string" || !value) continue;
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function patchsetStatusRank(patchset) {
-  const status = typeof patchset?.status === "string" ? patchset.status : "";
-  if (status === "applied") return 5;
-  if (status === "approved") return 4;
-  if (status === "validated") return 3;
-  if (status === "invalid") return 2;
-  if (status === "draft") return 1;
-  return 0;
-}
-
-function comparePatchsetsNewestFirst(left, right) {
-  const timestampDelta = patchsetActivityTimestamp(right) - patchsetActivityTimestamp(left);
-  if (timestampDelta !== 0) return timestampDelta;
-  const rankDelta = patchsetStatusRank(right) - patchsetStatusRank(left);
-  if (rankDelta !== 0) return rankDelta;
-  const leftId = typeof left?.id === "string" ? left.id : "";
-  const rightId = typeof right?.id === "string" ? right.id : "";
-  return rightId.localeCompare(leftId);
-}
-
-function latestPatchsetFromList(patchsets, planId = "") {
-  if (!Array.isArray(patchsets) || patchsets.length === 0) return null;
-  const scoped = planId ? patchsets.filter((item) => item?.plan_id === planId) : patchsets;
-  const candidates = scoped.length > 0 ? scoped : patchsets;
-  return [...candidates].sort(comparePatchsetsNewestFirst)[0] || null;
 }
 
 function InfoList({ title, items, emptyText }) {
@@ -338,11 +295,7 @@ export default function OctoAiSandboxDock({ sessionId, onExit }) {
     return null;
   }, [latestPlan]);
   const rawQuestion = useMemo(() => {
-    const direct = Array.isArray(latestPlan?.questions_json) ? latestPlan.questions_json : [];
-    if (direct.length > 0 && typeof direct[0] === "string" && direct[0].trim()) return direct[0].trim();
-    const nested = Array.isArray(latestPlan?.plan_json?.plan?.required_questions) ? latestPlan.plan_json.plan.required_questions : [];
-    if (nested.length > 0 && typeof nested[0] === "string" && nested[0].trim()) return nested[0].trim();
-    return "";
+    return latestPlanQuestionPrompt(latestPlan);
   }, [latestPlan]);
   const rawDecisionSlots = useMemo(() => extractDecisionSlots(latestPlan), [latestPlan]);
   const hasPendingQuestion = useMemo(() => hasPendingPlanQuestion(latestPlan, latestPatchset), [latestPatchset, latestPlan]);

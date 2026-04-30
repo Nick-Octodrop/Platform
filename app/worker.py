@@ -5,9 +5,11 @@ import os
 import json
 import logging
 import httpx
+import signal
 import sys
 import time
 import traceback
+import threading
 import uuid
 import importlib
 from datetime import datetime, timedelta, timezone
@@ -69,6 +71,35 @@ from app.webhook_signing import build_webhook_signature_headers
 
 
 logger = logging.getLogger("octo.worker")
+
+
+def _doc_generation_timeout_seconds() -> float:
+    raw = os.getenv("DOC_GENERATE_TIMEOUT_SECONDS") or os.getenv("DOC_RENDER_TIMEOUT_SECONDS") or "60"
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 60.0
+    return max(0.0, value)
+
+
+def _run_with_alarm_timeout(label: str, timeout_seconds: float, fn):
+    if timeout_seconds <= 0:
+        return fn()
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
+        return fn()
+    old_handler = signal.getsignal(signal.SIGALRM)
+    old_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def _timeout_handler(_signum, _frame):
+        raise TimeoutError(f"{label} timed out after {timeout_seconds:g} seconds")
+
+    signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return fn()
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, *old_timer)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def _lookup_workspace_member_emails(target_user_id: str | None) -> list[str]:
@@ -2038,7 +2069,11 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
                     "purpose": purpose,
                 },
             }
-            _handle_doc_generate(inline_job, get_org_id())
+            _run_with_alarm_timeout(
+                "Document generation",
+                _doc_generation_timeout_seconds(),
+                lambda: _handle_doc_generate(inline_job, get_org_id()),
+            )
             return {
                 "entity_id": entity_id,
                 "record_id": record_id,
@@ -2833,7 +2868,11 @@ def _run_job(job: dict) -> None:
         if job.get("type") == "email.send":
             _handle_email_send(job, org_id)
         elif job.get("type") == "doc.generate":
-            _handle_doc_generate(job, org_id)
+            _run_with_alarm_timeout(
+                "Document generation",
+                _doc_generation_timeout_seconds(),
+                lambda: _handle_doc_generate(job, org_id),
+            )
         elif job.get("type") == "automation.run":
             _run_automation(job, org_id)
         elif job.get("type") == "attachments.cleanup":

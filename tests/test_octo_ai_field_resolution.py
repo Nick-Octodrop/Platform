@@ -3,6 +3,7 @@ import json
 import unittest
 import copy
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -66,6 +67,40 @@ from app.main import (  # noqa: E402
 
 
 class TestOctoAiFieldResolution(unittest.TestCase):
+    class SlugRejectingAutomationStore:
+        __name__ = "DbAutomationStore"
+
+        def __init__(self) -> None:
+            self._items = {}
+
+        def get(self, automation_id: str) -> dict | None:
+            uuid.UUID(automation_id)
+            return self._items.get(automation_id)
+
+        def create(self, record: dict) -> dict:
+            item = copy.deepcopy(record)
+            item["id"] = str(uuid.uuid4())
+            item["created_at"] = datetime.now(timezone.utc)
+            item["updated_at"] = datetime.now(timezone.utc)
+            self._items[item["id"]] = item
+            return copy.deepcopy(item)
+
+        def update(self, automation_id: str, updates: dict) -> dict | None:
+            uuid.UUID(automation_id)
+            item = self._items.get(automation_id)
+            if not isinstance(item, dict):
+                return None
+            item.update(copy.deepcopy(updates))
+            item["updated_at"] = datetime.now(timezone.utc)
+            self._items[automation_id] = item
+            return copy.deepcopy(item)
+
+        def list(self, status: str | None = None) -> list[dict]:
+            items = list(self._items.values())
+            if isinstance(status, str) and status:
+                items = [item for item in items if item.get("status") == status]
+            return [copy.deepcopy(item) for item in items]
+
     def test_named_artifact_plan_expected_failure_detects_missing_openai_key(self) -> None:
         self.assertTrue(
             _ai_named_artifact_plan_expected_failure(
@@ -12186,6 +12221,9 @@ class TestOctoAiFieldResolution(unittest.TestCase):
 
             apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
             self.assertEqual(apply_response.status_code, 200, apply_response.text)
+            second_apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
+            self.assertEqual(second_apply_response.status_code, 200, second_apply_response.text)
+            self.assertTrue((second_apply_response.json().get("apply") or {}).get("already_applied"))
 
             self.assertIsNone(main._ai_active_question_for_session(session_id))
             self.assertIsNone(main._ai_active_question_meta_for_session(session_id))
@@ -12197,6 +12235,74 @@ class TestOctoAiFieldResolution(unittest.TestCase):
             self.assertEqual(answer_response.status_code, 400, answer_response.text)
             payload = answer_response.json()
             self.assertEqual(((payload.get("errors") or [{}])[0]).get("code"), "AI_NO_ACTIVE_QUESTION")
+
+    def test_applied_patchset_updated_at_clears_stale_confirm_question(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "Applied question update marker"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+            _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "status": "draft",
+                    "questions_json": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                    "plan_json": {"plan": {"required_questions": ["Confirm this plan?"], "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."}}},
+                    "created_at": "2026-03-23T00:00:00.000Z",
+                },
+            )
+            _ai_create_record(
+                _AI_ENTITY_PATCHSET,
+                {
+                    "session_id": session_id,
+                    "status": "applied",
+                    "base_snapshot_refs_json": [],
+                    "patch_json": {"operations": [], "noop": True},
+                    "validation_json": {"ok": True, "errors": [], "warnings": [], "results": []},
+                    "apply_log_json": [],
+                    "created_at": "2026-03-22T23:59:00Z",
+                    "updated_at": "2026-03-23T00:02:00.000Z",
+                    "applied_at": "",
+                },
+            )
+
+            self.assertIsNone(main._ai_active_question_for_session(session_id))
+            self.assertIsNone(main._ai_active_question_meta_for_session(session_id))
+
+    def test_validated_patchset_clears_stale_confirm_question_before_apply(self) -> None:
+        with TestClient(main.app) as client:
+            create_response = client.post("/octo-ai/sessions", json={"title": "Validated question reset"})
+            self.assertEqual(create_response.status_code, 200, create_response.text)
+            session_id = create_response.json()["session"]["id"]
+            _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "status": "draft",
+                    "questions_json": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                    "plan_json": {"plan": {"required_questions": ["Confirm this plan?"], "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."}}},
+                    "created_at": "2026-03-23T00:00:00.000Z",
+                },
+            )
+            _ai_create_record(
+                _AI_ENTITY_PATCHSET,
+                {
+                    "session_id": session_id,
+                    "status": "validated",
+                    "base_snapshot_refs_json": [],
+                    "patch_json": {"operations": [], "noop": True},
+                    "validation_json": {"ok": True, "errors": [], "warnings": [], "results": []},
+                    "apply_log_json": [],
+                    "created_at": "2026-03-23T00:02:00.000Z",
+                    "validated_at": "2026-03-23T00:02:00.000Z",
+                    "applied_at": "",
+                },
+            )
+
+            self.assertIsNone(main._ai_active_question_for_session(session_id))
+            self.assertIsNone(main._ai_active_question_meta_for_session(session_id))
 
     def test_sandbox_applied_status_text_uses_validated_module_name(self) -> None:
         text = main._ai_sandbox_applied_status_text(
@@ -16113,6 +16219,295 @@ class TestOctoAiFieldResolution(unittest.TestCase):
         self.assertIn("Next step: Apply to Sandbox.", answer_body.get("assistant_text") or "")
         self.assertNotIn("I understand this as:", answer_body.get("assistant_text") or "")
         self.assertNotIn("draft patchset for sandbox validation", answer_body.get("assistant_text") or "")
+
+    def test_confirm_plan_action_approve_clears_pending_question(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        with patch.object(main, "_resolve_actor", lambda _request: actor):
+            client = TestClient(main.app)
+            main._octo_ai_seed_in_memory_baseline_modules()
+            session = _ai_create_record(
+                _AI_ENTITY_SESSION,
+                {
+                    "title": "confirm_plan_button_approval",
+                    "status": "waiting_input",
+                    "scope_mode": "auto",
+                    "selected_artifact_type": "none",
+                    "selected_artifact_key": "",
+                    "last_activity_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            session_id = _ai_record_data(session)["id"]
+            _ai_create_record(
+                _AI_ENTITY_MESSAGE,
+                {
+                    "session_id": session_id,
+                    "role": "user",
+                    "message_type": "chat",
+                    "body": "Add a Chris field to the Contacts module.",
+                    "created_at": "2026-03-18T00:00:00Z",
+                },
+            )
+            plan = _ai_create_record(
+                _AI_ENTITY_PLAN,
+                {
+                    "session_id": session_id,
+                    "created_at": "2026-03-18T00:01:00Z",
+                    "questions_json": ["Confirm this plan?"],
+                    "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                    "affected_artifacts_json": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                    "plan_json": {
+                        "plan": {
+                            "required_questions": ["Confirm this plan?"],
+                            "required_question_meta": {"id": "confirm_plan", "kind": "confirm_plan", "prompt": "Confirm this plan or tell me what to change."},
+                            "candidate_operations": [
+                                {
+                                    "op": "add_field",
+                                    "artifact_type": "module",
+                                    "artifact_id": "contacts",
+                                    "entity_id": "entity.contact",
+                                    "field": {"id": "contact.chris", "label": "chris", "type": "string"},
+                                }
+                            ],
+                            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                        }
+                    },
+                },
+            )
+            _ai_update_record(_AI_ENTITY_SESSION, session_id, {"latest_plan_id": _ai_record_data(plan)["id"]})
+
+            answer_res = client.post(
+                f"/octo-ai/sessions/{session_id}/questions/answer",
+                json={"action": "approve", "question_id": "confirm_plan"},
+            )
+            answer_body = answer_res.json()
+
+        self.assertTrue(answer_body.get("ok"), answer_body)
+        plan = answer_body.get("plan") or {}
+        self.assertEqual(plan.get("required_questions"), [])
+        self.assertIsNone(plan.get("required_question_meta"))
+        self.assertIsNone(main._ai_active_question_for_session(session_id))
+
+    def test_fresh_request_does_not_reuse_previous_same_scope_plan(self) -> None:
+        latest_plan_record = {
+            "plan_json": {
+                "context": {"request_summary": "create a new field in contacts module called chris"},
+                "plan": {
+                    "planner_state": {"intent": "add_field", "module_name": "contacts"},
+                    "candidate_operations": [
+                        {
+                            "op": "add_field",
+                            "artifact_type": "module",
+                            "artifact_id": "contacts",
+                            "entity_id": "entity.contact",
+                            "field": {"id": "contact.chris", "label": "Chris", "type": "string"},
+                        }
+                    ],
+                    "affected_artifacts": [{"artifact_type": "module", "artifact_id": "contacts"}],
+                },
+            }
+        }
+        weak_same_scope_plan = {
+            "planner_state": {"intent": "preview_only_plan", "module_name": "contacts"},
+            "candidate_operations": [],
+            "required_questions": ["Confirm this plan?"],
+            "affected_artifacts": [{"artifact_type": "module", "artifact_id": "contacts"}],
+        }
+        latest_context = main._ai_plan_context_from_record_data(latest_plan_record)
+
+        self.assertFalse(
+            main._ai_should_preserve_latest_concrete_plan(
+                "create an automation when a new contact is created it sends a notification and sets the phone number to 123456789",
+                latest_plan_record,
+                weak_same_scope_plan,
+                latest_context,
+            )
+        )
+        self.assertTrue(
+            main._ai_should_preserve_latest_concrete_plan(
+                "Looks right, generate the draft patchset.",
+                latest_plan_record,
+                weak_same_scope_plan,
+                latest_context,
+            )
+        )
+        self.assertTrue(
+            main._ai_should_preserve_latest_concrete_plan(
+                "create a new field in contacts module called chris",
+                latest_plan_record,
+                weak_same_scope_plan,
+                latest_context,
+            )
+        )
+
+    def test_contact_created_update_notification_request_asks_recipient_then_builds_steps(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        session_data = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "none",
+            "selected_artifact_key": "",
+            "workspace_id": "default",
+        }
+        prompt = "create an automation when a new contact is created it sends a notification and sets the phone number to 123456789"
+
+        plan, derived = main._ai_plan_from_message(None, session_data, prompt, answer_hints={})
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "automation_notify_recipient")
+        self.assertEqual((plan.get("planner_state") or {}).get("field_id"), "contact.phone")
+        self.assertEqual((plan.get("planner_state") or {}).get("update_value"), "123456789")
+
+        completed_plan, _completed_derived = main._ai_plan_from_message(
+            None,
+            session_data,
+            prompt,
+            answer_hints={"recipient_user_id": "user-1"},
+        )
+        ops = [op for op in (completed_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual(len(ops), 1)
+        automation = ops[0].get("automation") or {}
+        steps = automation.get("steps") or []
+        self.assertEqual([step.get("action_id") for step in steps], ["system.update_record", "system.notify"])
+        self.assertEqual((steps[0].get("inputs") or {}).get("patch"), {"contact.phone": "123456789"})
+        self.assertEqual((steps[1].get("inputs") or {}).get("recipient_user_ids"), ["user-1"])
+
+    def test_field_true_notification_request_adds_boolean_field_then_automation(self) -> None:
+        main._octo_ai_seed_in_memory_baseline_modules()
+        session_data = {
+            "scope_mode": "auto",
+            "selected_artifact_type": "none",
+            "selected_artifact_key": "",
+            "workspace_id": "default",
+        }
+        prompt = "create a new field in contacts called chris, and when this field is true send a notification to a user"
+
+        plan, derived = main._ai_plan_from_message(None, session_data, prompt, answer_hints={})
+
+        self.assertEqual(derived.get("status"), "waiting_input")
+        self.assertEqual((plan.get("required_question_meta") or {}).get("id"), "automation_notify_recipient")
+        pending_ops = [op for op in (plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in pending_ops], ["add_field"])
+        self.assertEqual(pending_ops[0].get("field"), {"id": "contact.chris", "type": "bool", "label": "Chris"})
+
+        completed_plan, _completed_derived = main._ai_plan_from_message(
+            None,
+            session_data,
+            prompt,
+            answer_hints={"recipient_user_id": "user-1"},
+        )
+        ops = [op for op in (completed_plan.get("candidate_operations") or []) if isinstance(op, dict)]
+        self.assertEqual([op.get("op") for op in ops], ["add_field", "create_automation_record"])
+        automation = ops[1].get("automation") or {}
+        trigger = automation.get("trigger") or {}
+        self.assertEqual(trigger.get("event_types"), ["record.updated"])
+        self.assertIn({"path": "contact.chris", "op": "changed_to", "value": True}, trigger.get("filters") or [])
+        steps = automation.get("steps") or []
+        self.assertEqual([step.get("action_id") for step in steps], ["system.notify"])
+        self.assertEqual((steps[0].get("inputs") or {}).get("recipient_user_ids"), ["user-1"])
+
+        module_index = main._ai_module_manifest_index(None)
+        valid_ops, errors = _ai_preflight_candidate_ops(module_index, ops, answer_hints={})
+        self.assertFalse(errors)
+        self.assertEqual([op.get("op") for op in valid_ops], ["add_field", "create_automation_record"])
+
+    def test_field_true_notification_patchset_generate_does_not_500(self) -> None:
+        actor = {
+            "user_id": "test-user",
+            "email": "test@example.com",
+            "role": "admin",
+            "workspace_role": "admin",
+            "platform_role": "superadmin",
+            "workspace_id": "default",
+            "workspaces": [{"workspace_id": "default", "role": "admin", "workspace_name": "Default"}],
+            "claims": {},
+        }
+        automation_store = self.SlugRejectingAutomationStore()
+        with patch.object(main, "_resolve_actor", lambda _request: actor), patch.object(
+            main,
+            "list_workspace_members",
+            lambda _workspace_id: [{"user_id": "user-nick", "email": "nick@octodrop.com", "full_name": "Nick"}],
+        ), patch.object(main, "automation_store", automation_store):
+            with TestClient(main.app) as client:
+                main._octo_ai_seed_in_memory_baseline_modules()
+                create_response = client.post("/octo-ai/sessions", json={"title": "Field true notification"})
+                self.assertEqual(create_response.status_code, 200, create_response.text)
+                session_id = create_response.json()["session"]["id"]
+                _ai_update_record(
+                    _AI_ENTITY_SESSION,
+                    session_id,
+                    {"sandbox_workspace_id": "ws_sandbox_field_true_notification", "sandbox_status": "active"},
+                )
+
+                chat_response = client.post(
+                    f"/octo-ai/sessions/{session_id}/chat",
+                    json={"message": "create a new field in contacts called chris, and when this field is true send a notification to a user"},
+                )
+                self.assertEqual(chat_response.status_code, 200, chat_response.text)
+                chat_plan = chat_response.json().get("plan") or {}
+                self.assertEqual([op.get("op") for op in (chat_plan.get("candidate_operations") or [])], ["add_field"])
+                self.assertEqual((chat_plan.get("required_question_meta") or {}).get("id"), "automation_notify_recipient")
+
+                recipient_response = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={
+                        "action": "custom",
+                        "hints": {
+                            "selected_option_id": "member:user-nick",
+                            "selected_option_value": "nick@octodrop.com",
+                            "selected_option_label": "Nick",
+                            "recipient_email": "nick@octodrop.com",
+                        },
+                    },
+                )
+                self.assertEqual(recipient_response.status_code, 200, recipient_response.text)
+                recipient_plan = recipient_response.json().get("plan") or {}
+                self.assertEqual(
+                    [op.get("op") for op in (recipient_plan.get("candidate_operations") or [])],
+                    ["add_field", "create_automation_record"],
+                )
+
+                approve_response = client.post(
+                    f"/octo-ai/sessions/{session_id}/questions/answer",
+                    json={"action": "custom", "text": "Approved."},
+                )
+                self.assertEqual(approve_response.status_code, 200, approve_response.text)
+
+                patchset_response = client.post(f"/octo-ai/sessions/{session_id}/patchsets/generate", json={})
+                self.assertEqual(patchset_response.status_code, 200, patchset_response.text)
+                self.assertTrue(patchset_response.json().get("ok"), patchset_response.text)
+                patchset_id = (patchset_response.json().get("patchset") or {}).get("id")
+                self.assertIsInstance(patchset_id, str)
+
+                validate_response = client.post(f"/octo-ai/patchsets/{patchset_id}/validate", json={})
+                self.assertEqual(validate_response.status_code, 200, validate_response.text)
+                self.assertTrue(validate_response.json().get("ok"), validate_response.text)
+
+                apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
+                self.assertEqual(apply_response.status_code, 200, apply_response.text)
+                self.assertTrue(apply_response.json().get("ok"), apply_response.text)
+                applied_patchset = _ai_record_data(_ai_get_record(_AI_ENTITY_PATCHSET, patchset_id)) or {}
+                apply_log = applied_patchset.get("apply_log_json")
+                json.dumps(apply_log)
+                automation_results = [
+                    result
+                    for result in (((apply_log or [{}])[0] or {}).get("result") or [])
+                    if isinstance(result, dict) and result.get("artifact_type") == "automation"
+                ]
+                self.assertTrue(automation_results)
+                self.assertIsInstance(automation_results[0].get("updated_at"), str)
+                self.assertEqual(len(automation_store.list()), 1)
+
+                retry_apply_response = client.post(f"/octo-ai/patchsets/{patchset_id}/apply", json={"approved": True})
+                self.assertEqual(retry_apply_response.status_code, 200, retry_apply_response.text)
+                self.assertEqual(len(automation_store.list()), 1)
 
     def test_confirm_plan_answer_accepts_approval_even_when_other_hints_are_present(self) -> None:
         actor = {

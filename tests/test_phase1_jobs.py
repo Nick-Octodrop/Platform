@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -63,6 +64,59 @@ class TestPhase1Jobs(unittest.TestCase):
             strict=True,
         )
         self.assertEqual(out, "quote=QUO-1001;fallback")
+
+    def test_template_render_allows_saved_template_list_append_and_join(self) -> None:
+        out = render_template(
+            "{% set spec_parts = [] %}{% set _ = spec_parts.append('400W') %}{% set _ = spec_parts.append('Full Spectrum') %}{{ spec_parts|join(' | ') }}",
+            {},
+            strict=True,
+        )
+        self.assertEqual(out, "400W | Full Spectrum")
+
+    def test_customer_quote_template_renders_line_specs(self) -> None:
+        template_path = os.path.join(
+            ROOT,
+            "manifests",
+            "commercial_v2",
+            "templates",
+            "customer_quote_template.html.jinja",
+        )
+        with open(template_path, encoding="utf-8") as handle:
+            template_html = handle.read()
+        out = render_template(
+            template_html,
+            {
+                "record": {
+                    "biz_quote.quote_number": "QUO-1001",
+                    "biz_quote.customer_id_label": "Test Customer",
+                    "biz_quote.currency": "EUR",
+                    "biz_quote.subtotal": 850,
+                    "biz_quote.tax_total": 136,
+                    "biz_quote.grand_total": 986,
+                },
+                "line_items": [
+                    {
+                        "biz_quote_line.description": "Test fixture",
+                        "biz_quote_line.quantity": 1,
+                        "biz_quote_line.uom": "ea",
+                        "biz_quote_line.unit_price": 850,
+                        "biz_quote_line.line_total": 850,
+                        "biz_quote_line.wattage_snapshot": 400,
+                        "biz_quote_line.spectrum_snapshot": "Full Spectrum",
+                        "biz_quote_line.ip_rating_snapshot": "IP66",
+                    }
+                ],
+                "template_branding": {},
+                "company": {},
+                "workspace": {},
+            },
+            strict=True,
+        )
+        self.assertIn("400W | Full Spectrum | IP66", out)
+
+    def test_worker_alarm_timeout_bounds_document_generation(self) -> None:
+        with self.assertRaises(TimeoutError):
+            worker._run_with_alarm_timeout("Document generation", 0.01, lambda: time.sleep(1))
 
     def test_template_render_keeps_custom_function_calls_blocked_with_clear_message(self) -> None:
         with self.assertRaises(Exception) as raised:

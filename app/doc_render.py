@@ -17,6 +17,7 @@ from app.email import render_template
 
 _MARGIN_RE = re.compile(r"^(\d+(\.\d+)?)(mm|cm|in|px)$")
 _IMG_SRC_RE = re.compile(r"(<img\b[^>]*?\bsrc\s*=\s*)(['\"])([^'\"]+)(\2)", re.IGNORECASE)
+_CSS_URL_RE = re.compile(r"(url\(\s*)(['\"]?)(https?://[^'\"\)\s]+)(['\"]?)(\s*\))", re.IGNORECASE)
 _MAX_INLINE_ASSET_BYTES = 5 * 1024 * 1024
 logger = logging.getLogger("octo.doc_render")
 _PLAYWRIGHT_LOCK = threading.Lock()
@@ -85,7 +86,43 @@ def _inline_header_footer_assets(template_html: str | None) -> str | None:
             return match.group(0)
         return f"{prefix}{quote}{inlined}{quote}"
 
-    return _IMG_SRC_RE.sub(_replace, template_html)
+    def _replace_css_url(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        source = (match.group(3) or "").strip()
+        suffix = match.group(5)
+        try:
+            inlined = _fetch_asset_as_data_uri(source)
+        except Exception as exc:
+            logger.warning("doc_render:inline_asset_failed url=%s error=%s", source, exc)
+            return match.group(0)
+        return f"{prefix}'{inlined}'{suffix}"
+
+    with_inlined_images = _IMG_SRC_RE.sub(_replace, template_html)
+    return _CSS_URL_RE.sub(_replace_css_url, with_inlined_images)
+
+
+def _block_unresolved_external_requests(page: Any) -> None:
+    if not hasattr(page, "route"):
+        return
+
+    def _handler(route: Any) -> None:
+        try:
+            url = str(getattr(getattr(route, "request", None), "url", "") or "")
+            parsed = urlparse(url)
+            if parsed.scheme in {"http", "https"}:
+                route.abort()
+                return
+            route.continue_()
+        except Exception:
+            try:
+                route.abort()
+            except Exception:
+                return
+
+    try:
+        page.route("**/*", _handler)
+    except Exception as exc:
+        logger.warning("doc_render:route_setup_failed error=%s", exc)
 
 
 def normalize_margins(margins: dict | None) -> dict:
@@ -124,6 +161,7 @@ def render_pdf(
     started_at = time.perf_counter()
     margin_left = (margins or {}).get("left", "0")
     margin_right = (margins or {}).get("right", "0")
+    wrapped_html = _inline_header_footer_assets(html) or ""
     wrapped_header = _inline_header_footer_assets(header_html)
     wrapped_footer = _inline_header_footer_assets(footer_html)
     if header_html:
@@ -146,8 +184,9 @@ def render_pdf(
         logger.info("doc_render:context_created")
         page = context.new_page()
         logger.info("doc_render:page_created")
+        _block_unresolved_external_requests(page)
         page.set_default_timeout(15000)
-        page.set_content(html, wait_until="domcontentloaded", timeout=15000)
+        page.set_content(wrapped_html, wait_until="domcontentloaded", timeout=15000)
         logger.info("doc_render:content_set")
         try:
             page.wait_for_load_state("load", timeout=2000)
