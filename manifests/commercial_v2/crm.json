@@ -2487,6 +2487,14 @@
         },
         "filters": [
           {
+            "id": "all",
+            "label": "All Leads",
+            "domain": {
+              "op": "exists",
+              "field": "crm_lead.title"
+            }
+          },
+          {
             "id": "active",
             "label": "Active Leads",
             "domain": {
@@ -2735,6 +2743,14 @@
         },
         "filters": [
           {
+            "id": "all",
+            "label": "All Opportunities",
+            "domain": {
+              "op": "exists",
+              "field": "crm_opportunity.title"
+            }
+          },
+          {
             "id": "open",
             "label": "Open Opportunities",
             "domain": {
@@ -2972,6 +2988,27 @@
               "tab_label_key": "common.commercial",
               "sections": [
                 "commercial"
+              ]
+            },
+            {
+              "id": "products",
+              "label": "Products",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.biz_quote_line",
+                  "target_module_id": "biz_quotes",
+                  "target": "view:biz_quote_line.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "biz_quote_line.quote_id",
+                    "value": {
+                      "ref": "$record.crm_opportunity.linked_quote_id"
+                    }
+                  },
+                  "create_modal": false
+                }
               ]
             },
             {
@@ -3568,7 +3605,7 @@
               "kind": "view_modes",
               "entity_id": "entity.crm_opportunity",
               "default_mode": "kanban",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 {
                   "mode": "list",
@@ -3611,7 +3648,7 @@
               "kind": "view_modes",
               "entity_id": "entity.crm_lead",
               "default_mode": "kanban",
-              "default_filter_id": "active",
+              "default_filter_id": "all",
               "modes": [
                 {
                   "mode": "list",
@@ -3701,7 +3738,7 @@
               "kind": "view_modes",
               "entity_id": "entity.crm_opportunity",
               "default_mode": "kanban",
-              "default_filter_id": "open",
+              "default_filter_id": "all",
               "modes": [
                 {
                   "mode": "list",

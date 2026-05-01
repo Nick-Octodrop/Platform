@@ -25127,6 +25127,7 @@ def _run_transform_record_action(
                 "transformation_key": transformation_key,
                 "source_record_id": source_id,
                 "source_entity_id": source_entity,
+                "source_record": _mask_record_for_actor(actor, source_found[0], source_found[1], updated_source_record) if _record_visible_for_actor(actor, source_found[0], source_entity, updated_source_record) else None,
                 "source_record_ids": source_record_ids,
                 "child_created": child_created_count,
             }

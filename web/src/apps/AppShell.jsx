@@ -960,7 +960,8 @@ export default function AppShell({
       setSearchParams(params);
       return;
     }
-    const route = buildTargetRoute(moduleId, next, { preserveFrameParams: false });
+    const routeModuleId = opts.moduleId || moduleId;
+    const route = buildTargetRoute(routeModuleId, next, { preserveFrameParams: false });
     if (!route) return;
     const params = opts.preserveParams ? new URLSearchParams(searchParams || "") : new URLSearchParams();
     if (!opts.preserveReturnContext && !opts.returnToCurrent && !opts.returnTo) {
@@ -1122,6 +1123,7 @@ export default function AppShell({
     const contextRecordDraft = runtimeContext?.recordDraft && typeof runtimeContext.recordDraft === "object"
       ? runtimeContext.recordDraft
       : recordDraft;
+    const actionModuleId = runtimeContext?.moduleId || moduleId;
     const resolvedDefaults = action?.defaults && typeof action.defaults === "object"
       ? resolveTemplateRefs(action.defaults, contextRecordDraft || {})
       : action?.defaults;
@@ -1214,7 +1216,7 @@ export default function AppShell({
         pushToast("error", translateRuntime("common.app_shell.inline_action_kind_not_supported"));
         return null;
       }
-      const res = await runManifestAction(moduleId, action.id, {
+      const res = await runManifestAction(actionModuleId, action.id, {
         record_id: contextRecordId,
         record_draft: contextRecordDraft,
         selected_ids: contextSelectedIds,
@@ -1222,7 +1224,7 @@ export default function AppShell({
       const result = res.result || {};
       const actionKind = action.kind;
       if (result.kind === "navigate" && result.target) {
-        setTarget(result.target);
+        setTarget(result.target, { moduleId: actionModuleId });
         return result;
       }
       if (result.kind === "open_form" && result.target) {
@@ -1231,15 +1233,15 @@ export default function AppShell({
         const entityFullId = resolveEntityFullId(manifest, viewEntity);
         const defaultForm = resolveEntityDefaultFormPage(appDef?.defaults, entityFullId);
         if (defaultForm) {
-          setTarget(defaultForm);
+          setTarget(defaultForm, { moduleId: actionModuleId });
         } else {
-          setTarget(`view:${result.target}`);
+          setTarget(`view:${result.target}`, { moduleId: actionModuleId });
         }
         return result;
       }
       if (result.record_id) {
         if (actionKind === "transform_record") {
-          if (action?.stay_on_source_record === true) {
+          if (action?.stay_on_source_record === true || runtimeContext?.stayOnSourceRecord === true) {
             if (typeof runtimeContext?.refreshCurrentRecord === "function") {
               await runtimeContext.refreshCurrentRecord();
             }
@@ -1260,14 +1262,18 @@ export default function AppShell({
           setRefreshTick((v) => v + 1);
         } else {
           const resultEntityId = result.entity_id || action.entity_id;
-          const entityFullId = resolveEntityFullId(manifest, resultEntityId);
-          const defaultForm = resolveEntityDefaultFormPage(appDef?.defaults, entityFullId);
-          if (defaultForm) {
-            setTarget(defaultForm, { recordId: result.record_id });
+          if (actionModuleId !== moduleId) {
+            await navigateToEntityRecord(resultEntityId, result.record_id);
           } else {
-            const formView = getFormViewId(manifest, resultEntityId);
-            if (formView) {
-              setTarget(`view:${formView}`, { recordId: result.record_id });
+            const entityFullId = resolveEntityFullId(manifest, resultEntityId);
+            const defaultForm = resolveEntityDefaultFormPage(appDef?.defaults, entityFullId);
+            if (defaultForm) {
+              setTarget(defaultForm, { recordId: result.record_id });
+            } else {
+              const formView = getFormViewId(manifest, resultEntityId);
+              if (formView) {
+                setTarget(`view:${formView}`, { recordId: result.record_id });
+              }
             }
           }
         }
@@ -2179,6 +2185,7 @@ function AppView({
   async function handleHeaderAction(action) {
     if (!action) return;
     if (actionRunningRef.current) return;
+    const actionModuleId = action?.moduleId || moduleId;
     if (action.modal_id) {
       openManifestModal(action.modal_id, draft || {});
       return;
@@ -2203,7 +2210,7 @@ function AppView({
       return;
     }
     if (action.kind === "navigate" && action.target) {
-      onNavigate?.(action.target);
+      onNavigate?.(action.target, { moduleId: actionModuleId });
       return;
     }
     if (action.kind === "open_form" && action.target) {
@@ -2215,9 +2222,9 @@ function AppView({
         ? { returnToCurrent: true, returnLabel: currentEntityLabel }
         : {};
       if (defaultForm) {
-        onNavigate?.(defaultForm, { preserveParams: true, ...returnOptions });
+        onNavigate?.(defaultForm, { moduleId: actionModuleId, preserveParams: true, ...returnOptions });
       } else {
-        onNavigate?.(`view:${action.target}`, returnOptions);
+        onNavigate?.(`view:${action.target}`, { moduleId: actionModuleId, ...returnOptions });
       }
       return;
     }
@@ -2228,9 +2235,9 @@ function AppView({
         const targetEntityFullId = resolveEntityFullId(manifest, targetEntity);
         const defaultForm = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, targetEntityFullId));
         if (defaultForm) {
-          onNavigate?.(defaultForm, { preserveParams: true });
+          onNavigate?.(defaultForm, { moduleId: actionModuleId, preserveParams: true });
         } else if (formViewId) {
-          onNavigate?.(`view:${formViewId}`);
+          onNavigate?.(`view:${formViewId}`, { moduleId: actionModuleId });
         }
         return;
       }
@@ -2248,6 +2255,7 @@ function AppView({
       setDraft(optimistic);
       setInitialDraft(applyDraftComputed({ ...prevInitial, ...resolvedPatch }));
       const run = onRunAction?.(action, {
+        moduleId: actionModuleId,
         recordId: effectiveRecordId,
         recordDraft: draft || {},
         selectedIds,
@@ -2286,6 +2294,7 @@ function AppView({
     }
     try {
       return await runViewAction(action, {
+        moduleId: actionModuleId,
         recordId: effectiveRecordId,
         recordDraft: draft || {},
         selectedIds,

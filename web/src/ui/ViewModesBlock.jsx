@@ -1780,6 +1780,7 @@ export default function ViewModesBlock({
   onRunAction,
   onLookupCreate,
   actionsMap,
+  moduleId = null,
   externalRefreshTick = 0,
   previewMode = false,
   onConfirm,
@@ -1808,6 +1809,7 @@ export default function ViewModesBlock({
     : null;
   const fieldIndex = useMemo(() => buildFieldIndex(manifest, entityFullId), [manifest, entityFullId]);
   const actions = Array.isArray(manifest?.actions) ? manifest.actions : [];
+  const transformations = Array.isArray(manifest?.transformations) ? manifest.transformations : [];
 
   const [records, setRecords] = useState([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -1916,14 +1918,29 @@ export default function ViewModesBlock({
     return rawValue;
   }
 
+  function findActionTransitionValue(action) {
+    if (!action) return null;
+    if (action.kind === "update_record") {
+      if (resolveEntityFullId(manifest, action.entity_id) !== entityFullId) return null;
+      const patch = action.patch;
+      if (!patch || typeof patch !== "object" || !(effectiveGroupByParam in patch)) return null;
+      return { value: patch[effectiveGroupByParam] };
+    }
+    if (action.kind === "transform_record") {
+      if (resolveEntityFullId(manifest, action.entity_id) !== entityFullId) return null;
+      const transformation = transformations.find((item) => item?.key === action.transformation_key);
+      if (!transformation || resolveEntityFullId(manifest, transformation.source_entity_id) !== entityFullId) return null;
+      const sourcePatch = transformation?.source_update?.patch;
+      if (!sourcePatch || typeof sourcePatch !== "object" || !(effectiveGroupByParam in sourcePatch)) return null;
+      return { value: sourcePatch[effectiveGroupByParam] };
+    }
+    return null;
+  }
+
   function findTransitionAction(record, targetValue) {
     const matches = actions.filter((action) => {
-      if (!action || action.kind !== "update_record" || action.entity_id !== entityFullId) return false;
-      const patch = action.patch;
-      if (!patch || typeof patch !== "object") return false;
-      if (!(effectiveGroupByParam in patch)) return false;
-      if (patch[effectiveGroupByParam] !== targetValue) return false;
-      return true;
+      const transition = findActionTransitionValue(action);
+      return transition?.value === targetValue;
     });
     const visible = matches.filter((action) => {
       if (!action.visible_when) return true;
@@ -1977,12 +1994,21 @@ export default function ViewModesBlock({
       const result = await onRunAction(transitionAction, {
         recordId: rowId,
         recordDraft: { ...(record || {}) },
+        stayOnSourceRecord: transitionAction.kind === "transform_record",
       });
       if (!result) return { ok: false, message: "Transition failed." };
       const patch = transitionAction?.patch && typeof transitionAction.patch === "object" ? transitionAction.patch : null;
-      const nextRecord = result?.record && typeof result.record === "object"
-        ? result.record
-        : { ...(record || {}), ...(patch || {}), [effectiveGroupByParam]: targetValue };
+      const resultEntityId = result?.entity_id ? resolveEntityFullId(manifest, result.entity_id) : null;
+      const sourceEntityId = result?.source_entity_id ? resolveEntityFullId(manifest, result.source_entity_id) : null;
+      const resultRecord =
+        result?.record && typeof result.record === "object" && (!resultEntityId || resultEntityId === entityFullId)
+          ? result.record
+          : null;
+      const sourceRecord =
+        result?.source_record && typeof result.source_record === "object" && (!sourceEntityId || sourceEntityId === entityFullId)
+          ? result.source_record
+          : null;
+      const nextRecord = sourceRecord || resultRecord || { ...(record || {}), ...(patch || {}), [effectiveGroupByParam]: targetValue };
       setRecords((prev) =>
         (Array.isArray(prev) ? prev : []).map((entry) => {
           const entryId = entry?.record_id || entry?.record?.id;
@@ -2732,6 +2758,7 @@ export default function ViewModesBlock({
     if (!recordId) return;
     const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
     onNavigate?.(target, {
+      moduleId: block?.target_module_id || moduleId || undefined,
       recordId,
       recordParamName: openRecordParam,
       preserveParams: true,
@@ -2790,6 +2817,7 @@ export default function ViewModesBlock({
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
   const hideRecordViewsWhileLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
   const preserveMobileKanbanHeight = compactMobile && activeViewKind === "kanban" && showKanbanMode;
+  const showCreateButton = canWriteRecords && block?.allow_create !== false && block?.show_create !== false;
   const showMobileToolbarActions = isMobile && (
     showFilters
     || showSavedViews
@@ -3138,7 +3166,7 @@ export default function ViewModesBlock({
       {!compact && (
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
-          {canWriteRecords && (
+          {showCreateButton && (
             <DaisyTooltip label={translateRuntime("common.new_record_named", { name: entityLabel })} placement="bottom">
               <button
                 className={PRIMARY_BUTTON_SM}

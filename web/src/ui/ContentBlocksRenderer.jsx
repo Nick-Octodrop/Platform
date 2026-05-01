@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect, useRef, createContext, useContext } from "react";
-import { apiFetch, API_URL, getActiveWorkspaceId } from "../api.js";
+import React, { useMemo, useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
+import { apiFetch, API_URL, getActiveWorkspaceId, getManifest } from "../api.js";
 import { getSafeSession } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
@@ -218,6 +218,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
       <ScopedViewModesBlock
         block={block}
         manifest={manifest}
+        moduleId={moduleId}
         searchParams={searchParams}
         setSearchParams={setSearchParams}
         onNavigate={onNavigate}
@@ -238,21 +239,11 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   }
 
   if (kind === "related_list") {
-    const targetViewId = normalizeViewTarget(block.target || block.view);
-    if (!targetViewId) return <div className="alert alert-error">related_list requires a list view target</div>;
-    const mappedBlock = {
-      kind: "view_modes",
-      entity_id: block.entity_id,
-      default_mode: "list",
-      modes: [{ mode: "list", target: `view:${targetViewId}` }],
-      record_domain: block.record_domain || null,
-      create_defaults: block.create_defaults || null,
-      create_modal: block.create_modal !== false,
-    };
     return (
-      <ScopedViewModesBlock
-        block={mappedBlock}
+      <RelatedListBlock
+        block={block}
         manifest={manifest}
+        moduleId={moduleId}
         searchParams={searchParams}
         setSearchParams={setSearchParams}
         onNavigate={onNavigate}
@@ -268,7 +259,6 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
         recordContext={recordContext}
-        forceListOnly={true}
       />
     );
   }
@@ -572,6 +562,172 @@ function ScopedViewModesBlock(props) {
       {...props}
       searchParams={useLocalParams ? localSearchParams : props.searchParams}
       setSearchParams={useLocalParams ? handleSetLocalSearchParams : props.setSearchParams}
+    />
+  );
+}
+
+function findView(manifest, viewId) {
+  const views = Array.isArray(manifest?.views) ? manifest.views : [];
+  return views.find((view) => view?.id === viewId) || null;
+}
+
+function findEntity(manifest, entityId) {
+  const entities = Array.isArray(manifest?.entities) ? manifest.entities : [];
+  return entities.find((entity) => entity?.id === entityId) || null;
+}
+
+function moduleIdFromManifest(manifest) {
+  return manifest?.module?.id || manifest?.module?.key || null;
+}
+
+function RelatedListBlock({
+  block,
+  manifest,
+  moduleId,
+  searchParams,
+  setSearchParams,
+  onNavigate,
+  onRunAction,
+  actionsMap,
+  onConfirm,
+  onPrompt,
+  onLookupCreate,
+  externalRefreshTick,
+  previewMode,
+  bootstrap,
+  bootstrapVersion,
+  bootstrapLoading,
+  canWriteRecords,
+  recordContext,
+}) {
+  const targetViewId = normalizeViewTarget(block?.target || block?.view);
+  const entityId = block?.entity_id;
+  const [externalManifest, setExternalManifest] = useState(null);
+  const [externalState, setExternalState] = useState({ status: "idle", error: null });
+
+  const localView = targetViewId ? findView(manifest, targetViewId) : null;
+  const localEntity = entityId ? findEntity(manifest, entityId) : null;
+  const needsExternalManifest = Boolean(targetViewId && entityId && (!localView || !localEntity || block?.target_module_id));
+  const targetModuleId = block?.target_module_id || block?.module_id || block?.module || null;
+  const effectiveManifest = externalManifest || manifest;
+  const effectiveModuleId = moduleIdFromManifest(effectiveManifest) || targetModuleId || moduleId;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadExternalManifest() {
+      if (!needsExternalManifest) {
+        setExternalManifest(null);
+        setExternalState({ status: "idle", error: null });
+        return;
+      }
+      setExternalState({ status: "loading", error: null });
+      try {
+        if (targetModuleId) {
+          const res = await getManifest(targetModuleId);
+          if (!cancelled) {
+            setExternalManifest(res?.manifest || null);
+            setExternalState({ status: "idle", error: null });
+          }
+          return;
+        }
+        const modulesRes = await apiFetch("/modules");
+        const modules = Array.isArray(modulesRes?.modules) ? modulesRes.modules : Array.isArray(modulesRes) ? modulesRes : [];
+        for (const mod of modules) {
+          const candidateModuleId = mod?.module_id || mod?.id || mod?.moduleId;
+          if (!candidateModuleId || candidateModuleId === moduleId) continue;
+          let candidate;
+          try {
+            candidate = await getManifest(candidateModuleId);
+          } catch {
+            continue;
+          }
+          const candidateManifest = candidate?.manifest;
+          if (findView(candidateManifest, targetViewId) && findEntity(candidateManifest, entityId)) {
+            if (!cancelled) {
+              setExternalManifest(candidateManifest);
+              setExternalState({ status: "idle", error: null });
+            }
+            return;
+          }
+        }
+        if (!cancelled) {
+          setExternalManifest(null);
+          setExternalState({ status: "error", error: "Related list view not found" });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setExternalManifest(null);
+          setExternalState({ status: "error", error: err?.message || "Related list view not found" });
+        }
+      }
+    }
+    loadExternalManifest();
+    return () => {
+      cancelled = true;
+    };
+  }, [needsExternalManifest, targetModuleId, targetViewId, entityId, moduleId]);
+
+  const mappedBlock = {
+    kind: "view_modes",
+    entity_id: entityId,
+    default_mode: "list",
+    modes: [{ mode: "list", target: `view:${targetViewId || ""}` }],
+    record_domain: block.record_domain || null,
+    create_defaults: block.create_defaults || null,
+    create_modal: block.create_modal !== false,
+    allow_create: block.create_modal !== false && block.allow_create !== false && block.show_create !== false,
+    target_module_id: effectiveModuleId,
+    param_scope: block.param_scope || "local",
+  };
+
+  const effectiveActionsMap = useMemo(() => {
+    const map = new Map();
+    for (const action of (Array.isArray(effectiveManifest?.actions) ? effectiveManifest.actions : [])) {
+      if (action?.id) map.set(action.id, action);
+    }
+    return map.size ? map : actionsMap;
+  }, [effectiveManifest, actionsMap]);
+
+  const effectiveRunAction = useCallback(
+    (action, runtimeContext = {}) => {
+      if (!onRunAction) return null;
+      return onRunAction(action, {
+        ...runtimeContext,
+        moduleId: effectiveModuleId,
+      });
+    },
+    [onRunAction, effectiveModuleId]
+  );
+
+  if (!targetViewId) return <div className="alert alert-error">related_list requires a list view target</div>;
+  if (externalState.status === "loading") {
+    return <div className="text-sm text-base-content/60">Loading related records...</div>;
+  }
+  if (externalState.status === "error") {
+    return <div className="alert alert-error">{externalState.error}</div>;
+  }
+
+  return (
+    <ScopedViewModesBlock
+      block={mappedBlock}
+      manifest={effectiveManifest}
+      moduleId={effectiveModuleId}
+      searchParams={searchParams}
+      setSearchParams={setSearchParams}
+      onNavigate={onNavigate}
+      onRunAction={effectiveRunAction}
+      actionsMap={effectiveActionsMap}
+      onConfirm={onConfirm}
+      onPrompt={onPrompt}
+      onLookupCreate={onLookupCreate}
+      externalRefreshTick={externalRefreshTick}
+      previewMode={previewMode}
+      bootstrap={needsExternalManifest ? null : bootstrap}
+      bootstrapVersion={bootstrapVersion}
+      bootstrapLoading={needsExternalManifest ? false : bootstrapLoading}
+      canWriteRecords={canWriteRecords}
+      recordContext={recordContext}
+      forceListOnly={true}
     />
   );
 }
