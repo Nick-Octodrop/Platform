@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { MoreHorizontal, Trash2 } from "lucide-react";
+import { ChevronLeft, MoreHorizontal, Trash2 } from "lucide-react";
 import { renderField, setFieldValue, getFieldValue } from "./field_renderers.jsx";
 import { apiFetch, createRecord, deleteRecord, googlePlaceDetails, googlePlacesAutocomplete, updateRecord } from "../api.js";
 import { evalCondition } from "../utils/conditions.js";
@@ -179,7 +179,7 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
     for (const [targetFieldId, sourceFieldId] of Object.entries(fieldMap)) {
       if (typeof targetFieldId !== "string" || !targetFieldId || typeof sourceFieldId !== "string" || !sourceFieldId) continue;
       if (targetFieldId === lookupFieldId) continue;
-      const currentValue = getFieldValue(baseRecord || {}, targetFieldId);
+      const currentValue = getFieldValue(nextRecord || {}, targetFieldId);
       if (onlyWhenEmpty.has(targetFieldId) && hasMeaningfulValue(currentValue)) {
         const compareFieldId = overwriteIfCurrentMatches[targetFieldId];
         const compareValue =
@@ -388,6 +388,7 @@ export default function FormViewRenderer({
   requiredFields = [],
   hiddenFields = [],
   header,
+  returnControl = null,
   primaryActions = [],
   secondaryActions = [],
   onActionClick,
@@ -401,6 +402,8 @@ export default function FormViewRenderer({
   onRefreshRecord,
   onOptimisticRecordPatch,
   onFieldFocusChange,
+  onFieldCommit,
+  onActiveFieldSnapshotChange,
   bottomActionsMode = "inline",
   renderBlocks = null,
 }) {
@@ -505,6 +508,9 @@ export default function FormViewRenderer({
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
   const mobileActionsRef = useRef(null);
   const formRootRef = useRef(null);
+  const activeFieldCommitRef = useRef(null);
+  const onFieldCommitRef = useRef(onFieldCommit);
+  const onActiveFieldSnapshotChangeRef = useRef(onActiveFieldSnapshotChange);
   const computedRecord = useMemo(
     () => applyComputedFields(fieldIndex || {}, record || {}),
     [fieldIndex, record]
@@ -524,6 +530,77 @@ export default function FormViewRenderer({
     },
     [onFieldFocusChange]
   );
+
+  useEffect(() => {
+    onFieldCommitRef.current = onFieldCommit;
+  }, [onFieldCommit]);
+
+  useEffect(() => {
+    onActiveFieldSnapshotChangeRef.current = onActiveFieldSnapshotChange;
+  }, [onActiveFieldSnapshotChange]);
+
+  const completeFieldCommit = React.useCallback(
+    (fieldId) => {
+      const active = activeFieldCommitRef.current;
+      if (!active || active.fieldId !== fieldId) return;
+      activeFieldCommitRef.current = null;
+      onActiveFieldSnapshotChangeRef.current?.(null);
+      onFieldCommitRef.current?.({
+        fieldId: active.fieldId,
+        beforeRecord: active.beforeRecord,
+      });
+    },
+    []
+  );
+  const completeActiveFieldCommit = React.useCallback(() => {
+    const active = activeFieldCommitRef.current;
+    if (!active?.fieldId) return;
+    completeFieldCommit(active.fieldId);
+  }, [completeFieldCommit]);
+  const beginFieldCommit = React.useCallback(
+    (fieldId, disabled = false) => {
+      if (!fieldId || disabled || readonly || !onFieldCommitRef.current) return;
+      const active = activeFieldCommitRef.current;
+      if (active?.fieldId === fieldId) return;
+      if (active?.fieldId) {
+        onActiveFieldSnapshotChangeRef.current?.(null);
+        onFieldCommitRef.current?.({
+          fieldId: active.fieldId,
+          beforeRecord: active.beforeRecord,
+        });
+      }
+      const snapshot = {
+        fieldId,
+        beforeRecord: computedRecord && typeof computedRecord === "object" ? { ...computedRecord } : {},
+      };
+      activeFieldCommitRef.current = snapshot;
+      onActiveFieldSnapshotChangeRef.current?.(snapshot);
+    },
+    [computedRecord, readonly]
+  );
+
+  useEffect(() => {
+    return () => {
+      completeActiveFieldCommit();
+    };
+  }, [completeActiveFieldCommit]);
+
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      completeActiveFieldCommit();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        completeActiveFieldCommit();
+      }
+    };
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [completeActiveFieldCommit]);
 
   if (sections.length === 0 && !activityConfig) {
     return <div className="alert alert-info">{t("common.no_visible_fields_for_form")}</div>;
@@ -813,6 +890,16 @@ export default function FormViewRenderer({
       {header && !hideHeader && (
         <div className="shrink-0 flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0">
+            {returnControl?.onClick && (
+              <button
+                type="button"
+                className={`${SOFT_BUTTON_SM} whitespace-nowrap gap-1.5`}
+                onClick={returnControl.onClick}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                {returnControl.label || translateRuntime("common.back")}
+              </button>
+            )}
             <h1 className="text-base font-semibold truncate">{titleText}</h1>
             {!autoSaveEnabled && !readonly && isDirty && (
               <span className="text-sm opacity-60">{t("common.unsaved_changes")}</span>
@@ -1037,8 +1124,18 @@ export default function FormViewRenderer({
                     const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record: computedRecord }) : false;
                     const isAttachmentField = field?.type === "attachments";
                     const isBooleanField = field?.type === "bool" || field?.type === "boolean";
+                    const fieldReadonly = readonly || isDisabled;
                     return (
-                      <div key={fieldId}>
+                      <div
+                        key={fieldId}
+                        data-field-id={fieldId}
+                        onFocus={() => beginFieldCommit(fieldId, fieldReadonly)}
+                        onBlur={(event) => {
+                          const nextTarget = event.relatedTarget;
+                          if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+                          completeFieldCommit(fieldId);
+                        }}
+                      >
                         <fieldset className="fieldset">
                           <legend
                             className={[
@@ -1069,60 +1166,60 @@ export default function FormViewRenderer({
                                 entityId={entityId}
                                 recordId={effectiveRecordId}
                                 fieldId={fieldId}
-                                readonly={readonly || isDisabled}
-                                previewMode={previewMode}
-                                buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
-                                description={field?.ui?.description || field?.help_text || ""}
+	                                readonly={fieldReadonly}
+	                                previewMode={previewMode}
+	                                buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
+	                                description={field?.ui?.description || field?.help_text || ""}
                               />
                             )
                           ) : field.type === "lookup" ? (
                             <LookupField
-                              field={field}
-                              value={value}
-                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
-                              onRecordChange={applyRecordChange}
-                              readonly={readonly || isDisabled}
-                              record={computedRecord}
-                              previewMode={previewMode}
-                              canCreate={canCreateLookup}
+	                              field={field}
+	                              value={value}
+	                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+	                              onRecordChange={applyRecordChange}
+	                              readonly={fieldReadonly}
+	                              record={computedRecord}
+	                              previewMode={previewMode}
+	                              canCreate={canCreateLookup}
                               onCreate={onLookupCreate}
                             />
                           ) : field.type === "user" ? (
                             <WorkspaceUserField
-                              field={field}
-                              value={value}
-                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
-                              readonly={readonly || isDisabled}
-                              members={workspaceMembers}
-                              loadingMembers={workspaceMembersLoading}
-                            />
+	                              field={field}
+	                              value={value}
+	                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+	                              readonly={fieldReadonly}
+	                              members={workspaceMembers}
+	                              loadingMembers={workspaceMembersLoading}
+	                            />
                           ) : field.type === "users" ? (
                             <WorkspaceUsersField
-                              field={field}
-                              value={value}
-                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
-                              readonly={readonly || isDisabled}
-                              members={workspaceMembers}
-                              loadingMembers={workspaceMembersLoading}
-                            />
+	                              field={field}
+	                              value={value}
+	                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+	                              readonly={fieldReadonly}
+	                              members={workspaceMembers}
+	                              loadingMembers={workspaceMembersLoading}
+	                            />
                           ) : field.type === "string" && resolveAddressAutocompleteMapping(fieldId) ? (
                             <AddressAutocompleteField
                               field={field}
-                              value={value}
-                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
-                              onRecordChange={applyRecordChange}
-                              readonly={readonly || isDisabled}
-                              record={computedRecord}
-                              previewMode={previewMode}
-                            />
+	                              value={value}
+	                              onChange={(val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val))}
+	                              onRecordChange={applyRecordChange}
+	                              readonly={fieldReadonly}
+	                              record={computedRecord}
+	                              previewMode={previewMode}
+	                            />
                           ) : (
                             renderField(
                               field,
-                              value,
-                              (val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val)),
-                              readonly || isDisabled,
-                              computedRecord
-                            )
+	                              value,
+	                              (val) => applyRecordChange(setFieldValue(computedRecord, fieldId, val)),
+	                              fieldReadonly,
+	                              computedRecord
+	                            )
                           )}
                           {!isAttachmentField && field.help_text && <span className="label label-text-alt opacity-50">{field.help_text}</span>}
                           {showValidation && validationErrors[fieldId] && <div className="text-xs text-error">{validationErrors[fieldId]}</div>}

@@ -50995,7 +50995,7 @@ def _apply_lookup_populate_config_for_record(
             current_value = updated.get(target_field_id)
             if target_field_id in only_when_empty and _lookup_populate_has_value(current_value):
                 compare_field_id = overwrite_if_current_matches.get(target_field_id)
-                compare_value = updated.get(compare_field_id) if isinstance(compare_field_id, str) else None
+                compare_value = base.get(compare_field_id) if isinstance(compare_field_id, str) else None
                 if not (isinstance(compare_field_id, str) and _lookup_populate_values_equivalent(current_value, compare_value)):
                     continue
             if source_field_id not in lookup_record:
@@ -52070,6 +52070,9 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     if denied:
         return denied
     body = await _safe_json(request)
+    activity_options = body.get("_activity") if isinstance(body, dict) and isinstance(body.get("_activity"), dict) else {}
+    suppress_activity_changes = activity_options.get("suppress_changes") is True or activity_options.get("suppress_activity") is True
+    suppress_chatter = activity_options.get("suppress_chatter") is True or activity_options.get("suppress_activity") is True
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
     existing = generic_records.get(entity_id, record_id)
@@ -52143,7 +52146,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
         _resp_cache_invalidate_entity(entity_id)
         _resp_cache_invalidate_module_bootstrap(found[0])
         activity_cfg = _activity_view_config(found[2], found[1].get("id"))
-        if isinstance(activity_cfg, dict) and activity_cfg.get("show_changes", True) is not False:
+        if not suppress_activity_changes and isinstance(activity_cfg, dict) and activity_cfg.get("show_changes", True) is not False:
             tracked_fields = activity_cfg.get("tracked_fields") if isinstance(activity_cfg.get("tracked_fields"), list) else None
             changes = _collect_activity_changes(found[1], before_record, after_record, tracked_fields=tracked_fields)
             if changes:
@@ -52156,7 +52159,8 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                     )
                 except Exception:
                     pass
-        _add_chatter_entry(entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
+        if not suppress_chatter:
+            _add_chatter_entry(entity_id, record_id, "system", "Record updated", getattr(request.state, "user", None))
         changed = _changed_fields(before_record, after_record)
         before_snapshot = _automation_record_snapshot(before_record, found[1])
         after_snapshot = _automation_record_snapshot(after_record, found[1])
@@ -52325,6 +52329,81 @@ async def list_activity(
     items = rows[offset : offset + limit_cap]
     next_cursor = str(offset + limit_cap) if len(rows) > offset + limit_cap else None
     return _ok_response({"items": items, "next_cursor": next_cursor})
+
+
+@app.post("/api/activity/change")
+@app.post("/activity/change")
+async def add_activity_change(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    raw_entity = body.get("entity_id")
+    record_id = str(body.get("record_id") or "").strip()
+    if not isinstance(raw_entity, str) or not raw_entity.strip():
+        return _error_response("ACTIVITY_REQUIRED", "entity_id required", "entity_id", status=400)
+    if not record_id:
+        return _error_response("ACTIVITY_REQUIRED", "record_id required", "record_id", status=400)
+    normalized_entity = _normalize_entity_id(raw_entity)
+    found = _find_entity_def(request, normalized_entity)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    denied = _entity_access_denied_response(actor, found[0], normalized_entity, write=True)
+    if denied:
+        return denied
+    existing = generic_records.get(normalized_entity, record_id)
+    if not existing:
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    current_record = existing.get("record") if isinstance(existing, dict) else None
+    if not isinstance(current_record, dict) or not _record_visible_for_actor(actor, found[0], normalized_entity, current_record):
+        return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    if not _record_write_allowed_for_actor(actor, found[0], normalized_entity, current_record):
+        return _error_response("FORBIDDEN", "Record write access denied", "record_id", status=403)
+
+    activity_cfg = _activity_view_config(found[2], found[1].get("id"))
+    if not isinstance(activity_cfg, dict) or activity_cfg.get("show_changes", True) is False:
+        return _ok_response({"item": None, "changes": []})
+
+    before_record = body.get("before_record") if isinstance(body.get("before_record"), dict) else {}
+    requested_fields = body.get("fields") if isinstance(body.get("fields"), list) else None
+    tracked_fields = activity_cfg.get("tracked_fields") if isinstance(activity_cfg.get("tracked_fields"), list) else None
+    tracked_set = {field for field in tracked_fields if isinstance(field, str)} if tracked_fields else None
+    if requested_fields is not None:
+        seen: set[str] = set()
+        candidate_fields: list[str] = []
+        for field in requested_fields:
+            if not isinstance(field, str) or not field or field in seen:
+                continue
+            if tracked_set is not None and field not in tracked_set:
+                continue
+            seen.add(field)
+            candidate_fields.append(field)
+    else:
+        candidate_fields = list(tracked_set) if tracked_set is not None else []
+
+    if requested_fields is not None and not candidate_fields:
+        return _ok_response({"item": None, "changes": []})
+
+    changes = _collect_activity_changes(
+        found[1],
+        before_record,
+        current_record,
+        tracked_fields=candidate_fields if candidate_fields else None,
+    )
+    if not changes:
+        return _ok_response({"item": None, "changes": []})
+    item = activity_store.add_change(
+        found[1].get("id"),
+        record_id,
+        changes,
+        actor=getattr(request.state, "user", None),
+    )
+    return _ok_response({"item": item, "changes": changes})
 
 
 _MENTION_EMAIL_RE = re.compile(r"@([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", re.IGNORECASE)

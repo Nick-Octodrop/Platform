@@ -1801,6 +1801,11 @@ export default function ViewModesBlock({
   const entityFullId = resolveEntityFullId(manifest, block?.entity_id);
   const entityDef = (manifest?.entities || []).find((e) => e.id === entityFullId);
   const entityLabel = entityDef?.label || humanizeEntityId(entityFullId);
+  const recordContextEntityFullId = recordContext?.entityId ? resolveEntityFullId(manifest, recordContext.entityId) : null;
+  const recordContextEntityDef = (manifest?.entities || []).find((e) => e.id === recordContextEntityFullId);
+  const recordContextReturnLabel = recordContext?.recordId
+    ? recordContextEntityDef?.label || humanizeEntityId(recordContextEntityFullId)
+    : null;
   const fieldIndex = useMemo(() => buildFieldIndex(manifest, entityFullId), [manifest, entityFullId]);
   const actions = Array.isArray(manifest?.actions) ? manifest.actions : [];
 
@@ -2721,6 +2726,19 @@ export default function ViewModesBlock({
 
   const openRecordTarget = listView?.open_record?.to || resolveEntityDefaultFormPage(appDefaults, entityFullId);
   const openRecordParam = listView?.open_record?.param || "record";
+  function handleOpenRecord(row) {
+    if (!openRecordTarget) return;
+    const recordId = row?.record_id || row?.record?.id;
+    if (!recordId) return;
+    const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
+    onNavigate?.(target, {
+      recordId,
+      recordParamName: openRecordParam,
+      preserveParams: true,
+      returnToCurrent: Boolean(recordContextReturnLabel),
+      returnLabel: recordContextReturnLabel || undefined,
+    });
+  }
   const selectedRows = useMemo(() => {
     if (!Array.isArray(records) || !selectedIds.length) return [];
     const selected = new Set(selectedIds.map((id) => String(id)));
@@ -3662,13 +3680,7 @@ export default function ViewModesBlock({
                   const allIds = Array.isArray(ids) ? ids : records.map((r) => r.record_id || r.record?.id).filter(Boolean);
                   setSelectedIds(allIds);
                 }}
-                onSelectRow={(row) => {
-                  if (!openRecordTarget) return;
-                  const recordId = row.record_id || row.record?.id;
-                  if (!recordId) return;
-                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-                }}
+                onSelectRow={handleOpenRecord}
               />
             </div>
           </div>
@@ -3684,13 +3696,7 @@ export default function ViewModesBlock({
                 groupBy={effectiveGroupByParam}
                 canDragCards={kanbanCanDrag}
                 onMoveCard={handleKanbanMove}
-                onSelectRow={(row) => {
-                  if (!openRecordTarget) return;
-                  const recordId = row.record_id || row.record?.id;
-                  if (!recordId) return;
-                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-                }}
+                onSelectRow={handleOpenRecord}
               />
             </div>
           </div>
@@ -3703,13 +3709,7 @@ export default function ViewModesBlock({
                 view={activeView}
                 records={records}
                 entityDef={entityDef}
-                onSelectRow={(row) => {
-                  if (!openRecordTarget) return;
-                  const recordId = row.record_id || row.record?.id;
-                  if (!recordId) return;
-                  const target = openRecordTarget.startsWith("page:") || openRecordTarget.startsWith("view:") ? openRecordTarget : `page:${openRecordTarget}`;
-                  onNavigate?.(target, { recordId, recordParamName: openRecordParam, preserveParams: true });
-                }}
+                onSelectRow={handleOpenRecord}
               />
             </div>
           </div>

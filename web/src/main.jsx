@@ -1,10 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { unstable_HistoryRouter as HistoryRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.jsx";
 import "./styles.css";
 import { applyBrandColors, applyTheme, getBrandColors, getInitialTheme } from "./theme/theme.js";
+import { guardedBrowserHistory } from "./navigation/guardedHistory.js";
 
 const ENABLE_DEV_PWA = import.meta.env.VITE_ENABLE_DEV_PWA === "1";
 const SHOULD_REGISTER_PWA = !import.meta.env.DEV || ENABLE_DEV_PWA;
@@ -242,7 +243,7 @@ if (typeof window !== "undefined") {
 
 const root = createRoot(document.getElementById("root"));
 root.render(
-  <BrowserRouter>
+  <HistoryRouter history={guardedBrowserHistory}>
     <App />
-  </BrowserRouter>
+  </HistoryRouter>
 );

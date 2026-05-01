@@ -9,6 +9,7 @@ import { getDevMode, subscribeDevMode } from "../dev/devMode.js";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import { useAccessContext } from "../access.js";
 import { applyComputedFields } from "../utils/computedFields.js";
+import { getFieldValue } from "../ui/field_renderers.jsx";
 import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
 import {
   buildFormDraftStorageKey,
@@ -20,6 +21,7 @@ import {
 } from "../utils/formDraftPersistence.js";
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
+import { registerFormNavigationGuard } from "../navigation/formNavigationGuard.js";
 
 export default function EntityRecordPage() {
   const { t, version } = useI18n();
@@ -46,6 +48,8 @@ export default function EntityRecordPage() {
   const autoSaveTimerRef = React.useRef(null);
   const saveInFlightRef = React.useRef(false);
   const pendingAutoSaveRef = React.useRef(false);
+  const pendingActivityCommitRef = React.useRef(null);
+  const activeFieldSnapshotRef = React.useRef(null);
   const draftRef = React.useRef({});
 
   useEffect(() => {
@@ -60,7 +64,7 @@ export default function EntityRecordPage() {
     const handler = () => setDevMode(getDevMode());
     const unsubscribe = subscribeDevMode(handler);
     return unsubscribe;
-  }, []);
+  }, [fieldIndex]);
 
   const selected = index?.byId?.[entity] || null;
   const fullEntityId = selected?.entityFullId || null;
@@ -84,6 +88,147 @@ export default function EntityRecordPage() {
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+
+  function activityComparableValue(value) {
+    if (value === "" || value === null || value === undefined) return "";
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+
+  function activityValuesEqual(left, right) {
+    return activityComparableValue(left) === activityComparableValue(right);
+  }
+
+  function collectCommittedActivityFields(beforeRecord, afterRecord) {
+    if (!beforeRecord || typeof beforeRecord !== "object" || !afterRecord || typeof afterRecord !== "object") return [];
+    return Object.keys(fieldIndex || {}).filter((fieldId) => {
+      const field = fieldIndex[fieldId];
+      if (!field || field.type === "uuid" || fieldId === "id" || fieldId === "record_id") return false;
+      const beforeValue = getFieldValue(beforeRecord, fieldId);
+      const afterValue = getFieldValue(afterRecord, fieldId);
+      return !activityValuesEqual(beforeValue, afterValue);
+    });
+  }
+
+  function queueActivityCommit(beforeRecord) {
+    if (!beforeRecord || typeof beforeRecord !== "object") return false;
+    const afterRecord = draftRef.current || {};
+    const fields = collectCommittedActivityFields(beforeRecord, afterRecord);
+    if (fields.length === 0) return false;
+    const pending = pendingActivityCommitRef.current || { beforeRecord: {}, fields: new Set() };
+    for (const fieldId of fields) {
+      if (!pending.fields.has(fieldId)) {
+        pending.beforeRecord[fieldId] = getFieldValue(beforeRecord, fieldId);
+      }
+      pending.fields.add(fieldId);
+    }
+    pendingActivityCommitRef.current = pending;
+    return true;
+  }
+
+  function queueActiveFieldCommit() {
+    const snapshot = activeFieldSnapshotRef.current;
+    if (!snapshot?.beforeRecord || typeof snapshot.beforeRecord !== "object") return false;
+    return queueActivityCommit(snapshot.beforeRecord);
+  }
+
+  function handleActiveFieldSnapshotChange(snapshot) {
+    activeFieldSnapshotRef.current = snapshot && typeof snapshot === "object" ? snapshot : null;
+  }
+
+  async function waitForSaveIdle(timeoutMs = 8000) {
+    if (!saveInFlightRef.current) return true;
+    const startedAt = Date.now();
+    while (saveInFlightRef.current) {
+      if (Date.now() - startedAt > timeoutMs) return false;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return true;
+  }
+
+  async function flushPendingActivityCommit() {
+    const pending = pendingActivityCommitRef.current;
+    if (!pending || !pending.fields || pending.fields.size === 0) return false;
+    if (!selected || !id) return false;
+    const fields = Array.from(pending.fields).filter(Boolean);
+    const beforeRecord = pending.beforeRecord && typeof pending.beforeRecord === "object" ? pending.beforeRecord : {};
+    pendingActivityCommitRef.current = null;
+    try {
+      const res = await apiFetch("/api/activity/change", {
+        method: "POST",
+        body: JSON.stringify({
+          entity_id: selected.entityFullId || entity,
+          record_id: id,
+          before_record: beforeRecord,
+          fields,
+        }),
+      });
+      if (Array.isArray(res?.changes) && res.changes.length > 0 && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("octo:activity-mutated", {
+            detail: { entityId: selected.entityFullId || entity, recordId: id },
+          })
+        );
+      }
+      return true;
+    } catch (err) {
+      console.warn("activity_commit_failed", err);
+      return false;
+    }
+  }
+
+  async function saveAndFlushCommittedChanges({ includeActiveField = false, showValidationErrors = false } = {}) {
+    if (!canWriteRecords || !id || !record) return true;
+    if (includeActiveField) {
+      queueActiveFieldCommit();
+    }
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (saveInFlightRef.current) {
+      pendingAutoSaveRef.current = true;
+      const idle = await waitForSaveIdle();
+      if (!idle) {
+        setAutoSaveState("idle");
+        return false;
+      }
+    }
+    if (isDirtyRef.current) {
+      saveInFlightRef.current = true;
+      setAutoSaveState("saving");
+      try {
+        const saved = await handleSave({ silent: true, suppressActivity: true });
+        setAutoSaveState(saved ? "saved" : "idle");
+        if (!saved) return false;
+      } finally {
+        saveInFlightRef.current = false;
+      }
+    }
+    if (pendingActivityCommitRef.current) {
+      await flushPendingActivityCommit();
+    }
+    return true;
+  }
+
+  async function handleFieldCommit(commit) {
+    if (!viewForm?.header?.auto_save || !canWriteRecords || !id || !record) return;
+    if (!queueActivityCommit(commit?.beforeRecord)) return;
+    if (saveInFlightRef.current) {
+      pendingAutoSaveRef.current = true;
+      return;
+    }
+    if (!isDirtyRef.current) {
+      await flushPendingActivityCommit();
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -156,14 +301,28 @@ export default function EntityRecordPage() {
   }, [draftStorageKey, draft, isDirty, record]);
 
   useEffect(() => {
-    if (!isDirty) return undefined;
     const onBeforeUnload = (event) => {
+      queueActiveFieldCommit();
+      if (!isDirtyRef.current && !pendingActivityCommitRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [isDirty]);
+  }, []);
+
+  useEffect(() => {
+    if (!id || !record) return undefined;
+    return registerFormNavigationGuard(() =>
+      saveAndFlushCommittedChanges({ includeActiveField: true, showValidationErrors: true })
+    );
+  }, [id, record, selected, fieldIndex, canWriteRecords]);
+
+  async function navigateAfterSave(path) {
+    const ok = await saveAndFlushCommittedChanges({ includeActiveField: true, showValidationErrors: true });
+    if (!ok) return;
+    navigate(path);
+  }
 
   async function handleSave(options = {}) {
     if (!selected) return false;
@@ -172,9 +331,14 @@ export default function EntityRecordPage() {
     if (!silent) setLoading(true);
     try {
       const payload = normalizeManifestRecordPayload(fieldIndex, draftRef.current || {});
+      const suppressActivity = options?.suppressActivity === true;
       const res = await apiFetch(`/records/${entity}/${id}`, {
         method: "PUT",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(
+          suppressActivity
+            ? { record: payload, _activity: { suppress_changes: true, suppress_chatter: true } }
+            : payload
+        ),
       });
       const saved = applyComputedFields(fieldIndex, res?.record || payload);
       setRecord(saved);
@@ -204,14 +368,25 @@ export default function EntityRecordPage() {
       saveInFlightRef.current = true;
       setAutoSaveState("saving");
       try {
-        const saved = await handleSave({ silent: true });
+        const saved = await handleSave({ silent: true, suppressActivity: true });
         setAutoSaveState(saved ? "saved" : "idle");
+        if (saved && !pendingAutoSaveRef.current) {
+          await flushPendingActivityCommit();
+        }
       } finally {
         saveInFlightRef.current = false;
         if (pendingAutoSaveRef.current) {
           pendingAutoSaveRef.current = false;
-          const saved = await handleSave({ silent: true });
-          setAutoSaveState(saved ? "saved" : "idle");
+          saveInFlightRef.current = true;
+          try {
+            const saved = await handleSave({ silent: true, suppressActivity: true });
+            setAutoSaveState(saved ? "saved" : "idle");
+            if (saved) {
+              await flushPendingActivityCommit();
+            }
+          } finally {
+            saveInFlightRef.current = false;
+          }
         }
       }
     }, debounceMs);
@@ -259,7 +434,7 @@ export default function EntityRecordPage() {
         <div className="md:mt-4 flex flex-col gap-4 min-w-0">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold">{selected.displayName}</h2>
-            <button className="btn btn-sm" onClick={() => navigate(`/data/${entity}`)}>{t("common.back")}</button>
+            <button className="btn btn-sm" onClick={() => navigateAfterSave(`/data/${entity}`)}>{t("common.back")}</button>
           </div>
           {devMode && (
             <div className="rounded-box border border-base-300 bg-base-100 p-4">
@@ -286,11 +461,17 @@ export default function EntityRecordPage() {
                 fieldIndex={fieldIndex}
                 record={draft}
                 autoSaveState={autoSaveState}
-                onChange={(next) => setDraft(applyComputedFields(fieldIndex, next))}
+                onChange={(next) => {
+                  const computed = applyComputedFields(fieldIndex, next);
+                  draftRef.current = computed;
+                  setDraft(computed);
+                }}
                 onSave={() => handleSave()}
                 readonly={!canWriteRecords}
                 showValidation={showValidation}
                 header={viewForm.header || null}
+                onFieldCommit={handleFieldCommit}
+                onActiveFieldSnapshotChange={handleActiveFieldSnapshotChange}
               />
             </div>
           )}

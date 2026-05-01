@@ -196,8 +196,14 @@
             "populate_from_lookup": {
               "field_map": {
                 "biz_invoice.currency": "biz_contact.currency_preference",
-                "biz_invoice.payment_terms": "biz_contact.default_payment_terms"
+                "biz_invoice.payment_terms": "biz_contact.default_payment_terms",
+                "biz_invoice.customer_contact_email": "biz_contact.email",
+                "biz_invoice.customer_contact_phone": "biz_contact.phone"
               },
+              "only_when_empty": [
+                "biz_invoice.customer_contact_email",
+                "biz_invoice.customer_contact_phone"
+              ],
               "clear_fields": [
                 "biz_invoice.customer_contact_person_id",
                 "biz_invoice.customer_contact_name",
@@ -234,17 +240,20 @@
         {
           "id": "biz_invoice.customer_contact_name",
           "type": "string",
-          "label": "Customer Contact"
+          "label": "Customer Contact",
+          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available."
         },
         {
           "id": "biz_invoice.customer_contact_email",
           "type": "string",
-          "label": "Customer Contact Email"
+          "label": "Customer Contact Email",
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so the invoice keeps contact details after reload."
         },
         {
           "id": "biz_invoice.customer_contact_phone",
           "type": "string",
-          "label": "Customer Contact Phone"
+          "label": "Customer Contact Phone",
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the invoice."
         },
         {
           "id": "biz_invoice.source_order_id",

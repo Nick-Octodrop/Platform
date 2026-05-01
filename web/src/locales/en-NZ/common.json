@@ -29,6 +29,7 @@
   "user_id": "user id",
   "unknown_field_type": "Unknown field type: {{type}}",
   "back": "Back",
+  "back_to_entity": "Back to {{entity}}",
   "refresh": "Refresh",
   "open": "Open",
   "close": "Close",

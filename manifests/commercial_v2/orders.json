@@ -167,8 +167,14 @@
             "populate_from_lookup": {
               "field_map": {
                 "biz_order.currency": "biz_contact.currency_preference",
-                "biz_order.payment_terms": "biz_contact.default_payment_terms"
+                "biz_order.payment_terms": "biz_contact.default_payment_terms",
+                "biz_order.customer_contact_email": "biz_contact.email",
+                "biz_order.customer_contact_phone": "biz_contact.phone"
               },
+              "only_when_empty": [
+                "biz_order.customer_contact_email",
+                "biz_order.customer_contact_phone"
+              ],
               "skip_field_map_when_fields_present": [
                 "biz_order.customer_contact_person_id"
               ],
@@ -209,19 +215,19 @@
           "id": "biz_order.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available."
         },
         {
           "id": "biz_order.customer_contact_email",
           "type": "string",
           "label": "Customer Contact Email",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so the order keeps contact details after reload."
         },
         {
           "id": "biz_order.customer_contact_phone",
           "type": "string",
           "label": "Customer Contact Phone",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the order."
         },
         {
           "id": "biz_order.source_quote_id",

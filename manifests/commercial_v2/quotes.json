@@ -361,20 +361,20 @@
           "id": "biz_quote.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available.",
           "label_key": "quotes.entities.biz_quote.fields.customer_contact_name.label"
         },
         {
           "id": "biz_quote.customer_contact_email",
           "type": "string",
           "label": "Customer Contact Email",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so the quote keeps contact details after reload."
         },
         {
           "id": "biz_quote.customer_contact_phone",
           "type": "string",
           "label": "Customer Contact Phone",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the quote."
         },
         {
           "id": "biz_quote.customer_reference",
@@ -618,8 +618,9 @@
         },
         {
           "id": "biz_quote.payment_terms",
-          "type": "string",
+          "type": "text",
           "label": "Payment Terms",
+          "help_text": "Customer-facing payment terms. Use this for longer staged or project-specific payment wording.",
           "label_key": "quotes.entities.biz_quote.fields.payment_terms.label"
         },
         {
@@ -630,9 +631,46 @@
         },
         {
           "id": "biz_quote.shipping_terms",
-          "type": "string",
+          "type": "text",
           "label": "Shipping Terms",
+          "help_text": "Customer-facing shipping, delivery, and logistics terms.",
           "label_key": "quotes.entities.biz_quote.fields.shipping_terms.label"
+        },
+        {
+          "id": "biz_quote.sector",
+          "type": "string",
+          "label": "Sector",
+          "help_text": "Commercial sector copied from the opportunity where available."
+        },
+        {
+          "id": "biz_quote.crop_type",
+          "type": "string",
+          "label": "Type of Crop",
+          "help_text": "Primary crop or crop group copied from the opportunity where available."
+        },
+        {
+          "id": "biz_quote.product_interest",
+          "type": "string",
+          "label": "Products",
+          "help_text": "Products, product family, or system type discussed with the customer."
+        },
+        {
+          "id": "biz_quote.spectrum_interest",
+          "type": "string",
+          "label": "Spectrum",
+          "help_text": "Spectrum or lighting recipe requirement discussed for this quote."
+        },
+        {
+          "id": "biz_quote.company_address",
+          "type": "text",
+          "label": "Company Address",
+          "help_text": "Customer company address snapshot for quote context."
+        },
+        {
+          "id": "biz_quote.site_address",
+          "type": "text",
+          "label": "Site Address",
+          "help_text": "Project/site address snapshot for quote context."
         },
         {
           "id": "biz_quote.validity_notes",
@@ -921,6 +959,18 @@
           "label_key": "quotes.entities.biz_quote.fields.estimated_buy_total.label"
         },
         {
+          "id": "biz_quote.inbound_freight_cost",
+          "type": "number",
+          "label": "Inbound Freight / Delivery Cost to Us",
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "biz_quote.currency",
+            "precision": 2
+          },
+          "help_text": "Internal freight or delivery cost not charged to the customer. Included in quote margin."
+        },
+        {
           "id": "biz_quote.estimated_margin_amount",
           "type": "number",
           "label": "Estimated Margin Amount",
@@ -937,7 +987,15 @@
                       "ref": "$current.biz_quote.grand_total"
                     },
                     {
-                      "ref": "$current.biz_quote.estimated_buy_total"
+                      "op": "add",
+                      "args": [
+                        {
+                          "ref": "$current.biz_quote.estimated_buy_total"
+                        },
+                        {
+                          "ref": "$current.biz_quote.inbound_freight_cost"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -1131,6 +1189,7 @@
           "id": "biz_quote_line.available_stock_snapshot",
           "type": "number",
           "label": "Available Stock Snapshot",
+          "help_text": "Current available stock copied from the product. 0 is expected for made-to-order, custom, or non-stock products.",
           "readonly": true,
           "default": 0
         },
@@ -1199,7 +1258,7 @@
         {
           "id": "biz_quote_line.unit_price",
           "type": "number",
-          "label": "Unit Price",
+          "label": "Sell Unit Price",
           "help_text": "Customer sell price for this quote line. Sales users can adjust this per quote.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.unit_price.label"
@@ -1261,8 +1320,8 @@
         {
           "id": "biz_quote_line.default_buy_price_snapshot",
           "type": "number",
-          "label": "Buy Price Snapshot",
-          "help_text": "Quote cost snapshot copied from the product Quote Cost. Used for margin calculations and hidden from Sales users.",
+          "label": "Unit Cost",
+          "help_text": "Quote cost snapshot copied from the product Quote Cost. Adjust for custom items so margin stays accurate.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.default_buy_price_snapshot.label"
         },
@@ -2564,6 +2623,12 @@
             "biz_quote.payment_terms",
             "biz_quote.incoterm",
             "biz_quote.shipping_terms",
+            "biz_quote.sector",
+            "biz_quote.crop_type",
+            "biz_quote.product_interest",
+            "biz_quote.spectrum_interest",
+            "biz_quote.company_address",
+            "biz_quote.site_address",
             "biz_quote.linked_customer_order_id"
           ],
           "section_title_key": "quotes.views.form.sections.summary.title"
@@ -2702,12 +2767,19 @@
               },
               {
                 "field_id": "biz_quote_line.unit_price",
-                "label": "Unit Price",
-                "label_key": "common.unit_price",
+                "label": "Sell Price",
                 "type": "number",
                 "width": 155,
                 "align": "right",
                 "currency_field": "biz_quote_line.currency_snapshot"
+              },
+              {
+                "field_id": "biz_quote_line.default_buy_price_snapshot",
+                "label": "Unit Cost",
+                "type": "number",
+                "width": 135,
+                "align": "right",
+                "currency_field": "biz_quote_line.buy_currency_snapshot"
               },
               {
                 "field_id": "biz_quote_line.line_discount_percent",
@@ -2776,6 +2848,7 @@
           "columns": 2,
           "fields": [
             "biz_quote.estimated_buy_total",
+            "biz_quote.inbound_freight_cost",
             "biz_quote.estimated_margin_amount",
             "biz_quote.estimated_margin_percent"
           ],
@@ -2914,17 +2987,14 @@
           "biz_quote.document_language",
           "biz_quote.project_site_name",
           "biz_quote.script_template_id",
-          "biz_quote.payment_terms",
           "biz_quote.incoterm",
-          "biz_quote.shipping_terms",
+          "biz_quote.inbound_freight_cost",
+          "biz_quote.sector",
+          "biz_quote.crop_type",
+          "biz_quote.product_interest",
+          "biz_quote.spectrum_interest",
           "biz_quote.tax_percent",
           "biz_quote.grand_total",
-          "biz_quote.loss_reason",
-          "biz_quote.opening_message",
-          "biz_quote.quote_script_body",
-          "biz_quote.transport_disclaimer",
-          "biz_quote.closing_text",
-          "biz_quote.internal_notes",
           "biz_quote.linked_customer_order_id",
           "biz_quote.primary_document_id",
           "biz_quote.generated_files"

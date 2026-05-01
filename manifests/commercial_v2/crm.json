@@ -389,21 +389,21 @@
           "id": "crm_lead.contact_name",
           "type": "string",
           "label": "Contact Name",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person, but can be typed manually for new leads before the person record exists.",
           "label_key": "crm.entities.crm_lead.fields.contact_name.label"
         },
         {
           "id": "crm_lead.contact_email",
           "type": "string",
           "label": "Contact Email",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person or company. Editable so lead contact details are not lost when the person has not been created yet.",
           "label_key": "crm.entities.crm_lead.fields.contact_email.label"
         },
         {
           "id": "crm_lead.contact_phone",
           "type": "string",
           "label": "Contact Phone",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person or company. Editable so call details can be captured directly on the lead.",
           "label_key": "crm.entities.crm_lead.fields.contact_phone.label"
         },
         {
@@ -522,9 +522,7 @@
           "crm_lead.estimated_value",
           "crm_lead.next_action",
           "crm_lead.next_activity_date",
-          "crm_lead.linked_opportunity_id",
-          "crm_lead.disqualification_reason",
-          "crm_lead.notes"
+          "crm_lead.linked_opportunity_id"
         ]
       },
       "label_key": "crm.entities.crm_lead.label"
@@ -625,21 +623,21 @@
           "id": "crm_opportunity.primary_contact_name",
           "type": "string",
           "label": "Primary Contact",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available.",
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_name.label"
         },
         {
           "id": "crm_opportunity.primary_contact_email",
           "type": "string",
           "label": "Contact Email",
-          "readonly": true,
+          "help_text": "Auto-filled from the selected contact person or company. Editable so opportunity contact details remain visible after reload.",
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_email.label"
         },
         {
           "id": "crm_opportunity.primary_contact_phone",
           "type": "string",
           "label": "Contact Phone",
-          "readonly": true
+          "help_text": "Auto-filled from the selected contact person or company. Editable so phone details can be captured directly on the opportunity."
         },
         {
           "id": "crm_opportunity.site_id",
@@ -663,6 +661,15 @@
             }
           },
           "label_key": "crm.entities.crm_opportunity.fields.site_id.label"
+        },
+        {
+          "id": "crm_opportunity.source_lead_id",
+          "type": "lookup",
+          "label": "Source Lead",
+          "entity": "entity.crm_lead",
+          "display_field": "crm_lead.title",
+          "help_text": "Filled when this opportunity is created by qualifying a lead, so lead activity context remains visible.",
+          "label_key": "crm.entities.crm_opportunity.fields.source_lead_id.label"
         },
         {
           "id": "crm_opportunity.owner_user_id",
@@ -983,6 +990,42 @@
           "label_key": "crm.entities.crm_opportunity.fields.quote_state.label"
         },
         {
+          "id": "crm_opportunity.sector",
+          "type": "string",
+          "label": "Sector",
+          "help_text": "Commercial sector for reporting and handover, for example greenhouse, vertical farm, research, or propagation."
+        },
+        {
+          "id": "crm_opportunity.crop_type",
+          "type": "string",
+          "label": "Type of Crop",
+          "help_text": "Primary crop or crop group for the opportunity."
+        },
+        {
+          "id": "crm_opportunity.product_interest",
+          "type": "string",
+          "label": "Products",
+          "help_text": "Products, product family, or system type discussed with the customer."
+        },
+        {
+          "id": "crm_opportunity.spectrum_interest",
+          "type": "string",
+          "label": "Spectrum",
+          "help_text": "Spectrum or lighting recipe requirement discussed for this opportunity."
+        },
+        {
+          "id": "crm_opportunity.company_address",
+          "type": "text",
+          "label": "Company Address",
+          "help_text": "Customer company address snapshot for opportunity context."
+        },
+        {
+          "id": "crm_opportunity.site_address",
+          "type": "text",
+          "label": "Site Address",
+          "help_text": "Project/site address snapshot for opportunity context."
+        },
+        {
           "id": "crm_opportunity.linked_quote_id",
           "type": "lookup",
           "label": "Linked Quote",
@@ -1044,6 +1087,7 @@
           "crm_opportunity.primary_contact_email",
           "crm_opportunity.primary_contact_phone",
           "crm_opportunity.site_id",
+          "crm_opportunity.source_lead_id",
           "crm_opportunity.owner_user_id",
           "crm_opportunity.pipeline",
           "crm_opportunity.stage",
@@ -1055,10 +1099,12 @@
           "crm_opportunity.expected_close_date",
           "crm_opportunity.next_activity_date",
           "crm_opportunity.quote_state",
+          "crm_opportunity.sector",
+          "crm_opportunity.crop_type",
+          "crm_opportunity.product_interest",
+          "crm_opportunity.spectrum_interest",
           "crm_opportunity.linked_quote_id",
-          "crm_opportunity.linked_order_id",
-          "crm_opportunity.won_lost_reason",
-          "crm_opportunity.notes"
+          "crm_opportunity.linked_order_id"
         ]
       },
       "label_key": "crm.entities.crm_opportunity.label"
@@ -1221,6 +1267,7 @@
                 "crm_activity.company_id": "crm_opportunity.company_id",
                 "crm_activity.sales_entity": "crm_opportunity.sales_entity",
                 "crm_activity.site_id": "crm_opportunity.site_id",
+                "crm_activity.lead_id": "crm_opportunity.source_lead_id",
                 "crm_activity.owner_user_id": "crm_opportunity.owner_user_id"
               }
             }
@@ -1242,6 +1289,19 @@
             }
           },
           "label_key": "crm.entities.crm_activity.fields.site_id.label"
+        },
+        {
+          "id": "crm_activity.completed_date",
+          "type": "date",
+          "label": "Completed Date",
+          "help_text": "Set when the activity is marked done.",
+          "label_key": "crm.entities.crm_activity.fields.completed_date.label"
+        },
+        {
+          "id": "crm_activity.attachments",
+          "type": "attachments",
+          "label": "Attachments",
+          "label_key": "crm.entities.crm_activity.fields.attachments.label"
         },
         {
           "id": "crm_activity.notes",
@@ -1266,7 +1326,8 @@
           "crm_activity.lead_id",
           "crm_activity.opportunity_id",
           "crm_activity.site_id",
-          "crm_activity.notes"
+          "crm_activity.completed_date",
+          "crm_activity.attachments"
         ]
       },
       "label_key": "crm.entities.crm_activity.label"
@@ -1429,6 +1490,13 @@
           "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_proposal.label"
         },
         {
+          "from": "meeting",
+          "to": "deal_qualification",
+          "label": "Back to Qualification",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_deal_qualification.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.meeting_deal_qualification.label"
+        },
+        {
           "from": "proposal",
           "to": "negotiation_commitment",
           "label": "Move to Negotiation & Commitment",
@@ -1436,11 +1504,25 @@
           "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_negotiation_commitment.label"
         },
         {
+          "from": "proposal",
+          "to": "meeting",
+          "label": "Back to Meeting",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_meeting.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.proposal_meeting.label"
+        },
+        {
           "from": "negotiation_commitment",
           "to": "on_hold",
           "label": "Place On Hold",
           "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_on_hold.label",
           "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_on_hold.label"
+        },
+        {
+          "from": "negotiation_commitment",
+          "to": "proposal",
+          "label": "Back to Proposal",
+          "action_label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_proposal.label",
+          "label_key": "crm.workflows.crm_opportunity_stage_workflow.transitions.negotiation_commitment_proposal.label"
         },
         {
           "from": "on_hold",
@@ -1628,16 +1710,34 @@
       "action_id": "action.crm_opportunity_discovery"
     },
     {
+      "id": "biz_crm.action.crm_opportunity_back_to_qualification.clicked",
+      "label": "Back to Qualification clicked",
+      "event": "action.clicked",
+      "action_id": "action.crm_opportunity_back_to_qualification"
+    },
+    {
       "id": "biz_crm.action.crm_opportunity_solution.clicked",
       "label": "Move to Proposal clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_solution"
     },
     {
+      "id": "biz_crm.action.crm_opportunity_back_to_meeting.clicked",
+      "label": "Back to Meeting clicked",
+      "event": "action.clicked",
+      "action_id": "action.crm_opportunity_back_to_meeting"
+    },
+    {
       "id": "biz_crm.action.crm_opportunity_quote_stage.clicked",
       "label": "Move to Negotiation & Commitment clicked",
       "event": "action.clicked",
       "action_id": "action.crm_opportunity_quote_stage"
+    },
+    {
+      "id": "biz_crm.action.crm_opportunity_back_to_proposal.clicked",
+      "label": "Back to Proposal clicked",
+      "event": "action.clicked",
+      "action_id": "action.crm_opportunity_back_to_proposal"
     },
     {
       "id": "biz_crm.action.crm_opportunity_create_quote.clicked",
@@ -1694,6 +1794,9 @@
       "source_entity_id": "entity.crm_lead",
       "target_entity_id": "entity.crm_opportunity",
       "field_mappings": {
+        "crm_opportunity.source_lead_id": {
+          "ref": "$context.record_id"
+        },
         "crm_opportunity.title": {
           "from": "crm_lead.title"
         },
@@ -1808,6 +1911,24 @@
         },
         "biz_quote.follow_up_date": {
           "from": "crm_opportunity.next_activity_date"
+        },
+        "biz_quote.sector": {
+          "from": "crm_opportunity.sector"
+        },
+        "biz_quote.crop_type": {
+          "from": "crm_opportunity.crop_type"
+        },
+        "biz_quote.product_interest": {
+          "from": "crm_opportunity.product_interest"
+        },
+        "biz_quote.spectrum_interest": {
+          "from": "crm_opportunity.spectrum_interest"
+        },
+        "biz_quote.company_address": {
+          "from": "crm_opportunity.company_address"
+        },
+        "biz_quote.site_address": {
+          "from": "crm_opportunity.site_address"
         },
         "biz_quote.internal_notes": {
           "from": "crm_opportunity.notes"
@@ -1940,6 +2061,27 @@
         "field": "crm_lead.status",
         "value": "new"
       },
+      "enabled_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "crm_lead.contact_person_id"
+          },
+          {
+            "op": "exists",
+            "field": "crm_lead.contact_name"
+          },
+          {
+            "op": "exists",
+            "field": "crm_lead.contact_email"
+          },
+          {
+            "op": "exists",
+            "field": "crm_lead.contact_phone"
+          }
+        ]
+      },
       "action_label_key": "crm.actions.action_crm_lead_mark_contacted.label"
     },
     {
@@ -1978,6 +2120,27 @@
           {
             "op": "exists",
             "field": "crm_lead.company_id"
+          },
+          {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_lead.contact_person_id"
+              },
+              {
+                "op": "exists",
+                "field": "crm_lead.contact_name"
+              },
+              {
+                "op": "exists",
+                "field": "crm_lead.contact_email"
+              },
+              {
+                "op": "exists",
+                "field": "crm_lead.contact_phone"
+              }
+            ]
           }
         ]
       },
@@ -2017,6 +2180,23 @@
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_meeting.label"
     },
     {
+      "id": "action.crm_opportunity_back_to_qualification",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Back to Qualification",
+      "patch": {
+        "crm_opportunity.stage": "deal_qualification",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.probability": 10
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "crm_opportunity.stage",
+        "value": "meeting"
+      },
+      "action_label_key": "crm.actions.action_crm_opportunity_back_to_qualification.label"
+    },
+    {
       "id": "action.crm_opportunity_solution",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
@@ -2035,6 +2215,23 @@
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_proposal.label"
     },
     {
+      "id": "action.crm_opportunity_back_to_meeting",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Back to Meeting",
+      "patch": {
+        "crm_opportunity.stage": "meeting",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.probability": 25
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "crm_opportunity.stage",
+        "value": "proposal"
+      },
+      "action_label_key": "crm.actions.action_crm_opportunity_back_to_meeting.label"
+    },
+    {
       "id": "action.crm_opportunity_quote_stage",
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
@@ -2050,6 +2247,24 @@
         "value": "proposal"
       },
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_negotiation_commitment.label"
+    },
+    {
+      "id": "action.crm_opportunity_back_to_proposal",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Back to Proposal",
+      "patch": {
+        "crm_opportunity.stage": "proposal",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.quote_state": "quote_needed",
+        "crm_opportunity.probability": 55
+      },
+      "visible_when": {
+        "op": "eq",
+        "field": "crm_opportunity.stage",
+        "value": "negotiation_commitment"
+      },
+      "action_label_key": "crm.actions.action_crm_opportunity_back_to_proposal.label"
     },
     {
       "id": "action.crm_opportunity_create_quote",
@@ -2196,7 +2411,10 @@
       "entity_id": "entity.crm_activity",
       "label": "Mark Done",
       "patch": {
-        "crm_activity.status": "done"
+        "crm_activity.status": "done",
+        "crm_activity.completed_date": {
+          "ref": "$today"
+        }
       },
       "visible_when": {
         "op": "eq",
@@ -2276,7 +2494,8 @@
               "field": "crm_lead.status",
               "value": [
                 "new",
-                "contacted"
+                "contacted",
+                "qualified"
               ]
             },
             "label_key": "crm.views.list.filters.active.label"
@@ -2646,6 +2865,7 @@
             "crm_opportunity.primary_contact_email",
             "crm_opportunity.primary_contact_phone",
             "crm_opportunity.site_id",
+            "crm_opportunity.source_lead_id",
             "crm_opportunity.owner_user_id",
             "crm_opportunity.sales_entity",
             "crm_opportunity.pipeline",
@@ -2666,6 +2886,12 @@
             "crm_opportunity.probability",
             "crm_opportunity.weighted_value",
             "crm_opportunity.quote_state",
+            "crm_opportunity.sector",
+            "crm_opportunity.crop_type",
+            "crm_opportunity.product_interest",
+            "crm_opportunity.spectrum_interest",
+            "crm_opportunity.company_address",
+            "crm_opportunity.site_address",
             "crm_opportunity.linked_quote_id",
             "crm_opportunity.linked_order_id"
           ],
@@ -2693,10 +2919,19 @@
             "action_id": "action.crm_opportunity_discovery"
           },
           {
+            "action_id": "action.crm_opportunity_back_to_qualification"
+          },
+          {
             "action_id": "action.crm_opportunity_solution"
           },
           {
+            "action_id": "action.crm_opportunity_back_to_meeting"
+          },
+          {
             "action_id": "action.crm_opportunity_quote_stage"
+          },
+          {
+            "action_id": "action.crm_opportunity_back_to_proposal"
           },
           {
             "action_id": "action.crm_opportunity_create_quote"
@@ -2758,11 +2993,32 @@
                   "entity_id": "entity.crm_activity",
                   "target": "view:crm_activity.list",
                   "record_domain": {
-                    "op": "eq",
-                    "field": "crm_activity.opportunity_id",
-                    "value": {
-                      "ref": "$record.id"
-                    }
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "crm_activity.opportunity_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "and",
+                        "conditions": [
+                          {
+                            "op": "exists",
+                            "field": "crm_activity.lead_id"
+                          },
+                          {
+                            "op": "eq",
+                            "field": "crm_activity.lead_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.source_lead_id"
+                            }
+                          }
+                        ]
+                      }
+                    ]
                   },
                   "create_modal": true,
                   "create_defaults": {
@@ -2780,6 +3036,9 @@
                     },
                     "crm_activity.owner_user_id": {
                       "ref": "$record.crm_opportunity.owner_user_id"
+                    },
+                    "crm_activity.lead_id": {
+                      "ref": "$record.crm_opportunity.source_lead_id"
                     },
                     "crm_activity.status": "planned"
                   }
@@ -2820,7 +3079,16 @@
           "field_id": "crm_activity.company_id"
         },
         {
+          "field_id": "crm_activity.lead_id"
+        },
+        {
           "field_id": "crm_activity.opportunity_id"
+        },
+        {
+          "field_id": "crm_activity.completed_date"
+        },
+        {
+          "field_id": "crm_activity.attachments"
         },
         {
           "field_id": "crm_activity.owner_user_id"
@@ -2925,11 +3193,13 @@
             "crm_activity.status",
             "crm_activity.sales_entity",
             "crm_activity.due_date",
+            "crm_activity.completed_date",
             "crm_activity.owner_user_id",
             "crm_activity.company_id",
             "crm_activity.lead_id",
             "crm_activity.opportunity_id",
-            "crm_activity.site_id"
+            "crm_activity.site_id",
+            "crm_activity.attachments"
           ],
           "section_title_key": "crm.views.form.sections.summary.title"
         },

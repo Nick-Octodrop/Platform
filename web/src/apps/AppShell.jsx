@@ -28,6 +28,7 @@ import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { localizeManifest } from "../i18n/manifest.js";
 import { translateRuntime } from "../i18n/runtime.js";
+import { registerFormNavigationGuard, runFormNavigationGuard } from "../navigation/formNavigationGuard.js";
 
 function deriveRecordEntityId(entityId) {
   if (!entityId) return "";
@@ -83,6 +84,30 @@ function resolveEntityDefaultFormPage(appDefaults, entityFullId) {
 function resolveEntityDefaultHomePage(appDefaults, entityFullId) {
   const entityDefaults = resolveEntityDefaults(appDefaults, entityFullId);
   return entityDefaults?.entity_home_page || appDefaults?.entity_home_page || null;
+}
+
+const FORM_RETURN_TO_PARAM = "return_to";
+const FORM_RETURN_LABEL_PARAM = "return_label";
+
+function stripFormReturnParams(path) {
+  if (!path || typeof path !== "string") return "";
+  const [basePath, rawQuery = ""] = path.split("?");
+  const params = new URLSearchParams(rawQuery);
+  params.delete(FORM_RETURN_TO_PARAM);
+  params.delete(FORM_RETURN_LABEL_PARAM);
+  const suffix = params.toString();
+  return `${basePath}${suffix ? `?${suffix}` : ""}`;
+}
+
+function normalizeInternalReturnPath(path) {
+  const value = String(path || "").trim();
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  return stripFormReturnParams(value);
+}
+
+function formatBackToEntityLabel(entityLabel) {
+  const entity = String(entityLabel || "").trim() || translateRuntime("common.record");
+  return translateRuntime("common.back_to_entity", { entity }, { defaultValue: `Back to ${entity}` });
 }
 
 function getFormViewId(manifest, viewEntity) {
@@ -382,6 +407,20 @@ export default function AppShell({
   const { version: i18nVersion } = useI18n();
   // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
   const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
+
+  const registerNavigationGuard = useCallback((guard) => {
+    return registerFormNavigationGuard(guard);
+  }, []);
+
+  async function runNavigationGuard() {
+    try {
+      return await runFormNavigationGuard();
+    } catch (err) {
+      console.warn("navigation_guard_failed", err);
+      pushToast("error", err?.message || translateRuntime("common.save_failed"));
+      return false;
+    }
+  }
 
   useEffect(() => {
     if (moduleId === "octo_ai" && !isSuperadmin) {
@@ -882,7 +921,8 @@ export default function AppShell({
     };
   }, [previewMode]);
 
-  function setTarget(next, opts = {}) {
+  async function setTarget(next, opts = {}) {
+    if (!opts.skipFormGuard && !(await runNavigationGuard())) return;
     // Prevent "create new record" navigation for read-only users.
     // Opening existing records passes `opts.recordId`, so it is unaffected.
     if (!canWriteRecords && !opts.recordId) {
@@ -896,6 +936,10 @@ export default function AppShell({
     if (previewMode) {
       if (!previewAllowNav) return;
       const params = new URLSearchParams(searchParams.toString());
+      if (!opts.preserveReturnContext && !opts.returnToCurrent && !opts.returnTo) {
+        params.delete(FORM_RETURN_TO_PARAM);
+        params.delete(FORM_RETURN_LABEL_PARAM);
+      }
       if (typeof next === "string" && next) {
         params.set("preview_target", next);
       }
@@ -907,12 +951,22 @@ export default function AppShell({
         const recordParam = opts.recordParamName || "record";
         params.delete(recordParam);
       }
+      const returnTo = opts.returnTo || (opts.returnToCurrent ? stripFormReturnParams(`${location.pathname}${location.search || ""}`) : null);
+      if (returnTo) {
+        params.set(FORM_RETURN_TO_PARAM, returnTo);
+        if (opts.returnLabel) params.set(FORM_RETURN_LABEL_PARAM, String(opts.returnLabel));
+        else params.delete(FORM_RETURN_LABEL_PARAM);
+      }
       setSearchParams(params);
       return;
     }
     const route = buildTargetRoute(moduleId, next, { preserveFrameParams: false });
     if (!route) return;
     const params = opts.preserveParams ? new URLSearchParams(searchParams || "") : new URLSearchParams();
+    if (!opts.preserveReturnContext && !opts.returnToCurrent && !opts.returnTo) {
+      params.delete(FORM_RETURN_TO_PARAM);
+      params.delete(FORM_RETURN_LABEL_PARAM);
+    }
     const recordParam = opts.recordParamName || "record";
     if (opts.recordId) {
       params.set(recordParam, opts.recordId);
@@ -920,10 +974,17 @@ export default function AppShell({
     if (!opts.recordId) {
       params.delete(recordParam);
     }
+    const returnTo = opts.returnTo || (opts.returnToCurrent ? stripFormReturnParams(`${location.pathname}${location.search || ""}`) : null);
+    if (returnTo) {
+      params.set(FORM_RETURN_TO_PARAM, returnTo);
+      if (opts.returnLabel) params.set(FORM_RETURN_LABEL_PARAM, String(opts.returnLabel));
+      else params.delete(FORM_RETURN_LABEL_PARAM);
+    }
     navigate(buildRouteWithQuery(route, params));
   }
 
   async function navigateToEntityRecord(entityRef, targetRecordId) {
+    if (!(await runNavigationGuard())) return false;
     const targetEntityFullId = resolveEntityFullId(manifest, entityRef);
     if (!targetEntityFullId || !targetRecordId) return false;
 
@@ -984,6 +1045,11 @@ export default function AppShell({
     // 3) Final fallback: generic record page.
     navigate(buildRouteWithQuery(`/data/${toRouteEntityId(targetEntityFullId)}/${targetRecordId}`, new URLSearchParams()));
     return false;
+  }
+
+  async function guardedFallbackNavigate(path, options = {}) {
+    if (!options.skipFormGuard && !(await runNavigationGuard())) return;
+    navigate(path, options);
   }
 
   function resolveAction(action) {
@@ -1341,7 +1407,8 @@ export default function AppShell({
         setSearchParams={effectiveSetSearchParams}
         onSelectionChange={setSelectedIds}
         onRecordDraftChange={setRecordDraft}
-        onFallback={(path) => navigate(path)}
+        onFallback={guardedFallbackNavigate}
+        onRegisterNavigationGuard={registerNavigationGuard}
         canCreateLookup={() => canWriteRecords}
         onLookupCreate={openCreateModal}
         canWriteRecords={canWriteRecords}
@@ -1740,6 +1807,7 @@ function AppView({
   searchParams,
   setSearchParams,
   onFallback,
+  onRegisterNavigationGuard,
   onSelectionChange,
   onRecordDraftChange,
   canCreateLookup,
@@ -1766,7 +1834,10 @@ function AppView({
   const autoSaveTimerRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const pendingAutoSaveRef = useRef(false);
+  const pendingActivityCommitRef = useRef(null);
+  const activeFieldSnapshotRef = useRef(null);
   const draftRef = useRef({});
+  const initialDraftRef = useRef({});
   const actionRunningRef = useRef(false);
   const bootstrapUsedRef = useRef({ list: null, form: null });
   const perfMarkRef = useRef({ list: null, form: null });
@@ -1824,6 +1895,19 @@ function AppView({
   const fieldIndex = useMemo(() => buildFieldIndex(manifest, compiled, entityFullId), [manifest, compiled, entityFullId]);
   const applyDraftComputed = useCallback((next) => applyComputedFields(fieldIndex, next || {}), [fieldIndex]);
   const entityDef = useMemo(() => (manifest?.entities || []).find((e) => e.id === entityFullId), [manifest, entityFullId]);
+  const recordEntityDef = useMemo(
+    () => (manifest?.entities || []).find((e) => e.id === recordEntityId) || entityDef || null,
+    [manifest, recordEntityId, entityDef]
+  );
+  const currentEntityLabel = recordEntityDef?.label || humanizeEntityId(recordEntityId || entityFullId) || translateRuntime("common.record");
+  const recordContextEntityFullId = recordContext?.entityId ? resolveEntityFullId(manifest, recordContext.entityId) : null;
+  const recordContextEntityDef = useMemo(
+    () => (manifest?.entities || []).find((e) => e.id === recordContextEntityFullId) || null,
+    [manifest, recordContextEntityFullId]
+  );
+  const recordContextReturnLabel = recordContext?.recordId
+    ? recordContextEntityDef?.label || humanizeEntityId(recordContextEntityFullId) || null
+    : null;
   const displayField = entityDef?.display_field;
   const listFieldIds = useMemo(() => {
     if (kind !== "list") return [];
@@ -1915,12 +1999,18 @@ function AppView({
   const handleSelectRow = useCallback(
     (row) => {
       if (openRecordTarget) {
-        onNavigate?.(openRecordTarget, { recordId: row.record_id, recordParamName: openRecordParam, preserveParams: true });
+        onNavigate?.(openRecordTarget, {
+          recordId: row.record_id,
+          recordParamName: openRecordParam,
+          preserveParams: true,
+          returnToCurrent: Boolean(recordContextReturnLabel),
+          returnLabel: recordContextReturnLabel || undefined,
+        });
       } else {
         onFallback(`/data/${toRouteEntityId(recordEntityId)}/${row.record_id}`);
       }
     },
-    [openRecordTarget, openRecordParam, onNavigate, onFallback, recordEntityId]
+    [openRecordTarget, openRecordParam, onNavigate, onFallback, recordEntityId, recordContextReturnLabel]
   );
 
   function computeValidationErrors(nextDraft) {
@@ -2121,10 +2211,13 @@ function AppView({
       const targetEntity = targetView?.entity || targetView?.entity_id || targetView?.entityId;
       const targetEntityFullId = resolveEntityFullId(manifest, targetEntity);
       const defaultForm = normalizeTarget(resolveEntityDefaultFormPage(appDefaults, targetEntityFullId));
+      const returnOptions = effectiveRecordId
+        ? { returnToCurrent: true, returnLabel: currentEntityLabel }
+        : {};
       if (defaultForm) {
-        onNavigate?.(defaultForm, { preserveParams: true });
+        onNavigate?.(defaultForm, { preserveParams: true, ...returnOptions });
       } else {
-        onNavigate?.(`view:${action.target}`);
+        onNavigate?.(`view:${action.target}`, returnOptions);
       }
       return;
     }
@@ -2206,17 +2299,8 @@ function AppView({
   }
 
   async function flushPendingFormSave() {
-    if (kind !== "form" || previewMode || !effectiveRecordId || !isDirtyRef.current) return true;
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    const errors = computeValidationErrors(draftRef.current || {});
-    if (Object.keys(errors).length > 0) {
-      setShowValidation(true);
-      return false;
-    }
-    return await handleSave(null, { force: true, silent: true });
+    if (kind !== "form" || previewMode || !effectiveRecordId) return true;
+    return await saveAndFlushCommittedChanges({ includeActiveField: true, showValidationErrors: true });
   }
 
   useEffect(() => {
@@ -2455,6 +2539,158 @@ function AppView({
   }, [draft]);
 
   useEffect(() => {
+    initialDraftRef.current = initialDraft;
+  }, [initialDraft]);
+
+  function activityComparableValue(value) {
+    if (value === "" || value === null || value === undefined) return "";
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+
+  function activityValuesEqual(left, right) {
+    return activityComparableValue(left) === activityComparableValue(right);
+  }
+
+  function collectCommittedActivityFields(beforeRecord, afterRecord) {
+    if (!beforeRecord || typeof beforeRecord !== "object" || !afterRecord || typeof afterRecord !== "object") return [];
+    return Object.keys(fieldIndex || {}).filter((fieldId) => {
+      const field = fieldIndex[fieldId];
+      if (!field || field.type === "uuid" || fieldId === "id" || fieldId === "record_id") return false;
+      const beforeValue = getFieldValue(beforeRecord, fieldId);
+      const afterValue = getFieldValue(afterRecord, fieldId);
+      return !activityValuesEqual(beforeValue, afterValue);
+    });
+  }
+
+  function queueActivityCommit(beforeRecord) {
+    if (!beforeRecord || typeof beforeRecord !== "object") return false;
+    const afterRecord = draftRef.current || {};
+    const fields = collectCommittedActivityFields(beforeRecord, afterRecord);
+    if (fields.length === 0) return false;
+    const pending = pendingActivityCommitRef.current || { beforeRecord: {}, fields: new Set() };
+    for (const fieldId of fields) {
+      if (!pending.fields.has(fieldId)) {
+        pending.beforeRecord[fieldId] = getFieldValue(beforeRecord, fieldId);
+      }
+      pending.fields.add(fieldId);
+    }
+    pendingActivityCommitRef.current = pending;
+    return true;
+  }
+
+  function queueActiveFieldCommit() {
+    const snapshot = activeFieldSnapshotRef.current;
+    if (!snapshot?.beforeRecord || typeof snapshot.beforeRecord !== "object") return false;
+    return queueActivityCommit(snapshot.beforeRecord);
+  }
+
+  function handleActiveFieldSnapshotChange(snapshot) {
+    activeFieldSnapshotRef.current = snapshot && typeof snapshot === "object" ? snapshot : null;
+  }
+
+  async function waitForSaveIdle(timeoutMs = 8000) {
+    if (!saveInFlightRef.current) return true;
+    const startedAt = Date.now();
+    while (saveInFlightRef.current) {
+      if (Date.now() - startedAt > timeoutMs) return false;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return true;
+  }
+
+  async function flushPendingActivityCommit() {
+    const pending = pendingActivityCommitRef.current;
+    if (!pending || !pending.fields || pending.fields.size === 0) return false;
+    if (!recordEntityId || !effectiveRecordId || previewMode) return false;
+    const fields = Array.from(pending.fields).filter(Boolean);
+    const beforeRecord = pending.beforeRecord && typeof pending.beforeRecord === "object" ? pending.beforeRecord : {};
+    pendingActivityCommitRef.current = null;
+    try {
+      const res = await apiFetch("/api/activity/change", {
+        method: "POST",
+        body: JSON.stringify({
+          entity_id: recordEntityId,
+          record_id: effectiveRecordId,
+          before_record: beforeRecord,
+          fields,
+        }),
+      });
+      if (Array.isArray(res?.changes) && res.changes.length > 0 && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("octo:activity-mutated", {
+            detail: { entityId: recordEntityId, recordId: effectiveRecordId },
+          })
+        );
+      }
+      return true;
+    } catch (err) {
+      console.warn("activity_commit_failed", err);
+      return false;
+    }
+  }
+
+  async function saveAndFlushCommittedChanges({ includeActiveField = false, showValidationErrors = false } = {}) {
+    if (kind !== "form" || previewMode || !effectiveRecordId || !recordEntityId) return true;
+    if (includeActiveField) {
+      queueActiveFieldCommit();
+    }
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (saveInFlightRef.current) {
+      pendingAutoSaveRef.current = true;
+      const idle = await waitForSaveIdle();
+      if (!idle) {
+        setAutoSaveState("idle");
+        return false;
+      }
+    }
+    if (isDirtyRef.current) {
+      const errors = computeValidationErrors(draftRef.current || {});
+      if (Object.keys(errors).length > 0) {
+        if (showValidationErrors) setShowValidation(true);
+        setAutoSaveState("idle");
+        pushToast("error", translateRuntime("common.save_failed"));
+        return false;
+      }
+      setAutoSaveState("saving");
+      const saved = await handleSave(null, { force: true, silent: true, suppressActivity: true });
+      setAutoSaveState(saved && !isDirtyRef.current ? "saved" : "idle");
+      if (!saved) return false;
+    }
+    if (pendingActivityCommitRef.current) {
+      await flushPendingActivityCommit();
+    }
+    return true;
+  }
+
+  async function handleFieldCommit(commit) {
+    if (kind !== "form" || previewMode || !view?.header?.auto_save || !effectiveRecordId || !recordEntityId) return;
+    if (!queueActivityCommit(commit?.beforeRecord)) return;
+    if (saveInFlightRef.current) {
+      pendingAutoSaveRef.current = true;
+      return;
+    }
+    if (!isDirtyRef.current) {
+      await flushPendingActivityCommit();
+    }
+  }
+
+  useEffect(() => {
+    if (!onRegisterNavigationGuard || kind !== "form" || previewMode || !effectiveRecordId) return undefined;
+    return onRegisterNavigationGuard(() => saveAndFlushCommittedChanges({ includeActiveField: true, showValidationErrors: true }));
+  }, [onRegisterNavigationGuard, kind, previewMode, effectiveRecordId, recordEntityId, fieldIndex]);
+
+  useEffect(() => {
     return () => {
       if (draftNotifyTimerRef.current) {
         clearTimeout(draftNotifyTimerRef.current);
@@ -2641,11 +2877,13 @@ function AppView({
       validationErrors && typeof validationErrors === "object" ? validationErrors : computeValidationErrors(liveDraft);
     if (nextValidationErrors && Object.keys(nextValidationErrors).length > 0) return false;
     const silent = opts.silent === true;
+    const suppressActivity = opts.suppressActivity === true;
     if (saveInFlightRef.current && !opts.force) {
       pendingAutoSaveRef.current = true;
       return false;
     }
     let writeSeq = null;
+    let saveSucceeded = false;
     const saveRevisionAtStart = draftRevisionRef.current;
     try {
       saveInFlightRef.current = true;
@@ -2678,7 +2916,11 @@ function AppView({
       } else if (effectiveRecordId) {
         const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, {
           method: "PUT",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(
+            suppressActivity
+              ? { record: payload, _activity: { suppress_changes: true, suppress_chatter: true } }
+              : payload
+          ),
         });
         const savedRecord = applyDraftComputed(res?.record || payload);
         if (!finishRecordWriteGuard(writeSeq, savedRecord)) {
@@ -2736,6 +2978,7 @@ function AppView({
         if (!silent) pushToast("success", translateRuntime("common.created"));
         applyLoadedDraft(payload);
       }
+      saveSucceeded = true;
       return true;
     } catch (err) {
       if (writeSeq !== null) clearRecordWriteGuard(writeSeq);
@@ -2748,8 +2991,14 @@ function AppView({
         if (kind === "form" && view?.header?.auto_save && effectiveRecordId) {
           const errors = computeValidationErrors(draftRef.current || {});
           if (Object.keys(errors).length === 0) {
-            handleSave(null, { force: true, silent: true });
+            await handleSave(null, { force: true, silent: true, suppressActivity: true });
           }
+        }
+      } else if (saveSucceeded && pendingActivityCommitRef.current) {
+        if (suppressActivity) {
+          await flushPendingActivityCommit();
+        } else {
+          pendingActivityCommitRef.current = null;
         }
       }
     }
@@ -2785,14 +3034,16 @@ function AppView({
   }, [kind, previewMode, formDraftStorageKey, isDirty, draft, initialDraft]);
 
   useEffect(() => {
-    if (kind !== "form" || previewMode || !isDirty) return undefined;
+    if (kind !== "form" || previewMode) return undefined;
     const onBeforeUnload = (event) => {
+      queueActiveFieldCommit();
+      if (!isDirtyRef.current && !pendingActivityCommitRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [kind, previewMode, isDirty]);
+  }, [kind, previewMode, fieldIndex]);
 
   async function handleDiscard() {
     if (!effectiveRecordId) {
@@ -2833,7 +3084,7 @@ function AppView({
         return;
       }
       setAutoSaveState("saving");
-      const saved = await handleSave(null, { silent: true });
+      const saved = await handleSave(null, { silent: true, suppressActivity: true });
       setAutoSaveState(saved && !isDirtyRef.current ? "saved" : "idle");
     }, debounceMs);
     return () => {
@@ -3321,6 +3572,14 @@ function AppView({
         return chosenByStatusValue.get(target) === item;
       });
     })();
+    const explicitReturnTo = normalizeInternalReturnPath(searchParams?.get(FORM_RETURN_TO_PARAM));
+    const explicitReturnLabel = String(searchParams?.get(FORM_RETURN_LABEL_PARAM) || "").trim();
+    const returnControl = explicitReturnTo
+      ? {
+          label: formatBackToEntityLabel(explicitReturnLabel || currentEntityLabel),
+          onClick: () => onFallback?.(explicitReturnTo),
+        }
+      : null;
     const showFormSkeleton = state.status === "running" && Boolean(effectiveRecordId);
     return (
       <>
@@ -3345,6 +3604,7 @@ function AppView({
               onDiscard={handleDiscard}
               isDirty={isDirty}
               header={header}
+              returnControl={returnControl}
               primaryActions={primaryActions}
               secondaryActions={secondaryActions}
               onActionClick={handleHeaderAction}
@@ -3361,6 +3621,8 @@ function AppView({
               onRefreshRecord={refreshCurrentRecord}
               onOptimisticRecordPatch={applyOptimisticRecordPatch}
               onFieldFocusChange={setIsFormFieldFocused}
+              onFieldCommit={handleFieldCommit}
+              onActiveFieldSnapshotChange={handleActiveFieldSnapshotChange}
               renderBlocks={(blocks, nestedRecordContext = null) => (
                 <ContentBlocksRenderer
                   blocks={blocks}

@@ -27,6 +27,7 @@
   "user_id": "identifiant utilisateur",
   "unknown_field_type": "Type de champ inconnu : {{type}}",
   "back": "Retour",
+  "back_to_entity": "Retour a {{entity}}",
   "refresh": "Actualiser",
   "open": "Ouvrir",
   "close": "Fermer",

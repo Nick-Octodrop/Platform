@@ -29,6 +29,7 @@
   "user_id": "gebruikers-ID",
   "unknown_field_type": "Onbekend veldtype: {{type}}",
   "back": "Rug",
+  "back_to_entity": "Terug naar {{entity}}",
   "refresh": "Vernieuwen",
   "open": "Openen",
   "close": "Sluiten",
