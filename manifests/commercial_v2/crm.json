@@ -18,6 +18,10 @@
         "version": ">=1.0.0"
       },
       {
+        "module": "biz_products",
+        "version": ">=1.0.0"
+      },
+      {
         "module": "biz_quotes",
         "version": ">=1.0.0"
       },
@@ -44,6 +48,10 @@
         "entity.crm_opportunity": {
           "entity_home_page": "page:crm_opportunity.list_page",
           "entity_form_page": "page:crm_opportunity.form_page"
+        },
+        "entity.crm_opportunity_line": {
+          "entity_home_page": "page:crm_opportunity_line.list_page",
+          "entity_form_page": "page:crm_opportunity_line.form_page"
         },
         "entity.crm_activity": {
           "entity_home_page": "page:crm_activity.list_page",
@@ -894,6 +902,52 @@
           "label_key": "crm.entities.crm_opportunity.fields.weighted_value.label"
         },
         {
+          "id": "crm_opportunity.product_line_count",
+          "type": "number",
+          "label": "Product Line Count",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "aggregate": {
+              "op": "count",
+              "entity": "entity.crm_opportunity_line",
+              "where": {
+                "op": "eq",
+                "field": "crm_opportunity_line.opportunity_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "crm_opportunity.product_subtotal",
+          "type": "number",
+          "label": "Product Subtotal",
+          "readonly": true,
+          "default": 0,
+          "format": {
+            "kind": "currency",
+            "currency_field": "crm_opportunity.currency",
+            "precision": 2
+          },
+          "compute": {
+            "aggregate": {
+              "op": "sum",
+              "entity": "entity.crm_opportunity_line",
+              "field": "crm_opportunity_line.line_total",
+              "where": {
+                "op": "eq",
+                "field": "crm_opportunity_line.opportunity_id",
+                "value": {
+                  "ref": "$parent.id"
+                }
+              }
+            }
+          }
+        },
+        {
           "id": "crm_opportunity.expected_close_date",
           "type": "date",
           "label": "Expected Close",
@@ -1108,6 +1162,503 @@
         ]
       },
       "label_key": "crm.entities.crm_opportunity.label"
+    },
+    {
+      "id": "entity.crm_opportunity_line",
+      "label": "Opportunity Product Line",
+      "display_field": "crm_opportunity_line.description",
+      "fields": [
+        {
+          "id": "crm_opportunity_line.id",
+          "type": "uuid",
+          "label": "ID",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.opportunity_id",
+          "type": "lookup",
+          "label": "Opportunity",
+          "entity": "entity.crm_opportunity",
+          "display_field": "crm_opportunity.title",
+          "required": true
+        },
+        {
+          "id": "crm_opportunity_line.line_type",
+          "type": "enum",
+          "label": "Line Type",
+          "default": "catalogue",
+          "options": [
+            {
+              "value": "catalogue",
+              "label": "Catalogue"
+            },
+            {
+              "value": "custom",
+              "label": "Custom"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.product_id",
+          "type": "lookup",
+          "label": "Product",
+          "entity": "entity.biz_product",
+          "display_field": "biz_product.name"
+        },
+        {
+          "id": "crm_opportunity_line.description",
+          "type": "string",
+          "label": "Description",
+          "required": true
+        },
+        {
+          "id": "crm_opportunity_line.sales_entity_snapshot",
+          "type": "enum",
+          "label": "Sales Entity Snapshot",
+          "default": "NLight BV",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.fulfilment_mode_snapshot",
+          "type": "enum",
+          "label": "Fulfilment Mode Snapshot",
+          "default": "made_to_order",
+          "options": [
+            {
+              "value": "made_to_order",
+              "label": "Made To Order"
+            },
+            {
+              "value": "stocked",
+              "label": "Stocked"
+            },
+            {
+              "value": "hybrid",
+              "label": "Hybrid"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.currency_snapshot",
+          "type": "enum",
+          "label": "Currency Snapshot",
+          "default": "EUR",
+          "options": [
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.available_stock_snapshot",
+          "type": "number",
+          "label": "Available Stock Snapshot",
+          "help_text": "Current available stock copied from the product. 0 is expected for made-to-order, custom, or non-stock products.",
+          "readonly": true,
+          "default": 0
+        },
+        {
+          "id": "crm_opportunity_line.uom",
+          "type": "enum",
+          "label": "UOM",
+          "default": "EA",
+          "options": [
+            {
+              "value": "EA",
+              "label": "Each"
+            },
+            {
+              "value": "SET",
+              "label": "Set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container"
+            },
+            {
+              "value": "M",
+              "label": "Meter"
+            },
+            {
+              "value": "HOUR",
+              "label": "Hour"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.quantity",
+          "type": "number",
+          "label": "Qty",
+          "default": 1
+        },
+        {
+          "id": "crm_opportunity_line.unit_price",
+          "type": "number",
+          "label": "Sell Unit Price",
+          "help_text": "Customer sell price for this opportunity product. This is copied to the quote when a quote is created.",
+          "default": 0
+        },
+        {
+          "id": "crm_opportunity_line.line_discount_percent",
+          "type": "number",
+          "label": "Discount %",
+          "default": 0
+        },
+        {
+          "id": "crm_opportunity_line.line_total",
+          "type": "number",
+          "label": "Line Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "op": "mul",
+                      "args": [
+                        {
+                          "ref": "$current.crm_opportunity_line.quantity"
+                        },
+                        {
+                          "ref": "$current.crm_opportunity_line.unit_price"
+                        }
+                      ]
+                    },
+                    {
+                      "op": "sub",
+                      "args": [
+                        1,
+                        {
+                          "op": "div",
+                          "args": [
+                            {
+                              "ref": "$current.crm_opportunity_line.line_discount_percent"
+                            },
+                            100
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "crm_opportunity_line.default_buy_price_snapshot",
+          "type": "number",
+          "label": "Unit Cost",
+          "help_text": "Internal quote cost snapshot copied from the product so quote margin remains stable after handoff.",
+          "default": 0
+        },
+        {
+          "id": "crm_opportunity_line.buy_currency_snapshot",
+          "type": "enum",
+          "label": "Buy Currency Snapshot",
+          "default": "USD",
+          "options": [
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity_line.procurement_supplier_id",
+          "type": "lookup",
+          "label": "Procurement Supplier",
+          "entity": "entity.biz_contact",
+          "display_field": "biz_contact.name",
+          "domain": {
+            "op": "in",
+            "field": "biz_contact.contact_type",
+            "value": [
+              "supplier",
+              "factory_partner"
+            ]
+          }
+        },
+        {
+          "id": "crm_opportunity_line.supplier_sku_snapshot",
+          "type": "string",
+          "label": "Supplier SKU Snapshot",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.minimum_order_quantity_snapshot",
+          "type": "number",
+          "label": "MOQ",
+          "readonly": true,
+          "default": 1
+        },
+        {
+          "id": "crm_opportunity_line.lead_time_weeks_snapshot",
+          "type": "number",
+          "label": "Lead Time (Weeks)",
+          "readonly": true,
+          "default": 0
+        },
+        {
+          "id": "crm_opportunity_line.product_type_snapshot",
+          "type": "string",
+          "label": "Product Type",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.quote_cost_mode_snapshot",
+          "type": "string",
+          "label": "Quote Cost Mode",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.wattage_snapshot",
+          "type": "number",
+          "label": "Wattage",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.spectrum_snapshot",
+          "type": "string",
+          "label": "Spectrum",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.input_voltage_snapshot",
+          "type": "string",
+          "label": "Input Voltage",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.ppe_umol_per_w_snapshot",
+          "type": "string",
+          "label": "PPE (umol/s/W)",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.ppf_umol_s_snapshot",
+          "type": "number",
+          "label": "PPF (umol/s)",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.dimmable_snapshot",
+          "type": "string",
+          "label": "Dimmable",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.ip_rating_snapshot",
+          "type": "string",
+          "label": "IP Rating",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.max_ambient_temp_snapshot",
+          "type": "string",
+          "label": "Max Ambient Temp",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.modules_snapshot",
+          "type": "string",
+          "label": "Modules",
+          "readonly": true
+        },
+        {
+          "id": "crm_opportunity_line.buy_fx_to_quote_rate",
+          "type": "number",
+          "label": "Buy FX To Quote",
+          "default": 1
+        },
+        {
+          "id": "crm_opportunity_line.buy_total",
+          "type": "number",
+          "label": "Buy Total",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.crm_opportunity_line.quantity"
+                    },
+                    {
+                      "ref": "$current.crm_opportunity_line.default_buy_price_snapshot"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "crm_opportunity_line.buy_total_quote_currency",
+          "type": "number",
+          "label": "Buy Total (Quote Currency)",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "mul",
+                  "args": [
+                    {
+                      "ref": "$current.crm_opportunity_line.buy_total"
+                    },
+                    {
+                      "ref": "$current.crm_opportunity_line.buy_fx_to_quote_rate"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "crm_opportunity_line.estimated_margin_amount",
+          "type": "number",
+          "label": "Estimated Margin Amount",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "round",
+              "args": [
+                {
+                  "op": "sub",
+                  "args": [
+                    {
+                      "ref": "$current.crm_opportunity_line.line_total"
+                    },
+                    {
+                      "ref": "$current.crm_opportunity_line.buy_total_quote_currency"
+                    }
+                  ]
+                },
+                2
+              ]
+            }
+          }
+        },
+        {
+          "id": "crm_opportunity_line.estimated_margin_percent",
+          "type": "number",
+          "label": "Estimated Margin %",
+          "readonly": true,
+          "default": 0,
+          "compute": {
+            "expression": {
+              "op": "if",
+              "condition": {
+                "op": "gt",
+                "field": "crm_opportunity_line.line_total",
+                "value": 0
+              },
+              "then": {
+                "op": "round",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "op": "div",
+                        "args": [
+                          {
+                            "ref": "$current.crm_opportunity_line.estimated_margin_amount"
+                          },
+                          {
+                            "ref": "$current.crm_opportunity_line.line_total"
+                          }
+                        ]
+                      },
+                      100
+                    ]
+                  },
+                  2
+                ]
+              },
+              "else": 0
+            }
+          }
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": false,
+        "tracked_fields": [
+          "crm_opportunity_line.opportunity_id",
+          "crm_opportunity_line.line_type",
+          "crm_opportunity_line.product_id",
+          "crm_opportunity_line.description",
+          "crm_opportunity_line.uom",
+          "crm_opportunity_line.quantity",
+          "crm_opportunity_line.unit_price",
+          "crm_opportunity_line.line_discount_percent",
+          "crm_opportunity_line.line_total"
+        ]
+      }
     },
     {
       "id": "entity.crm_activity",
@@ -1636,6 +2187,18 @@
       "entity_id": "entity.crm_opportunity"
     },
     {
+      "id": "biz_crm.record.crm_opportunity_line.created",
+      "label": "Opportunity product line created",
+      "event": "record.created",
+      "entity_id": "entity.crm_opportunity_line"
+    },
+    {
+      "id": "biz_crm.record.crm_opportunity_line.updated",
+      "label": "Opportunity product line updated",
+      "event": "record.updated",
+      "entity_id": "entity.crm_opportunity_line"
+    },
+    {
       "id": "biz_crm.record.crm_activity.created",
       "label": "Activity created",
       "event": "record.created",
@@ -1937,6 +2500,103 @@
           "from": "crm_opportunity.description"
         }
       },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.crm_opportunity_line",
+          "target_entity_id": "entity.biz_quote_line",
+          "source_link_field": "crm_opportunity_line.opportunity_id",
+          "target_link_field": "biz_quote_line.quote_id",
+          "field_mappings": {
+            "biz_quote_line.line_type": {
+              "from": "crm_opportunity_line.line_type"
+            },
+            "biz_quote_line.product_id": {
+              "from": "crm_opportunity_line.product_id"
+            },
+            "biz_quote_line.description": {
+              "from": "crm_opportunity_line.description"
+            },
+            "biz_quote_line.sales_entity_snapshot": {
+              "from": "crm_opportunity_line.sales_entity_snapshot"
+            },
+            "biz_quote_line.fulfilment_mode_snapshot": {
+              "from": "crm_opportunity_line.fulfilment_mode_snapshot"
+            },
+            "biz_quote_line.currency_snapshot": {
+              "from": "crm_opportunity_line.currency_snapshot"
+            },
+            "biz_quote_line.available_stock_snapshot": {
+              "from": "crm_opportunity_line.available_stock_snapshot"
+            },
+            "biz_quote_line.uom": {
+              "from": "crm_opportunity_line.uom"
+            },
+            "biz_quote_line.quantity": {
+              "from": "crm_opportunity_line.quantity"
+            },
+            "biz_quote_line.unit_price": {
+              "from": "crm_opportunity_line.unit_price"
+            },
+            "biz_quote_line.line_discount_percent": {
+              "from": "crm_opportunity_line.line_discount_percent"
+            },
+            "biz_quote_line.default_buy_price_snapshot": {
+              "from": "crm_opportunity_line.default_buy_price_snapshot"
+            },
+            "biz_quote_line.buy_currency_snapshot": {
+              "from": "crm_opportunity_line.buy_currency_snapshot"
+            },
+            "biz_quote_line.procurement_supplier_id": {
+              "from": "crm_opportunity_line.procurement_supplier_id"
+            },
+            "biz_quote_line.supplier_sku_snapshot": {
+              "from": "crm_opportunity_line.supplier_sku_snapshot"
+            },
+            "biz_quote_line.minimum_order_quantity_snapshot": {
+              "from": "crm_opportunity_line.minimum_order_quantity_snapshot"
+            },
+            "biz_quote_line.lead_time_weeks_snapshot": {
+              "from": "crm_opportunity_line.lead_time_weeks_snapshot"
+            },
+            "biz_quote_line.product_type_snapshot": {
+              "from": "crm_opportunity_line.product_type_snapshot"
+            },
+            "biz_quote_line.quote_cost_mode_snapshot": {
+              "from": "crm_opportunity_line.quote_cost_mode_snapshot"
+            },
+            "biz_quote_line.wattage_snapshot": {
+              "from": "crm_opportunity_line.wattage_snapshot"
+            },
+            "biz_quote_line.spectrum_snapshot": {
+              "from": "crm_opportunity_line.spectrum_snapshot"
+            },
+            "biz_quote_line.input_voltage_snapshot": {
+              "from": "crm_opportunity_line.input_voltage_snapshot"
+            },
+            "biz_quote_line.ppe_umol_per_w_snapshot": {
+              "from": "crm_opportunity_line.ppe_umol_per_w_snapshot"
+            },
+            "biz_quote_line.ppf_umol_s_snapshot": {
+              "from": "crm_opportunity_line.ppf_umol_s_snapshot"
+            },
+            "biz_quote_line.dimmable_snapshot": {
+              "from": "crm_opportunity_line.dimmable_snapshot"
+            },
+            "biz_quote_line.ip_rating_snapshot": {
+              "from": "crm_opportunity_line.ip_rating_snapshot"
+            },
+            "biz_quote_line.max_ambient_temp_snapshot": {
+              "from": "crm_opportunity_line.max_ambient_temp_snapshot"
+            },
+            "biz_quote_line.modules_snapshot": {
+              "from": "crm_opportunity_line.modules_snapshot"
+            },
+            "biz_quote_line.buy_fx_to_quote_rate": {
+              "from": "crm_opportunity_line.buy_fx_to_quote_rate"
+            }
+          }
+        }
+      ],
       "link_fields": {
         "source_to_target": "crm_opportunity.linked_quote_id"
       },
@@ -2901,6 +3561,8 @@
             "crm_opportunity.value",
             "crm_opportunity.probability",
             "crm_opportunity.weighted_value",
+            "crm_opportunity.product_line_count",
+            "crm_opportunity.product_subtotal",
             "crm_opportunity.quote_state",
             "crm_opportunity.sector",
             "crm_opportunity.crop_type",
@@ -2912,6 +3574,154 @@
             "crm_opportunity.linked_order_id"
           ],
           "section_title_key": "crm.views.form.sections.commercial.title"
+        },
+        {
+          "id": "opportunity_lines",
+          "title": "Opportunity Products",
+          "line_editor": {
+            "entity_id": "entity.crm_opportunity_line",
+            "parent_field": "crm_opportunity_line.opportunity_id",
+            "item_lookup_field": "crm_opportunity_line.product_id",
+            "item_lookup_entity": "entity.biz_product",
+            "item_lookup_display_field": "biz_product.name",
+            "item_field_map": {
+              "crm_opportunity_line.description": "biz_product.description",
+              "crm_opportunity_line.fulfilment_mode_snapshot": "biz_product.fulfilment_mode",
+              "crm_opportunity_line.available_stock_snapshot": "biz_product.available_qty",
+              "crm_opportunity_line.uom": "biz_product.uom",
+              "crm_opportunity_line.unit_price": "biz_product.default_sales_price",
+              "crm_opportunity_line.default_buy_price_snapshot": "biz_product.default_quote_cost_price",
+              "crm_opportunity_line.buy_currency_snapshot": "biz_product.default_quote_cost_currency",
+              "crm_opportunity_line.procurement_supplier_id": "biz_product.preferred_supplier_id",
+              "crm_opportunity_line.supplier_sku_snapshot": "biz_product.supplier_factory_reference",
+              "crm_opportunity_line.minimum_order_quantity_snapshot": "biz_product.minimum_order_quantity",
+              "crm_opportunity_line.lead_time_weeks_snapshot": "biz_product.lead_time_weeks",
+              "crm_opportunity_line.product_type_snapshot": "biz_product.product_type",
+              "crm_opportunity_line.quote_cost_mode_snapshot": "biz_product.quote_cost_mode",
+              "crm_opportunity_line.wattage_snapshot": "biz_product.wattage",
+              "crm_opportunity_line.spectrum_snapshot": "biz_product.spectrum",
+              "crm_opportunity_line.input_voltage_snapshot": "biz_product.input_voltage",
+              "crm_opportunity_line.ppe_umol_per_w_snapshot": "biz_product.ppe_umol_per_w",
+              "crm_opportunity_line.ppf_umol_s_snapshot": "biz_product.ppf_umol_s",
+              "crm_opportunity_line.dimmable_snapshot": "biz_product.dimmable",
+              "crm_opportunity_line.ip_rating_snapshot": "biz_product.ip_rating",
+              "crm_opportunity_line.max_ambient_temp_snapshot": "biz_product.max_ambient_temp",
+              "crm_opportunity_line.modules_snapshot": "biz_product.modules"
+            },
+            "parent_field_map": {
+              "crm_opportunity_line.sales_entity_snapshot": "crm_opportunity.sales_entity",
+              "crm_opportunity_line.currency_snapshot": "crm_opportunity.currency"
+            },
+            "description_field": "crm_opportunity_line.description",
+            "defaults": {
+              "crm_opportunity_line.line_type": "catalogue",
+              "crm_opportunity_line.sales_entity_snapshot": "NLight BV",
+              "crm_opportunity_line.currency_snapshot": "EUR",
+              "crm_opportunity_line.uom": "EA",
+              "crm_opportunity_line.quantity": 1,
+              "crm_opportunity_line.unit_price": 0,
+              "crm_opportunity_line.default_buy_price_snapshot": 0,
+              "crm_opportunity_line.buy_currency_snapshot": "USD",
+              "crm_opportunity_line.minimum_order_quantity_snapshot": 1,
+              "crm_opportunity_line.lead_time_weeks_snapshot": 0,
+              "crm_opportunity_line.quote_cost_mode_snapshot": "catalogue"
+            },
+            "custom_line_defaults": {
+              "crm_opportunity_line.line_type": "custom"
+            },
+            "columns": [
+              {
+                "field_id": "crm_opportunity_line.product_id",
+                "label": "Product",
+                "readonly": true,
+                "width": 220
+              },
+              {
+                "field_id": "crm_opportunity_line.description",
+                "label": "Description",
+                "width": 460
+              },
+              {
+                "field_id": "crm_opportunity_line.uom",
+                "label": "UOM",
+                "type": "enum",
+                "width": 105,
+                "options": [
+                  {
+                    "value": "EA",
+                    "label": "Each"
+                  },
+                  {
+                    "value": "SET",
+                    "label": "Set"
+                  },
+                  {
+                    "value": "KIT",
+                    "label": "Kit"
+                  },
+                  {
+                    "value": "LOT",
+                    "label": "Lot"
+                  },
+                  {
+                    "value": "PALLET",
+                    "label": "Pallet"
+                  },
+                  {
+                    "value": "CONTAINER",
+                    "label": "Container"
+                  },
+                  {
+                    "value": "M",
+                    "label": "Meter"
+                  },
+                  {
+                    "value": "HOUR",
+                    "label": "Hour"
+                  }
+                ]
+              },
+              {
+                "field_id": "crm_opportunity_line.quantity",
+                "label": "Qty",
+                "type": "number",
+                "width": 90,
+                "align": "right"
+              },
+              {
+                "field_id": "crm_opportunity_line.available_stock_snapshot",
+                "label": "Avail.",
+                "type": "number",
+                "readonly": true,
+                "width": 85,
+                "align": "right"
+              },
+              {
+                "field_id": "crm_opportunity_line.unit_price",
+                "label": "Sell Price",
+                "type": "number",
+                "width": 155,
+                "align": "right",
+                "currency_field": "crm_opportunity_line.currency_snapshot"
+              },
+              {
+                "field_id": "crm_opportunity_line.line_discount_percent",
+                "label": "Disc %",
+                "type": "number",
+                "width": 95,
+                "align": "right"
+              },
+              {
+                "field_id": "crm_opportunity_line.line_total",
+                "label": "Line Total",
+                "type": "number",
+                "readonly": true,
+                "width": 155,
+                "align": "right",
+                "currency_field": "crm_opportunity_line.currency_snapshot"
+              }
+            ]
+          }
         },
         {
           "id": "notes",
@@ -2993,22 +3803,8 @@
             {
               "id": "products",
               "label": "Products",
-              "sections": [],
-              "content": [
-                {
-                  "kind": "related_list",
-                  "entity_id": "entity.biz_quote_line",
-                  "target_module_id": "biz_quotes",
-                  "target": "view:biz_quote_line.list",
-                  "record_domain": {
-                    "op": "eq",
-                    "field": "biz_quote_line.quote_id",
-                    "value": {
-                      "ref": "$record.crm_opportunity.linked_quote_id"
-                    }
-                  },
-                  "create_modal": false
-                }
+              "sections": [
+                "opportunity_lines"
               ]
             },
             {
@@ -3473,6 +4269,100 @@
         "show_changes": true,
         "allow_comments": true,
         "allow_attachments": true
+      }
+    },
+    {
+      "id": "crm_opportunity_line.list",
+      "kind": "list",
+      "entity": "entity.crm_opportunity_line",
+      "columns": [
+        {
+          "field_id": "crm_opportunity_line.opportunity_id"
+        },
+        {
+          "field_id": "crm_opportunity_line.product_id"
+        },
+        {
+          "field_id": "crm_opportunity_line.description"
+        },
+        {
+          "field_id": "crm_opportunity_line.uom"
+        },
+        {
+          "field_id": "crm_opportunity_line.quantity"
+        },
+        {
+          "field_id": "crm_opportunity_line.unit_price"
+        },
+        {
+          "field_id": "crm_opportunity_line.line_total"
+        }
+      ],
+      "header": {
+        "open_record_target": "page:crm_opportunity_line.form_page",
+        "search": {
+          "enabled": true,
+          "placeholder": "Search opportunity products...",
+          "fields": [
+            "crm_opportunity_line.description"
+          ]
+        }
+      }
+    },
+    {
+      "id": "crm_opportunity_line.form",
+      "kind": "form",
+      "entity": "entity.crm_opportunity_line",
+      "sections": [
+        {
+          "id": "main",
+          "title": "Opportunity Product",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity_line.opportunity_id",
+            "crm_opportunity_line.line_type",
+            "crm_opportunity_line.product_id",
+            "crm_opportunity_line.description",
+            "crm_opportunity_line.sales_entity_snapshot",
+            "crm_opportunity_line.fulfilment_mode_snapshot",
+            "crm_opportunity_line.currency_snapshot",
+            "crm_opportunity_line.available_stock_snapshot",
+            "crm_opportunity_line.uom",
+            "crm_opportunity_line.quantity",
+            "crm_opportunity_line.unit_price",
+            "crm_opportunity_line.line_discount_percent",
+            "crm_opportunity_line.line_total",
+            "crm_opportunity_line.default_buy_price_snapshot",
+            "crm_opportunity_line.buy_currency_snapshot",
+            "crm_opportunity_line.procurement_supplier_id",
+            "crm_opportunity_line.supplier_sku_snapshot",
+            "crm_opportunity_line.minimum_order_quantity_snapshot",
+            "crm_opportunity_line.lead_time_weeks_snapshot",
+            "crm_opportunity_line.product_type_snapshot",
+            "crm_opportunity_line.quote_cost_mode_snapshot",
+            "crm_opportunity_line.wattage_snapshot",
+            "crm_opportunity_line.spectrum_snapshot",
+            "crm_opportunity_line.input_voltage_snapshot",
+            "crm_opportunity_line.ppe_umol_per_w_snapshot",
+            "crm_opportunity_line.ppf_umol_s_snapshot",
+            "crm_opportunity_line.dimmable_snapshot",
+            "crm_opportunity_line.ip_rating_snapshot",
+            "crm_opportunity_line.max_ambient_temp_snapshot",
+            "crm_opportunity_line.modules_snapshot",
+            "crm_opportunity_line.buy_fx_to_quote_rate",
+            "crm_opportunity_line.buy_total",
+            "crm_opportunity_line.buy_total_quote_currency",
+            "crm_opportunity_line.estimated_margin_amount",
+            "crm_opportunity_line.estimated_margin_percent"
+          ]
+        }
+      ],
+      "activity": {
+        "enabled": true,
+        "show_changes": true,
+        "allow_comments": true,
+        "allow_attachments": false
       }
     }
   ],
@@ -3966,6 +4856,60 @@
         }
       ],
       "title_key": "crm.pages.form_page.title"
+    },
+    {
+      "id": "crm_opportunity_line.list_page",
+      "title": "Opportunity Products",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "container",
+          "variant": "card",
+          "content": [
+            {
+              "kind": "view_modes",
+              "entity_id": "entity.crm_opportunity_line",
+              "default_mode": "list",
+              "modes": [
+                {
+                  "mode": "list",
+                  "target": "view:crm_opportunity_line.list"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "crm_opportunity_line.form_page",
+      "title": "Opportunity Product",
+      "layout": "single",
+      "header": {
+        "variant": "none"
+      },
+      "content": [
+        {
+          "kind": "record",
+          "entity_id": "entity.crm_opportunity_line",
+          "record_id_query": "record",
+          "content": [
+            {
+              "kind": "container",
+              "variant": "card",
+              "content": [
+                {
+                  "kind": "view",
+                  "target": "view:crm_opportunity_line.form"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ],
   "modals": [

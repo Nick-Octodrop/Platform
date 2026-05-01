@@ -46,7 +46,7 @@ ORDER_ENTITIES = ["entity.biz_order", "entity.biz_order_line"]
 PO_ENTITIES = ["entity.biz_purchase_order", "entity.biz_purchase_order_line"]
 INVOICE_ENTITIES = ["entity.biz_invoice", "entity.biz_invoice_line"]
 DOCUMENT_ENTITIES = ["entity.biz_document"]
-CRM_ENTITIES = ["entity.crm_lead", "entity.crm_opportunity", "entity.crm_activity", "entity.crm_site"]
+CRM_ENTITIES = ["entity.crm_lead", "entity.crm_opportunity", "entity.crm_opportunity_line", "entity.crm_activity", "entity.crm_site"]
 TASK_ENTITIES = ["entity.biz_task"]
 CALENDAR_ENTITIES = ["entity.biz_calendar_event"]
 
@@ -360,6 +360,15 @@ def sales_hidden_fields() -> list[RuleSpec]:
         "biz_quote_line.buy_total_quote_currency",
         "biz_quote_line.estimated_margin_amount",
         "biz_quote_line.estimated_margin_percent",
+        "crm_opportunity_line.default_buy_price_snapshot",
+        "crm_opportunity_line.buy_currency_snapshot",
+        "crm_opportunity_line.procurement_supplier_id",
+        "crm_opportunity_line.supplier_sku_snapshot",
+        "crm_opportunity_line.buy_fx_to_quote_rate",
+        "crm_opportunity_line.buy_total",
+        "crm_opportunity_line.buy_total_quote_currency",
+        "crm_opportunity_line.estimated_margin_amount",
+        "crm_opportunity_line.estimated_margin_percent",
         "biz_order.preferred_supplier_id",
         "biz_order.estimated_buy_total",
         "biz_order.estimated_margin_amount",
@@ -635,6 +644,7 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
             + [
                 entity_rule("entity.crm_lead", "write", eq_condition("crm_lead.sales_entity", entity_scope)),
                 entity_rule("entity.crm_opportunity", "write", eq_condition("crm_opportunity.sales_entity", entity_scope)),
+                entity_rule("entity.crm_opportunity_line", "write", eq_condition("crm_opportunity_line.sales_entity_snapshot", entity_scope)),
                 entity_rule("entity.crm_activity", "write", eq_condition("crm_activity.sales_entity", entity_scope)),
                 entity_rule("entity.crm_site", "write", eq_condition("crm_site.sales_entity", entity_scope)),
             ]

@@ -50,6 +50,9 @@ ALLOWED_V1_BLOCK_KEYS = {
     "default_tab",
     "text",
     "entity_id",
+    "target_module_id",
+    "module_id",
+    "module",
     "record_ref",
     "variant",
     "title",
@@ -117,7 +120,18 @@ ALLOWED_V1_VIEW_MODES_KEYS = {
     "param_scope",
     "page_size",
 }
-ALLOWED_V1_RELATED_LIST_KEYS = {"kind", "entity_id", "target", "view", "record_domain", "create_defaults", "create_modal"}
+ALLOWED_V1_RELATED_LIST_KEYS = {
+    "kind",
+    "entity_id",
+    "target_module_id",
+    "module_id",
+    "module",
+    "target",
+    "view",
+    "record_domain",
+    "create_defaults",
+    "create_modal",
+}
 ALLOWED_V1_DOCUMENT_REGISTRY_KEYS = {
     "kind",
     "id",
@@ -771,15 +785,19 @@ def _validate_blocks(
                 errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "related_list blocks require manifest_version >= 1.3", f"{bpath}.kind"))
                 continue
             _reject_unknown_keys(errors, block, ALLOWED_V1_RELATED_LIST_KEYS, bpath)
+            target_module_id = _get(block, "target_module_id") or _get(block, "module_id") or _get(block, "module")
+            if target_module_id is not None and (not isinstance(target_module_id, str) or not target_module_id.strip()):
+                errors.append(_issue("MANIFEST_RELATED_LIST_MODULE_INVALID", "related_list.target_module_id must be a string", f"{bpath}.target_module_id"))
+            is_cross_module = isinstance(target_module_id, str) and bool(target_module_id.strip())
             entity_id = _get(block, "entity_id")
             if not isinstance(entity_id, str) or not entity_id:
                 errors.append(_issue("MANIFEST_RELATED_LIST_ENTITY_INVALID", "related_list.entity_id is required", f"{bpath}.entity_id"))
-            elif entity_id not in entity_by_id and f"entity.{entity_id}" not in entity_by_id:
+            elif not is_cross_module and entity_id not in entity_by_id and f"entity.{entity_id}" not in entity_by_id:
                 errors.append(_issue("MANIFEST_RELATED_LIST_ENTITY_UNKNOWN", "related_list.entity_id not found", f"{bpath}.entity_id"))
             target_id = _parse_view_target(_get(block, "target") or _get(block, "view"))
             if not target_id:
                 errors.append(_issue("MANIFEST_TARGET_INVALID", "related_list target must be a view id or view:<id>", f"{bpath}.target"))
-            elif target_id not in view_ids:
+            elif not is_cross_module and target_id not in view_ids:
                 errors.append(_issue("MANIFEST_TARGET_UNKNOWN", "related_list target view not found", f"{bpath}.target"))
             record_domain = _get(block, "record_domain")
             if record_domain is not None:

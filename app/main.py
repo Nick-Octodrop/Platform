@@ -1467,7 +1467,15 @@ def _entity_access_denied_response(actor: dict | None, module_id: str | None, en
     return None
 
 
-def _field_write_policy_errors(actor: dict | None, module_id: str | None, entity_def: dict | None, data: dict | None) -> list[dict]:
+def _field_write_policy_errors(
+    actor: dict | None,
+    module_id: str | None,
+    entity_def: dict | None,
+    data: dict | None,
+    *,
+    allow_system_fields: bool = False,
+    system_field_ids: set[str] | None = None,
+) -> list[dict]:
     if not isinstance(entity_def, dict) or not isinstance(data, dict):
         return []
     entity_id = entity_def.get("id")
@@ -1476,6 +1484,8 @@ def _field_write_policy_errors(actor: dict | None, module_id: str | None, entity
         if key == "id":
             continue
         field_access = _field_access_level_for_actor(actor, module_id, entity_id, key)
+        if (allow_system_fields or (isinstance(system_field_ids, set) and key in system_field_ids)) and field_access in {"hidden", "read"}:
+            continue
         if field_access != "write":
             errors.append(
                 {
@@ -24800,7 +24810,15 @@ def _run_transform_record_action(
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(target_found[1], clean_target if isinstance(clean_target, dict) else {})
     errors.extend(domain_errors)
-    errors.extend(_field_write_policy_errors(actor, target_found[0], target_found[1], clean_target if isinstance(clean_target, dict) else {}))
+    errors.extend(
+        _field_write_policy_errors(
+            actor,
+            target_found[0],
+            target_found[1],
+            clean_target if isinstance(clean_target, dict) else {},
+            allow_system_fields=True,
+        )
+    )
     errors.extend(_document_numbering_write_errors(actor, target_found[1], None, clean_target if isinstance(clean_target, dict) else {}))
     errors.extend(_document_numbering_assignment_errors(target_found[1], None, clean_target if isinstance(clean_target, dict) else {}, target_found[2], lifecycle_event="create"))
     if errors:
@@ -24871,7 +24889,15 @@ def _run_transform_record_action(
             child_errors.extend(child_lookup_errors)
             child_domain_errors = _enforce_lookup_domains(target_child_found[1], clean_child if isinstance(clean_child, dict) else {})
             child_errors.extend(child_domain_errors)
-            child_errors.extend(_field_write_policy_errors(actor, target_child_found[0], target_child_found[1], clean_child if isinstance(clean_child, dict) else {}))
+            child_errors.extend(
+                _field_write_policy_errors(
+                    actor,
+                    target_child_found[0],
+                    target_child_found[1],
+                    clean_child if isinstance(clean_child, dict) else {},
+                    allow_system_fields=True,
+                )
+            )
             child_errors.extend(_document_numbering_write_errors(actor, target_child_found[1], None, clean_child if isinstance(clean_child, dict) else {}))
             child_errors.extend(_document_numbering_assignment_errors(target_child_found[1], None, clean_child if isinstance(clean_child, dict) else {}, target_child_found[2], lifecycle_event="create"))
             if child_errors:
@@ -24921,7 +24947,15 @@ def _run_transform_record_action(
             if not isinstance(row_id, str) or not isinstance(row_record, dict):
                 continue
             source_patch_errors, merged_source = _validate_patch_payload(source_found[1], source_patch, row_record, workflow=source_workflow)
-            source_patch_errors.extend(_field_write_policy_errors(actor, source_found[0], source_found[1], source_patch if isinstance(source_patch, dict) else {}))
+            source_patch_errors.extend(
+                _field_write_policy_errors(
+                    actor,
+                    source_found[0],
+                    source_found[1],
+                    source_patch if isinstance(source_patch, dict) else {},
+                    allow_system_fields=True,
+                )
+            )
             source_patch_errors.extend(_document_numbering_write_errors(actor, source_found[1], row_record, merged_source if isinstance(merged_source, dict) else {}))
             source_patch_errors.extend(_document_numbering_assignment_errors(source_found[1], row_record, merged_source if isinstance(merged_source, dict) else {}, source_found[2], lifecycle_event="save"))
             if source_patch_errors:
@@ -24999,7 +25033,15 @@ def _run_transform_record_action(
     target_to_source_field = link_fields.get("target_to_source")
     if isinstance(target_to_source_field, str) and target_to_source_field:
         target_patch_errors, merged_target = _validate_patch_payload(target_found[1], {target_to_source_field: source_id}, target_record, workflow=target_workflow)
-        target_patch_errors.extend(_field_write_policy_errors(actor, target_found[0], target_found[1], {target_to_source_field: source_id}))
+        target_patch_errors.extend(
+            _field_write_policy_errors(
+                actor,
+                target_found[0],
+                target_found[1],
+                {target_to_source_field: source_id},
+                allow_system_fields=True,
+            )
+        )
         target_patch_errors.extend(_document_numbering_write_errors(actor, target_found[1], target_record, merged_target if isinstance(merged_target, dict) else {}))
         target_patch_errors.extend(_document_numbering_assignment_errors(target_found[1], target_record, merged_target if isinstance(merged_target, dict) else {}, target_found[2], lifecycle_event="save"))
         if target_patch_errors:
@@ -51006,6 +51048,116 @@ def _apply_lookup_populate_config_for_record(
     return updated
 
 
+def _line_editor_configs_for_child(manifest: dict | None, child_entity_id: str | None) -> list[tuple[dict, str | None]]:
+    normalized_child = _normalize_entity_id(child_entity_id)
+    if not isinstance(manifest, dict) or not isinstance(normalized_child, str):
+        return []
+    configs: list[tuple[dict, str | None]] = []
+    for view in manifest.get("views") or []:
+        if not isinstance(view, dict):
+            continue
+        parent_entity_id = _normalize_entity_id(view.get("entity")) if isinstance(view.get("entity"), str) else None
+        section_configs: list[dict] = []
+        for section in view.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            config = section.get("line_editor") if isinstance(section.get("line_editor"), dict) else section.get("lineEditor")
+            if isinstance(config, dict):
+                section_configs.append(config)
+        raw_line_editors = view.get("line_editors") or view.get("lineEditors")
+        if isinstance(raw_line_editors, list):
+            section_configs.extend([item for item in raw_line_editors if isinstance(item, dict)])
+        elif isinstance(raw_line_editors, dict):
+            section_configs.extend([item for item in raw_line_editors.values() if isinstance(item, dict)])
+        for config in section_configs:
+            if _normalize_entity_id(config.get("entity_id")) == normalized_child:
+                configs.append((config, parent_entity_id))
+    return configs
+
+
+def _extract_store_record(row: dict | None) -> dict | None:
+    if not isinstance(row, dict):
+        return None
+    record = row.get("record") if isinstance(row.get("record"), dict) else row
+    return record if isinstance(record, dict) else None
+
+
+def _apply_line_editor_maps_for_record(
+    manifest: dict | None,
+    entity_def: dict | None,
+    data: dict | None,
+    *,
+    before_record: dict | None = None,
+) -> tuple[dict | None, set[str]]:
+    if not isinstance(entity_def, dict) or not isinstance(data, dict):
+        return data, set()
+    entity_id = entity_def.get("id")
+    configs = _line_editor_configs_for_child(manifest, entity_id if isinstance(entity_id, str) else None)
+    if not configs:
+        return data, set()
+    updated = dict(data)
+    base = before_record if isinstance(before_record, dict) else {}
+    system_fields: set[str] = set()
+    is_create = not isinstance(before_record, dict)
+    for config, parent_entity_id in configs:
+        if not isinstance(config, dict):
+            continue
+        defaults = config.get("defaults") if isinstance(config.get("defaults"), dict) else {}
+        if is_create:
+            for target_field_id, default_value in defaults.items():
+                if (
+                    isinstance(target_field_id, str)
+                    and target_field_id in updated
+                    and _lookup_populate_values_equivalent(updated.get(target_field_id), default_value)
+                ):
+                    system_fields.add(target_field_id)
+
+        item_field = config.get("item_lookup_field")
+        item_entity = config.get("item_lookup_entity")
+        item_field_map = config.get("item_field_map") if isinstance(config.get("item_field_map"), dict) else {}
+        item_value = updated.get(item_field) if isinstance(item_field, str) else None
+        item_changed = is_create or not _lookup_populate_values_equivalent(base.get(item_field), item_value)
+        if item_changed and isinstance(item_field, str) and isinstance(item_entity, str) and isinstance(item_value, str) and item_value.strip():
+            item_record, _item_entity_def = _load_lookup_target_record(item_entity, item_value)
+            if isinstance(item_record, dict):
+                for target_field_id, source_field_id in item_field_map.items():
+                    if not isinstance(target_field_id, str) or not isinstance(source_field_id, str):
+                        continue
+                    if source_field_id not in item_record:
+                        continue
+                    mapped_value = item_record.get(source_field_id)
+                    if mapped_value in (None, ""):
+                        continue
+                    updated[target_field_id] = mapped_value
+                    system_fields.add(target_field_id)
+
+        parent_field = config.get("parent_field")
+        parent_field_map = config.get("parent_field_map") if isinstance(config.get("parent_field_map"), dict) else {}
+        parent_value = updated.get(parent_field) if isinstance(parent_field, str) else None
+        parent_changed = is_create or not _lookup_populate_values_equivalent(base.get(parent_field), parent_value)
+        if (
+            parent_changed
+            and isinstance(parent_entity_id, str)
+            and isinstance(parent_field, str)
+            and isinstance(parent_value, str)
+            and parent_value.strip()
+            and parent_field_map
+        ):
+            parent_record = _extract_store_record(generic_records.get(parent_entity_id, parent_value))
+            if isinstance(parent_record, dict):
+                for target_field_id, source_field_id in parent_field_map.items():
+                    if not isinstance(target_field_id, str) or not isinstance(source_field_id, str):
+                        continue
+                    if source_field_id not in parent_record:
+                        continue
+                    mapped_value = parent_record.get(source_field_id)
+                    if mapped_value in (None, ""):
+                        continue
+                    updated[target_field_id] = mapped_value
+                    system_fields.add(target_field_id)
+    return updated, system_fields
+
+
 def _enrich_template_record(record: dict, entity_def: dict | None, *, expand_lookup_aliases: bool = True) -> dict:
     enriched = dict(record or {})
     for field in _field_list(entity_def):
@@ -51941,13 +52093,22 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
     body = await _safe_json(request)
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
     data = _apply_lookup_populate_config_for_record(found[1], data)
+    data, line_editor_system_fields = _apply_line_editor_maps_for_record(found[2], found[1], data)
     workflow = _find_entity_workflow(found[2], found[1].get("id"))
     errors, clean = _validate_record_payload(found[1], data, for_create=True, workflow=workflow)
     lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
     errors.extend(domain_errors)
-    errors.extend(_field_write_policy_errors(actor, found[0], found[1], clean if isinstance(clean, dict) else {}))
+    errors.extend(
+        _field_write_policy_errors(
+            actor,
+            found[0],
+            found[1],
+            data if isinstance(data, dict) else {},
+            system_field_ids=line_editor_system_fields,
+        )
+    )
     errors.extend(_document_numbering_write_errors(actor, found[1], None, clean if isinstance(clean, dict) else {}))
     errors.extend(_document_numbering_assignment_errors(found[1], None, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="create"))
     if errors:
@@ -52090,12 +52251,27 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
     merged.update(data)
     merged.pop("id", None)
     merged = _apply_lookup_populate_config_for_record(found[1], merged, before_record=before_record) or merged
+    merged, line_editor_system_fields = _apply_line_editor_maps_for_record(
+        found[2],
+        found[1],
+        merged,
+        before_record=before_record,
+    )
+    merged = merged or {}
     errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
     lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
     errors.extend(domain_errors)
-    errors.extend(_field_write_policy_errors(actor, found[0], found[1], data if isinstance(data, dict) else {}))
+    errors.extend(
+        _field_write_policy_errors(
+            actor,
+            found[0],
+            found[1],
+            data if isinstance(data, dict) else {},
+            system_field_ids=line_editor_system_fields,
+        )
+    )
     if errors:
         _log_record_validation_errors(entity_id, merged, errors, workflow)
         return _validation_response(errors, [])
