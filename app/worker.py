@@ -102,6 +102,20 @@ def _run_with_alarm_timeout(label: str, timeout_seconds: float, fn):
         signal.signal(signal.SIGALRM, old_handler)
 
 
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
 def _lookup_workspace_member_emails(target_user_id: str | None) -> list[str]:
     if not isinstance(target_user_id, str) or not target_user_id.strip():
         return []
@@ -290,6 +304,17 @@ def _sync_attachment_field(
     updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
     updated_record.update(_attachment_metadata_patch(entity_def, attachment_field, attachment))
     records.update(entity_id, record_id, updated_record)
+
+
+def _record_route(entity_id: object, record_id: object) -> str | None:
+    if not isinstance(entity_id, str) or not entity_id.strip():
+        return None
+    if not isinstance(record_id, str) or not record_id.strip():
+        return None
+    route_entity_id = entity_id.strip()
+    if route_entity_id.startswith("entity."):
+        route_entity_id = route_entity_id[7:]
+    return f"/data/{route_entity_id}/{record_id.strip()}"
 
 
 def _record_payload(record: dict | None) -> dict:
@@ -539,7 +564,7 @@ def _handle_email_send(job: dict, org_id: str) -> None:
     )
 
 
-def _handle_doc_generate(job: dict, org_id: str) -> None:
+def _handle_doc_generate(job: dict, org_id: str) -> dict:
     render_html, render_pdf, normalize_margins = _get_doc_render_helpers()
     store_bytes, _, _ = _get_attachment_helpers()
     app_main = _get_app_main()
@@ -657,6 +682,17 @@ def _handle_doc_generate(job: dict, org_id: str) -> None:
         attachment=attachment,
         purpose=purpose,
     )
+    source_entity_id = record_data.get("biz_document.source_entity_id") or payload.get("source_entity_id")
+    source_record_id = record_data.get("biz_document.source_record_id") or payload.get("source_record_id")
+    return {
+        "attachment": attachment,
+        "filename": f"{filename}.pdf",
+        "entity_id": record_entity_id,
+        "record_id": record_id,
+        "source_entity_id": source_entity_id,
+        "source_record_id": source_record_id,
+        "link_to": _record_route(source_entity_id, source_record_id) or _record_route(record_entity_id, record_id),
+    }
 
 
 def _handle_attachments_cleanup(job: dict, org_id: str) -> None:
@@ -712,6 +748,60 @@ def _find_recent_record_target(ctx: dict) -> tuple[str | None, str | None]:
     if isinstance(trigger_entity_id, str) and trigger_entity_id.strip() and isinstance(trigger_record_id, str) and trigger_record_id.strip():
         return trigger_entity_id.strip(), trigger_record_id.strip()
     return None, None
+
+
+def _automation_actor_user_id(inputs: dict | None, ctx: dict | None) -> str | None:
+    inputs = inputs if isinstance(inputs, dict) else {}
+    trigger = ctx.get("trigger") if isinstance(ctx, dict) and isinstance(ctx.get("trigger"), dict) else {}
+    for candidate in (
+        inputs.get("actor_user_id"),
+        inputs.get("recipient_user_id"),
+        trigger.get("user_id"),
+        trigger.get("actor_user_id"),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _notify_doc_generation(job: dict, *, result: dict | None = None, error: BaseException | None = None) -> None:
+    payload = job.get("payload") if isinstance(job, dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    result = result if isinstance(result, dict) else {}
+    recipient_user_id = payload.get("actor_user_id") or payload.get("recipient_user_id")
+    if not isinstance(recipient_user_id, str) or not recipient_user_id.strip():
+        return
+    source_event = {
+        "event": "doc.generate.failed" if error else "doc.generate.succeeded",
+        "entity_id": result.get("source_entity_id") or result.get("entity_id") or payload.get("source_entity_id") or payload.get("entity_id"),
+        "record_id": result.get("source_record_id") or result.get("record_id") or payload.get("source_record_id") or payload.get("record_id"),
+        "template_id": payload.get("template_id"),
+        "job_id": job.get("id"),
+    }
+    if error:
+        title = "Document generation failed"
+        body = str(error) or "The document could not be generated."
+        severity = "danger"
+        link_to = _record_route(source_event.get("entity_id"), source_event.get("record_id"))
+    else:
+        filename = result.get("filename") if isinstance(result.get("filename"), str) else "Document"
+        title = "Document ready"
+        body = f"{filename} has been generated."
+        severity = "success"
+        link_to = result.get("link_to") if isinstance(result.get("link_to"), str) else _record_route(source_event.get("entity_id"), source_event.get("record_id"))
+    try:
+        DbNotificationStore().create(
+            {
+                "recipient_user_id": recipient_user_id.strip(),
+                "title": title,
+                "body": body,
+                "severity": severity,
+                "link_to": link_to,
+                "source_event": source_event,
+            }
+        )
+    except Exception as exc:
+        logger.warning("doc_generate_notification_failed job_id=%s error=%s", job.get("id"), exc)
 
 
 def _lookup_nested_path(value: object, path: str) -> object:
@@ -2059,17 +2149,27 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         if not template_id or not entity_id or not record_id:
             raise RuntimeError("template_id, entity_id, record_id required")
         purpose = inputs.get("purpose") or "generated"
-        if bool(ctx.get("_automation_inline_artifacts")):
+        trigger = ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {}
+        actor_user_id = _automation_actor_user_id(inputs, ctx)
+        doc_payload = {
+            "template_id": template_id,
+            "entity_id": entity_id,
+            "record_id": record_id,
+            "purpose": purpose,
+        }
+        if actor_user_id:
+            doc_payload["actor_user_id"] = actor_user_id
+        for key in ("source_entity_id", "source_record_id"):
+            value = inputs.get(key) or trigger.get(key)
+            if isinstance(value, str) and value.strip():
+                doc_payload[key] = value.strip()
+        wait_for_completion = _coerce_bool(inputs.get("wait_for_completion"), bool(ctx.get("_automation_inline_artifacts")))
+        if wait_for_completion:
             inline_job = {
                 "type": "doc.generate",
-                "payload": {
-                    "template_id": template_id,
-                    "entity_id": entity_id,
-                    "record_id": record_id,
-                    "purpose": purpose,
-                },
+                "payload": doc_payload,
             }
-            _run_with_alarm_timeout(
+            result = _run_with_alarm_timeout(
                 "Document generation",
                 _doc_generation_timeout_seconds(),
                 lambda: _handle_doc_generate(inline_job, get_org_id()),
@@ -2080,21 +2180,26 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
                 "template_id": template_id,
                 "purpose": purpose,
                 "inline_generated": True,
+                "result": result,
             }
         job = job_store.enqueue(
             {
                 "type": "doc.generate",
-                "payload": {
-                    "template_id": template_id,
-                    "entity_id": entity_id,
-                    "record_id": record_id,
-                    "purpose": purpose,
-                },
+                "payload": doc_payload,
                 "idempotency_key": inputs.get("idempotency_key"),
                 "workspace_id": get_org_id(),
+                "priority": 50,
+                "max_attempts": 2,
             }
         )
-        return {"job": job}
+        return {
+            "job": job,
+            "entity_id": entity_id,
+            "record_id": record_id,
+            "template_id": template_id,
+            "purpose": purpose,
+            "queued": True,
+        }
 
     if action_id == "system.apply_integration_mapping":
         mapping_id = inputs.get("mapping_id")
@@ -2596,6 +2701,15 @@ def _execute_step_runtime(
     raise RuntimeError(f"Unsupported step kind: {kind}")
 
 
+def _step_waits_for_document(step: dict, idx: int, total_steps: int) -> bool:
+    if step.get("action_id") != "system.generate_document":
+        return False
+    inputs = step.get("inputs") if isinstance(step.get("inputs"), dict) else {}
+    if "wait_for_completion" in inputs:
+        return _coerce_bool(inputs.get("wait_for_completion"), True)
+    return idx < total_steps - 1
+
+
 def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore | MemoryAutomationStore | None = None, job_store: DbJobStore | MemoryJobStore | None = None) -> None:
     automation_store = automation_store or DbAutomationStore()
     job_store = job_store or DbJobStore()
@@ -2654,6 +2768,8 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
             return
 
         step_id = step.get("id") or f"step_{idx}"
+        if step.get("action_id") == "system.generate_document" and step_id == "step_notify":
+            step_id = "step_generate_document"
         attempt = int(step.get("attempt") or 0)
         idempotency_key = f"{run_id}:{step_id}:{attempt}"
         existing = None
@@ -2677,16 +2793,22 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         try:
             kind = step.get("kind")
             sequence_state["value"] = max(sequence_state["value"], idx)
-            output = _execute_step_runtime(
-                step,
-                ctx,
-                job_store,
-                run_id=run_id,
-                automation_store=automation_store,
-                step_prefix=step_id,
-                sequence_state=sequence_state,
-                allow_delay=True,
-            )
+            previous_inline_artifacts = ctx.get("_automation_inline_artifacts")
+            if step.get("action_id") == "system.generate_document":
+                ctx["_automation_inline_artifacts"] = _step_waits_for_document(step, idx, len(steps))
+            try:
+                output = _execute_step_runtime(
+                    step,
+                    ctx,
+                    job_store,
+                    run_id=run_id,
+                    automation_store=automation_store,
+                    step_prefix=step_id,
+                    sequence_state=sequence_state,
+                    allow_delay=True,
+                )
+            finally:
+                ctx["_automation_inline_artifacts"] = previous_inline_artifacts
             if kind == "condition":
                 goto = step.get("if_true_goto") if output.get("result") else step.get("if_false_goto")
                 stop_on_false = bool(step.get("stop_on_false"))
@@ -2868,11 +2990,12 @@ def _run_job(job: dict) -> None:
         if job.get("type") == "email.send":
             _handle_email_send(job, org_id)
         elif job.get("type") == "doc.generate":
-            _run_with_alarm_timeout(
+            result = _run_with_alarm_timeout(
                 "Document generation",
                 _doc_generation_timeout_seconds(),
                 lambda: _handle_doc_generate(job, org_id),
             )
+            _notify_doc_generation(job, result=result if isinstance(result, dict) else None)
         elif job.get("type") == "automation.run":
             _run_automation(job, org_id)
         elif job.get("type") == "attachments.cleanup":
@@ -2932,6 +3055,8 @@ def main() -> None:
                     max_attempts = job.get("max_attempts", 10)
                     if attempt >= max_attempts:
                         job_store.update(job["id"], {"status": "dead", "last_error": str(exc)})
+                        if job.get("type") == "doc.generate":
+                            _notify_doc_generation(job, error=exc)
                     else:
                         delay = _backoff_seconds(attempt)
                         run_at = (_now() + timedelta(seconds=delay)).strftime("%Y-%m-%dT%H:%M:%SZ")

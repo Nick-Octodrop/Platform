@@ -27,6 +27,7 @@ const requestInFlight = new Map();
 
 const REQUEST_DEFAULT_TTL_MS = 0;
 const REQUEST_CACHE_TTL_MS = 30000;
+const AUTOMATION_RUNS_STARTED_EVENT = "octo:automation-runs-started";
 let modulesCache = null;
 let modulesCacheTs = 0;
 const MODULES_TTL_MS = 30000;
@@ -76,6 +77,31 @@ function notifyWorkspaceChanged(workspaceId, scope = "local") {
       },
     }),
   );
+}
+
+function emitAutomationRunsStarted(data, path, body) {
+  if (typeof window === "undefined") return;
+  const runs = Array.isArray(data?.result?.automation_runs)
+    ? data.result.automation_runs
+    : Array.isArray(data?.automation_runs)
+      ? data.automation_runs
+      : [];
+  if (runs.length === 0) return;
+  let action = {};
+  if (path === "/actions/run" && typeof body === "string" && body.trim()) {
+    try {
+      const parsed = JSON.parse(body);
+      action = {
+        id: parsed?.action_id || null,
+        module_id: parsed?.module_id || null,
+        kind: data?.result?.kind || null,
+        label: data?.result?.label || data?.result?.action_label || null,
+      };
+    } catch {
+      action = {};
+    }
+  }
+  window.dispatchEvent(new CustomEvent(AUTOMATION_RUNS_STARTED_EVENT, { detail: { runs, action } }));
 }
 
 function notifyUiPrefsUpdated(payload, response = null) {
@@ -375,6 +401,7 @@ export async function apiFetch(path, options = {}) {
           requestCache.set(key, data);
           requestCacheTs.set(key, Date.now());
         }
+        emitAutomationRunsStarted(data, path, body);
         if (method !== "GET") {
           if (path.startsWith("/records/")) {
             const parts = path.split("/").filter(Boolean);

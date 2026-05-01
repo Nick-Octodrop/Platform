@@ -40,7 +40,7 @@ function coerceStringArray(value) {
   return [String(value)];
 }
 
-const GENERATE_DOCUMENT_INPUT_KEYS = ["template_id", "entity_id", "record_id", "purpose", "idempotency_key"];
+const GENERATE_DOCUMENT_INPUT_KEYS = ["template_id", "entity_id", "record_id", "purpose", "wait_for_completion", "actor_user_id", "idempotency_key"];
 
 function firstAutomationPlanErrorMessage(result) {
   const errors = Array.isArray(result?.errors) ? result.errors : [];
@@ -73,6 +73,8 @@ function buildActionSelectionPatch(step, actionValue, index) {
     }, {});
     if (!nextInputs.entity_id) nextInputs.entity_id = "{{trigger.entity_id}}";
     if (!nextInputs.record_id) nextInputs.record_id = "{{trigger.record_id}}";
+    if (nextInputs.wait_for_completion === undefined) nextInputs.wait_for_completion = false;
+    if (!nextInputs.actor_user_id) nextInputs.actor_user_id = "{{trigger.user_id}}";
     if (step?.id === "step_notify") {
       patch.id = index === 0 ? "step_generate_document" : `step_${index + 1}_generate_document`;
     }

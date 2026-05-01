@@ -7,6 +7,7 @@ import SuperadminRoute from "./auth/SuperadminRoute.jsx";
 import ShellLayout from "./layout/ShellLayout.jsx";
 import { ModuleStoreProvider } from "./state/moduleStore.jsx";
 import { ToastProvider } from "./components/Toast.jsx";
+import BackgroundAutomationTracker from "./components/BackgroundAutomationTracker.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { AccessContextProvider } from "./access.js";
 import { LocalizationProvider, useI18n } from "./i18n/LocalizationProvider.jsx";
@@ -546,6 +547,7 @@ export default function App() {
     <ToastProvider>
       <ErrorBoundary>
         <LocalizationProvider user={user}>
+          <BackgroundAutomationTracker />
           {updatePromptVisible ? <WebUpdatePrompt onUpdate={handleApplyUpdate} /> : null}
           {!updatePromptVisible && installPromptVisible ? (
             <WebInstallPrompt

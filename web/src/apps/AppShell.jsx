@@ -1222,6 +1222,11 @@ export default function AppShell({
         selected_ids: contextSelectedIds,
       });
       const result = res.result || {};
+      const actionStartedAutomation = Array.isArray(result?.automation_runs) && result.automation_runs.length > 0;
+      const pushActionCompleteToast = () => {
+        if (actionStartedAutomation) return;
+        pushToast("success", translateRuntime("common.app_shell.action_complete"));
+      };
       const actionKind = action.kind;
       if (result.kind === "navigate" && result.target) {
         setTarget(result.target, { moduleId: actionModuleId });
@@ -1254,7 +1259,7 @@ export default function AppShell({
               setRefreshTick((v) => v + 1);
             }
           }
-          pushToast("success", translateRuntime("common.app_shell.action_complete"));
+          pushActionCompleteToast();
           return result;
         }
         if (actionKind === "update_record" || actionKind === "bulk_update") {
@@ -1284,7 +1289,7 @@ export default function AppShell({
       if (result.updated) {
         setRefreshTick((v) => v + 1);
       }
-      pushToast("success", translateRuntime("common.app_shell.action_complete"));
+      pushActionCompleteToast();
       return result;
     } catch (err) {
       pushToast("error", err.message || translateRuntime("common.app_shell.action_failed"));

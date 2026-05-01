@@ -14,6 +14,7 @@ import useMediaQuery from "../hooks/useMediaQuery.js";
 import { useAccessContext } from "../access.js";
 import useWorkspaceProviderStatus from "../hooks/useWorkspaceProviderStatus.js";
 import ProviderSecretModal from "../components/ProviderSecretModal.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
 
@@ -1373,7 +1374,6 @@ function InlineLineItemsTable({
   const [deletingRowId, setDeletingRowId] = useState("");
   const [addLookupResetKey, setAddLookupResetKey] = useState(0);
   const [creatingCustomLine, setCreatingCustomLine] = useState(false);
-  const isMobile = useMediaQuery("(max-width: 768px)");
   const lookupCacheRef = useRef({});
   const parentRefreshInFlightRef = useRef(false);
   const parentRefreshQueuedRef = useRef(false);
@@ -1820,11 +1820,12 @@ function InlineLineItemsTable({
 
   const actionColumnWeight = readonly ? 0 : 72;
   const totalColumnWeight = columns.reduce((total, col) => total + columnWeight(col), actionColumnWeight) || 1;
-  const actionColumnStyle = { width: `${(actionColumnWeight / totalColumnWeight) * 100}%` };
-  const mobileTableMinWidth = Math.max(totalColumnWeight, 720);
+  const actionColumnStyle = { width: `${actionColumnWeight}px`, minWidth: `${actionColumnWeight}px` };
+  const tableMinWidth = Math.max(totalColumnWeight, 720);
 
   function columnStyle(col) {
-    return { width: `${(columnWeight(col) / totalColumnWeight) * 100}%` };
+    const width = columnWeight(col);
+    return { width: `${width}px`, minWidth: `${width}px` };
   }
 
   function readOnlyCell(raw, col, rowRecord = null) {
@@ -1847,8 +1848,8 @@ function InlineLineItemsTable({
     <div className="h-full min-h-[520px] rounded-box border border-base-300 bg-base-100 flex flex-col overflow-hidden">
       <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-auto">
         <table
-          className={`table table-sm [&_td]:px-2 [&_th]:px-2 ${isMobile ? "w-max min-w-full table-auto" : "table-fixed w-full"}`}
-          style={isMobile ? { minWidth: `${mobileTableMinWidth}px` } : undefined}
+          className="table table-sm table-fixed min-w-full [&_td]:px-2 [&_th]:px-2"
+          style={{ width: `${tableMinWidth}px` }}
         >
           <colgroup>
             {columns.map((col, index) => (
@@ -1987,7 +1988,7 @@ function InlineLineItemsTable({
                   if (col.type === "enum" && Array.isArray(col.options)) {
                     return (
                       <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
-                        <select
+                        <AppSelect
                           className="select select-bordered select-xs w-full"
                           value={raw ?? ""}
                           onChange={(e) => {
@@ -2008,7 +2009,7 @@ function InlineLineItemsTable({
                               {option.label ?? option.value}
                             </option>
                           ))}
-                        </select>
+                        </AppSelect>
                       </td>
                     );
                   }

@@ -825,6 +825,28 @@ def _matching_triggers(manifest: dict, event: str, entity_id: str | None, action
     return matched
 
 
+def _automation_run_response_items(runs: list[dict] | None) -> list[dict]:
+    items: list[dict] = []
+    seen: set[str] = set()
+    for run in runs or []:
+        if not isinstance(run, dict):
+            continue
+        run_id = run.get("id")
+        if not isinstance(run_id, str) or not run_id or run_id in seen:
+            continue
+        seen.add(run_id)
+        items.append(
+            {
+                "id": run_id,
+                "automation_id": run.get("automation_id"),
+                "automation_name": run.get("automation_name"),
+                "status": run.get("status"),
+                "trigger_type": run.get("trigger_type"),
+            }
+        )
+    return items
+
+
 def _emit_triggers(
     request: Request,
     module_id: str,
@@ -835,13 +857,13 @@ def _emit_triggers(
     entity_id: str | None = None,
     action_id: str | None = None,
     status_field: str | None = None,
-) -> None:
+) -> list[dict]:
     if not isinstance(manifest, dict):
-        return
+        return []
     module = _get_module(request, module_id)
     manifest_hash = module.get("current_hash") if isinstance(module, dict) else None
     if not isinstance(manifest_hash, str):
-        return
+        return []
     module_slug = (manifest.get("module") or {}).get("id")
     if not isinstance(module_slug, str) or not module_slug:
         module_slug = module_id
@@ -864,49 +886,56 @@ def _emit_triggers(
         return f"{module_slug}.{event}"
 
     namespaced_event = _derive_namespaced_event()
-    base_event_payload = {**payload, "event": event}
+    actor_user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    event_base = {**payload}
+    if isinstance(actor_user_id, str) and actor_user_id.strip() and "user_id" not in event_base:
+        event_base["user_id"] = actor_user_id.strip()
+    base_event_payload = {**event_base, "event": event}
     _emit_external_webhook_subscriptions(event, base_event_payload, meta)
     if namespaced_event and namespaced_event != event:
-        _emit_external_webhook_subscriptions(namespaced_event, {**payload, "event": namespaced_event}, meta)
+        _emit_external_webhook_subscriptions(namespaced_event, {**event_base, "event": namespaced_event}, meta)
 
+    automation_runs: list[dict] = []
     try:
         emitted_base = make_event(event, base_event_payload, meta)
         event_bus.publish(emitted_base)
-        _handle_automation_event(emitted_base)
+        automation_runs.extend(_handle_automation_event(emitted_base) or [])
         if namespaced_event and namespaced_event != event:
-            namespaced_payload = {**payload, "event": namespaced_event}
+            namespaced_payload = {**event_base, "event": namespaced_event}
             emitted_ns = make_event(namespaced_event, namespaced_payload, meta)
             event_bus.publish(emitted_ns)
-            _handle_automation_event(emitted_ns)
+            automation_runs.extend(_handle_automation_event(emitted_ns) or [])
     except Exception as exc:
         logger.warning("trigger_emit_failed module_id=%s event=%s error=%s", module_id, event, exc)
 
     triggers = _matching_triggers(manifest, event, entity_id, action_id, status_field)
     if not triggers:
-        return
+        return automation_runs
 
     for trig in triggers:
         name = trig.get("id") or event
         if name in {event, namespaced_event}:
             continue
         event_payload = {
-            **payload,
+            **event_base,
             "event": name,
             "trigger_id": trig.get("id"),
         }
         try:
             emitted = make_event(name, event_payload, meta)
             event_bus.publish(emitted)
-            _handle_automation_event(emitted)
+            automation_runs.extend(_handle_automation_event(emitted) or [])
         except Exception as exc:
             logger.warning("trigger_emit_failed module_id=%s event=%s error=%s", module_id, event, exc)
+    return automation_runs
 
 
-def _handle_automation_event(event: dict) -> None:
+def _handle_automation_event(event: dict) -> list[dict]:
     try:
-        handle_automation_event(automation_store, job_store, event)
+        return handle_automation_event(automation_store, job_store, event) or []
     except Exception as exc:
         logger.warning("automation_event_failed error=%s", exc)
+        return []
 
 
 def _event_matches_pattern(event_name: str, pattern: str) -> bool:
@@ -24851,6 +24880,7 @@ def _run_transform_record_action(
 
     created_children: list[tuple[str, str]] = []
     child_created_count = 0
+    automation_runs: list[dict] = []
     for child_bundle in child_sources:
         child_def = child_bundle["def"]
         target_child_entity = child_def.get("target_entity_id")
@@ -24991,41 +25021,45 @@ def _run_transform_record_action(
             changed = _changed_fields(before_record or {}, after_record or {})
             before_snapshot = _automation_record_snapshot(before_record, source_found[1])
             after_snapshot = _automation_record_snapshot(after_record, source_found[1])
-            _emit_triggers(
-                request,
-                module_id,
-                manifest,
-                "record.updated",
-                {
-                    "entity_id": source_found[1].get("id"),
-                    "record_id": row_id,
-                    "changed_fields": changed,
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                    "timestamp": _now(),
-                },
-                entity_id=source_found[1].get("id"),
-            )
-            if isinstance(status_field, str) and before_record.get(status_field) != (after_record or {}).get(status_field):
+            automation_runs.extend(
                 _emit_triggers(
                     request,
                     module_id,
                     manifest,
-                    "workflow.status_changed",
+                    "record.updated",
                     {
                         "entity_id": source_found[1].get("id"),
                         "record_id": row_id,
-                        "changed_fields": [status_field],
-                        "from": before_record.get(status_field),
-                        "to": (after_record or {}).get(status_field),
+                        "changed_fields": changed,
                         "before": before_snapshot,
                         "after": after_snapshot,
                         "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                         "timestamp": _now(),
                     },
                     entity_id=source_found[1].get("id"),
-                    status_field=status_field,
+                )
+            )
+            if isinstance(status_field, str) and before_record.get(status_field) != (after_record or {}).get(status_field):
+                automation_runs.extend(
+                    _emit_triggers(
+                        request,
+                        module_id,
+                        manifest,
+                        "workflow.status_changed",
+                        {
+                            "entity_id": source_found[1].get("id"),
+                            "record_id": row_id,
+                            "changed_fields": [status_field],
+                            "from": before_record.get(status_field),
+                            "to": (after_record or {}).get(status_field),
+                            "before": before_snapshot,
+                            "after": after_snapshot,
+                            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                            "timestamp": _now(),
+                        },
+                        entity_id=source_found[1].get("id"),
+                        status_field=status_field,
+                    )
                 )
         _resp_cache_invalidate_entity(source_entity)
         _resp_cache_invalidate_module_bootstrap(module_id)
@@ -25121,41 +25155,45 @@ def _run_transform_record_action(
         if isinstance(event_name, str) and event_name:
             _emit_transform_hook_event(request, module_id, manifest, event_name, hook_payload)
 
-    _emit_triggers(
-        request,
-        module_id,
-        manifest,
-        "record.created",
-        {
-            "entity_id": target_found[1].get("id"),
-            "record_id": target_id,
-            "changed_fields": sorted((target_record or {}).keys()),
-            "record": _automation_record_snapshot(target_record, target_found[1]),
-            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-            "timestamp": _now(),
-        },
-        entity_id=target_found[1].get("id"),
+    automation_runs.extend(
+        _emit_triggers(
+            request,
+            module_id,
+            manifest,
+            "record.created",
+            {
+                "entity_id": target_found[1].get("id"),
+                "record_id": target_id,
+                "changed_fields": sorted((target_record or {}).keys()),
+                "record": _automation_record_snapshot(target_record, target_found[1]),
+                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                "timestamp": _now(),
+            },
+            entity_id=target_found[1].get("id"),
+        )
     )
-    _emit_triggers(
-        request,
-        module_id,
-        manifest,
-        "action.clicked",
-        {
-            "action_id": action_id,
-            "kind": "transform_record",
-            "entity_id": target_found[1].get("id"),
-            "record_id": target_id,
-            "record": _automation_record_snapshot(target_record, target_found[1]),
-            "source_record_id": source_id,
-            "source_record_ids": source_record_ids,
-            "source_entity_id": source_found[1].get("id"),
-            "target_entity_id": target_found[1].get("id"),
-            "changed_fields": sorted((target_record or {}).keys()),
-            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-            "timestamp": _now(),
-        },
-        action_id=action_id,
+    automation_runs.extend(
+        _emit_triggers(
+            request,
+            module_id,
+            manifest,
+            "action.clicked",
+            {
+                "action_id": action_id,
+                "kind": "transform_record",
+                "entity_id": target_found[1].get("id"),
+                "record_id": target_id,
+                "record": _automation_record_snapshot(target_record, target_found[1]),
+                "source_record_id": source_id,
+                "source_record_ids": source_record_ids,
+                "source_entity_id": source_found[1].get("id"),
+                "target_entity_id": target_found[1].get("id"),
+                "changed_fields": sorted((target_record or {}).keys()),
+                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                "timestamp": _now(),
+            },
+            action_id=action_id,
+        )
     )
     phase_ms["total"] = (time.perf_counter() - action_start) * 1000
     _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": "transform_record", "ms": phase_ms})
@@ -25172,8 +25210,10 @@ def _run_transform_record_action(
                 "source_record": _mask_record_for_actor(actor, source_found[0], source_found[1], updated_source_record) if _record_visible_for_actor(actor, source_found[0], source_entity, updated_source_record) else None,
                 "source_record_ids": source_record_ids,
                 "child_created": child_created_count,
+                "automation_runs": _automation_run_response_items(automation_runs),
             }
-        }
+        },
+        warnings=[],
     )
 
 
@@ -25275,7 +25315,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             kind,
             actor=getattr(request.state, "user", None),
         )
-        _emit_triggers(
+        automation_runs = _emit_triggers(
             request,
             module_id,
             manifest,
@@ -25292,7 +25332,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             },
             action_id=action_id,
         )
-        return _ok_response({"result": {"kind": kind, "target": action.get("target")}})
+        return _ok_response({"result": {"kind": kind, "target": action.get("target"), "automation_runs": _automation_run_response_items(automation_runs)}})
 
     if kind == "transform_record":
         return _run_transform_record_action(
@@ -25384,41 +25424,55 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         phase_ms["write"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms})
+        automation_runs: list[dict] = []
         if created_id and isinstance(created_record, dict):
             created_snapshot = _automation_record_snapshot(created_record, entity_def)
+            automation_runs.extend(
+                _emit_triggers(
+                    request,
+                    module_id,
+                    manifest,
+                    "record.created",
+                    {
+                        "entity_id": entity_def.get("id"),
+                        "record_id": created_id,
+                        "changed_fields": sorted(created_record.keys()),
+                        "record": created_snapshot,
+                        "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                        "timestamp": _now(),
+                    },
+                    entity_id=entity_def.get("id"),
+                )
+            )
+        automation_runs.extend(
             _emit_triggers(
                 request,
                 module_id,
                 manifest,
-                "record.created",
+                "action.clicked",
                 {
+                    "action_id": action_id,
+                    "kind": kind,
                     "entity_id": entity_def.get("id"),
                     "record_id": created_id,
-                    "changed_fields": sorted(created_record.keys()),
-                    "record": created_snapshot,
+                    "record": created_snapshot if created_id and isinstance(created_record, dict) else None,
+                    "changed_fields": sorted(created_record.keys()) if isinstance(created_record, dict) else [],
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
                 },
-                entity_id=entity_def.get("id"),
+                action_id=action_id,
             )
-        _emit_triggers(
-            request,
-            module_id,
-            manifest,
-            "action.clicked",
-            {
-                "action_id": action_id,
-                "kind": kind,
-                "entity_id": entity_def.get("id"),
-                "record_id": created_id,
-                "record": created_snapshot if created_id and isinstance(created_record, dict) else None,
-                "changed_fields": sorted(created_record.keys()) if isinstance(created_record, dict) else [],
-                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                "timestamp": _now(),
-            },
-            action_id=action_id,
         )
-        return _ok_response({"result": {"record_id": record["record_id"], "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]), "entity_id": entity_id}})
+        return _ok_response(
+            {
+                "result": {
+                    "record_id": record["record_id"],
+                    "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]),
+                    "entity_id": entity_id,
+                    "automation_runs": _automation_run_response_items(automation_runs),
+                }
+            }
+        )
 
     patch = action.get("patch") if isinstance(action.get("patch"), dict) else {}
     patch = _resolve_action_templates(patch, context)
@@ -25527,63 +25581,79 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             actor=getattr(request.state, "user", None),
             extra_payload={"changed_fields": changed},
         )
+        automation_runs: list[dict] = []
         if isinstance(after_record, dict):
             before_snapshot = _automation_record_snapshot(before_record, entity_def)
             after_snapshot = _automation_record_snapshot(after_record, entity_def)
-            _emit_triggers(
-                request,
-                module_id,
-                manifest,
-                "record.updated",
-                {
-                    "entity_id": entity_def.get("id"),
-                    "record_id": record_id,
-                    "changed_fields": changed,
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                    "timestamp": _now(),
-                },
-                entity_id=entity_def.get("id"),
-            )
-            if isinstance(status_field, str) and before_record and before_record.get(status_field) != after_record.get(status_field):
+            automation_runs.extend(
                 _emit_triggers(
                     request,
                     module_id,
                     manifest,
-                    "workflow.status_changed",
+                    "record.updated",
                     {
                         "entity_id": entity_def.get("id"),
                         "record_id": record_id,
-                        "changed_fields": [status_field],
-                        "from": before_record.get(status_field),
-                        "to": after_record.get(status_field),
+                        "changed_fields": changed,
                         "before": before_snapshot,
                         "after": after_snapshot,
                         "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                         "timestamp": _now(),
                     },
                     entity_id=entity_def.get("id"),
-                    status_field=status_field,
                 )
-        _emit_triggers(
-            request,
-            module_id,
-            manifest,
-            "action.clicked",
-            {
-                "action_id": action_id,
-                "kind": kind,
-                "entity_id": entity_def.get("id"),
-                "record_id": record_id,
-                "record": after_snapshot if isinstance(after_record, dict) else None,
-                "changed_fields": changed,
-                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                "timestamp": _now(),
-            },
-            action_id=action_id,
+            )
+            if isinstance(status_field, str) and before_record and before_record.get(status_field) != after_record.get(status_field):
+                automation_runs.extend(
+                    _emit_triggers(
+                        request,
+                        module_id,
+                        manifest,
+                        "workflow.status_changed",
+                        {
+                            "entity_id": entity_def.get("id"),
+                            "record_id": record_id,
+                            "changed_fields": [status_field],
+                            "from": before_record.get(status_field),
+                            "to": after_record.get(status_field),
+                            "before": before_snapshot,
+                            "after": after_snapshot,
+                            "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                            "timestamp": _now(),
+                        },
+                        entity_id=entity_def.get("id"),
+                        status_field=status_field,
+                    )
+                )
+        automation_runs.extend(
+            _emit_triggers(
+                request,
+                module_id,
+                manifest,
+                "action.clicked",
+                {
+                    "action_id": action_id,
+                    "kind": kind,
+                    "entity_id": entity_def.get("id"),
+                    "record_id": record_id,
+                    "record": after_snapshot if isinstance(after_record, dict) else None,
+                    "changed_fields": changed,
+                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                    "timestamp": _now(),
+                },
+                action_id=action_id,
+            )
         )
-        return _ok_response({"result": {"record_id": record["record_id"], "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]), "entity_id": entity_id}})
+        return _ok_response(
+            {
+                "result": {
+                    "record_id": record["record_id"],
+                    "record": _mask_record_for_actor(actor, found[0], entity_def, record["record"]),
+                    "entity_id": entity_id,
+                    "automation_runs": _automation_run_response_items(automation_runs),
+                }
+            }
+        )
 
     if kind == "bulk_update":
         t0 = time.perf_counter()
@@ -25593,6 +25663,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         updated_count = 0
         updated_ids = []
         last_updated_record = None
+        automation_runs: list[dict] = []
         for record_id in selected_ids:
             if not isinstance(record_id, str):
                 continue
@@ -25680,65 +25751,71 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             if isinstance(after_record, dict):
                 before_snapshot = _automation_record_snapshot(before_record, entity_def)
                 after_snapshot = _automation_record_snapshot(after_record, entity_def)
-                _emit_triggers(
-                    request,
-                    module_id,
-                    manifest,
-                    "record.updated",
-                    {
-                        "entity_id": entity_def.get("id"),
-                        "record_id": record_id,
-                        "changed_fields": changed,
-                        "before": before_snapshot,
-                        "after": after_snapshot,
-                        "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                        "timestamp": _now(),
-                    },
-                    entity_id=entity_def.get("id"),
-                )
-                status_field = (workflow or {}).get("status_field")
-                if isinstance(status_field, str) and before_record and before_record.get(status_field) != after_record.get(status_field):
+                automation_runs.extend(
                     _emit_triggers(
                         request,
                         module_id,
                         manifest,
-                        "workflow.status_changed",
+                        "record.updated",
                         {
                             "entity_id": entity_def.get("id"),
                             "record_id": record_id,
-                            "changed_fields": [status_field],
-                            "from": before_record.get(status_field),
-                            "to": after_record.get(status_field),
+                            "changed_fields": changed,
                             "before": before_snapshot,
                             "after": after_snapshot,
                             "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                             "timestamp": _now(),
                         },
                         entity_id=entity_def.get("id"),
-                        status_field=status_field,
+                    )
+                )
+                status_field = (workflow or {}).get("status_field")
+                if isinstance(status_field, str) and before_record and before_record.get(status_field) != after_record.get(status_field):
+                    automation_runs.extend(
+                        _emit_triggers(
+                            request,
+                            module_id,
+                            manifest,
+                            "workflow.status_changed",
+                            {
+                                "entity_id": entity_def.get("id"),
+                                "record_id": record_id,
+                                "changed_fields": [status_field],
+                                "from": before_record.get(status_field),
+                                "to": after_record.get(status_field),
+                                "before": before_snapshot,
+                                "after": after_snapshot,
+                                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                                "timestamp": _now(),
+                            },
+                            entity_id=entity_def.get("id"),
+                            status_field=status_field,
+                        )
                     )
         _resp_cache_invalidate_entity(entity_id)
         _resp_cache_invalidate_module_bootstrap(module_id)
         phase_ms["bulk_total"] = (time.perf_counter() - t0) * 1000
         phase_ms["total"] = (time.perf_counter() - action_start) * 1000
         _action_logger.info("action_perf=%s", {"action_id": action_id, "kind": kind, "ms": phase_ms, "updated": updated_count})
-        _emit_triggers(
-            request,
-            module_id,
-            manifest,
-            "action.clicked",
-            {
-                "action_id": action_id,
-                "kind": kind,
-                "entity_id": entity_def.get("id"),
-                "record_id": updated_ids[0] if len(updated_ids) == 1 else None,
-                "record": _automation_record_snapshot(last_updated_record, entity_def) if len(updated_ids) == 1 and isinstance(last_updated_record, dict) else None,
-                "record_ids": updated_ids,
-                "changed_fields": list(patch.keys()) if isinstance(patch, dict) else [],
-                "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                "timestamp": _now(),
-            },
-            action_id=action_id,
+        automation_runs.extend(
+            _emit_triggers(
+                request,
+                module_id,
+                manifest,
+                "action.clicked",
+                {
+                    "action_id": action_id,
+                    "kind": kind,
+                    "entity_id": entity_def.get("id"),
+                    "record_id": updated_ids[0] if len(updated_ids) == 1 else None,
+                    "record": _automation_record_snapshot(last_updated_record, entity_def) if len(updated_ids) == 1 and isinstance(last_updated_record, dict) else None,
+                    "record_ids": updated_ids,
+                    "changed_fields": list(patch.keys()) if isinstance(patch, dict) else [],
+                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                    "timestamp": _now(),
+                },
+                action_id=action_id,
+            )
         )
         return _ok_response(
             {
@@ -25748,6 +25825,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "record_id": updated_ids[0] if len(updated_ids) == 1 else None,
                     "record_ids": updated_ids,
                     "record": last_updated_record if len(updated_ids) == 1 and isinstance(last_updated_record, dict) else None,
+                    "automation_runs": _automation_run_response_items(automation_runs),
                 }
             }
         )
@@ -53768,7 +53846,7 @@ async def delete_document_numbering_settings(request: Request, sequence_id: str)
 # ---- Phase 1: Ops / Jobs ----
 
 
-TERMINAL_JOB_STATUSES = {"succeeded", "failed", "dead"}
+TERMINAL_JOB_STATUSES = {"succeeded", "failed", "dead", "cancelled"}
 
 
 @app.get("/ops/health")
@@ -64755,6 +64833,215 @@ async def list_automation_runs(request: Request, automation_id: str) -> dict:
         return denied
     items = automation_store.list_runs(automation_id=automation_id)
     return _ok_response({"runs": items})
+
+
+TERMINAL_AUTOMATION_STATUSES = {"succeeded", "failed", "cancelled"}
+TERMINAL_AUTOMATION_STEP_STATUSES = {"succeeded", "failed", "cancelled", "skipped"}
+
+
+def _automation_run_trigger_user_id(run: dict) -> str | None:
+    payload = run.get("trigger_payload") if isinstance(run, dict) else None
+    if not isinstance(payload, dict):
+        return None
+    user_id = payload.get("user_id")
+    if isinstance(user_id, str) and user_id.strip():
+        return user_id.strip()
+    actor = payload.get("actor")
+    if isinstance(actor, dict):
+        actor_user_id = actor.get("user_id") or actor.get("id")
+        if isinstance(actor_user_id, str) and actor_user_id.strip():
+            return actor_user_id.strip()
+    return None
+
+
+def _can_view_automation_run_status(actor: dict | None, run: dict) -> bool:
+    if _has_capability(actor, "automations.manage"):
+        return True
+    actor_user_id = actor.get("user_id") if isinstance(actor, dict) else None
+    return bool(actor_user_id and actor_user_id == _automation_run_trigger_user_id(run))
+
+
+def _collect_automation_job_ids(value: Any, seen: set[str] | None = None, depth: int = 0) -> set[str]:
+    if seen is None:
+        seen = set()
+    if depth > 8:
+        return seen
+    if isinstance(value, dict):
+        nested_job = value.get("job")
+        if isinstance(nested_job, dict):
+            job_id = nested_job.get("id")
+            if isinstance(job_id, str) and job_id.strip():
+                seen.add(job_id.strip())
+        for key in ("job_id", "queued_job_id"):
+            job_id = value.get(key)
+            if isinstance(job_id, str) and job_id.strip():
+                seen.add(job_id.strip())
+        for nested in value.values():
+            _collect_automation_job_ids(nested, seen, depth + 1)
+    elif isinstance(value, list):
+        for nested in value:
+            _collect_automation_job_ids(nested, seen, depth + 1)
+    return seen
+
+
+def _automation_step_label(step_run: dict, configured_step: dict | None = None) -> str:
+    source = step_run.get("input") if isinstance(step_run.get("input"), dict) else {}
+    if isinstance(configured_step, dict):
+        source = {**configured_step, **source}
+    for key in ("label", "name", "title"):
+        value = source.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    action_id = source.get("action_id")
+    if isinstance(action_id, str) and action_id.strip():
+        return action_id.strip()
+    step_id = step_run.get("step_id")
+    if isinstance(step_id, str) and step_id.strip():
+        return step_id.strip()
+    return "Automation step"
+
+
+def _automation_step_status_item(step_run: dict, configured_step: dict | None = None) -> dict:
+    source = step_run.get("input") if isinstance(step_run.get("input"), dict) else {}
+    if isinstance(configured_step, dict):
+        source = {**configured_step, **source}
+    return {
+        "id": step_run.get("id"),
+        "step_id": step_run.get("step_id"),
+        "step_index": step_run.get("step_index"),
+        "status": step_run.get("status"),
+        "attempt": step_run.get("attempt"),
+        "started_at": step_run.get("started_at"),
+        "ended_at": step_run.get("ended_at"),
+        "last_error": step_run.get("last_error"),
+        "kind": source.get("kind"),
+        "action_id": source.get("action_id"),
+        "label": _automation_step_label(step_run, configured_step),
+    }
+
+
+def _automation_job_status_item(job: dict) -> dict:
+    return {
+        "id": job.get("id"),
+        "type": job.get("type"),
+        "status": job.get("status"),
+        "attempt": job.get("attempt"),
+        "max_attempts": job.get("max_attempts"),
+        "run_at": job.get("run_at"),
+        "created_at": job.get("created_at"),
+        "updated_at": job.get("updated_at"),
+        "locked_at": job.get("locked_at"),
+        "last_error": job.get("last_error"),
+    }
+
+
+def _latest_automation_step_runs(step_runs: list[dict]) -> list[dict]:
+    latest_by_index: dict[int, dict] = {}
+    overflow_index = 100000
+    for step_run in step_runs:
+        raw_index = step_run.get("step_index")
+        try:
+            step_index = int(raw_index)
+        except (TypeError, ValueError):
+            step_index = overflow_index
+            overflow_index += 1
+        previous = latest_by_index.get(step_index)
+        if not previous or int(step_run.get("attempt") or 0) >= int(previous.get("attempt") or 0):
+            latest_by_index[step_index] = step_run
+    return [latest_by_index[key] for key in sorted(latest_by_index.keys())]
+
+
+@app.get("/automation-runs/{run_id}/status")
+async def get_automation_run_status(request: Request, run_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    run = automation_store.get_run(run_id)
+    if not run:
+        return _error_response("AUTOMATION_RUN_NOT_FOUND", "Run not found", "run_id", status=404)
+    if not _can_view_automation_run_status(actor, run):
+        return _error_response("FORBIDDEN", "You can only view automation runs you started.", status=403)
+
+    automation_id = run.get("automation_id")
+    automation = automation_store.get(automation_id) if automation_id else None
+    configured_steps = automation.get("steps") if isinstance(automation, dict) else []
+    if not isinstance(configured_steps, list):
+        configured_steps = []
+
+    step_runs = automation_store.list_step_runs(run_id)
+    latest_step_runs = _latest_automation_step_runs(step_runs)
+    job_ids: set[str] = set()
+    for step_run in step_runs:
+        output = step_run.get("output")
+        if isinstance(output, (dict, list)):
+            job_ids.update(_collect_automation_job_ids(output))
+    jobs = []
+    for job_id in sorted(job_ids):
+        job = job_store.get(job_id)
+        if job:
+            jobs.append(_automation_job_status_item(job))
+
+    step_items: list[dict] = []
+    for step_run in latest_step_runs:
+        raw_index = step_run.get("step_index")
+        try:
+            step_index = int(raw_index)
+        except (TypeError, ValueError):
+            step_index = None
+        configured_step = configured_steps[step_index] if step_index is not None and 0 <= step_index < len(configured_steps) else None
+        step_items.append(_automation_step_status_item(step_run, configured_step))
+
+    total_steps = max(len(configured_steps), len(step_items), int(run.get("current_step_index") or 0))
+    completed_steps = len({item.get("step_index") for item in step_items if item.get("status") in TERMINAL_AUTOMATION_STEP_STATUSES})
+    active_jobs = [job for job in jobs if job.get("status") not in TERMINAL_JOB_STATUSES]
+    failed_jobs = [job for job in jobs if job.get("status") in {"failed", "dead", "cancelled"}]
+    run_status = run.get("status")
+    is_run_terminal = run_status in TERMINAL_AUTOMATION_STATUSES
+    is_done = is_run_terminal and not active_jobs
+    effective_status = "failed" if failed_jobs else (run_status or "queued")
+
+    active_step = next((item for item in step_items if item.get("status") not in TERMINAL_AUTOMATION_STEP_STATUSES), None)
+    if active_step is None and not is_run_terminal:
+        current_index = int(run.get("current_step_index") or 0)
+        if 0 <= current_index < len(configured_steps):
+            active_step = _automation_step_status_item(
+                {
+                    "step_id": configured_steps[current_index].get("id") or f"step_{current_index}",
+                    "step_index": current_index,
+                    "status": run_status or "queued",
+                    "attempt": 0,
+                },
+                configured_steps[current_index],
+            )
+
+    return _ok_response(
+        {
+            "run": {
+                "id": run.get("id"),
+                "automation_id": automation_id,
+                "automation_name": automation.get("name") if isinstance(automation, dict) else None,
+                "status": run_status,
+                "effective_status": effective_status,
+                "trigger_type": run.get("trigger_type"),
+                "current_step_index": run.get("current_step_index"),
+                "created_at": run.get("created_at"),
+                "updated_at": run.get("updated_at"),
+                "started_at": run.get("started_at"),
+                "ended_at": run.get("ended_at"),
+                "last_error": run.get("last_error"),
+            },
+            "steps": step_items,
+            "jobs": jobs,
+            "progress": {
+                "total_steps": total_steps,
+                "completed_steps": min(completed_steps, total_steps) if total_steps else completed_steps,
+                "active_step": active_step,
+                "active_jobs": active_jobs,
+                "done": is_done,
+                "effective_status": effective_status,
+            },
+        }
+    )
 
 
 @app.get("/automation-runs/{run_id}")

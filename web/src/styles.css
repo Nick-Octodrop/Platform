@@ -213,6 +213,32 @@ body {
     background-color: oklch(var(--p));
     transform: translateX(-1px);
   }
+
+  .octo-indeterminate-progress {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-primary/15;
+  }
+
+  .octo-indeterminate-progress > div {
+    width: 38%;
+    height: 100%;
+    border-radius: inherit;
+    background: oklch(var(--p));
+    animation: octo-indeterminate-progress 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes octo-indeterminate-progress {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  55% {
+    transform: translateX(85%);
+  }
+
+  100% {
+    transform: translateX(265%);
+  }
 }
 
 @layer utilities {

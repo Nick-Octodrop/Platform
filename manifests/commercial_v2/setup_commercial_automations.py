@@ -80,6 +80,8 @@ def build_generate_document_automation(
                     "entity_id": "entity.biz_document",
                     "record_id": "{{ trigger.record.fields.primary_document_id }}",
                     "purpose": purpose,
+                    "wait_for_completion": False,
+                    "actor_user_id": "{{ trigger.user_id }}",
                 },
             }
         ],

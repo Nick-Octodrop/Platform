@@ -54,7 +54,9 @@ def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dic
                 automation.get("id"),
                 org_id,
             )
-            runs.append(run)
+            run_summary = dict(run)
+            run_summary["automation_name"] = automation.get("name")
+            runs.append(run_summary)
     finally:
         if token is not None:
             reset_org_id(token)

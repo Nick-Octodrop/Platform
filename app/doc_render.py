@@ -23,6 +23,10 @@ logger = logging.getLogger("octo.doc_render")
 _PLAYWRIGHT_LOCK = threading.Lock()
 _PLAYWRIGHT_MANAGER = None
 _PLAYWRIGHT_BROWSER = None
+_ASSET_CACHE_LOCK = threading.Lock()
+_ASSET_DATA_URI_CACHE: dict[str, tuple[float, str]] = {}
+_ASSET_CACHE_TTL_SECONDS = 10 * 60
+_ASSET_CACHE_MAX_ITEMS = 128
 
 
 def _get_shared_browser():
@@ -50,6 +54,11 @@ def render_html(template_html: str, context: dict[str, Any]) -> str:
 
 
 def _fetch_asset_as_data_uri(url: str) -> str:
+    now = time.time()
+    with _ASSET_CACHE_LOCK:
+        cached = _ASSET_DATA_URI_CACHE.get(url)
+        if cached and now - cached[0] <= _ASSET_CACHE_TTL_SECONDS:
+            return cached[1]
     request = Request(url, headers={"User-Agent": "Octodrop/1.0"})
     with urlopen(request, timeout=5) as response:
         payload = response.read(_MAX_INLINE_ASSET_BYTES + 1)
@@ -65,7 +74,12 @@ def _fetch_asset_as_data_uri(url: str) -> str:
         if not content_type:
             content_type = mimetypes.guess_type(url)[0] or "application/octet-stream"
         encoded = base64.b64encode(payload).decode("ascii")
-        return f"data:{content_type};base64,{encoded}"
+        data_uri = f"data:{content_type};base64,{encoded}"
+        with _ASSET_CACHE_LOCK:
+            if len(_ASSET_DATA_URI_CACHE) >= _ASSET_CACHE_MAX_ITEMS:
+                _ASSET_DATA_URI_CACHE.clear()
+            _ASSET_DATA_URI_CACHE[url] = (now, data_uri)
+        return data_uri
 
 
 def _inline_header_footer_assets(template_html: str | None) -> str | None:
