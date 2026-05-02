@@ -160,6 +160,14 @@ def _record_field_index_rows(
     return rows
 
 
+def _record_field_index_value_key(value_text: Any, value_num: Any, value_bool: Any) -> tuple[Any, Any, Any]:
+    return (
+        None if value_text is None else str(value_text),
+        None if value_num is None else str(value_num),
+        value_bool,
+    )
+
+
 def _release_record_field_index_savepoint(conn) -> None:
     with conn.cursor() as cur:
         cur.execute(f"release savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
@@ -184,16 +192,49 @@ def _replace_record_field_index(conn, tenant_id: str, entity_id: str, record_id:
     with conn.cursor() as cur:
         cur.execute(f"savepoint {_RECORD_FIELD_INDEX_SAVEPOINT}")
     try:
-        execute(
+        existing_rows = fetch_all(
             conn,
             """
-            delete from records_generic_field_values
+            select field_id, value_text, value_num::text as value_num, value_bool
+            from records_generic_field_values
             where tenant_id=%s and entity_id=%s and record_id=%s
             """,
             [tenant_id, entity_id, record_id],
-            query_name="records_generic.field_index.delete_record",
+            query_name="records_generic.field_index.get_record",
         )
-        if rows:
+        existing_by_field = {
+            str(row.get("field_id")): _record_field_index_value_key(
+                row.get("value_text"),
+                row.get("value_num"),
+                row.get("value_bool"),
+            )
+            for row in existing_rows
+            if row.get("field_id")
+        }
+        next_by_field = {
+            row[3]: _record_field_index_value_key(row[4], row[5], row[6])
+            for row in rows
+        }
+        removed_fields = sorted(set(existing_by_field) - set(next_by_field))
+        changed_rows = [
+            row
+            for row in rows
+            if existing_by_field.get(row[3]) != next_by_field.get(row[3])
+        ]
+        if not removed_fields and not changed_rows:
+            _release_record_field_index_savepoint(conn)
+            return
+        if removed_fields:
+            execute(
+                conn,
+                """
+                delete from records_generic_field_values
+                where tenant_id=%s and entity_id=%s and record_id=%s and field_id = any(%s::text[])
+                """,
+                [tenant_id, entity_id, record_id, removed_fields],
+                query_name="records_generic.field_index.delete_fields",
+            )
+        if changed_rows:
             with conn.cursor() as cur:
                 psycopg2.extras.execute_values(
                     cur,
@@ -210,7 +251,7 @@ def _replace_record_field_index(conn, tenant_id: str, entity_id: str, record_id:
                         value_bool = excluded.value_bool,
                         updated_at = excluded.updated_at
                     """,
-                    rows,
+                    changed_rows,
                     page_size=500,
                 )
         _release_record_field_index_savepoint(conn)
@@ -1746,10 +1787,14 @@ class DbGenericRecordStore:
         tenant_id: str | None = None,
         limit: int = 200,
         offset: int = 0,
+        order: str | None = None,
     ) -> list[dict]:
         tenant_id = tenant_id or get_org_id()
         if not isinstance(field_id, str) or not field_id.strip():
             return []
+        order_key = str(order or "").strip().lower()
+        order_sql = "r.created_at asc, r.id asc" if order_key == "created_at_asc" else "idx.updated_at desc, idx.record_id desc"
+        fallback_order_sql = "created_at asc, id asc" if order_key == "created_at_asc" else "updated_at desc"
         scalar: str | None
         if value is None:
             scalar = None
@@ -1784,7 +1829,7 @@ class DbGenericRecordStore:
                           and idx.entity_id=%s
                           and idx.field_id=%s
                           and {value_clause}
-                        order by idx.updated_at desc, idx.record_id desc
+                        order by {order_sql}
                         limit %s offset %s
                         """,
                         params,
@@ -1812,7 +1857,7 @@ class DbGenericRecordStore:
                 select id, data
                 from records_generic
                 {where}
-                order by updated_at desc
+                order by {fallback_order_sql}
                 limit %s offset %s
                 """,
                 params,

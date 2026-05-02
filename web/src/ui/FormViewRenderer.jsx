@@ -5,6 +5,19 @@ import { apiFetch, createRecord, deleteRecord, googlePlaceDetails, googlePlacesA
 import { evalCondition } from "../utils/conditions.js";
 import { applyComputedFields, computeAggregateFieldPatchFromRows } from "../utils/computedFields.js";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
+import {
+  acknowledgePersistedLineItems,
+  addPendingLineItem,
+  attachPendingLineItemPromise,
+  buildPendingLineItemScope,
+  completePendingLineItem,
+  failPendingLineItem,
+  getPendingLineItemEntries,
+  getPendingLineItemEntry,
+  removePendingLineItem,
+  subscribePendingLineItems,
+  updatePendingLineItem,
+} from "../utils/pendingLineItemWrites.js";
 import Tabs from "../components/Tabs.jsx";
 import { PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_ICON_SM } from "../components/buttonStyles.js";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -1297,6 +1310,204 @@ function coerceEditorValue(value, type) {
   return value;
 }
 
+function isPendingLineItemRow(row) {
+  return Boolean(row?._pendingLineItemId);
+}
+
+function createClientRecordId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function pendingLineEntryToRow(entry, applyLineComputed) {
+  if (!entry || typeof entry !== "object") return null;
+  const recordId = entry.status === "saved" && entry.recordId ? entry.recordId : entry.tempId;
+  if (!recordId) return null;
+  const record = applyLineComputed(entry.record && typeof entry.record === "object" ? entry.record : {});
+  return {
+    record_id: recordId,
+    record,
+    _lineItemUiKey: entry.tempId,
+    _pendingLineItemId: entry.tempId,
+    _pendingLineItemStatus: entry.status || "saving",
+    _pendingLineItemError: entry.error || "",
+  };
+}
+
+function normalizeLineRow(row, applyLineComputed, uiKey = null) {
+  if (!row || typeof row !== "object" || !row.record_id) return null;
+  return {
+    record_id: row.record_id,
+    record: applyLineComputed(row.record && typeof row.record === "object" ? row.record : {}),
+    ...(uiKey || row._lineItemUiKey ? { _lineItemUiKey: uiKey || row._lineItemUiKey } : {}),
+  };
+}
+
+function mergeLineRowsWithPending(baseRows, pendingEntries, applyLineComputed) {
+  const sourceRows = Array.isArray(baseRows) ? baseRows : [];
+  const entries = Array.isArray(pendingEntries) ? pendingEntries.filter((entry) => entry?.tempId) : [];
+  if (entries.length === 0) {
+    return sourceRows
+      .map((row) => normalizeLineRow(row, applyLineComputed))
+      .filter(Boolean);
+  }
+
+  const entryByTempId = new Map();
+  const entryByRecordId = new Map();
+  for (const entry of entries) {
+    const tempId = String(entry.tempId || "");
+    const recordId = String(entry.recordId || "");
+    if (tempId) entryByTempId.set(tempId, entry);
+    if (recordId) entryByRecordId.set(recordId, entry);
+  }
+
+  const persistedById = new Map();
+  const pendingEntryIdsInRows = new Set();
+  for (const row of sourceRows) {
+    const rowId = String(row?.record_id || "");
+    if (!rowId) continue;
+    if (isPendingLineItemRow(row)) {
+      if (row._pendingLineItemId) pendingEntryIdsInRows.add(String(row._pendingLineItemId));
+    } else {
+      persistedById.set(rowId, row);
+    }
+  }
+
+  const consumedEntries = new Set();
+  const consumedPersisted = new Set();
+  const merged = [];
+
+  for (const row of sourceRows) {
+    const rowId = String(row?.record_id || "");
+    if (!rowId) continue;
+
+    if (isPendingLineItemRow(row)) {
+      const entry = entryByTempId.get(String(row._pendingLineItemId || "")) || entryByRecordId.get(rowId);
+      if (!entry) continue;
+      const pendingRow = pendingLineEntryToRow(entry, applyLineComputed);
+      if (!pendingRow) continue;
+      const persisted =
+        persistedById.get(String(entry.recordId || "")) ||
+        persistedById.get(String(entry.tempId || ""));
+      if (entry.status === "saved" && persisted) {
+        const normalized = normalizeLineRow(persisted, applyLineComputed, entry.tempId);
+        if (normalized) merged.push(normalized);
+        consumedPersisted.add(String(persisted.record_id || ""));
+      } else {
+        merged.push(pendingRow);
+      }
+      consumedEntries.add(String(entry.tempId || ""));
+      continue;
+    }
+
+    const entry = entryByRecordId.get(rowId) || entryByTempId.get(rowId);
+    if (entry && !consumedEntries.has(String(entry.tempId || ""))) {
+      consumedPersisted.add(rowId);
+      if (pendingEntryIdsInRows.has(String(entry.tempId || ""))) {
+        continue;
+      }
+      const pendingRow = pendingLineEntryToRow(entry, applyLineComputed);
+      if (pendingRow) {
+        merged.push(pendingRow);
+        consumedEntries.add(String(entry.tempId || ""));
+        continue;
+      }
+    }
+
+    if (!consumedPersisted.has(rowId)) {
+      const normalized = normalizeLineRow(row, applyLineComputed);
+      if (normalized) merged.push(normalized);
+    }
+  }
+
+  for (const entry of entries) {
+    const tempId = String(entry.tempId || "");
+    if (!tempId || consumedEntries.has(tempId)) continue;
+    const recordId = String(entry.recordId || "");
+    if ((recordId && consumedPersisted.has(recordId)) || consumedPersisted.has(tempId)) continue;
+    const pendingRow = pendingLineEntryToRow(entry, applyLineComputed);
+    if (pendingRow) merged.push(pendingRow);
+  }
+
+  return merged;
+}
+
+const LINE_ITEM_ROWS_CACHE_TTL_MS = 5 * 60 * 1000;
+const LINE_ITEM_ROWS_CACHE_LIMIT = 100;
+const lineItemRowsCache = new Map();
+
+function cloneLineRowsForCache(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      if (!row || typeof row !== "object" || !row.record_id) return null;
+      if (isPendingLineItemRow(row) && row._pendingLineItemStatus !== "saved") return null;
+      return {
+        record_id: row.record_id,
+        record: row.record && typeof row.record === "object" ? { ...row.record } : {},
+        ...(row._lineItemUiKey ? { _lineItemUiKey: row._lineItemUiKey } : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+function cloneLookupCacheForLineItems(cache) {
+  return cache && typeof cache === "object" ? { ...cache } : {};
+}
+
+function getCachedLineItemRows(scopeKey) {
+  const key = String(scopeKey || "").trim();
+  if (!key) return null;
+  const cached = lineItemRowsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - (cached.updatedAt || 0) > LINE_ITEM_ROWS_CACHE_TTL_MS) {
+    lineItemRowsCache.delete(key);
+    return null;
+  }
+  return {
+    rows: cloneLineRowsForCache(cached.rows),
+    lookupCache: cloneLookupCacheForLineItems(cached.lookupCache),
+  };
+}
+
+function setCachedLineItemRows(scopeKey, rows, lookupCache = {}) {
+  const key = String(scopeKey || "").trim();
+  if (!key) return;
+  lineItemRowsCache.set(key, {
+    rows: cloneLineRowsForCache(rows),
+    lookupCache: cloneLookupCacheForLineItems(lookupCache),
+    updatedAt: Date.now(),
+  });
+  if (lineItemRowsCache.size > LINE_ITEM_ROWS_CACHE_LIMIT) {
+    const oldestKey = lineItemRowsCache.keys().next().value;
+    if (oldestKey) lineItemRowsCache.delete(oldestKey);
+  }
+}
+
+function preserveLineRowUiKeys(nextRows, previousRows) {
+  const uiKeyByRecordId = new Map(
+    (Array.isArray(previousRows) ? previousRows : [])
+      .map((row) => [String(row?.record_id || ""), row?._lineItemUiKey])
+      .filter(([recordId, uiKey]) => recordId && uiKey)
+  );
+  return (Array.isArray(nextRows) ? nextRows : []).map((row) => {
+    const uiKey = uiKeyByRecordId.get(String(row?.record_id || ""));
+    return uiKey && !row?._lineItemUiKey ? { ...row, _lineItemUiKey: uiKey } : row;
+  });
+}
+
+function lineRecordDiffPayload(nextRecord, persistedRecord) {
+  const next = nextRecord && typeof nextRecord === "object" ? nextRecord : {};
+  const persisted = persistedRecord && typeof persistedRecord === "object" ? persistedRecord : {};
+  const diff = {};
+  for (const [fieldId, value] of Object.entries(next)) {
+    if (fieldId === "id" || fieldId === "record_id") continue;
+    if (persisted[fieldId] !== value) diff[fieldId] = value;
+  }
+  return diff;
+}
+
 function InlineLineItemsTable({
   config,
   entityDefs = [],
@@ -1375,6 +1586,8 @@ function InlineLineItemsTable({
   const [addLookupResetKey, setAddLookupResetKey] = useState(0);
   const [creatingCustomLine, setCreatingCustomLine] = useState(false);
   const lookupCacheRef = useRef({});
+  const rowsRef = useRef([]);
+  const appliedInitialCacheRef = useRef("");
   const parentRefreshInFlightRef = useRef(false);
   const parentRefreshQueuedRef = useRef(false);
   const parentRefreshTimerRef = useRef(null);
@@ -1396,6 +1609,17 @@ function InlineLineItemsTable({
       placeholder: translateRuntime("common.add_line_item"),
     }),
     [itemDisplayField, itemEntityId, itemField, itemLookupDomain, itemLookupFields]
+  );
+  const lineItemScopeKey = useMemo(
+    () => buildPendingLineItemScope({ parentEntityId, parentRecordId, childEntityId, parentField }),
+    [childEntityId, parentEntityId, parentField, parentRecordId]
+  );
+  const mergeWithCurrentPending = React.useCallback(
+    (baseRows) =>
+      lineItemScopeKey
+        ? mergeLineRowsWithPending(baseRows, getPendingLineItemEntries(lineItemScopeKey), applyLineComputed)
+        : baseRows,
+    [applyLineComputed, lineItemScopeKey]
   );
 
   async function addParentActivity(message) {
@@ -1457,7 +1681,11 @@ function InlineLineItemsTable({
   }, [flushParentRefresh, onRefreshParent, previewMode]);
 
   const rowRecords = useMemo(
-    () => rows.map((row) => row?.record).filter((row) => row && typeof row === "object"),
+    () =>
+      rows
+        .filter((row) => row?._pendingLineItemStatus !== "error")
+        .map((row) => row?.record)
+        .filter((row) => row && typeof row === "object"),
     [rows]
   );
 
@@ -1506,6 +1734,38 @@ function InlineLineItemsTable({
     lookupCacheRef.current = lookupCache;
   }, [lookupCache]);
 
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(() => {
+    if (!lineItemScopeKey || previewMode || !rowsLoaded) return;
+    setCachedLineItemRows(lineItemScopeKey, rows, lookupCache);
+  }, [lineItemScopeKey, lookupCache, previewMode, rows, rowsLoaded]);
+
+  const applyPendingLineItemEntries = React.useCallback(() => {
+    if (!lineItemScopeKey) return;
+    const entries = getPendingLineItemEntries(lineItemScopeKey);
+    setRows((prev) => mergeLineRowsWithPending(prev, entries, applyLineComputed));
+    setLookupCache((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const entry of entries) {
+        const recordId = entry.status === "saved" && entry.recordId ? entry.recordId : entry.tempId;
+        if (!recordId || !entry.label || next[recordId] === entry.label) continue;
+        next[recordId] = entry.label;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [applyLineComputed, lineItemScopeKey]);
+
+  useEffect(() => {
+    if (!lineItemScopeKey) return undefined;
+    applyPendingLineItemEntries();
+    return subscribePendingLineItems(lineItemScopeKey, applyPendingLineItemEntries);
+  }, [applyPendingLineItemEntries, lineItemScopeKey]);
+
   const resolveItemLabelsBatch = React.useCallback(async (itemIds) => {
     const normalizedIds = Array.from(
       new Set((itemIds || []).map((itemId) => String(itemId || "").trim()).filter(Boolean))
@@ -1550,11 +1810,38 @@ function InlineLineItemsTable({
   const fetchRows = React.useCallback(async () => {
     if (!childEntityId || !parentField || !parentRecordId || previewMode) {
       setRows([]);
+      rowsRef.current = [];
+      appliedInitialCacheRef.current = "";
       setRowsLoaded(false);
       return;
     }
-    setLoading(true);
-    setRowsLoaded(false);
+    const cached = lineItemScopeKey ? getCachedLineItemRows(lineItemScopeKey) : null;
+    const scopeChanged = appliedInitialCacheRef.current !== lineItemScopeKey;
+    if (cached && scopeChanged) {
+      appliedInitialCacheRef.current = lineItemScopeKey;
+      const cachedRows = mergeLineRowsWithPending(
+        cached.rows,
+        getPendingLineItemEntries(lineItemScopeKey),
+        applyLineComputed
+      );
+      setRows(cachedRows);
+      rowsRef.current = cachedRows;
+      setLookupCache((prev) => ({ ...cached.lookupCache, ...prev }));
+      setRowsLoaded(true);
+      setLoading(false);
+      void hydrateLookupLabels(cachedRows);
+    } else if (scopeChanged) {
+      appliedInitialCacheRef.current = lineItemScopeKey;
+      setRows([]);
+      rowsRef.current = [];
+      setRowsLoaded(false);
+      setLoading(true);
+    } else if (rowsRef.current.length === 0) {
+      setLoading(true);
+      setRowsLoaded(false);
+    } else {
+      setLoading(false);
+    }
     setError("");
     try {
       const fieldIds = Array.from(
@@ -1579,22 +1866,33 @@ function InlineLineItemsTable({
           value: parentRecordId,
         })
       );
+      qs.set("order", "created_at_asc");
       const res = await apiFetch(`/records/${childEntityId}?${qs.toString()}`);
       const next = (res?.records || []).map((r) => ({
         record_id: r.record_id,
         record: applyLineComputed(r.record || {}),
       }));
-      setRows(next);
+      if (lineItemScopeKey) {
+        acknowledgePersistedLineItems(lineItemScopeKey, next.map((row) => row.record_id));
+      }
+      const merged = preserveLineRowUiKeys(mergeWithCurrentPending(next), rowsRef.current);
+      setRows(merged);
+      rowsRef.current = merged;
       setRowsLoaded(true);
-      void hydrateLookupLabels(next);
+      if (lineItemScopeKey) setCachedLineItemRows(lineItemScopeKey, merged, lookupCacheRef.current);
+      void hydrateLookupLabels(merged);
     } catch (err) {
-      setError(err?.message || translateRuntime("common.failed_to_load_line_items"));
-      setRows([]);
-      setRowsLoaded(false);
+      if (!cached && rowsRef.current.length === 0) {
+        setError(err?.message || translateRuntime("common.failed_to_load_line_items"));
+        const fallbackRows = mergeWithCurrentPending([]);
+        setRows(fallbackRows);
+        rowsRef.current = fallbackRows;
+        setRowsLoaded(false);
+      }
     } finally {
       setLoading(false);
     }
-  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, parentFieldMap, hydrateLookupLabels, applyLineComputed]);
+  }, [childEntityId, parentField, parentRecordId, previewMode, columns, itemField, descriptionField, parentFieldMap, hydrateLookupLabels, applyLineComputed, lineItemScopeKey, mergeWithCurrentPending]);
 
   useEffect(() => {
     fetchRows();
@@ -1613,6 +1911,10 @@ function InlineLineItemsTable({
           : row
       )
     );
+    if (currentRow?._pendingLineItemId && currentRow._pendingLineItemStatus !== "saved") {
+      updatePendingLineItem(lineItemScopeKey, currentRow._pendingLineItemId, nextRecord);
+      return;
+    }
     const mutationSeq = nextRowMutationSeq(recordId);
     try {
       const updated = await updateRecord(childEntityId, recordId, { [fieldId]: value });
@@ -1634,9 +1936,16 @@ function InlineLineItemsTable({
 
   async function deleteRow(recordId) {
     if (!recordId || deletingRowId) return;
+    const currentRow = rows.find((row) => row.record_id === recordId);
+    if (currentRow?._pendingLineItemId && currentRow._pendingLineItemStatus !== "saved") {
+      if (currentRow._pendingLineItemStatus === "saving") return;
+      removePendingLineItem(lineItemScopeKey, currentRow._pendingLineItemId);
+      setRows((prev) => prev.filter((row) => row.record_id !== recordId));
+      setPendingDeleteRow(null);
+      return;
+    }
     setDeletingRowId(recordId);
     try {
-      const currentRow = rows.find((row) => row.record_id === recordId);
       await deleteRecord(childEntityId, recordId);
       setRows((prev) => prev.filter((row) => row.record_id !== recordId));
       setPendingDeleteRow(null);
@@ -1656,17 +1965,7 @@ function InlineLineItemsTable({
     );
   }
 
-  async function addRowFromOption(option) {
-    if (!option?.value || !parentRecordId) return;
-    let itemRecord = option?.record && typeof option.record === "object" ? option.record : null;
-    if (!itemRecord || lookupRecordMissingSources(itemRecord)) {
-      try {
-        const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
-        itemRecord = itemRes?.record || itemRes || null;
-      } catch {
-        itemRecord = null;
-      }
-    }
+  function buildLinePayloadFromOption(option, itemRecord = null) {
     const payload = {
       ...defaults,
       [parentField]: parentRecordId,
@@ -1705,51 +2004,170 @@ function InlineLineItemsTable({
       }
     }
     if (descriptionField && !payload[descriptionField]) payload[descriptionField] = option.label || "";
-    const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticRecord = applyLineComputed({ ...payload });
-    setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
-    setLookupCache((prev) => ({ ...prev, [temporaryRowId]: option.label || option.value }));
+    return payload;
+  }
+
+  async function loadFullLookupRecord(option) {
+    const initial = option?.record && typeof option.record === "object" ? option.record : null;
+    if (initial && !lookupRecordMissingSources(initial)) return initial;
     try {
-      const created = await createRecord(childEntityId, payload);
-      const createdId = created?.record_id;
-      const createdRecord = created?.record && typeof created.record === "object"
+      const itemRes = await apiFetch(`/records/${itemEntityId}/${option.value}`);
+      return itemRes?.record || itemRes || initial;
+    } catch {
+      return initial;
+    }
+  }
+
+  async function persistPendingCatalogueLine(tempId, option, initialPayload) {
+    let loadedLookupRecord = null;
+    let hasLoadedLookupRecord = false;
+    const getFullLookupRecord = async () => {
+      if (!hasLoadedLookupRecord) {
+        loadedLookupRecord = await loadFullLookupRecord(option);
+        hasLoadedLookupRecord = true;
+      }
+      return loadedLookupRecord;
+    };
+    const createLineRecord = async (payload) => {
+      const createPayload = applyLineComputed(payload);
+      updatePendingLineItem(lineItemScopeKey, tempId, createPayload);
+      const created = await createRecord(childEntityId, createPayload);
+      const createdId = created?.record_id || tempId;
+      const persistedRecord = created?.record && typeof created.record === "object"
         ? applyLineComputed(created.record)
-        : applyLineComputed({ ...payload, id: createdId || payload.id });
-      if (createdId) {
-        setRows((prev) => {
-          if (prev.some((row) => row.record_id === createdId)) {
-            return prev.filter((row) => row.record_id !== temporaryRowId);
-          }
-          return prev.map((row) =>
-            row.record_id === temporaryRowId ? { record_id: createdId, record: createdRecord } : row
-          );
+        : applyLineComputed({ ...createPayload, id: createdId });
+      const latestRecord = getPendingLineItemEntry(lineItemScopeKey, tempId)?.record || createPayload;
+      const displayRecord = applyLineComputed({
+        ...persistedRecord,
+        ...lineRecordDiffPayload(latestRecord, createPayload),
+        id: createdId,
+      });
+      updatePendingLineItem(lineItemScopeKey, tempId, displayRecord);
+      setLookupCache((prev) => {
+        const next = { ...prev, [createdId]: option.label || option.value };
+        if (createdId !== tempId) delete next[tempId];
+        return next;
+      });
+      return { createdId, createPayload, persistedRecord, displayRecord };
+    };
+
+    try {
+      let createdState;
+      try {
+        createdState = await createLineRecord(initialPayload);
+      } catch {
+        const itemRecord = await getFullLookupRecord();
+        const latestBeforeFallback = getPendingLineItemEntry(lineItemScopeKey, tempId)?.record || initialPayload;
+        const hydratedFallbackPayload = applyLineComputed({
+          ...initialPayload,
+          ...buildLinePayloadFromOption(option, itemRecord),
+          ...lineRecordDiffPayload(latestBeforeFallback, initialPayload),
+          id: tempId,
         });
-        setLookupCache((prev) => {
-          const next = { ...prev, [createdId]: option.label || option.value };
-          delete next[temporaryRowId];
-          return next;
+        createdState = await createLineRecord(hydratedFallbackPayload);
+      }
+
+      const { createdId, createPayload, persistedRecord, displayRecord } = createdState;
+      let savedRecord = persistedRecord;
+      if (createdId) {
+        const itemRecord = await getFullLookupRecord();
+        const hydratedPayload = applyLineComputed({
+          ...createPayload,
+          ...buildLinePayloadFromOption(option, itemRecord),
+          id: createdId,
+        });
+        const latestAfterCreate = getPendingLineItemEntry(lineItemScopeKey, tempId)?.record || displayRecord;
+        const targetRecord = applyLineComputed({
+          ...hydratedPayload,
+          ...lineRecordDiffPayload(latestAfterCreate, initialPayload),
+          id: createdId,
+        });
+        const postCreatePatch = lineRecordDiffPayload(targetRecord, persistedRecord);
+        if (Object.keys(postCreatePatch).length > 0) {
+          const updated = await updateRecord(childEntityId, createdId, postCreatePatch);
+          savedRecord = applyLineComputed(
+            updated?.record && typeof updated.record === "object" ? updated.record : { ...persistedRecord, ...postCreatePatch }
+          );
+        }
+        completePendingLineItem(lineItemScopeKey, tempId, {
+          recordId: createdId,
+          record: savedRecord,
+          label: option.label || option.value,
         });
       }
-      setAddLookupResetKey((prev) => prev + 1);
       void addParentActivity(`Line item added: ${option.label || option.value}.`);
       queueParentRefresh();
     } catch (err) {
-      setRows((prev) => prev.filter((row) => row.record_id !== temporaryRowId));
-      setLookupCache((prev) => {
-        const next = { ...prev };
-        delete next[temporaryRowId];
-        return next;
-      });
+      failPendingLineItem(lineItemScopeKey, tempId, err);
       setError(err?.message || translateRuntime("common.failed_to_add_line_item"));
     }
   }
 
-  async function createInlineCustomLine() {
-    if (!parentRecordId || creatingCustomLine) return;
+  function addRowFromOption(option) {
+    if (!option?.value || !parentRecordId || !lineItemScopeKey) return;
+    const itemRecord = option?.record && typeof option.record === "object" ? option.record : null;
+    const temporaryRowId = createClientRecordId();
+    const payload = { ...buildLinePayloadFromOption(option, itemRecord), id: temporaryRowId };
+    const optimisticRecord = applyLineComputed({ ...payload });
+    addPendingLineItem(lineItemScopeKey, {
+      tempId: temporaryRowId,
+      parentEntityId,
+      parentRecordId,
+      childEntityId,
+      parentField,
+      record: optimisticRecord,
+      label: option.label || option.value,
+    });
+    setLookupCache((prev) => ({ ...prev, [temporaryRowId]: option.label || option.value }));
+    setRows((prev) => mergeWithCurrentPending(prev));
+    setError("");
+    setAddLookupResetKey((prev) => prev + 1);
+    const promise = persistPendingCatalogueLine(temporaryRowId, option, optimisticRecord);
+    attachPendingLineItemPromise(lineItemScopeKey, temporaryRowId, promise);
+  }
+
+  async function persistPendingCustomLine(tempId, initialRecord, description) {
+    try {
+      const latestBeforeCreate = getPendingLineItemEntry(lineItemScopeKey, tempId)?.record || initialRecord;
+      const createPayload = applyLineComputed(latestBeforeCreate);
+      const created = await createRecord(childEntityId, createPayload);
+      const createdId = created?.record_id;
+      let createdRecord = created?.record && typeof created.record === "object"
+        ? applyLineComputed(created.record)
+        : applyLineComputed({ ...createPayload, id: createdId || createPayload.id });
+      if (createdId) {
+        const latestAfterCreate = getPendingLineItemEntry(lineItemScopeKey, tempId)?.record || createPayload;
+        const postCreatePatch = lineRecordDiffPayload(latestAfterCreate, createdRecord);
+        if (Object.keys(postCreatePatch).length > 0) {
+          const updated = await updateRecord(childEntityId, createdId, postCreatePatch);
+          createdRecord = applyLineComputed(
+            updated?.record && typeof updated.record === "object" ? updated.record : { ...createdRecord, ...postCreatePatch }
+          );
+        }
+        completePendingLineItem(lineItemScopeKey, tempId, {
+          recordId: createdId,
+          record: createdRecord,
+          label: description,
+        });
+      }
+      void addParentActivity(`Custom line item added: ${description}.`);
+      queueParentRefresh();
+    } catch (err) {
+      failPendingLineItem(lineItemScopeKey, tempId, err);
+      setError(err?.message || translateRuntime("common.failed_to_add_custom_line"));
+    } finally {
+      setCreatingCustomLine(false);
+    }
+  }
+
+  function createInlineCustomLine() {
+    if (!parentRecordId || !lineItemScopeKey || creatingCustomLine) return;
     const description = translateRuntime("common.custom_line");
+    const temporaryRowId = createClientRecordId();
     const payload = {
       ...defaults,
       ...customLineDefaults,
+      id: temporaryRowId,
       [parentField]: parentRecordId,
       ...(descriptionField ? { [descriptionField]: description } : {}),
     };
@@ -1769,35 +2187,22 @@ function InlineLineItemsTable({
     if (unitAmountColumn?.field_id) {
       payload[unitAmountColumn.field_id] = coerceEditorValue(defaults?.[unitAmountColumn.field_id], "number") ?? 0;
     }
-    const temporaryRowId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticRecord = applyLineComputed({ ...payload });
-    setRows((prev) => [...prev, { record_id: temporaryRowId, record: optimisticRecord }]);
+    addPendingLineItem(lineItemScopeKey, {
+      tempId: temporaryRowId,
+      parentEntityId,
+      parentRecordId,
+      childEntityId,
+      parentField,
+      record: optimisticRecord,
+      label: description,
+    });
+    setRows((prev) => mergeWithCurrentPending(prev));
     setCreatingCustomLine(true);
-    try {
-      const created = await createRecord(childEntityId, payload);
-      const createdId = created?.record_id;
-      const createdRecord = created?.record && typeof created.record === "object"
-        ? applyLineComputed(created.record)
-        : applyLineComputed({ ...payload, id: createdId || payload.id });
-      if (createdId) {
-        setRows((prev) => {
-          if (prev.some((row) => row.record_id === createdId)) {
-            return prev.filter((row) => row.record_id !== temporaryRowId);
-          }
-          return prev.map((row) =>
-            row.record_id === temporaryRowId ? { record_id: createdId, record: createdRecord } : row
-          );
-        });
-      }
-      setAddLookupResetKey((prev) => prev + 1);
-      void addParentActivity(`Custom line item added: ${description}.`);
-      queueParentRefresh();
-    } catch (err) {
-      setRows((prev) => prev.filter((row) => row.record_id !== temporaryRowId));
-      setError(err?.message || translateRuntime("common.failed_to_add_custom_line"));
-    } finally {
-      setCreatingCustomLine(false);
-    }
+    setError("");
+    setAddLookupResetKey((prev) => prev + 1);
+    const promise = persistPendingCustomLine(temporaryRowId, optimisticRecord, description);
+    attachPendingLineItemPromise(lineItemScopeKey, temporaryRowId, promise);
   }
 
   if (!childEntityId || !parentField || !itemField || !itemEntityId) {
@@ -1868,7 +2273,7 @@ function InlineLineItemsTable({
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading && rows.length === 0 && (
               <tr>
                 <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">{translateRuntime("common.loading_line_items")}</td>
               </tr>
@@ -1878,18 +2283,30 @@ function InlineLineItemsTable({
                 <td colSpan={columns.length + (readonly ? 0 : 1)} className="text-sm opacity-70">{translateRuntime("empty.no_line_items")}</td>
               </tr>
             )}
-            {!loading && rows.map((row) => (
-              <tr key={row.record_id}>
+            {rows.map((row) => (
+              <tr
+                key={row._lineItemUiKey || row.record_id}
+                className={row._pendingLineItemStatus === "error" ? "bg-error/5" : ""}
+              >
                 {columns.map((col) => {
                   const fieldId = col.field_id;
                   const raw = row.record?.[fieldId];
                   if (fieldId === itemField) {
                     const isCustomLine = !raw;
                     const label = isCustomLine ? translateRuntime("common.custom") : lookupCache[row.record_id] || row.record?.[descriptionField] || raw || "";
+                    const pendingStatus = row._pendingLineItemStatus;
+                    const pendingError = pendingStatus === "error"
+                      ? (row._pendingLineItemError || translateRuntime("common.failed_to_add_line_item"))
+                      : "";
                     if (readonly || col.readonly) {
                       return (
                         <td key={`${row.record_id}-${fieldId}`} style={columnStyle(col)}>
-                          {isCustomLine ? <span className="badge badge-outline badge-sm">{translateRuntime("common.custom")}</span> : label}
+                          <div className="flex min-h-8 flex-col justify-center gap-1">
+                            <div className="flex items-center gap-2">
+                              {isCustomLine ? <span className="badge badge-outline badge-sm">{translateRuntime("common.custom")}</span> : label}
+                            </div>
+                            {pendingError ? <div className="text-xs text-error">{pendingError}</div> : null}
+                          </div>
                         </td>
                       );
                     }
@@ -1953,6 +2370,10 @@ function InlineLineItemsTable({
                               )
                             );
                             setLookupCache((prev) => ({ ...prev, [row.record_id]: nextLabel }));
+                            if (row._pendingLineItemId && row._pendingLineItemStatus !== "saved") {
+                              updatePendingLineItem(lineItemScopeKey, row._pendingLineItemId, computedNextRecord);
+                              return;
+                            }
                             const mutationSeq = nextRowMutationSeq(row.record_id);
                             try {
                               const updated = await updateRecord(childEntityId, row.record_id, updatePayload);
@@ -1979,6 +2400,7 @@ function InlineLineItemsTable({
                           canCreate={canCreateLookup}
                           onCreate={onLookupCreate}
                         />
+                        {pendingError ? <div className="mt-1 text-xs text-error">{pendingError}</div> : null}
                       </td>
                     );
                   }
@@ -2088,6 +2510,7 @@ function InlineLineItemsTable({
                       type="button"
                       className="btn btn-ghost btn-xs text-error"
                       onClick={() => setPendingDeleteRow(row)}
+                      disabled={row._pendingLineItemStatus === "saving"}
                       aria-label={translateRuntime("common.delete_line_item")}
                       title={translateRuntime("common.delete_line_item")}
                     >
@@ -2106,9 +2529,9 @@ function InlineLineItemsTable({
                     key={addLookupResetKey}
                     field={addLookupField}
                     value={null}
-                    onChange={async (nextItemId, selectedOption = null) => {
+                    onChange={(nextItemId, selectedOption = null) => {
                       if (!nextItemId) return;
-                      await addRowFromOption({
+                      addRowFromOption({
                         value: nextItemId,
                         label: selectedOption?.label || nextItemId,
                         record: selectedOption?.record || null,

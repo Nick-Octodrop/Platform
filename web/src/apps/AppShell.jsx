@@ -23,6 +23,7 @@ import {
   resolvePersistedFormDraft,
   saveFormDraftSnapshot,
 } from "../utils/formDraftPersistence.js";
+import { waitForPendingLineItemWrites } from "../utils/pendingLineItemWrites.js";
 import { normalizeManifestRecordPayload } from "../utils/formPayload.js";
 import { useAccessContext } from "../access.js";
 import useMediaQuery from "../hooks/useMediaQuery.js";
@@ -1125,6 +1126,11 @@ export default function AppShell({
       ? runtimeContext.recordDraft
       : recordDraft;
     const actionModuleId = runtimeContext?.moduleId || moduleId;
+    const contextEntityId =
+      runtimeContext?.entityId ||
+      runtimeContext?.recordEntityId ||
+      resolveEntityFullId(manifest, action?.entity_id) ||
+      null;
     const resolvedDefaults = action?.defaults && typeof action.defaults === "object"
       ? resolveTemplateRefs(action.defaults, contextRecordDraft || {})
       : action?.defaults;
@@ -1162,6 +1168,20 @@ export default function AppShell({
     if (["update_record", "transform_record"].includes(action?.kind || "") && flushCurrentFormSave) {
       const saved = await flushCurrentFormSave();
       if (!saved) return null;
+    }
+    if (!previewMode && contextRecordId && contextEntityId) {
+      const lineWrites = await waitForPendingLineItemWrites({
+        parentEntityId: contextEntityId,
+        parentRecordId: contextRecordId,
+        timeoutMs: 20000,
+      });
+      if (!lineWrites.ok) {
+        const message = lineWrites.timedOut || lineWrites.pending > 0
+          ? "Line items are still saving. Try again in a moment."
+          : translateRuntime("common.failed_to_add_line_item");
+        pushToast("error", message);
+        return null;
+      }
     }
     try {
       if (previewMode && previewAllowNav) {
@@ -1895,7 +1915,12 @@ function AppView({
     const shouldShowActionPending = isWriteActionKind(action?.kind) || action?.kind === "transform_record";
     if (shouldShowActionPending) startActionPending(action);
     try {
-      return await onRunAction(action, { ...context, flushPendingFormSave, refreshCurrentRecord });
+      return await onRunAction(action, {
+        ...context,
+        entityId: context?.entityId || recordEntityId,
+        flushPendingFormSave,
+        refreshCurrentRecord,
+      });
     } finally {
       if (shouldShowActionPending) clearActionPending();
     }

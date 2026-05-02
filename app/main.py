@@ -4806,16 +4806,19 @@ def _records_list_page_with_simple_domain(
     q: str | None = None,
     search_fields: list[str] | None = None,
     fields: list[str] | None = None,
+    order: str | None = None,
 ) -> tuple[list[dict], str | None] | None:
     built_domain = _build_simple_domain_sql_clause(domain)
     if built_domain is None:
         return None
+    order_key = str(order or "").strip().lower()
+    stable_created_order = order_key == "created_at_asc"
     where, params = _build_records_generic_sql_where(entity_id=entity_id, q=q, search_fields=search_fields)
     domain_sql, domain_params = built_domain
     where += f" and ({domain_sql})"
     params.extend(domain_params)
     decoded = _decode_resp_cursor(cursor)
-    if decoded:
+    if decoded and not stable_created_order:
         cursor_ts, cursor_id = decoded
         where += " and (updated_at, id) < (%s, %s)"
         params.extend([cursor_ts, cursor_id])
@@ -4834,19 +4837,21 @@ def _records_list_page_with_simple_domain(
         rows = fetch_all(
             conn,
             f"""
-            select id, {data_expr}, updated_at
+            select id, {data_expr}, updated_at, created_at
             from records_generic
             {where}
-            order by updated_at desc, id desc
+            order by {"created_at asc, id asc" if stable_created_order else "updated_at desc, id desc"}
             limit %s
             """,
             query_params,
             query_name="records_generic.list_page_simple_domain",
         )
     next_cursor = None
-    if len(rows) > limit:
+    if len(rows) > limit and not stable_created_order:
         tail = rows[limit - 1]
         next_cursor = _encode_resp_cursor(tail.get("updated_at"), str(tail.get("id")))
+        rows = rows[:limit]
+    elif len(rows) > limit:
         rows = rows[:limit]
     items: list[dict] = []
     for row in rows:
@@ -49956,6 +49961,7 @@ async def list_generic_records(
     search_fields: str | None = None,
     fields: str | None = None,
     domain: str | None = None,
+    order: str | None = None,
 ) -> dict:
     actor = _resolve_actor(request)
     if isinstance(actor, JSONResponse):
@@ -49985,7 +49991,7 @@ async def list_generic_records(
     entity_has_computed = has_computed_fields(found[1])
     cache_key = (
         f"records:list:{get_org_id()}:{entity_id}:{limit_cap}:{offset_val}:{cursor or ''}:{fields or ''}:"
-        f"{search_fields or ''}:{q or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
+        f"{search_fields or ''}:{q or ''}:{order or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
     )
     cached = _resp_cache_get(cache_key)
     if cached is not None:
@@ -49994,7 +50000,13 @@ async def list_generic_records(
     field_ids = [f.strip() for f in fields.split(",") if f.strip()] if isinstance(fields, str) and fields.strip() else None
     use_cursor = isinstance(cursor, str) and cursor.strip()
     fast_page = None
-    if (use_cursor or offset_val == 0) and parsed_domain and not entity_has_computed and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain, allow_simple_domain=True):
+    stable_created_order = str(order or "").strip().lower() == "created_at_asc"
+    if (
+        (use_cursor or offset_val == 0)
+        and parsed_domain
+        and (not entity_has_computed or stable_created_order)
+        and _records_sql_fast_path_allowed(actor, entity_id, parsed_domain, allow_simple_domain=True)
+    ):
         fast_page = _records_list_page_with_simple_domain(
             entity_id=entity_id,
             domain=parsed_domain,
@@ -50003,6 +50015,7 @@ async def list_generic_records(
             q=q,
             search_fields=fields_list,
             fields=field_ids,
+            order=order,
         )
     if fast_page is not None:
         items, next_cursor = fast_page
@@ -51368,7 +51381,7 @@ def _template_related_line_config(entity_name: str | None) -> dict | None:
 def _list_template_line_rows(line_entity_id: str, parent_field_id: str, parent_record_id: str) -> list[dict]:
     if hasattr(generic_records, "list_by_field_value"):
         try:
-            return generic_records.list_by_field_value(line_entity_id, parent_field_id, parent_record_id, limit=1000)
+            return generic_records.list_by_field_value(line_entity_id, parent_field_id, parent_record_id, limit=1000, order="created_at_asc")
         except TypeError:
             try:
                 return generic_records.list_by_field_value(line_entity_id, parent_field_id, parent_record_id)
