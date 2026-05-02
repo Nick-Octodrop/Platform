@@ -79,13 +79,23 @@ function notifyWorkspaceChanged(workspaceId, scope = "local") {
   );
 }
 
-function emitAutomationRunsStarted(data, path, body) {
+function emitAutomationRunsStarted(data, path, body, method) {
   if (typeof window === "undefined") return;
-  const runs = Array.isArray(data?.result?.automation_runs)
+  let runs = Array.isArray(data?.result?.automation_runs)
     ? data.result.automation_runs
     : Array.isArray(data?.automation_runs)
       ? data.automation_runs
-      : [];
+      : Array.isArray(data?.data?.result?.automation_runs)
+        ? data.data.result.automation_runs
+        : Array.isArray(data?.data?.automation_runs)
+          ? data.data.automation_runs
+          : [];
+  if (runs.length === 0 && method !== "GET" && data?.run && typeof data.run === "object") {
+    runs = [data.run];
+  }
+  if (runs.length === 0 && method !== "GET" && data?.result?.run && typeof data.result.run === "object") {
+    runs = [data.result.run];
+  }
   if (runs.length === 0) return;
   let action = {};
   if (path === "/actions/run" && typeof body === "string" && body.trim()) {
@@ -401,7 +411,7 @@ export async function apiFetch(path, options = {}) {
           requestCache.set(key, data);
           requestCacheTs.set(key, Date.now());
         }
-        emitAutomationRunsStarted(data, path, body);
+        emitAutomationRunsStarted(data, path, body, method);
         if (method !== "GET") {
           if (path.startsWith("/records/")) {
             const parts = path.split("/").filter(Boolean);

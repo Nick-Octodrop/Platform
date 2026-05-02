@@ -17,8 +17,26 @@ export default function AutomationRunDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch(`/automation-runs/${runId}`);
-      setData({ run: res?.run || null, steps: Array.isArray(res?.steps) ? res.steps : [] });
+      const [res, statusRes] = await Promise.all([
+        apiFetch(`/automation-runs/${runId}`),
+        apiFetch(`/automation-runs/${runId}/status`).catch(() => null),
+      ]);
+      const rawRun = res?.run || null;
+      const statusRun = statusRes?.run || null;
+      const statusSteps = Array.isArray(statusRes?.steps) ? statusRes.steps : [];
+      const statusById = new Map(statusSteps.map((step) => [step.id || step.step_id, step]));
+      const statusByStepId = new Map(statusSteps.map((step) => [step.step_id, step]));
+      const rawSteps = Array.isArray(res?.steps) ? res.steps : [];
+      const mergedSteps = rawSteps.map((step) => {
+        const statusStep = statusById.get(step.id || step.step_id) || statusByStepId.get(step.step_id);
+        return statusStep ? { ...step, ...statusStep, input: step.input, output: step.output } : step;
+      });
+      setData({
+        run: rawRun ? { ...rawRun, ...(statusRun || {}) } : statusRun,
+        steps: mergedSteps.length ? mergedSteps : statusSteps,
+        jobs: Array.isArray(statusRes?.jobs) ? statusRes.jobs : [],
+        progress: statusRes?.progress || null,
+      });
     } catch (err) {
       setData(null);
       const detail = err?.detail ? ` ${JSON.stringify(err.detail)}` : "";
@@ -34,11 +52,13 @@ export default function AutomationRunDetailPage() {
 
   const run = data?.run || null;
   const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+  const displayStatus = run?.effective_status || run?.status || "";
   const displayRunId = run?.id || runId || "";
 
   const summaryItems = useMemo(
     () => [
-      { label: t("common.status"), value: run?.status ? t(`common.${run.status}`, {}, { defaultValue: run.status }) : "—" },
+      { label: t("common.status"), value: displayStatus ? t(`common.${displayStatus}`, {}, { defaultValue: displayStatus }) : "—" },
       { label: t("settings.automation_run_detail.automation"), value: run?.automation_id || "—", mono: true },
       { label: t("settings.automation_run_detail.trigger_type"), value: run?.trigger_type || "—" },
       { label: t("common.started"), value: formatDateTime(run?.started_at, { defaultValue: "—" }) || "—" },
@@ -46,7 +66,7 @@ export default function AutomationRunDetailPage() {
       { label: t("settings.automation_run_detail.current_step_index"), value: run?.current_step_index ?? "—" },
       { label: t("settings.automation_run_detail.trigger_event_id"), value: run?.trigger_event_id || "—", mono: true },
     ],
-    [run, formatDateTime, t]
+    [run, displayStatus, formatDateTime, t]
   );
 
   return (
@@ -58,7 +78,7 @@ export default function AutomationRunDetailPage() {
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold break-all">{displayRunId ? t("settings.automation_run_detail.run_named", { id: displayRunId }) : t("settings.automation_run_detail.title")}</h1>
                 <div className="mt-1 text-sm opacity-70">
-                  {run?.status ? t("settings.automation_run_detail.status_value", { status: t(`common.${run.status}`, {}, { defaultValue: run.status }) }) : t("settings.automation_run_detail.subtitle")}
+                  {displayStatus ? t("settings.automation_run_detail.status_value", { status: t(`common.${displayStatus}`, {}, { defaultValue: displayStatus }) }) : t("settings.automation_run_detail.subtitle")}
                 </div>
               </div>
 
@@ -137,6 +157,37 @@ export default function AutomationRunDetailPage() {
                       </div>
                     )}
                   </section>
+
+                  {jobs.length ? (
+                    <section className="space-y-3">
+                      <div>
+                        <h2 className="text-base font-semibold">Background jobs</h2>
+                        <div className="mt-1 text-sm opacity-70">Queued worker jobs linked to this automation run.</div>
+                      </div>
+                      <div className="overflow-x-auto rounded-box border border-base-300">
+                        <table className="table table-sm">
+                          <thead>
+                            <tr>
+                              <th>Type</th>
+                              <th>Status</th>
+                              <th>Attempt</th>
+                              <th>Last error</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {jobs.map((job) => (
+                              <tr key={job.id}>
+                                <td className="font-mono text-xs">{job.type || "—"}</td>
+                                <td>{job.status ? t(`common.${job.status}`, {}, { defaultValue: job.status }) : "—"}</td>
+                                <td>{job.attempt ?? "—"}/{job.max_attempts ?? "—"}</td>
+                                <td className="max-w-xl whitespace-pre-wrap text-error">{job.last_error || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  ) : null}
                 </>
               )}
             </div>

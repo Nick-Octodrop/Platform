@@ -324,6 +324,12 @@ class MemoryJobStore:
         job = self._jobs.get(job_id)
         return copy.deepcopy(job) if job else None
 
+    def get_by_idempotency(self, job_type: str, idempotency_key: str) -> dict | None:
+        for job in self._jobs.values():
+            if job.get("type") == job_type and job.get("idempotency_key") == idempotency_key:
+                return copy.deepcopy(job)
+        return None
+
     def list(self, workspace_id: str, status: str | None = None, job_type: str | None = None, limit: int = 200) -> list[dict]:
         items = [
             j for j in self._jobs.values()

@@ -52229,7 +52229,7 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
         _add_chatter_entry(entity_id, record_id, "system", "Record created", getattr(request.state, "user", None))
         _activity_add_record_created_event(found[1], record_id, record_payload, actor=getattr(request.state, "user", None))
         created_snapshot = _automation_record_snapshot(record_payload, found[1])
-        _emit_triggers(
+        automation_runs = _emit_triggers(
             request,
             found[0],
             found[2],
@@ -52244,7 +52244,13 @@ async def create_generic_record(request: Request, entity_id: str) -> dict:
             },
             entity_id=found[1].get("id"),
         )
-        return _ok_response({"record_id": record_id, "record": _mask_record_for_actor(actor, found[0], found[1], record_payload)})
+        return _ok_response(
+            {
+                "record_id": record_id,
+                "record": _mask_record_for_actor(actor, found[0], found[1], record_payload),
+                "automation_runs": _automation_run_response_items(automation_runs),
+            }
+        )
     if "id" in record:
         return _ok_response({"record_id": record["id"], "record": record})
     return _ok_response({"record": record})
@@ -52382,6 +52388,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
             )
         raise
     after_record = record.get("record") if isinstance(record, dict) else None
+    automation_runs: list[dict] = []
     if isinstance(after_record, dict) and isinstance(before_record, dict):
         try:
             after_record = _apply_document_numbering_after_write(
@@ -52429,7 +52436,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
                 after_record.get(status_field),
                 actor=getattr(request.state, "user", None),
             )
-        _emit_triggers(
+        automation_runs = _emit_triggers(
             request,
             found[0],
             found[2],
@@ -52446,26 +52453,34 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
             entity_id=found[1].get("id"),
         )
         if isinstance(status_field, str) and before_record.get(status_field) != after_record.get(status_field):
-            _emit_triggers(
-                request,
-                found[0],
-                found[2],
-                "workflow.status_changed",
-                {
-                    "entity_id": found[1].get("id"),
-                    "record_id": record_id,
-                    "changed_fields": [status_field],
-                    "from": before_record.get(status_field),
-                    "to": after_record.get(status_field),
-                    "before": before_snapshot,
-                    "after": after_snapshot,
-                    "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
-                    "timestamp": _now(),
-                },
-                entity_id=found[1].get("id"),
-                status_field=status_field,
+            automation_runs.extend(
+                _emit_triggers(
+                    request,
+                    found[0],
+                    found[2],
+                    "workflow.status_changed",
+                    {
+                        "entity_id": found[1].get("id"),
+                        "record_id": record_id,
+                        "changed_fields": [status_field],
+                        "from": before_record.get(status_field),
+                        "to": after_record.get(status_field),
+                        "before": before_snapshot,
+                        "after": after_snapshot,
+                        "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
+                        "timestamp": _now(),
+                    },
+                    entity_id=found[1].get("id"),
+                    status_field=status_field,
+                )
             )
-    return _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], record["record"]), "record_id": record["record_id"]})
+    return _ok_response(
+        {
+            "record": _mask_record_for_actor(actor, found[0], found[1], record["record"]),
+            "record_id": record["record_id"],
+            "automation_runs": _automation_run_response_items(automation_runs),
+        }
+    )
 
 
 @app.delete("/records/{entity_id}/{record_id}")
@@ -64165,7 +64180,15 @@ async def test_automation_trigger(request: Request, automation_id: str) -> dict:
         }
     )
     job = job_store.enqueue({"type": "automation.run", "payload": {"run_id": run.get("id")}})
-    return _ok_response({"run": run, "job": job}, status=202)
+    run_summary = {**run, "automation_name": automation.get("name") if isinstance(automation, dict) else None}
+    return _ok_response(
+        {
+            "run": run,
+            "job": job,
+            "automation_runs": _automation_run_response_items([run_summary]),
+        },
+        status=202,
+    )
 
 
 @app.delete("/automations/{automation_id}")
@@ -64839,6 +64862,24 @@ TERMINAL_AUTOMATION_STATUSES = {"succeeded", "failed", "cancelled"}
 TERMINAL_AUTOMATION_STEP_STATUSES = {"succeeded", "failed", "cancelled", "skipped"}
 
 
+def _automation_status_stale_seconds() -> int:
+    raw = os.getenv("OCTO_AUTOMATION_STATUS_STALE_SECONDS") or os.getenv("OCTO_JOB_LOCK_LEASE_SECONDS") or "1200"
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 1200
+    return max(60, value)
+
+
+def _automation_timestamp_age_seconds(value: Any) -> float | None:
+    parsed = _to_datetime(value)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).total_seconds()
+
+
 def _automation_run_trigger_user_id(run: dict) -> str | None:
     payload = run.get("trigger_payload") if isinstance(run, dict) else None
     if not isinstance(payload, dict):
@@ -64935,6 +64976,28 @@ def _automation_job_status_item(job: dict) -> dict:
     }
 
 
+def _automation_stale_active_job(jobs: list[dict], stale_seconds: int) -> dict | None:
+    for job in jobs:
+        if job.get("status") != "running":
+            continue
+        age = _automation_timestamp_age_seconds(job.get("locked_at") or job.get("updated_at"))
+        if age is not None and age > stale_seconds:
+            return job
+    return None
+
+
+def _fallback_step_job(step_run: dict) -> dict | None:
+    source = step_run.get("input") if isinstance(step_run.get("input"), dict) else {}
+    if source.get("action_id") != "system.generate_document":
+        return None
+    idempotency_key = step_run.get("idempotency_key")
+    if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+        return None
+    if hasattr(job_store, "get_by_idempotency"):
+        return job_store.get_by_idempotency("doc.generate", idempotency_key.strip())
+    return None
+
+
 def _latest_automation_step_runs(step_runs: list[dict]) -> list[dict]:
     latest_by_index: dict[int, dict] = {}
     overflow_index = 100000
@@ -64971,15 +65034,20 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
     step_runs = automation_store.list_step_runs(run_id)
     latest_step_runs = _latest_automation_step_runs(step_runs)
     job_ids: set[str] = set()
+    jobs_by_id: dict[str, dict] = {}
     for step_run in step_runs:
         output = step_run.get("output")
         if isinstance(output, (dict, list)):
             job_ids.update(_collect_automation_job_ids(output))
+        fallback_job = _fallback_step_job(step_run)
+        if fallback_job and fallback_job.get("id"):
+            jobs_by_id[str(fallback_job.get("id"))] = fallback_job
     jobs = []
     for job_id in sorted(job_ids):
         job = job_store.get(job_id)
         if job:
-            jobs.append(_automation_job_status_item(job))
+            jobs_by_id[str(job_id)] = job
+    jobs = [_automation_job_status_item(job) for job in jobs_by_id.values()]
 
     step_items: list[dict] = []
     for step_run in latest_step_runs:
@@ -64997,8 +65065,24 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
     failed_jobs = [job for job in jobs if job.get("status") in {"failed", "dead", "cancelled"}]
     run_status = run.get("status")
     is_run_terminal = run_status in TERMINAL_AUTOMATION_STATUSES
-    is_done = is_run_terminal and not active_jobs
-    effective_status = "failed" if failed_jobs else (run_status or "queued")
+    stale_step = None
+    stale_seconds = _automation_status_stale_seconds()
+    stale_job = _automation_stale_active_job(active_jobs, stale_seconds)
+    if not active_jobs and not failed_jobs and not stale_job and not is_run_terminal:
+        for item in step_items:
+            if item.get("status") in TERMINAL_AUTOMATION_STEP_STATUSES:
+                continue
+            age = _automation_timestamp_age_seconds(item.get("started_at") or run.get("updated_at") or run.get("started_at"))
+            if age is not None and age > stale_seconds:
+                stale_step = item
+                break
+    is_done = (is_run_terminal and not active_jobs) or stale_step is not None or stale_job is not None
+    effective_status = "failed" if failed_jobs or stale_step or stale_job else (run_status or "queued")
+    last_error = run.get("last_error")
+    if stale_job and not last_error:
+        last_error = "Automation job appears stalled. The worker may have been stopped while this job was running."
+    elif stale_step and not last_error:
+        last_error = "Automation appears stalled. The worker may have been stopped while this step was running."
 
     active_step = next((item for item in step_items if item.get("status") not in TERMINAL_AUTOMATION_STEP_STATUSES), None)
     if active_step is None and not is_run_terminal:
@@ -65028,7 +65112,7 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
                 "updated_at": run.get("updated_at"),
                 "started_at": run.get("started_at"),
                 "ended_at": run.get("ended_at"),
-                "last_error": run.get("last_error"),
+                "last_error": last_error,
             },
             "steps": step_items,
             "jobs": jobs,
@@ -65039,6 +65123,7 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
                 "active_jobs": active_jobs,
                 "done": is_done,
                 "effective_status": effective_status,
+                "stalled": stale_step is not None or stale_job is not None,
             },
         }
     )

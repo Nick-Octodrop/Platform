@@ -74,11 +74,11 @@ logger = logging.getLogger("octo.worker")
 
 
 def _doc_generation_timeout_seconds() -> float:
-    raw = os.getenv("DOC_GENERATE_TIMEOUT_SECONDS") or os.getenv("DOC_RENDER_TIMEOUT_SECONDS") or "60"
+    raw = os.getenv("DOC_GENERATE_TIMEOUT_SECONDS") or os.getenv("DOC_RENDER_TIMEOUT_SECONDS") or "180"
     try:
         value = float(raw)
     except (TypeError, ValueError):
-        value = 60.0
+        value = 180.0
     return max(0.0, value)
 
 
@@ -303,6 +303,34 @@ def _sync_attachment_field(
     updated_record = dict(record_data)
     updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
     updated_record.update(_attachment_metadata_patch(entity_def, attachment_field, attachment))
+    records.update(entity_id, record_id, updated_record)
+
+
+def _sync_generated_document_record(
+    records: DbGenericRecordStore,
+    *,
+    entity_id: str,
+    record_id: str,
+    record_data: dict,
+    attachment: dict,
+) -> None:
+    if not _entity_id_matches(entity_id, "entity.biz_document") or not isinstance(record_data, dict):
+        return
+    existing_items = _extract_attachment_refs(record_data.get("biz_document.attachments"))
+    attachment_id = attachment.get("id")
+    next_items = list(existing_items)
+    if not (isinstance(attachment_id, str) and any(item.get("id") == attachment_id for item in existing_items if isinstance(item, dict))):
+        next_items.append(_attachment_item(attachment))
+    filename = attachment.get("filename") if isinstance(attachment.get("filename"), str) else ""
+    updated_record = dict(record_data)
+    updated_record.update(
+        {
+            "biz_document.attachments": next_items,
+            "biz_document.file_name": filename,
+            "biz_document.file_extension": _attachment_extension_from_filename(filename),
+            "biz_document.mime_type": attachment.get("mime_type") or "application/pdf",
+        }
+    )
     records.update(entity_id, record_id, updated_record)
 
 
@@ -674,6 +702,13 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
         )
     attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, record_entity_id)
     _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment, entity_def=record_entity_def)
+    _sync_generated_document_record(
+        records,
+        entity_id=record_entity_id,
+        record_id=record_id,
+        record_data=record_data,
+        attachment=attachment,
+    )
     _mirror_generated_attachment_to_parent_record(
         records,
         attach_store,
@@ -2778,18 +2813,31 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         if existing and existing.get("status") == "succeeded":
             automation_store.update_run(run_id, {"current_step_index": idx + 1})
             continue
-        step_run = automation_store.create_step_run(
-            {
-                "run_id": run_id,
-                "step_index": idx,
-                "step_id": step_id,
-                "status": "running",
-                "attempt": attempt,
-                "started_at": _now(),
-                "input": step,
-                "idempotency_key": idempotency_key,
-            }
-        )
+        if existing:
+            step_run = automation_store.update_step_run(
+                existing.get("id"),
+                {
+                    "status": "running",
+                    "started_at": _now(),
+                    "ended_at": None,
+                    "input": step,
+                    "output": None,
+                    "last_error": None,
+                },
+            ) or existing
+        else:
+            step_run = automation_store.create_step_run(
+                {
+                    "run_id": run_id,
+                    "step_index": idx,
+                    "step_id": step_id,
+                    "status": "running",
+                    "attempt": attempt,
+                    "started_at": _now(),
+                    "input": step,
+                    "idempotency_key": idempotency_key,
+                }
+            )
         try:
             kind = step.get("kind")
             sequence_state["value"] = max(sequence_state["value"], idx)
@@ -2990,10 +3038,24 @@ def _run_job(job: dict) -> None:
         if job.get("type") == "email.send":
             _handle_email_send(job, org_id)
         elif job.get("type") == "doc.generate":
+            payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+            logger.info(
+                "doc_generate_start job_id=%s template_id=%s entity_id=%s record_id=%s",
+                job.get("id"),
+                payload.get("template_id"),
+                payload.get("entity_id"),
+                payload.get("record_id"),
+            )
             result = _run_with_alarm_timeout(
                 "Document generation",
                 _doc_generation_timeout_seconds(),
                 lambda: _handle_doc_generate(job, org_id),
+            )
+            logger.info(
+                "doc_generate_succeeded job_id=%s attachment_id=%s filename=%s",
+                job.get("id"),
+                (result.get("attachment") or {}).get("id") if isinstance(result, dict) else None,
+                result.get("filename") if isinstance(result, dict) else None,
             )
             _notify_doc_generation(job, result=result if isinstance(result, dict) else None)
         elif job.get("type") == "automation.run":
@@ -3012,6 +3074,26 @@ def _run_job(job: dict) -> None:
         reset_org_id(token)
 
 
+def _fail_automation_run_for_job(job: dict, error: BaseException) -> None:
+    if job.get("type") != "automation.run":
+        return
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    run_id = payload.get("run_id")
+    if not isinstance(run_id, str) or not run_id.strip():
+        return
+    try:
+        DbAutomationStore().update_run(
+            run_id.strip(),
+            {
+                "status": "failed",
+                "ended_at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "last_error": str(error) or "Automation worker failed",
+            },
+        )
+    except Exception as exc:
+        logger.warning("automation_run_terminal_update_failed run_id=%s error=%s", run_id, exc)
+
+
 def main() -> None:
     worker_id = os.getenv("WORKER_ID", str(uuid.uuid4()))
     scoped_org_id = os.getenv("WORKER_ORG_ID") or os.getenv("OCTO_WORKER_ORG_ID") or ""
@@ -3027,6 +3109,12 @@ def main() -> None:
         poll_ms,
         batch_size,
     )
+    try:
+        from app.doc_render import prewarm_pdf_renderer
+
+        prewarm_pdf_renderer(wait=False)
+    except Exception as exc:
+        logger.warning("doc_renderer_prewarm_failed error=%s", exc)
 
     while True:
         if shared_mode:
@@ -3050,13 +3138,16 @@ def main() -> None:
                     job_store.update(job["id"], {"status": "succeeded", "locked_at": None, "locked_by": None})
                 except SecretStoreError as exc:
                     job_store.update(job["id"], {"status": "failed", "last_error": str(exc)})
+                    _fail_automation_run_for_job(job, exc)
                 except Exception as exc:
                     attempt = job.get("attempt", 1)
                     max_attempts = job.get("max_attempts", 10)
-                    if attempt >= max_attempts:
+                    non_retryable_timeout = job.get("type") == "doc.generate" and isinstance(exc, TimeoutError)
+                    if non_retryable_timeout or attempt >= max_attempts:
                         job_store.update(job["id"], {"status": "dead", "last_error": str(exc)})
                         if job.get("type") == "doc.generate":
                             _notify_doc_generation(job, error=exc)
+                        _fail_automation_run_for_job(job, exc)
                     else:
                         delay = _backoff_seconds(attempt)
                         run_at = (_now() + timedelta(seconds=delay)).strftime("%Y-%m-%dT%H:%M:%SZ")

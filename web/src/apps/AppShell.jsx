@@ -7,6 +7,7 @@ import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
 import ContentBlocksRenderer from "../ui/ContentBlocksRenderer.jsx";
 import { getFieldValue, renderField, setFieldValue } from "../ui/field_renderers.jsx";
+import { notifyAutomationRunsStarted } from "../components/BackgroundAutomationTracker.jsx";
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
@@ -1222,7 +1223,21 @@ export default function AppShell({
         selected_ids: contextSelectedIds,
       });
       const result = res.result || {};
-      const actionStartedAutomation = Array.isArray(result?.automation_runs) && result.automation_runs.length > 0;
+      const automationRuns = Array.isArray(result?.automation_runs)
+        ? result.automation_runs
+        : Array.isArray(res?.automation_runs)
+          ? res.automation_runs
+          : [];
+      const actionStartedAutomation = automationRuns.length > 0;
+      if (actionStartedAutomation) {
+        notifyAutomationRunsStarted(automationRuns, {
+          id: action.id,
+          module_id: actionModuleId,
+          kind: result.kind || action.kind,
+          label: resolveActionLabel(action, manifest, views),
+          action_label: action.action_label || action.label || null,
+        });
+      }
       const pushActionCompleteToast = () => {
         if (actionStartedAutomation) return;
         pushToast("success", translateRuntime("common.app_shell.action_complete"));

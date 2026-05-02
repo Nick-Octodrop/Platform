@@ -6,6 +6,7 @@ import { translateRuntime } from "../i18n/runtime.js";
 export const AUTOMATION_RUNS_STARTED_EVENT = "octo:automation-runs-started";
 
 const STORAGE_KEY = "octo.backgroundAutomationTasks";
+const AUTO_DISMISS_DONE_MS = 3000;
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "dead", "cancelled"]);
 const FAILED_STATUSES = new Set(["failed", "dead", "cancelled"]);
@@ -189,6 +190,20 @@ export default function BackgroundAutomationTracker() {
   }, []);
 
   useEffect(() => {
+    const timeoutIds = [];
+    const now = Date.now();
+    for (const task of tasks) {
+      if (!task?.id || !task.done || task.dismissed) continue;
+      const finishedAt = Number(task.finishedAt || now);
+      const delay = Math.max(0, AUTO_DISMISS_DONE_MS - (now - finishedAt));
+      timeoutIds.push(window.setTimeout(() => dismissTask(task.id), delay));
+    }
+    return () => {
+      for (const timeoutId of timeoutIds) window.clearTimeout(timeoutId);
+    };
+  }, [tasks, dismissTask]);
+
+  useEffect(() => {
     function handleRunsStarted(event) {
       const runs = Array.isArray(event?.detail?.runs) ? event.detail.runs : [];
       const action = event?.detail?.action || {};
@@ -309,12 +324,6 @@ export default function BackgroundAutomationTracker() {
     <div className="pointer-events-none fixed bottom-4 right-4 z-[255] w-[min(28rem,calc(100vw-2rem))] space-y-2" aria-live="polite">
       {visibleTasks.slice(-4).map((task) => {
         const progress = progressState(task);
-        const badgeClass = task.failed ? "badge-error" : task.done ? "badge-success" : "badge-info";
-        const badgeText = task.failed
-          ? translateRuntime("common.app_shell.background_task_failed_short", {}, { defaultValue: "Failed" })
-          : task.done
-            ? translateRuntime("common.app_shell.background_task_done_short", {}, { defaultValue: "Done" })
-            : translateRuntime("common.app_shell.background_task_running_short", {}, { defaultValue: "Running" });
         return (
           <div
             key={task.id}
@@ -325,7 +334,6 @@ export default function BackgroundAutomationTracker() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="truncate text-sm font-semibold">{titleForTask(task)}</div>
-                  <span className={`badge badge-sm ${badgeClass}`}>{badgeText}</span>
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-base-content/70">{taskDescription(task)}</div>
                 {progress.indeterminate ? (

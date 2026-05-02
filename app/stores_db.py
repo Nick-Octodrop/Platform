@@ -19,6 +19,16 @@ from app.module_dependencies import module_key_from_manifest, module_version_fro
 
 logger = logging.getLogger("octo.chatter")
 
+
+def _job_lock_lease_seconds() -> int:
+    raw = os.getenv("OCTO_JOB_LOCK_LEASE_SECONDS", "1200")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 1200
+    return max(60, value)
+
+
 from app.db import (
     clear_active_conn,
     db_internal_service,
@@ -4582,8 +4592,15 @@ class DbJobStore:
                 with candidates as (
                   select id from jobs
                   where org_id=%s
-                    and status='queued'
-                    and run_at <= now()
+                    and (
+                      (status='queued' and run_at <= now())
+                      or (
+                        status='running'
+                        and locked_at is not null
+                        and locked_at < now() - (%s * interval '1 second')
+                        and attempt < max_attempts
+                      )
+                    )
                   order by priority desc, run_at asc
                   for update skip locked
                   limit %s
@@ -4598,7 +4615,7 @@ class DbJobStore:
                 where j.id = c.id
                 returning j.*
                 """,
-                [get_org_id(), limit, worker_id],
+                [get_org_id(), _job_lock_lease_seconds(), limit, worker_id],
                 query_name="jobs.claim_batch",
             )
             return [dict(r) for r in rows]
@@ -4610,8 +4627,15 @@ class DbJobStore:
                 """
                 with candidates as (
                   select id from jobs
-                  where status='queued'
-                    and run_at <= now()
+                  where (
+                    (status='queued' and run_at <= now())
+                    or (
+                      status='running'
+                      and locked_at is not null
+                      and locked_at < now() - (%s * interval '1 second')
+                      and attempt < max_attempts
+                    )
+                  )
                   order by priority desc, run_at asc
                   for update skip locked
                   limit %s
@@ -4626,7 +4650,7 @@ class DbJobStore:
                 where j.id = c.id
                 returning j.*
                 """,
-                [limit, worker_id],
+                [_job_lock_lease_seconds(), limit, worker_id],
                 query_name="jobs.claim_batch_any",
             )
             return [dict(r) for r in rows]
@@ -4676,6 +4700,21 @@ class DbJobStore:
                 """,
                 [get_org_id(), job_id],
                 query_name="jobs.get",
+            )
+            return dict(row) if row else None
+
+    def get_by_idempotency(self, job_type: str, idempotency_key: str) -> dict | None:
+        with get_conn() as conn:
+            row = fetch_one(
+                conn,
+                """
+                select * from jobs
+                where org_id=%s and type=%s and idempotency_key=%s
+                order by created_at desc
+                limit 1
+                """,
+                [get_org_id(), job_type, idempotency_key],
+                query_name="jobs.get_by_idempotency",
             )
             return dict(row) if row else None
 
