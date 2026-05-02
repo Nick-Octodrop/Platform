@@ -196,7 +196,7 @@ from app.integration_mapping_runtime import preview_integration_mapping
 from app.template_render import collect_undeclared_vars, describe_template_render_error, validate_templates
 from app.secrets import create_secret, encrypt_secret, get_secret, resolve_secret, rotate_secret, SecretStoreError
 from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
-from app.doc_render import render_html, render_pdf, normalize_margins
+from app.doc_render import render_html, render_pdf, normalize_margins, prewarm_pdf_renderer
 from app.automations import match_event
 from app.automations_runtime import handle_event as handle_automation_event
 from app.access_policies import (
@@ -63116,6 +63116,19 @@ async def validate_doc_template(request: Request, template_id: str) -> dict:
     return _ok_response(_validation_payload(errors, undefined, warnings, possible_undefined))
 
 
+@app.post("/docs/templates/preview/prewarm")
+async def prewarm_doc_template_preview(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    try:
+        await anyio.to_thread.run_sync(lambda: prewarm_pdf_renderer(wait=False))
+    except Exception as exc:
+        logger.warning("doc_template_preview_prewarm_failed error=%s", exc)
+        return _ok_response({"ok": False})
+    return _ok_response({"ok": True})
+
+
 @app.post("/docs/templates/{template_id}/preview")
 async def preview_doc_template(request: Request, template_id: str) -> dict:
     actor = _resolve_actor(request)
@@ -63207,6 +63220,7 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
     except Exception as exc:
         return _error_response("MARGINS_INVALID", str(exc), "margins", status=400)
     paper_size = source_template.get("paper_size") or "A4"
+    render_started = time.perf_counter()
     try:
         pdf_bytes = await anyio.to_thread.run_sync(
             render_pdf,
@@ -63221,6 +63235,13 @@ async def preview_doc_template(request: Request, template_id: str) -> dict:
             pdf_bytes = _fallback_preview_pdf_bytes()
         else:
             return _error_response("PDF_RENDER_FAILED", str(exc), None, status=500)
+    logger.info(
+        "doc_template_preview_rendered template_id=%s placeholder=%s bytes=%s total_ms=%.1f",
+        template_id,
+        bool(placeholder),
+        len(pdf_bytes or b""),
+        (time.perf_counter() - render_started) * 1000.0,
+    )
     if using_supabase_storage():
         return _ok_response(
             {

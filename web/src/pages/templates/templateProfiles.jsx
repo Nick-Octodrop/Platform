@@ -359,6 +359,9 @@ export function getDocumentTemplateProfile(t = translateRuntime) {
     samplePicker: { enabled: true },
     autoPreview: true,
     autoPreviewMode: "placeholder",
+    autoPreviewDebounceMs: 400,
+    prewarmPreview: true,
+    prewarmPreviewPath: "/docs/templates/preview/prewarm",
     desktopScrollableTabs: ["template"],
     agentMessage: t("settings.template_studio.document_agent_message"),
     actions: [

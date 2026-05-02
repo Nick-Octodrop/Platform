@@ -146,6 +146,8 @@ export default function TemplateStudioShell({
   const debounceRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const lastAutoPreviewRef = useRef("");
+  const previewRequestIdRef = useRef(0);
+  const previewPrewarmRef = useRef("");
   const validateDebounceRef = useRef(null);
   const lastValidateSigRef = useRef("");
   const validationRequestIdRef = useRef(0);
@@ -400,11 +402,15 @@ export default function TemplateStudioShell({
 
   async function runPreview(sampleOverride = null) {
     if (!preview) return;
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
     try {
       const res = await preview(recordId, { sample: buildSamplePayload(sampleOverride), draft });
+      if (previewRequestIdRef.current !== requestId) return res;
       setPreviewState(res);
       return res;
     } catch (err) {
+      if (previewRequestIdRef.current !== requestId) return null;
       setPreviewState({ error: err?.message || t("settings.template_studio.preview_failed") });
       return null;
     }
@@ -533,6 +539,20 @@ export default function TemplateStudioShell({
   }, [validate]);
 
   useEffect(() => {
+    const prewarmPath = typeof profile?.prewarmPreviewPath === "string" ? profile.prewarmPreviewPath : "";
+    if (!profile?.prewarmPreview || !prewarmPath || activeTabId !== "preview" || !recordId) return;
+    const key = `${prewarmPath}:${recordId}`;
+    if (previewPrewarmRef.current === key) return;
+    previewPrewarmRef.current = key;
+    apiFetch(prewarmPath, {
+      method: "POST",
+      body: { template_id: recordId },
+      cacheTtl: 60000,
+      cacheKey: `template-preview-prewarm:${key}`,
+    }).catch(() => {});
+  }, [activeTabId, profile?.prewarmPreview, profile?.prewarmPreviewPath, recordId]);
+
+  useEffect(() => {
     if (!validate) return;
     if (!draft || !recordId) return;
     const sig = JSON.stringify({
@@ -570,16 +590,17 @@ export default function TemplateStudioShell({
     if (previewDebounceRef.current) {
       clearTimeout(previewDebounceRef.current);
     }
+    const debounceMs = Math.max(100, Number(profile?.autoPreviewDebounceMs) || 900);
     previewDebounceRef.current = setTimeout(() => {
       runPreview(previewSample);
       lastAutoPreviewRef.current = sig;
-    }, 900);
+    }, debounceMs);
     return () => {
       if (previewDebounceRef.current) {
         clearTimeout(previewDebounceRef.current);
       }
     };
-  }, [draft, sample, sampleRecord, activeTabId, profile?.autoPreview, profile?.autoPreviewMode]);
+  }, [draft, sample, sampleRecord, activeTabId, profile?.autoPreview, profile?.autoPreviewMode, profile?.autoPreviewDebounceMs]);
 
   if (isMobile) {
     return (

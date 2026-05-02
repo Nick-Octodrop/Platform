@@ -6,6 +6,32 @@ import { getDocumentTemplateProfile } from "../templates/templateProfiles.jsx";
 import useMediaQuery from "../../hooks/useMediaQuery.js";
 import { useI18n } from "../../i18n/LocalizationProvider.jsx";
 
+const PREVIEW_CACHE_TTL_MS = 60 * 1000;
+const PREVIEW_CACHE_LIMIT = 8;
+const previewCache = new Map();
+
+function getPreviewCache(key) {
+  const cached = previewCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.ts > PREVIEW_CACHE_TTL_MS) {
+    previewCache.delete(key);
+    return null;
+  }
+  previewCache.delete(key);
+  previewCache.set(key, cached);
+  return cached.value;
+}
+
+function setPreviewCache(key, value) {
+  if (!key || !value) return;
+  previewCache.set(key, { ts: Date.now(), value });
+  while (previewCache.size > PREVIEW_CACHE_LIMIT) {
+    const oldestKey = previewCache.keys().next().value;
+    if (!oldestKey) break;
+    previewCache.delete(oldestKey);
+  }
+}
+
 export default function DocumentTemplateStudioPage({ user }) {
   const { id } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -35,7 +61,15 @@ export default function DocumentTemplateStudioPage({ user }) {
   }, []);
 
   const previewRecord = useCallback(async (recordId, payload) => {
-    return apiFetch(`/docs/templates/${recordId}/preview`, { method: "POST", body: payload });
+    const cacheKey = `${recordId}:${JSON.stringify(payload || {})}`;
+    const cached = getPreviewCache(cacheKey);
+    if (cached) return cached;
+    const res = await apiFetch(`/docs/templates/${recordId}/preview`, {
+      method: "POST",
+      body: payload,
+    });
+    setPreviewCache(cacheKey, res);
+    return res;
   }, []);
 
   return (
