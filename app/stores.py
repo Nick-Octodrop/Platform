@@ -301,14 +301,30 @@ class MemoryJobStore:
 
     def enqueue(self, job: dict) -> dict:
         record = copy.deepcopy(job)
+        coalesce = bool(record.pop("coalesce", False))
         idem = record.get("idempotency_key")
         if idem:
-            for existing in self._jobs.values():
+            for job_id, existing in self._jobs.items():
                 if (
                     existing.get("idempotency_key") == idem
                     and existing.get("workspace_id") == record.get("workspace_id")
                     and existing.get("type") == record.get("type")
                 ):
+                    if coalesce:
+                        updated = {
+                            **existing,
+                            **{key: value for key, value in record.items() if key != "id"},
+                            "id": existing.get("id"),
+                            "created_at": existing.get("created_at"),
+                            "status": record.get("status", "queued"),
+                            "attempt": record.get("attempt", 0),
+                            "locked_at": None,
+                            "locked_by": None,
+                            "last_error": None,
+                            "updated_at": _now(),
+                        }
+                        self._jobs[job_id] = updated
+                        return copy.deepcopy(updated)
                     return copy.deepcopy(existing)
         record.setdefault("id", str(uuid.uuid4()))
         record.setdefault("status", "queued")
@@ -768,6 +784,35 @@ class MemoryAutomationStore:
 
     def create_run(self, record: dict) -> dict:
         item = copy.deepcopy(record)
+        coalesce = bool(item.pop("coalesce", False))
+        idem = item.get("idempotency_key")
+        if idem:
+            for run_id, existing in self._runs.items():
+                if (
+                    existing.get("automation_id") == item.get("automation_id")
+                    and existing.get("idempotency_key") == idem
+                ):
+                    if coalesce:
+                        updated = {
+                            **existing,
+                            **{key: value for key, value in item.items() if key not in {"id", "created_at", "coalesce"}},
+                            "id": existing.get("id"),
+                            "created_at": existing.get("created_at"),
+                            "status": item.get("status", "queued"),
+                            "current_step_index": item.get("current_step_index", 0),
+                            "started_at": None,
+                            "ended_at": None,
+                            "last_error": None,
+                            "updated_at": _now(),
+                        }
+                        self._runs[run_id] = updated
+                        self._step_runs = {
+                            step_id: step
+                            for step_id, step in self._step_runs.items()
+                            if step.get("run_id") != existing.get("id")
+                        }
+                        return copy.deepcopy(updated)
+                    return copy.deepcopy(existing)
         item.setdefault("id", str(uuid.uuid4()))
         item.setdefault("status", "queued")
         item.setdefault("current_step_index", 0)

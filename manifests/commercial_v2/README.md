@@ -53,6 +53,8 @@ Catalogue seed notes:
 
 Xero phase 1 notes:
 - Pass an explicit `--sales-account-code` and `--default-tax-type` for the target Xero tenant instead of relying on generic defaults.
+- Run `setup_xero_phase1.py` once per selling entity/Xero tenant. The script now namespaces automations and mappings by sales entity, so NLight BV and EcoTech FZCO setup runs do not overwrite each other.
+- Example: run once with `--sales-entity "NLight BV"` against the NLight Xero connection, then again with `--sales-entity "EcoTech FZCO"` against the EcoTech Xero connection.
 - The tax type must be a live code in that tenant. If Xero shows an archived tax rate on exported drafts, rerun `setup_xero_phase1.py` with the correct `--default-tax-type` and republish.
 - Invoice headers in `invoices.json` now prefer summed `biz_invoice_line.line_total` values whenever invoice lines exist, so Octodrop totals stay aligned with exported Xero line totals.
 

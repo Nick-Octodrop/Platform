@@ -24,6 +24,12 @@ test("runtime locale changes switch translated UI strings", async () => {
   assert.equal(translateRuntime("common.save"), "Enregistrer");
 });
 
+test("UK English locale falls back to bundled English copy", async () => {
+  setRuntimePreferences({ locale: "en-GB", timezone: "Europe/London", defaultCurrency: "GBP" });
+  await ensureRuntimeNamespaces(["common"]);
+  assert.equal(translateRuntime("common.save"), "Save");
+});
+
 test("Dutch locale uses bundled Dutch strings for shared and settings copy", async () => {
   setRuntimePreferences({ locale: "nl-NL", timezone: "Europe/Amsterdam", defaultCurrency: "EUR" });
   await ensureRuntimeNamespaces(["common", "settings"]);

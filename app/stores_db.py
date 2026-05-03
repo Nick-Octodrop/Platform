@@ -4599,16 +4599,34 @@ class DbSyncCheckpointStore:
 
 class DbJobStore:
     def enqueue(self, job: dict) -> dict:
+        coalesce = bool(job.get("coalesce"))
+        conflict_update = (
+            """
+                do update set
+                  status=excluded.status,
+                  priority=excluded.priority,
+                  run_at=excluded.run_at,
+                  attempt=excluded.attempt,
+                  max_attempts=excluded.max_attempts,
+                  locked_at=null,
+                  locked_by=null,
+                  last_error=null,
+                  payload=excluded.payload,
+                  updated_at=now()
+            """
+            if coalesce
+            else "do update set updated_at=now()"
+        )
         with get_conn() as conn:
             row = fetch_one(
                 conn,
-                """
+                f"""
                 insert into jobs (
                   org_id, type, status, priority, run_at, attempt, max_attempts,
                   locked_at, locked_by, last_error, payload, idempotency_key, created_at, updated_at
                 ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
                 on conflict (org_id, type, idempotency_key) where idempotency_key is not null
-                do update set updated_at=now()
+                {conflict_update}
                 returning *
                 """,
                 [
@@ -5567,11 +5585,28 @@ class DbAutomationStore:
             return bool(row)
 
     def create_run(self, record: dict) -> dict:
+        coalesce = bool(record.get("coalesce"))
+        conflict_update = (
+            """
+                        do update set
+                          status=excluded.status,
+                          trigger_event_id=excluded.trigger_event_id,
+                          trigger_type=excluded.trigger_type,
+                          trigger_payload=excluded.trigger_payload,
+                          current_step_index=excluded.current_step_index,
+                          started_at=null,
+                          ended_at=null,
+                          last_error=null,
+                          updated_at=excluded.updated_at
+            """
+            if coalesce
+            else "do update set updated_at=excluded.updated_at"
+        )
         with get_conn() as conn:
             try:
                 row = fetch_one(
                     conn,
-                    """
+                    f"""
                     insert into automation_runs (
                       org_id, automation_id, status, trigger_event_id, trigger_type, trigger_payload,
                       current_step_index, created_at, updated_at, started_at, ended_at, last_error, idempotency_key
@@ -5579,7 +5614,7 @@ class DbAutomationStore:
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     on conflict (org_id, automation_id, idempotency_key)
                     where idempotency_key is not null
-                    do update set updated_at=excluded.updated_at
+                    {conflict_update}
                     returning *
                     """,
                     [
@@ -5599,6 +5634,16 @@ class DbAutomationStore:
                     ],
                     query_name="automation_runs.create",
                 )
+                if coalesce and row and row.get("id"):
+                    execute(
+                        conn,
+                        """
+                        delete from automation_step_runs
+                        where org_id=%s and run_id=%s
+                        """,
+                        [get_org_id(), row.get("id")],
+                        query_name="automation_step_runs.clear_for_coalesced_run",
+                    )
             except psycopg2.errors.UndefinedColumn:
                 row = fetch_one(
                     conn,

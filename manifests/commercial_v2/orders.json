@@ -168,6 +168,7 @@
               "field_map": {
                 "biz_order.currency": "biz_contact.currency_preference",
                 "biz_order.payment_terms": "biz_contact.default_payment_terms",
+                "biz_order.shipping_destination": "biz_contact.default_delivery_address",
                 "biz_order.customer_contact_email": "biz_contact.email",
                 "biz_order.customer_contact_phone": "biz_contact.phone"
               },

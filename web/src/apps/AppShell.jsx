@@ -6,7 +6,7 @@ import { realtimeEnabled, supabase } from "../supabase";
 import ListViewRenderer from "../ui/ListViewRenderer.jsx";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
 import ContentBlocksRenderer from "../ui/ContentBlocksRenderer.jsx";
-import { getFieldValue, renderField, setFieldValue } from "../ui/field_renderers.jsx";
+import { getFieldValue } from "../ui/field_renderers.jsx";
 import { notifyAutomationRunsStarted } from "../components/BackgroundAutomationTracker.jsx";
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
@@ -220,61 +220,87 @@ function resolveActionLabel(action, manifest, views) {
   return translateRuntime("common.action");
 }
 
-function _conditionEvalContext(record) {
-  return { record: record || {} };
+function _conditionEvalContext(record, actor = null) {
+  return { record: record || {}, actor: actor || {} };
 }
 
-function collectConditionMissingFields(condition, record, missing) {
+function isEmptyFieldValue(value) {
+  return value === "" || value === null || value === undefined || (Array.isArray(value) && value.length === 0);
+}
+
+function isValidationUiEnabled(config) {
+  if (config === false) return false;
+  if (config === true || config === undefined || config === null) return true;
+  if (typeof config !== "object") return true;
+  const mode = config.mode || config.behaviour || config.behavior;
+  return mode !== "none" && config.enabled !== false;
+}
+
+function extractValidationFieldIds(errors, fieldIndex) {
+  if (!Array.isArray(errors) || !fieldIndex) return [];
+  const ids = [];
+  for (const error of errors) {
+    const path = typeof error?.path === "string" ? error.path : "";
+    const fieldId = path && fieldIndex[path] ? path : null;
+    if (!fieldId) continue;
+    const field = fieldIndex[fieldId];
+    if (!field || field.readonly === true || field.system === true || field.compute) continue;
+    ids.push(fieldId);
+  }
+  return Array.from(new Set(ids));
+}
+
+function collectConditionMissingFields(condition, record, missing, actor = null) {
   if (!condition || typeof condition !== "object") return;
   const op = condition.op;
   if (op === "exists") {
     const fieldId = condition.field;
     if (typeof fieldId === "string") {
       const value = getFieldValue(record || {}, fieldId);
-      if (value === "" || value === null || value === undefined) {
+      if (isEmptyFieldValue(value)) {
         missing.add(fieldId);
       }
     }
     return;
   }
   if (typeof condition.field === "string" && ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains"].includes(op)) {
-    if (!evalCondition(condition, _conditionEvalContext(record))) {
+    if (!evalCondition(condition, _conditionEvalContext(record, actor))) {
       missing.add(condition.field);
     }
     return;
   }
   if (op === "and" && Array.isArray(condition.conditions)) {
     condition.conditions.forEach((child) => {
-      if (!evalCondition(child, _conditionEvalContext(record))) {
-        collectConditionMissingFields(child, record, missing);
+      if (!evalCondition(child, _conditionEvalContext(record, actor))) {
+        collectConditionMissingFields(child, record, missing, actor);
       }
     });
     return;
   }
   if (op === "or" && Array.isArray(condition.conditions)) {
     const children = condition.conditions.filter((child) => child && typeof child === "object");
-    if (children.some((child) => evalCondition(child, _conditionEvalContext(record)))) {
+    if (children.some((child) => evalCondition(child, _conditionEvalContext(record, actor)))) {
       return;
     }
-    children.forEach((child) => collectConditionMissingFields(child, record, missing));
+    children.forEach((child) => collectConditionMissingFields(child, record, missing, actor));
     return;
   }
   if (op === "not" && condition.condition) {
-    if (evalCondition(condition.condition, _conditionEvalContext(record))) {
-      collectConditionMissingFields(condition.condition, record, missing);
+    if (evalCondition(condition.condition, _conditionEvalContext(record, actor))) {
+      collectConditionMissingFields(condition.condition, record, missing, actor);
     }
   }
 }
 
-function explainActionDisabled(action, record, fieldIndex, { missingRecord = false, missingSelection = false } = {}) {
+function explainActionDisabled(action, record, fieldIndex, { missingRecord = false, missingSelection = false, actor = null } = {}) {
   if (missingRecord) return translateRuntime("common.save_record_first");
   if (missingSelection) return translateRuntime("common.select_records_first");
   const cond = action?.enabled_when;
   if (!cond) return null;
-  const enabled = evalCondition(cond, { record: record || {} });
+  const enabled = evalCondition(cond, _conditionEvalContext(record, actor));
   if (enabled) return null;
   const missing = new Set();
-  collectConditionMissingFields(cond, record || {}, missing);
+  collectConditionMissingFields(cond, record || {}, missing, actor);
   if (missing.size === 0) return translateRuntime("validation.requirements_not_met");
   const labels = Array.from(missing).map((fieldId) => fieldIndex?.[fieldId]?.label || fieldId);
   return translateRuntime("validation.missing_fields", { fields: labels.join(", ") });
@@ -405,7 +431,7 @@ export default function AppShell({
   const previewRouteTarget = previewMode ? (searchParams.get("preview_target") || null) : null;
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
-  const { hasCapability, isSuperadmin } = useAccessContext();
+  const { actor: currentActor, hasCapability, isSuperadmin } = useAccessContext();
   const { version: i18nVersion } = useI18n();
   // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
   const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
@@ -1346,9 +1372,9 @@ export default function AppShell({
     if (!resolvedAction || !resolvedAction.kind) return null;
     if (isWriteActionKind(resolvedAction.kind) && !canWriteRecords) return null;
     const label = resolveActionLabel(resolvedAction, manifest, views);
-    const visible = resolvedAction.visible_when ? evalCondition(resolvedAction.visible_when, { record: recordDraft }) : true;
+    const visible = resolvedAction.visible_when ? evalCondition(resolvedAction.visible_when, _conditionEvalContext(recordDraft, currentActor)) : true;
     if (!visible) return null;
-    const enabled = resolvedAction.enabled_when ? evalCondition(resolvedAction.enabled_when, { record: recordDraft }) : true;
+    const enabled = resolvedAction.enabled_when ? evalCondition(resolvedAction.enabled_when, _conditionEvalContext(recordDraft, currentActor)) : true;
     if (resolvedAction.kind === "refresh") {
       return (
         <button
@@ -1458,6 +1484,7 @@ export default function AppShell({
         canCreateLookup={() => canWriteRecords}
         onLookupCreate={openCreateModal}
         canWriteRecords={canWriteRecords}
+        currentActor={currentActor}
         previewMode={preview}
         previewAllowNav={previewAllowNav}
         previewStore={
@@ -1859,6 +1886,7 @@ function AppView({
   canCreateLookup,
   onLookupCreate,
   canWriteRecords = true,
+  currentActor = null,
   previewMode = false,
   previewAllowNav = false,
   previewStore = null,
@@ -2106,6 +2134,108 @@ function AppView({
     return action;
   }
 
+  function computeManifestModalMissingFieldIds({ fields = [], showMissingOnly = false, missingFieldsActionId = null } = {}, record = {}) {
+    if (!showMissingOnly) return null;
+    if (missingFieldsActionId) {
+      const sourceAction = resolveModalAction({ action_id: missingFieldsActionId });
+      const condition = sourceAction?.enabled_when;
+      if (condition) {
+        const missing = new Set();
+        if (!evalCondition(condition, _conditionEvalContext(record || {}, currentActor))) {
+          collectConditionMissingFields(condition, record || {}, missing, currentActor);
+        }
+        return fields.filter((fieldId) => missing.has(fieldId));
+      }
+    }
+    return fields.filter((fieldId) => isEmptyFieldValue(getFieldValue(record || {}, fieldId)));
+  }
+
+  function getActionValidationFieldIds(action, contextRecord = draft || {}) {
+    if (!action?.enabled_when || !isValidationUiEnabled(action.validation_ui ?? action.validationUi)) return [];
+    if (evalCondition(action.enabled_when, _conditionEvalContext(contextRecord || {}, currentActor))) return [];
+    const missing = new Set();
+    collectConditionMissingFields(action.enabled_when, contextRecord || {}, missing, currentActor);
+    return Array.from(missing).filter((fieldId) => {
+      const field = fieldIndex?.[fieldId];
+      return field && field.readonly !== true && field.system !== true && !field.compute && isEmptyFieldValue(getFieldValue(contextRecord || {}, fieldId));
+    });
+  }
+
+  function openValidationFieldsModal({
+    fieldIds,
+    errors = [],
+    title = "Complete Required Fields",
+    description = "Complete the missing or invalid fields, then continue.",
+    source = null,
+    contextRecord = draft || {},
+  } = {}) {
+    const fields = Array.from(new Set((fieldIds || []).filter((fieldId) => fieldIndex?.[fieldId])));
+    if (fields.length === 0) return false;
+    const seeded = applyDraftComputed({ ...(draftRef.current || contextRecord || {}), ...(contextRecord || {}) });
+    setActiveManifestModal({
+      id: `validation.${Date.now()}`,
+      title,
+      description,
+      fields,
+      actions: [],
+      draft: seeded,
+      fieldIndex,
+      entityId: recordEntityId || entityFullId,
+      showMissingOnly: true,
+      missingFieldsActionId: null,
+      missingFieldIds: fields,
+      saveProgress: Boolean(effectiveRecordId),
+      validationSource: source,
+      validationErrors: Array.isArray(errors) ? errors : [],
+      busy: false,
+      error: "",
+      savedAt: null,
+    });
+    return true;
+  }
+
+  function openActionValidationModal(action, contextRecord = draft || {}) {
+    const fields = getActionValidationFieldIds(action, contextRecord);
+    if (fields.length === 0) return false;
+    const label = resolveActionLabel(action, manifest, views);
+    return openValidationFieldsModal({
+      fieldIds: fields,
+      title: "Complete Required Fields",
+      description: label ? `Complete the required fields before running ${label}.` : "Complete the required fields before continuing.",
+      source: { type: "action", action },
+      contextRecord,
+    });
+  }
+
+  function openValidationModalFromError(err, source = null, contextRecord = draft || {}) {
+    if (!isValidationUiEnabled(source?.validationUi ?? source?.validation_ui ?? source?.action?.validation_ui ?? source?.action?.validationUi)) return false;
+    const errors = Array.isArray(err?.errors) ? err.errors : [];
+    const fields = extractValidationFieldIds(errors, fieldIndex);
+    if (fields.length === 0) return false;
+    return openValidationFieldsModal({
+      fieldIds: fields,
+      errors,
+      title: "Fix Validation Issues",
+      description: "Some required or invalid fields need attention before this can continue.",
+      source,
+      contextRecord,
+    });
+  }
+
+  function syncValidationModalDraftToForm(modal = activeManifestModal) {
+    if (!modal?.validationSource) return draftRef.current || draft || {};
+    const patch = {};
+    for (const fieldId of modal.fields || []) {
+      if (!fieldId || !modal.fieldIndex?.[fieldId]) continue;
+      patch[fieldId] = getFieldValue(modal.draft || {}, fieldId);
+    }
+    const next = applyDraftComputed({ ...(draftRef.current || draft || {}), ...patch });
+    draftRevisionRef.current += 1;
+    draftRef.current = next;
+    setDraft(next);
+    return next;
+  }
+
   async function confirmAction(action) {
     if (action?.confirm && typeof action.confirm === "object") {
       if (!onConfirm) return false;
@@ -2134,6 +2264,10 @@ function AppView({
     const fields = Array.isArray(def.fields) ? def.fields.filter((fieldId) => typeof fieldId === "string") : [];
     const defaultValues = def.defaults && typeof def.defaults === "object" ? resolveTemplateRefs(def.defaults, contextRecord || {}) : {};
     const seeded = { ...(contextRecord || {}), ...(defaultValues || {}) };
+    const showMissingOnly = Boolean(def.show_missing_only || def.showMissingOnly);
+    const missingFieldsActionId =
+      def.missing_fields_action_id || def.missingFieldsActionId || def.show_missing_only_from_action || null;
+    const missingFieldIds = computeManifestModalMissingFieldIds({ fields, showMissingOnly, missingFieldsActionId }, seeded);
     setActiveManifestModal({
       id: def.id,
       title: def.title || def.label || "Modal",
@@ -2142,9 +2276,27 @@ function AppView({
       actions: Array.isArray(def.actions) ? def.actions : [],
       draft: seeded,
       fieldIndex: modalFieldIndex,
+      entityId: modalEntityFullId,
+      showMissingOnly,
+      missingFieldsActionId,
+      missingFieldIds,
+      saveProgress: Boolean(def.save_progress || def.saveProgress),
       busy: false,
       error: "",
+      savedAt: null,
     });
+  }
+
+  function resolveCompletedMissingOnlyModalAction(modalId, contextRecord = draft || {}) {
+    const def = modalById.get(modalId);
+    if (!def || !Boolean(def.show_missing_only || def.showMissingOnly)) return null;
+    const actionId = def.missing_fields_action_id || def.missingFieldsActionId || def.show_missing_only_from_action || null;
+    if (!actionId) return null;
+    const sourceAction = resolveModalAction({ action_id: actionId });
+    const condition = sourceAction?.enabled_when;
+    if (!condition) return null;
+    const complete = evalCondition(condition, _conditionEvalContext(contextRecord || {}, currentActor));
+    return complete ? { ...sourceAction, modal_id: null } : null;
   }
 
   async function runManifestModalAction(action) {
@@ -2227,14 +2379,146 @@ function AppView({
     setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
   }
 
-  async function handleHeaderAction(action) {
-    if (!action) return;
-    if (actionRunningRef.current) return;
-    const actionModuleId = action?.moduleId || moduleId;
-    if (action.modal_id) {
-      openManifestModal(action.modal_id, draft || {});
+  function buildManifestModalProgressPatch(modal = activeManifestModal) {
+    if (!modal?.saveProgress || !Array.isArray(modal.fields) || modal.fields.length === 0) return {};
+    const modalDraft = modal.draft || {};
+    const baseDraft = initialDraftRef.current || initialDraft || {};
+    const patch = {};
+    for (const fieldId of modal.fields) {
+      if (!fieldId || typeof fieldId !== "string") continue;
+      const field = modal.fieldIndex?.[fieldId];
+      if (!field || field.readonly === true || field.system === true || field.compute) continue;
+      const nextValue = getFieldValue(modalDraft, fieldId);
+      const currentValue = getFieldValue(baseDraft, fieldId);
+      if (!formDraftValuesEqual({ value: nextValue }, { value: currentValue })) {
+        patch[fieldId] = nextValue;
+      }
+    }
+    return patch;
+  }
+
+  async function handleManifestModalSaveProgress() {
+    const modal = activeManifestModal;
+    if (!modal?.saveProgress || modal.busy || !effectiveRecordId || !canWriteRecords) return;
+    const modalEntityId = modal.entityId || recordEntityId;
+    if (!modalEntityId) return;
+    const rawPatch = buildManifestModalProgressPatch(modal);
+    const patch = normalizeManifestRecordPayload(modal.fieldIndex || fieldIndex, rawPatch);
+    if (Object.keys(patch).length === 0) {
+      setActiveManifestModal((prev) => (prev ? { ...prev, error: "", savedAt: Date.now() } : prev));
       return;
     }
+
+    const prevDraft = draftRef.current || draft || {};
+    const prevInitial = initialDraftRef.current || initialDraft || {};
+    const optimistic = applyDraftComputed({ ...prevDraft, ...patch });
+    const optimisticInitial = applyDraftComputed({ ...prevInitial, ...patch });
+    const writeSeq = beginRecordWriteGuard(patch);
+    draftRevisionRef.current += 1;
+    invalidatePendingRecordLoads();
+    draftRef.current = optimistic;
+    setDraft(optimistic);
+    setInitialDraft(optimisticInitial);
+    setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "", savedAt: null } : prev));
+
+    try {
+      let savedRecord = null;
+      if (previewMode && previewStore) {
+        const updated = previewStore.upsert(modalEntityId, effectiveRecordId, optimistic);
+        savedRecord = updated?.record || optimistic;
+      } else {
+        const res = await apiFetch(`/records/${modalEntityId}/${effectiveRecordId}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            record: patch,
+            _activity: { suppress_changes: true, suppress_chatter: true },
+            _validation: { mode: "patch" },
+          }),
+        });
+        savedRecord = res?.record || optimistic;
+      }
+      const serverRecord = applyDraftComputed(savedRecord || optimistic);
+      const persistedPatch = {};
+      for (const fieldId of Object.keys(patch)) {
+        persistedPatch[fieldId] = getFieldValue(serverRecord, fieldId);
+      }
+      const next = applyDraftComputed({ ...(draftRef.current || optimistic), ...persistedPatch });
+      const nextInitial = applyDraftComputed({ ...(initialDraftRef.current || optimisticInitial), ...persistedPatch });
+      if (latestWriteSeqRef.current === writeSeq) {
+        if (!finishRecordWriteGuard(writeSeq, next)) clearRecordWriteGuard(writeSeq);
+        draftRef.current = next;
+        setDraft(next);
+        setInitialDraft(nextInitial);
+      }
+      setActiveManifestModal((prev) => {
+        if (!prev) return prev;
+        const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, { ...(prev.draft || {}), ...next });
+        const missingFieldIds = computeManifestModalMissingFieldIds(prev, nextModalDraft);
+        return {
+          ...prev,
+          draft: nextModalDraft,
+          missingFieldIds,
+          busy: false,
+          error: "",
+          savedAt: Date.now(),
+        };
+      });
+    } catch (err) {
+      if (latestWriteSeqRef.current === writeSeq) {
+        clearRecordWriteGuard(writeSeq);
+        draftRef.current = prevDraft;
+        setDraft(prevDraft);
+        setInitialDraft(prevInitial);
+      }
+      setActiveManifestModal((prev) =>
+        prev ? { ...prev, busy: false, error: err?.message || translateRuntime("common.save_failed") } : prev
+      );
+    }
+  }
+
+  async function handleValidationModalContinue() {
+    const modal = activeManifestModal;
+    const source = modal?.validationSource;
+    if (!modal || !source || modal.busy) return;
+    const nextDraft = syncValidationModalDraftToForm(modal);
+    setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
+    try {
+      let ok = false;
+      if (source.type === "save") {
+        ok = await handleSave(null, { force: true });
+      } else if (source.type === "action" && source.action) {
+        const result = await handleHeaderAction({ ...source.action }, { recordDraft: nextDraft });
+        ok = Boolean(result);
+      }
+      if (ok) {
+        setActiveManifestModal(null);
+      } else {
+        setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
+      }
+    } catch (err) {
+      if (openValidationModalFromError(err, source, nextDraft)) return;
+      setActiveManifestModal((prev) =>
+        prev ? { ...prev, busy: false, error: err?.message || translateRuntime("common.app_shell.action_failed") } : prev
+      );
+    }
+  }
+
+  async function handleHeaderAction(action, options = {}) {
+    if (!action) return;
+    if (actionRunningRef.current) return;
+    const contextDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draft || {};
+    if (action.modal_id) {
+      const completedModalAction = resolveCompletedMissingOnlyModalAction(action.modal_id, contextDraft);
+      if (completedModalAction) {
+        action = { ...completedModalAction, moduleId: action?.moduleId || completedModalAction.moduleId };
+      } else {
+        openManifestModal(action.modal_id, contextDraft);
+        return;
+      }
+    } else if (!options?.validationRetry && openActionValidationModal(action, contextDraft)) {
+      return;
+    }
+    const actionModuleId = action?.moduleId || moduleId;
     if (isWriteActionKind(action.kind) && !canWriteRecords) return;
     if (!(await confirmAction(action))) return;
     if (action.kind === "refresh") {
@@ -2243,7 +2527,7 @@ function AppView({
         try {
           await runViewAction(action, {
             recordId: effectiveRecordId,
-            recordDraft: draft || {},
+            recordDraft: contextDraft,
             selectedIds,
             skipConfirm: true,
           });
@@ -2288,8 +2572,8 @@ function AppView({
       }
     }
     if (action.kind === "update_record" && action.patch && typeof action.patch === "object") {
-      const resolvedPatch = resolveTemplateRefs(action.patch, draft || {});
-      const prevDraft = draft || {};
+      const resolvedPatch = resolveTemplateRefs(action.patch, contextDraft);
+      const prevDraft = draftRef.current || contextDraft || {};
       const prevInitial = initialDraft || {};
       const optimistic = applyDraftComputed({ ...prevDraft, ...resolvedPatch });
       const writeSeq = beginRecordWriteGuard(resolvedPatch);
@@ -2302,11 +2586,11 @@ function AppView({
       const run = onRunAction?.(action, {
         moduleId: actionModuleId,
         recordId: effectiveRecordId,
-        recordDraft: draft || {},
+        recordDraft: contextDraft,
         selectedIds,
         skipConfirm: true,
       });
-      Promise.resolve(run)
+      return await Promise.resolve(run)
         .then((result) => {
           if (latestWriteSeqRef.current !== writeSeq) return;
           if (!result) {
@@ -2314,7 +2598,7 @@ function AppView({
             draftRef.current = prevDraft;
             setDraft(prevDraft);
             setInitialDraft(prevInitial);
-            return;
+            return null;
           }
           if (result.record) {
             const next = applyDraftComputed(result.record);
@@ -2324,29 +2608,33 @@ function AppView({
             finishRecordWriteGuard(writeSeq, optimistic);
             applyLoadedDraft(optimistic);
           }
+          return result;
         })
-        .catch(() => {
+        .catch((err) => {
           if (latestWriteSeqRef.current !== writeSeq) return;
           clearRecordWriteGuard(writeSeq);
           draftRef.current = prevDraft;
           setDraft(prevDraft);
           setInitialDraft(prevInitial);
+          if (openValidationModalFromError(err, { type: "action", action }, contextDraft)) return null;
+          pushToast("error", err?.message || translateRuntime("common.app_shell.action_failed"));
+          return null;
         })
         .finally(() => {
           clearActionPending();
         });
-      return;
     }
     try {
       return await runViewAction(action, {
         moduleId: actionModuleId,
         recordId: effectiveRecordId,
-        recordDraft: draft || {},
+        recordDraft: contextDraft,
         selectedIds,
         skipConfirm: true,
       });
     } catch (err) {
       console.warn("action_run_failed", err);
+      if (openValidationModalFromError(err, { type: "action", action }, contextDraft)) return null;
       pushToast("error", err?.message || translateRuntime("common.app_shell.action_failed"));
       return null;
     }
@@ -2929,7 +3217,25 @@ function AppView({
     const liveDraft = draftRef.current || {};
     const nextValidationErrors =
       validationErrors && typeof validationErrors === "object" ? validationErrors : computeValidationErrors(liveDraft);
-    if (nextValidationErrors && Object.keys(nextValidationErrors).length > 0) return false;
+    if (nextValidationErrors && Object.keys(nextValidationErrors).length > 0) {
+      if (isValidationUiEnabled(view?.header?.validation_ui ?? view?.header?.validationUi)) {
+        openValidationFieldsModal({
+          fieldIds: Object.keys(nextValidationErrors),
+          errors: Object.entries(nextValidationErrors).map(([path, message]) => ({
+            code: "REQUIRED_FIELD",
+            path,
+            message: typeof message === "string" ? message : "Required",
+          })),
+          title: "Complete Required Fields",
+          description: effectiveRecordId
+            ? "Complete the missing fields before saving this record."
+            : "Complete the missing fields before creating this record.",
+          source: { type: "save", validationUi: view?.header?.validation_ui ?? view?.header?.validationUi },
+          contextRecord: liveDraft,
+        });
+      }
+      return false;
+    }
     const silent = opts.silent === true;
     const suppressActivity = opts.suppressActivity === true;
     if (saveInFlightRef.current && !opts.force) {
@@ -3036,6 +3342,7 @@ function AppView({
       return true;
     } catch (err) {
       if (writeSeq !== null) clearRecordWriteGuard(writeSeq);
+      if (openValidationModalFromError(err, { type: "save", validationUi: view?.header?.validation_ui ?? view?.header?.validationUi }, draftRef.current || liveDraft)) return false;
       pushToast("error", err.message || translateRuntime("common.save_failed"));
       return false;
     } finally {
@@ -3150,6 +3457,42 @@ function AppView({
 
   const transitionTargets = transitions.filter((t) => t?.from === currentStatus);
   const modalReadonly = !canWriteRecords || activeManifestModal?.busy;
+  const modalMissingFieldSet =
+    activeManifestModal?.showMissingOnly && Array.isArray(activeManifestModal?.missingFieldIds)
+      ? new Set(activeManifestModal.missingFieldIds)
+      : null;
+  const modalHiddenFields = activeManifestModal?.showMissingOnly
+    ? activeManifestModal.fields.filter((fieldId) => {
+        if (modalMissingFieldSet) return !modalMissingFieldSet.has(fieldId);
+        return !isEmptyFieldValue(getFieldValue(activeManifestModal.draft || {}, fieldId));
+      })
+    : [];
+  const modalVisibleFields = activeManifestModal
+    ? activeManifestModal.fields.filter((fieldId) => !modalHiddenFields.includes(fieldId))
+    : [];
+  const modalProgressPatch = activeManifestModal?.saveProgress ? buildManifestModalProgressPatch(activeManifestModal) : {};
+  const modalProgressDirty = Object.keys(modalProgressPatch).length > 0;
+  const modalProgressSaved = Boolean(activeManifestModal?.savedAt) && !modalProgressDirty;
+  const modalProgressLabel = modalProgressSaved ? "Progress Saved" : "Save Progress";
+  const modalFormView =
+    activeManifestModal && activeManifestModal.fields.length > 0
+      ? {
+          id: `${activeManifestModal.id || "manifest_modal"}.form`,
+          kind: "form",
+          entity: activeManifestModal.entityId,
+          sections: [
+            {
+              id: "fields",
+              title: "",
+              fields: activeManifestModal.fields,
+            },
+          ],
+          header: {
+            save_mode: "none",
+            auto_save: false,
+          },
+        }
+      : null;
   const manifestModalNode =
     activeManifestModal &&
     createPortal(
@@ -3160,53 +3503,86 @@ function AppView({
             <p className="py-2 text-sm opacity-70">{activeManifestModal.description}</p>
           ) : null}
           <div className="space-y-3">
-            {activeManifestModal.fields.map((fieldId) => {
-              const field = activeManifestModal.fieldIndex?.[fieldId];
-              if (!field) {
-                return (
-                  <div key={fieldId} className="text-xs text-error">
-                    Missing field in modal: {fieldId}
-                  </div>
-                );
-              }
-              const value = getFieldValue(activeManifestModal.draft, fieldId);
-              const isBooleanField = field?.type === "bool" || field?.type === "boolean";
-              return (
-                <fieldset key={fieldId} className="fieldset">
-                  <legend
-                    className={[
-                      "fieldset-legend text-xs uppercase tracking-wide",
-                      isBooleanField ? "select-none opacity-0 pointer-events-none" : "opacity-60",
-                    ].join(" ")}
-                    aria-hidden={isBooleanField ? "true" : undefined}
-                  >
-                    {field.label || field.id}
-                  </legend>
-                  {renderField(
-                    field,
-                    value,
-                    (next) =>
-                      setActiveManifestModal((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              draft: applyComputedFields(
-                                prev.fieldIndex || {},
-                                setFieldValue(prev.draft || {}, fieldId, next)
-                              ),
-                              error: "",
-                            }
-                          : prev
-                      ),
-                    modalReadonly,
-                    activeManifestModal.draft || {}
-                  )}
-                </fieldset>
-              );
-            })}
+            {modalFormView && modalVisibleFields.length > 0 ? (
+              <FormViewRenderer
+                view={modalFormView}
+                entityId={activeManifestModal.entityId}
+                recordId={effectiveRecordId}
+                fieldIndex={activeManifestModal.fieldIndex || {}}
+                entityDefs={manifest?.entities || []}
+                record={activeManifestModal.draft || {}}
+                autoSaveState="idle"
+                hasRecord={Boolean(effectiveRecordId)}
+                onChange={(next) =>
+                  setActiveManifestModal((prev) => {
+                    if (!prev) return prev;
+                    const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, next || {});
+                    if (prev.validationSource) {
+                      const patch = {};
+                      for (const fieldId of prev.fields || []) {
+                        patch[fieldId] = getFieldValue(nextModalDraft, fieldId);
+                      }
+                      const nextFormDraft = applyDraftComputed({ ...(draftRef.current || draft || {}), ...patch });
+                      draftRef.current = nextFormDraft;
+                      setDraft(nextFormDraft);
+                    }
+                    return {
+                      ...prev,
+                      draft: nextModalDraft,
+                      error: "",
+                      savedAt: null,
+                    };
+                  })
+                }
+                onSave={null}
+                onDiscard={null}
+                isDirty={false}
+                header={modalFormView.header}
+                primaryActions={[]}
+                secondaryActions={[]}
+                onActionClick={null}
+                readonly={modalReadonly}
+                showValidation={false}
+                applyDefaults={false}
+                requiredFields={[]}
+                hiddenFields={modalHiddenFields}
+                previewMode={false}
+                canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
+                onLookupCreate={onLookupCreate}
+                hideHeader
+              />
+            ) : activeManifestModal.fields.length > 0 ? (
+              <div className="alert alert-success text-sm">
+                All required fields in this gate are complete. You can continue.
+              </div>
+            ) : null}
             {activeManifestModal.error ? <div className="text-xs text-error">{activeManifestModal.error}</div> : null}
           </div>
           <div className="modal-action">
+            {activeManifestModal.saveProgress && modalVisibleFields.length > 0 ? (
+              <button
+                className={SOFT_BUTTON_SM}
+                disabled={modalReadonly || !effectiveRecordId || !modalProgressDirty}
+                onClick={handleManifestModalSaveProgress}
+              >
+                {activeManifestModal.busy ? <span className="loading loading-spinner loading-xs" /> : null}
+                {modalProgressLabel}
+              </button>
+            ) : null}
+            {activeManifestModal.validationSource ? (
+              <button
+                className={PRIMARY_BUTTON_SM}
+                disabled={modalReadonly || (activeManifestModal.validationSource.type === "save" && !canWriteRecords)}
+                onClick={handleValidationModalContinue}
+              >
+                {activeManifestModal.busy ? <span className="loading loading-spinner loading-xs" /> : null}
+                {activeManifestModal.validationSource.type === "save"
+                  ? effectiveRecordId
+                    ? "Save Record"
+                    : "Create Record"
+                  : "Continue"}
+              </button>
+            ) : null}
             {activeManifestModal.actions.map((action, idx) => {
               const resolvedAction = resolveModalAction(action);
               if (!resolvedAction) return null;
@@ -3214,7 +3590,7 @@ function AppView({
               const variant = action?.variant || "soft";
               const btnClass = variant === "primary" ? PRIMARY_BUTTON_SM : SOFT_BUTTON_SM;
               const enabled = resolvedAction.enabled_when
-                ? evalCondition(resolvedAction.enabled_when, { record: activeManifestModal.draft || {} })
+                ? evalCondition(resolvedAction.enabled_when, _conditionEvalContext(activeManifestModal.draft || {}, currentActor))
                 : true;
               return (
                 <button
@@ -3301,12 +3677,13 @@ function AppView({
         if (!resolved || !resolved.kind) continue;
         if (isWriteActionKind(resolved.kind) && !canWriteRecords) continue;
         const label = resolveActionLabel(resolved, manifest, views);
-        const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
+        const visible = resolved.visible_when ? evalCondition(resolved.visible_when, _conditionEvalContext(contextRecord || {}, currentActor)) : true;
         if (!visible) continue;
-        let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, { record: contextRecord || {} }) : true;
+        let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, _conditionEvalContext(contextRecord || {}, currentActor)) : true;
+        if (!enabled && resolved.modal_id) enabled = true;
         const missingSelection = resolved.kind === "bulk_update" && (!selectedIds || selectedIds.length === 0);
         if (missingSelection) enabled = false;
-        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingSelection });
+        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingSelection, actor: currentActor });
         items.push({ action: resolved, label, enabled, reason });
       }
       return items;
@@ -3584,12 +3961,13 @@ function AppView({
         if (!resolved || !resolved.kind) continue;
         if (isWriteActionKind(resolved.kind) && !canWriteRecords) continue;
         const label = resolveActionLabel(resolved, manifest, views);
-        const visible = resolved.visible_when ? evalCondition(resolved.visible_when, { record: contextRecord || {} }) : true;
+        const visible = resolved.visible_when ? evalCondition(resolved.visible_when, _conditionEvalContext(contextRecord || {}, currentActor)) : true;
         if (!visible) continue;
-        let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, { record: contextRecord || {} }) : true;
+        let enabled = resolved.enabled_when ? evalCondition(resolved.enabled_when, _conditionEvalContext(contextRecord || {}, currentActor)) : true;
+        if (!enabled && (resolved.modal_id || getActionValidationFieldIds(resolved, contextRecord || {}).length > 0)) enabled = true;
         const missingRecord = (resolved.kind === "update_record" || resolved.kind === "transform_record") && !effectiveRecordId;
         if (missingRecord) enabled = false;
-        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingRecord });
+        const reason = enabled ? null : explainActionDisabled(resolved, contextRecord || {}, fieldIndex, { missingRecord, actor: currentActor });
         items.push({ action: resolved, label, enabled, reason });
       }
       return items;

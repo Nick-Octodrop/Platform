@@ -187,6 +187,39 @@
           "label_key": "crm.entities.crm_site.fields.country.label"
         },
         {
+          "id": "crm_site.full_address",
+          "type": "text",
+          "label": "Full Site Address",
+          "readonly": true,
+          "help_text": "Computed from the site address fields and copied into opportunities, quotes, and orders as an editable snapshot.",
+          "compute": {
+            "expression": {
+              "op": "join",
+              "separator": "\n",
+              "args": [
+                {
+                  "ref": "$current.crm_site.address_line_1"
+                },
+                {
+                  "ref": "$current.crm_site.address_line_2"
+                },
+                {
+                  "ref": "$current.crm_site.city"
+                },
+                {
+                  "ref": "$current.crm_site.region"
+                },
+                {
+                  "ref": "$current.crm_site.postcode"
+                },
+                {
+                  "ref": "$current.crm_site.country"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "crm_site.site_notes",
           "type": "text",
           "label": "Site Notes",
@@ -215,6 +248,7 @@
           "crm_site.region",
           "crm_site.postcode",
           "crm_site.country",
+          "crm_site.full_address",
           "crm_site.site_notes",
           "crm_site.is_active"
         ]
@@ -333,6 +367,11 @@
               "field_map": {
                 "crm_lead.contact_email": "biz_contact.email",
                 "crm_lead.contact_phone": "biz_contact.phone",
+                "crm_lead.company_legal_name": "biz_contact.legal_name",
+                "crm_lead.company_country": "biz_contact.country",
+                "crm_lead.company_tax_number": "biz_contact.tax_number",
+                "crm_lead.company_registration_number": "biz_contact.company_number",
+                "crm_lead.company_address": "biz_contact.company_address",
                 "crm_lead.currency": "biz_contact.currency_preference",
                 "crm_lead.quote_tax_percent": "biz_contact.default_sales_tax_percent"
               },
@@ -347,7 +386,13 @@
                 "crm_lead.contact_person_id",
                 "crm_lead.contact_name",
                 "crm_lead.contact_email",
-                "crm_lead.contact_phone"
+                "crm_lead.contact_phone",
+                "crm_lead.contact_role",
+                "crm_lead.company_legal_name",
+                "crm_lead.company_country",
+                "crm_lead.company_tax_number",
+                "crm_lead.company_registration_number",
+                "crm_lead.company_address"
               ]
             }
           },
@@ -388,7 +433,8 @@
               "field_map": {
                 "crm_lead.contact_name": "biz_contact_person.display_name",
                 "crm_lead.contact_email": "biz_contact_person.email",
-                "crm_lead.contact_phone": "biz_contact_person.phone"
+                "crm_lead.contact_phone": "biz_contact_person.phone",
+                "crm_lead.contact_role": "biz_contact_person.job_title"
               }
             }
           }
@@ -413,6 +459,42 @@
           "label": "Contact Phone",
           "help_text": "Auto-filled from the selected contact person or company. Editable so call details can be captured directly on the lead.",
           "label_key": "crm.entities.crm_lead.fields.contact_phone.label"
+        },
+        {
+          "id": "crm_lead.contact_role",
+          "type": "string",
+          "label": "Contact Role",
+          "help_text": "Auto-filled from the selected contact person and carried into the opportunity when the lead is qualified."
+        },
+        {
+          "id": "crm_lead.company_legal_name",
+          "type": "string",
+          "label": "Company Legal Name",
+          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+        },
+        {
+          "id": "crm_lead.company_country",
+          "type": "string",
+          "label": "Company Country",
+          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+        },
+        {
+          "id": "crm_lead.company_tax_number",
+          "type": "string",
+          "label": "VAT / Tax Number",
+          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+        },
+        {
+          "id": "crm_lead.company_registration_number",
+          "type": "string",
+          "label": "Company Registration Number",
+          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+        },
+        {
+          "id": "crm_lead.company_address",
+          "type": "text",
+          "label": "Company Address",
+          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
         },
         {
           "id": "crm_lead.owner_user_id",
@@ -525,6 +607,12 @@
           "crm_lead.contact_name",
           "crm_lead.contact_email",
           "crm_lead.contact_phone",
+          "crm_lead.contact_role",
+          "crm_lead.company_legal_name",
+          "crm_lead.company_country",
+          "crm_lead.company_tax_number",
+          "crm_lead.company_registration_number",
+          "crm_lead.company_address",
           "crm_lead.owner_user_id",
           "crm_lead.currency",
           "crm_lead.estimated_value",
@@ -565,8 +653,13 @@
               "field_map": {
                 "crm_opportunity.primary_contact_email": "biz_contact.email",
                 "crm_opportunity.primary_contact_phone": "biz_contact.phone",
+                "crm_opportunity.company_legal_name": "biz_contact.legal_name",
+                "crm_opportunity.company_country": "biz_contact.country",
+                "crm_opportunity.company_tax_number": "biz_contact.tax_number",
+                "crm_opportunity.company_registration_number": "biz_contact.company_number",
                 "crm_opportunity.currency": "biz_contact.currency_preference",
-                "crm_opportunity.quote_tax_percent": "biz_contact.default_sales_tax_percent"
+                "crm_opportunity.quote_tax_percent": "biz_contact.default_sales_tax_percent",
+                "crm_opportunity.company_address": "biz_contact.company_address"
               },
               "only_when_empty": [
                 "crm_opportunity.primary_contact_email",
@@ -580,12 +673,41 @@
                 "crm_opportunity.primary_contact_name",
                 "crm_opportunity.primary_contact_email",
                 "crm_opportunity.primary_contact_phone",
-                "crm_opportunity.site_id"
+                "crm_opportunity.primary_contact_role",
+                "crm_opportunity.site_id",
+                "crm_opportunity.company_legal_name",
+                "crm_opportunity.company_country",
+                "crm_opportunity.company_tax_number",
+                "crm_opportunity.company_registration_number"
               ]
             }
           },
           "required": true,
           "label_key": "crm.entities.crm_opportunity.fields.company_id.label"
+        },
+        {
+          "id": "crm_opportunity.company_legal_name",
+          "type": "string",
+          "label": "Company Legal Name",
+          "help_text": "Snapshot from the company record for mandatory qualification checks."
+        },
+        {
+          "id": "crm_opportunity.company_country",
+          "type": "string",
+          "label": "Company Country",
+          "help_text": "Snapshot from the company record for mandatory qualification checks."
+        },
+        {
+          "id": "crm_opportunity.company_tax_number",
+          "type": "string",
+          "label": "VAT / Tax Number",
+          "help_text": "Snapshot from the company record for mandatory qualification checks."
+        },
+        {
+          "id": "crm_opportunity.company_registration_number",
+          "type": "string",
+          "label": "Company Registration Number",
+          "help_text": "Snapshot from the company record for mandatory qualification checks."
         },
         {
           "id": "crm_opportunity.sales_entity",
@@ -622,7 +744,8 @@
               "field_map": {
                 "crm_opportunity.primary_contact_name": "biz_contact_person.display_name",
                 "crm_opportunity.primary_contact_email": "biz_contact_person.email",
-                "crm_opportunity.primary_contact_phone": "biz_contact_person.phone"
+                "crm_opportunity.primary_contact_phone": "biz_contact_person.phone",
+                "crm_opportunity.primary_contact_role": "biz_contact_person.job_title"
               }
             }
           }
@@ -648,6 +771,12 @@
           "help_text": "Auto-filled from the selected contact person or company. Editable so phone details can be captured directly on the opportunity."
         },
         {
+          "id": "crm_opportunity.primary_contact_role",
+          "type": "string",
+          "label": "Primary Contact Role",
+          "help_text": "Role or job title of the primary contact for stage-gate qualification."
+        },
+        {
           "id": "crm_opportunity.site_id",
           "type": "lookup",
           "label": "Site",
@@ -664,7 +793,8 @@
             "populate_from_lookup": {
               "field_map": {
                 "crm_opportunity.company_id": "crm_site.company_id",
-                "crm_opportunity.sales_entity": "crm_site.sales_entity"
+                "crm_opportunity.sales_entity": "crm_site.sales_entity",
+                "crm_opportunity.site_address": "crm_site.full_address"
               }
             }
           },
@@ -678,6 +808,14 @@
           "display_field": "crm_lead.title",
           "help_text": "Filled when this opportunity is created by qualifying a lead, so lead activity context remains visible.",
           "label_key": "crm.entities.crm_opportunity.fields.source_lead_id.label"
+        },
+        {
+          "id": "crm_opportunity.returned_lead_id",
+          "type": "lookup",
+          "label": "Returned Lead",
+          "entity": "entity.crm_lead",
+          "display_field": "crm_lead.title",
+          "help_text": "Filled when this opportunity is moved back to a lead for nurture."
         },
         {
           "id": "crm_opportunity.owner_user_id",
@@ -1011,6 +1149,150 @@
           "label_key": "crm.entities.crm_opportunity.fields.source.label"
         },
         {
+          "id": "crm_opportunity.facility_type",
+          "type": "enum",
+          "label": "Facility Type",
+          "options": [
+            {
+              "value": "greenhouse",
+              "label": "Greenhouse"
+            },
+            {
+              "value": "indoor",
+              "label": "Indoor"
+            },
+            {
+              "value": "vertical_farm",
+              "label": "Vertical Farm"
+            },
+            {
+              "value": "research",
+              "label": "Research"
+            },
+            {
+              "value": "other",
+              "label": "Other"
+            }
+          ],
+          "help_text": "Facility category required before progressing from Deal Qualification."
+        },
+        {
+          "id": "crm_opportunity.canopy_area",
+          "type": "number",
+          "label": "Canopy Area",
+          "help_text": "Growing canopy area required before progressing from Deal Qualification."
+        },
+        {
+          "id": "crm_opportunity.canopy_area_unit",
+          "type": "enum",
+          "label": "Canopy Area Unit",
+          "default": "m2",
+          "options": [
+            {
+              "value": "m2",
+              "label": "m2"
+            },
+            {
+              "value": "ft2",
+              "label": "ft2"
+            }
+          ]
+        },
+        {
+          "id": "crm_opportunity.existing_lighting",
+          "type": "string",
+          "label": "Existing Lighting",
+          "help_text": "Existing lighting technology, for example HPS, LED, vertical lighting, or none."
+        },
+        {
+          "id": "crm_opportunity.indicative_budget_range",
+          "type": "string",
+          "label": "Indicative Budget Range",
+          "help_text": "Early budget range captured during qualification."
+        },
+        {
+          "id": "crm_opportunity.decision_process",
+          "type": "text",
+          "label": "Decision-Making Process",
+          "help_text": "Short note describing who decides and how approval happens."
+        },
+        {
+          "id": "crm_opportunity.partnership_name",
+          "type": "string",
+          "label": "Partnership Name",
+          "help_text": "Optional partnership or channel name."
+        },
+        {
+          "id": "crm_opportunity.discovery_meeting_date",
+          "type": "date",
+          "label": "Meeting Date"
+        },
+        {
+          "id": "crm_opportunity.discovery_meeting_attendees",
+          "type": "text",
+          "label": "Meeting Attendees"
+        },
+        {
+          "id": "crm_opportunity.pain_points",
+          "type": "text",
+          "label": "Drivers / Pain Points"
+        },
+        {
+          "id": "crm_opportunity.target_ppfd_or_dli",
+          "type": "string",
+          "label": "Target PPFD or DLI"
+        },
+        {
+          "id": "crm_opportunity.available_power_kw",
+          "type": "number",
+          "label": "Available Power (kW)"
+        },
+        {
+          "id": "crm_opportunity.power_phase",
+          "type": "string",
+          "label": "Power Phase"
+        },
+        {
+          "id": "crm_opportunity.power_voltage",
+          "type": "string",
+          "label": "Power Voltage"
+        },
+        {
+          "id": "crm_opportunity.mounting_height",
+          "type": "string",
+          "label": "Mounting Height"
+        },
+        {
+          "id": "crm_opportunity.ceiling_structure",
+          "type": "text",
+          "label": "Ceiling / Structure"
+        },
+        {
+          "id": "crm_opportunity.decision_makers",
+          "type": "text",
+          "label": "Decision Makers"
+        },
+        {
+          "id": "crm_opportunity.decision_criteria",
+          "type": "text",
+          "label": "Decision Criteria"
+        },
+        {
+          "id": "crm_opportunity.known_competitors",
+          "type": "text",
+          "label": "Known Competitors"
+        },
+        {
+          "id": "crm_opportunity.confirmed_budget",
+          "type": "string",
+          "label": "Confirmed Budget"
+        },
+        {
+          "id": "crm_opportunity.next_step",
+          "type": "text",
+          "label": "Next Step"
+        },
+        {
           "id": "crm_opportunity.quote_state",
           "type": "enum",
           "label": "Quote State",
@@ -1042,6 +1324,303 @@
             }
           ],
           "label_key": "crm.entities.crm_opportunity.fields.quote_state.label"
+        },
+        {
+          "id": "crm_opportunity.lighting_design_attached",
+          "type": "bool",
+          "label": "Lighting Design Attached",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.fixture_model",
+          "type": "string",
+          "label": "Fixture Model"
+        },
+        {
+          "id": "crm_opportunity.fixture_count",
+          "type": "number",
+          "label": "Fixture Count"
+        },
+        {
+          "id": "crm_opportunity.layout_drawing_attached",
+          "type": "bool",
+          "label": "Layout Drawing Attached",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.lead_time",
+          "type": "string",
+          "label": "Lead Time"
+        },
+        {
+          "id": "crm_opportunity.warranty_term",
+          "type": "string",
+          "label": "Warranty Term"
+        },
+        {
+          "id": "crm_opportunity.payment_terms",
+          "type": "string",
+          "label": "Payment Terms"
+        },
+        {
+          "id": "crm_opportunity.quote_validity_period",
+          "type": "string",
+          "label": "Quote Validity Period"
+        },
+        {
+          "id": "crm_opportunity.compliance_certification",
+          "type": "string",
+          "label": "Compliance / Certification"
+        },
+        {
+          "id": "crm_opportunity.proposal_sent_date",
+          "type": "date",
+          "label": "Proposal Sent Date"
+        },
+        {
+          "id": "crm_opportunity.final_bom_locked",
+          "type": "bool",
+          "label": "Final BOM Locked",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.fixture_discount_percent",
+          "type": "number",
+          "label": "Fixture Discount %"
+        },
+        {
+          "id": "crm_opportunity.fixture_discount_approver",
+          "type": "string",
+          "label": "Fixture Discount Approver"
+        },
+        {
+          "id": "crm_opportunity.payment_schedule_agreed",
+          "type": "bool",
+          "label": "Payment Schedule Agreed",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.site_contact",
+          "type": "string",
+          "label": "Site Contact"
+        },
+        {
+          "id": "crm_opportunity.target_install_window",
+          "type": "string",
+          "label": "Target Install Window"
+        },
+        {
+          "id": "crm_opportunity.verbal_commitment",
+          "type": "text",
+          "label": "Verbal Commitment"
+        },
+        {
+          "id": "crm_opportunity.expected_po_date",
+          "type": "date",
+          "label": "Expected PO Date"
+        },
+        {
+          "id": "crm_opportunity.last_contact_date",
+          "type": "date",
+          "label": "Last Contact Date"
+        },
+        {
+          "id": "crm_opportunity.last_activity_at",
+          "type": "datetime",
+          "label": "Last Activity At"
+        },
+        {
+          "id": "crm_opportunity.is_rotting",
+          "type": "bool",
+          "label": "Rotting Deal",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.rotting_follow_up_task_id",
+          "type": "lookup",
+          "label": "Rotting Follow-Up Task",
+          "entity": "entity.biz_task",
+          "display_field": "biz_task.title",
+          "help_text": "System-created follow-up task when no logged activity has occurred for the rotting-deal window."
+        },
+        {
+          "id": "crm_opportunity.signed_quote_contract_attached",
+          "type": "bool",
+          "label": "Signed Quote / Contract Attached",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.po_number",
+          "type": "string",
+          "label": "PO Number"
+        },
+        {
+          "id": "crm_opportunity.po_document_attached",
+          "type": "bool",
+          "label": "PO Document Attached",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.deposit_invoice_raised",
+          "type": "bool",
+          "label": "Deposit Invoice Raised",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.production_slot_requested",
+          "type": "bool",
+          "label": "Production Slot Requested",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.handover_checklist_completed",
+          "type": "bool",
+          "label": "Handover Checklist Completed",
+          "default": false
+        },
+        {
+          "id": "crm_opportunity.won_reason",
+          "type": "text",
+          "label": "Won Reason"
+        },
+        {
+          "id": "crm_opportunity.stage_gate_exception_status",
+          "type": "enum",
+          "label": "Stage Gate Exception",
+          "default": "none",
+          "options": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "requested",
+              "label": "Requested"
+            },
+            {
+              "value": "approved",
+              "label": "Approved"
+            },
+            {
+              "value": "rejected",
+              "label": "Rejected"
+            }
+          ],
+          "help_text": "Approval status for progressing an opportunity when a mandatory stage-gate field cannot be completed yet."
+        },
+        {
+          "id": "crm_opportunity.stage_gate_exception_reason",
+          "type": "text",
+          "label": "Stage Gate Exception Reason",
+          "required_when": {
+            "op": "in",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": [
+              "requested",
+              "approved",
+              "rejected"
+            ]
+          },
+          "help_text": "Reason the mandatory stage-gate requirement cannot be completed before progressing."
+        },
+        {
+          "id": "crm_opportunity.stage_gate_exception_approver_user_id",
+          "type": "user",
+          "label": "Stage Gate Approver",
+          "required_when": {
+            "op": "in",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": [
+              "requested",
+              "approved",
+              "rejected"
+            ]
+          },
+          "help_text": "Nominated approver for the mandatory-field exception request."
+        },
+        {
+          "id": "crm_opportunity.stage_gate_exception_fields",
+          "type": "text",
+          "label": "Waived Mandatory Fields",
+          "required_when": {
+            "op": "in",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": [
+              "requested",
+              "approved",
+              "rejected"
+            ]
+          },
+          "help_text": "Mandatory fields being waived by this exception request."
+        },
+        {
+          "id": "crm_opportunity.stage_gate_exception_decision_notes",
+          "type": "text",
+          "label": "Stage Gate Decision Notes",
+          "help_text": "Approval or rejection notes for mandatory-field exception requests."
+        },
+        {
+          "id": "crm_opportunity.on_hold_reason",
+          "type": "text",
+          "label": "On Hold Note",
+          "required_when": {
+            "op": "eq",
+            "field": "crm_opportunity.on_hold_reason_code",
+            "value": "other"
+          },
+          "help_text": "Additional note required when the hold reason is Other."
+        },
+        {
+          "id": "crm_opportunity.on_hold_reason_code",
+          "type": "enum",
+          "label": "On Hold Reason",
+          "options": [
+            {
+              "value": "budget",
+              "label": "Budget"
+            },
+            {
+              "value": "timing",
+              "label": "Timing"
+            },
+            {
+              "value": "decision_maker_change",
+              "label": "Decision-maker Change"
+            },
+            {
+              "value": "awaiting_funding",
+              "label": "Awaiting Funding"
+            },
+            {
+              "value": "other",
+              "label": "Other"
+            }
+          ],
+          "required_when": {
+            "op": "eq",
+            "field": "crm_opportunity.stage",
+            "value": "on_hold"
+          },
+          "help_text": "Mandatory hold reason category from Natalie and Shelly's stage-gate document."
+        },
+        {
+          "id": "crm_opportunity.on_hold_follow_up_date",
+          "type": "date",
+          "label": "On Hold Follow-Up Date",
+          "required_when": {
+            "op": "eq",
+            "field": "crm_opportunity.stage",
+            "value": "on_hold"
+          },
+          "help_text": "Date the owner must follow up while this opportunity is on hold."
+        },
+        {
+          "id": "crm_opportunity.on_hold_follow_up_task_id",
+          "type": "lookup",
+          "label": "On Hold Follow-Up Task",
+          "entity": "entity.biz_task",
+          "display_field": "biz_task.title",
+          "help_text": "System-created follow-up task for the current on-hold cycle."
         },
         {
           "id": "crm_opportunity.sector",
@@ -1140,8 +1719,14 @@
           "crm_opportunity.primary_contact_name",
           "crm_opportunity.primary_contact_email",
           "crm_opportunity.primary_contact_phone",
+          "crm_opportunity.primary_contact_role",
+          "crm_opportunity.company_legal_name",
+          "crm_opportunity.company_country",
+          "crm_opportunity.company_tax_number",
+          "crm_opportunity.company_registration_number",
           "crm_opportunity.site_id",
           "crm_opportunity.source_lead_id",
+          "crm_opportunity.returned_lead_id",
           "crm_opportunity.owner_user_id",
           "crm_opportunity.pipeline",
           "crm_opportunity.stage",
@@ -1153,6 +1738,62 @@
           "crm_opportunity.expected_close_date",
           "crm_opportunity.next_activity_date",
           "crm_opportunity.quote_state",
+          "crm_opportunity.facility_type",
+          "crm_opportunity.canopy_area",
+          "crm_opportunity.canopy_area_unit",
+          "crm_opportunity.existing_lighting",
+          "crm_opportunity.indicative_budget_range",
+          "crm_opportunity.decision_process",
+          "crm_opportunity.partnership_name",
+          "crm_opportunity.discovery_meeting_date",
+          "crm_opportunity.discovery_meeting_attendees",
+          "crm_opportunity.pain_points",
+          "crm_opportunity.target_ppfd_or_dli",
+          "crm_opportunity.available_power_kw",
+          "crm_opportunity.power_phase",
+          "crm_opportunity.power_voltage",
+          "crm_opportunity.mounting_height",
+          "crm_opportunity.ceiling_structure",
+          "crm_opportunity.decision_makers",
+          "crm_opportunity.decision_criteria",
+          "crm_opportunity.known_competitors",
+          "crm_opportunity.confirmed_budget",
+          "crm_opportunity.next_step",
+          "crm_opportunity.lighting_design_attached",
+          "crm_opportunity.fixture_model",
+          "crm_opportunity.fixture_count",
+          "crm_opportunity.layout_drawing_attached",
+          "crm_opportunity.lead_time",
+          "crm_opportunity.warranty_term",
+          "crm_opportunity.payment_terms",
+          "crm_opportunity.quote_validity_period",
+          "crm_opportunity.compliance_certification",
+          "crm_opportunity.proposal_sent_date",
+          "crm_opportunity.final_bom_locked",
+          "crm_opportunity.fixture_discount_percent",
+          "crm_opportunity.fixture_discount_approver",
+          "crm_opportunity.payment_schedule_agreed",
+          "crm_opportunity.site_contact",
+          "crm_opportunity.target_install_window",
+          "crm_opportunity.verbal_commitment",
+          "crm_opportunity.expected_po_date",
+          "crm_opportunity.last_contact_date",
+          "crm_opportunity.is_rotting",
+          "crm_opportunity.signed_quote_contract_attached",
+          "crm_opportunity.po_number",
+          "crm_opportunity.po_document_attached",
+          "crm_opportunity.deposit_invoice_raised",
+          "crm_opportunity.production_slot_requested",
+          "crm_opportunity.handover_checklist_completed",
+          "crm_opportunity.won_reason",
+          "crm_opportunity.stage_gate_exception_status",
+          "crm_opportunity.stage_gate_exception_reason",
+          "crm_opportunity.stage_gate_exception_approver_user_id",
+          "crm_opportunity.stage_gate_exception_fields",
+          "crm_opportunity.stage_gate_exception_decision_notes",
+          "crm_opportunity.on_hold_reason_code",
+          "crm_opportunity.on_hold_reason",
+          "crm_opportunity.on_hold_follow_up_date",
           "crm_opportunity.sector",
           "crm_opportunity.crop_type",
           "crm_opportunity.product_interest",
@@ -2140,8 +2781,72 @@
         }
       ],
       "required_fields_by_state": {
+        "meeting": [
+          "crm_opportunity.title",
+          "crm_opportunity.company_id",
+          "crm_opportunity.company_legal_name",
+          "crm_opportunity.company_country",
+          "crm_opportunity.sales_entity",
+          "crm_opportunity.primary_contact_name",
+          "crm_opportunity.primary_contact_role",
+          "crm_opportunity.primary_contact_email",
+          "crm_opportunity.primary_contact_phone",
+          "crm_opportunity.source",
+          "crm_opportunity.crop_type",
+          "crm_opportunity.facility_type",
+          "crm_opportunity.canopy_area",
+          "crm_opportunity.existing_lighting",
+          "crm_opportunity.indicative_budget_range",
+          "crm_opportunity.expected_close_date",
+          "crm_opportunity.decision_process"
+        ],
         "proposal": [
-          "crm_opportunity.company_id"
+          "crm_opportunity.discovery_meeting_date",
+          "crm_opportunity.discovery_meeting_attendees",
+          "crm_opportunity.pain_points",
+          "crm_opportunity.target_ppfd_or_dli",
+          "crm_opportunity.available_power_kw",
+          "crm_opportunity.power_phase",
+          "crm_opportunity.power_voltage",
+          "crm_opportunity.mounting_height",
+          "crm_opportunity.ceiling_structure",
+          "crm_opportunity.decision_makers",
+          "crm_opportunity.decision_criteria",
+          "crm_opportunity.known_competitors",
+          "crm_opportunity.confirmed_budget",
+          "crm_opportunity.next_step",
+          "crm_opportunity.next_activity_date"
+        ],
+        "negotiation_commitment": [
+          "crm_opportunity.fixture_model",
+          "crm_opportunity.spectrum_interest",
+          "crm_opportunity.fixture_count",
+          "crm_opportunity.lead_time",
+          "crm_opportunity.warranty_term",
+          "crm_opportunity.payment_terms",
+          "crm_opportunity.quote_validity_period",
+          "crm_opportunity.compliance_certification",
+          "crm_opportunity.proposal_sent_date",
+          "crm_opportunity.linked_quote_id"
+        ],
+        "on_hold": [
+          "crm_opportunity.on_hold_reason_code",
+          "crm_opportunity.on_hold_follow_up_date",
+          "crm_opportunity.owner_user_id",
+          "crm_opportunity.last_contact_date"
+        ],
+        "won": [
+          "crm_opportunity.fixture_discount_approver",
+          "crm_opportunity.site_address",
+          "crm_opportunity.site_contact",
+          "crm_opportunity.target_install_window",
+          "crm_opportunity.verbal_commitment",
+          "crm_opportunity.expected_po_date",
+          "crm_opportunity.probability"
+        ],
+        "post_purchase": [
+          "crm_opportunity.po_number",
+          "crm_opportunity.won_reason"
         ],
         "lost": [
           "crm_opportunity.won_lost_reason"
@@ -2366,6 +3071,21 @@
         "crm_opportunity.company_id": {
           "from": "crm_lead.company_id"
         },
+        "crm_opportunity.company_legal_name": {
+          "from": "crm_lead.company_legal_name"
+        },
+        "crm_opportunity.company_country": {
+          "from": "crm_lead.company_country"
+        },
+        "crm_opportunity.company_tax_number": {
+          "from": "crm_lead.company_tax_number"
+        },
+        "crm_opportunity.company_registration_number": {
+          "from": "crm_lead.company_registration_number"
+        },
+        "crm_opportunity.company_address": {
+          "from": "crm_lead.company_address"
+        },
         "crm_opportunity.primary_contact_person_id": {
           "from": "crm_lead.contact_person_id"
         },
@@ -2377,6 +3097,9 @@
         },
         "crm_opportunity.primary_contact_phone": {
           "from": "crm_lead.contact_phone"
+        },
+        "crm_opportunity.primary_contact_role": {
+          "from": "crm_lead.contact_role"
         },
         "crm_opportunity.owner_user_id": {
           "from": "crm_lead.owner_user_id"
@@ -2427,6 +3150,77 @@
         "require_source_fields": [
           "crm_lead.title",
           "crm_lead.company_id"
+        ],
+        "prevent_if_target_linked": true
+      }
+    },
+    {
+      "key": "opportunity_to_lead",
+      "source_entity_id": "entity.crm_opportunity",
+      "target_entity_id": "entity.crm_lead",
+      "field_mappings": {
+        "crm_lead.title": {
+          "from": "crm_opportunity.title"
+        },
+        "crm_lead.company_id": {
+          "from": "crm_opportunity.company_id"
+        },
+        "crm_lead.contact_person_id": {
+          "from": "crm_opportunity.primary_contact_person_id"
+        },
+        "crm_lead.contact_name": {
+          "from": "crm_opportunity.primary_contact_name"
+        },
+        "crm_lead.contact_email": {
+          "from": "crm_opportunity.primary_contact_email"
+        },
+        "crm_lead.contact_phone": {
+          "from": "crm_opportunity.primary_contact_phone"
+        },
+        "crm_lead.owner_user_id": {
+          "from": "crm_opportunity.owner_user_id"
+        },
+        "crm_lead.sales_entity": {
+          "from": "crm_opportunity.sales_entity"
+        },
+        "crm_lead.currency": {
+          "from": "crm_opportunity.currency"
+        },
+        "crm_lead.quote_tax_percent": {
+          "from": "crm_opportunity.quote_tax_percent"
+        },
+        "crm_lead.estimated_value": {
+          "from": "crm_opportunity.value"
+        },
+        "crm_lead.source": {
+          "from": "crm_opportunity.source"
+        },
+        "crm_lead.next_activity_date": {
+          "from": "crm_opportunity.next_activity_date"
+        },
+        "crm_lead.notes": {
+          "from": "crm_opportunity.notes"
+        },
+        "crm_lead.status": {
+          "value": "contacted"
+        }
+      },
+      "link_fields": {
+        "source_to_target": "crm_opportunity.returned_lead_id",
+        "target_to_source": "crm_lead.linked_opportunity_id"
+      },
+      "source_update": {
+        "patch": {
+          "crm_opportunity.stage": "lost",
+          "crm_opportunity.status": "lost",
+          "crm_opportunity.probability": 0,
+          "crm_opportunity.won_lost_reason": "Moved back to Lead for nurture."
+        }
+      },
+      "validation": {
+        "require_source_fields": [
+          "crm_opportunity.title",
+          "crm_opportunity.company_id"
         ],
         "prevent_if_target_linked": true
       }
@@ -2653,6 +3447,12 @@
         "biz_order.customer_reference": {
           "from": "crm_opportunity.title"
         },
+        "biz_order.payment_terms": {
+          "from": "crm_opportunity.payment_terms"
+        },
+        "biz_order.shipping_destination": {
+          "from": "crm_opportunity.site_address"
+        },
         "biz_order.notes": {
           "from": "crm_opportunity.notes"
         },
@@ -2660,6 +3460,97 @@
           "from": "crm_opportunity.expected_close_date"
         }
       },
+      "child_mappings": [
+        {
+          "source_entity_id": "entity.crm_opportunity_line",
+          "target_entity_id": "entity.biz_order_line",
+          "source_link_field": "crm_opportunity_line.opportunity_id",
+          "target_link_field": "biz_order_line.customer_order_id",
+          "field_mappings": {
+            "biz_order_line.product_id": {
+              "from": "crm_opportunity_line.product_id"
+            },
+            "biz_order_line.description": {
+              "from": "crm_opportunity_line.description"
+            },
+            "biz_order_line.sales_entity_snapshot": {
+              "from": "crm_opportunity_line.sales_entity_snapshot"
+            },
+            "biz_order_line.fulfilment_mode_snapshot": {
+              "from": "crm_opportunity_line.fulfilment_mode_snapshot"
+            },
+            "biz_order_line.currency_snapshot": {
+              "from": "crm_opportunity_line.currency_snapshot"
+            },
+            "biz_order_line.available_stock_snapshot": {
+              "from": "crm_opportunity_line.available_stock_snapshot"
+            },
+            "biz_order_line.uom": {
+              "from": "crm_opportunity_line.uom"
+            },
+            "biz_order_line.quantity": {
+              "from": "crm_opportunity_line.quantity"
+            },
+            "biz_order_line.unit_price": {
+              "from": "crm_opportunity_line.unit_price"
+            },
+            "biz_order_line.unit_cost_snapshot": {
+              "from": "crm_opportunity_line.default_buy_price_snapshot"
+            },
+            "biz_order_line.buy_currency_snapshot": {
+              "from": "crm_opportunity_line.buy_currency_snapshot"
+            },
+            "biz_order_line.procurement_supplier_id": {
+              "from": "crm_opportunity_line.procurement_supplier_id"
+            },
+            "biz_order_line.supplier_sku_snapshot": {
+              "from": "crm_opportunity_line.supplier_sku_snapshot"
+            },
+            "biz_order_line.minimum_order_quantity_snapshot": {
+              "from": "crm_opportunity_line.minimum_order_quantity_snapshot"
+            },
+            "biz_order_line.lead_time_weeks_snapshot": {
+              "from": "crm_opportunity_line.lead_time_weeks_snapshot"
+            },
+            "biz_order_line.product_type_snapshot": {
+              "from": "crm_opportunity_line.product_type_snapshot"
+            },
+            "biz_order_line.quote_cost_mode_snapshot": {
+              "from": "crm_opportunity_line.quote_cost_mode_snapshot"
+            },
+            "biz_order_line.wattage_snapshot": {
+              "from": "crm_opportunity_line.wattage_snapshot"
+            },
+            "biz_order_line.spectrum_snapshot": {
+              "from": "crm_opportunity_line.spectrum_snapshot"
+            },
+            "biz_order_line.input_voltage_snapshot": {
+              "from": "crm_opportunity_line.input_voltage_snapshot"
+            },
+            "biz_order_line.ppe_umol_per_w_snapshot": {
+              "from": "crm_opportunity_line.ppe_umol_per_w_snapshot"
+            },
+            "biz_order_line.ppf_umol_s_snapshot": {
+              "from": "crm_opportunity_line.ppf_umol_s_snapshot"
+            },
+            "biz_order_line.dimmable_snapshot": {
+              "from": "crm_opportunity_line.dimmable_snapshot"
+            },
+            "biz_order_line.ip_rating_snapshot": {
+              "from": "crm_opportunity_line.ip_rating_snapshot"
+            },
+            "biz_order_line.max_ambient_temp_snapshot": {
+              "from": "crm_opportunity_line.max_ambient_temp_snapshot"
+            },
+            "biz_order_line.modules_snapshot": {
+              "from": "crm_opportunity_line.modules_snapshot"
+            },
+            "biz_order_line.buy_fx_to_order_rate": {
+              "from": "crm_opportunity_line.buy_fx_to_quote_rate"
+            }
+          }
+        }
+      ],
       "link_fields": {
         "source_to_target": "crm_opportunity.linked_order_id"
       },
@@ -2675,6 +3566,7 @@
           "crm_opportunity.title",
           "crm_opportunity.company_id"
         ],
+        "require_child_records": true,
         "prevent_if_target_linked": true
       }
     }
@@ -2713,6 +3605,7 @@
       "kind": "update_record",
       "entity_id": "entity.crm_lead",
       "label": "Mark Contacted",
+      "modal_id": "modal.crm_lead_mark_contacted_gate",
       "patch": {
         "crm_lead.status": "contacted"
       },
@@ -2749,6 +3642,7 @@
       "kind": "transform_record",
       "entity_id": "entity.crm_lead",
       "label": "Qualify Lead",
+      "modal_id": "modal.crm_lead_qualify_gate",
       "transformation_key": "lead_to_opportunity",
       "visible_when": {
         "op": "and",
@@ -2827,17 +3721,236 @@
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Move to Meeting",
-      "patch": {
-        "crm_opportunity.stage": "meeting",
-        "crm_opportunity.status": "open",
-        "crm_opportunity.probability": 25
-      },
+      "modal_id": "modal.crm_opportunity_move_to_meeting",
       "visible_when": {
         "op": "eq",
         "field": "crm_opportunity.stage",
         "value": "deal_qualification"
       },
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_meeting.label"
+    },
+    {
+      "id": "action.crm_opportunity_confirm_meeting",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Move to Meeting",
+      "patch": {
+        "crm_opportunity.company_id": {
+          "ref": "$record.crm_opportunity.company_id"
+        },
+        "crm_opportunity.company_legal_name": {
+          "ref": "$record.crm_opportunity.company_legal_name"
+        },
+        "crm_opportunity.company_country": {
+          "ref": "$record.crm_opportunity.company_country"
+        },
+        "crm_opportunity.company_tax_number": {
+          "ref": "$record.crm_opportunity.company_tax_number"
+        },
+        "crm_opportunity.company_registration_number": {
+          "ref": "$record.crm_opportunity.company_registration_number"
+        },
+        "crm_opportunity.sales_entity": {
+          "ref": "$record.crm_opportunity.sales_entity"
+        },
+        "crm_opportunity.primary_contact_person_id": {
+          "ref": "$record.crm_opportunity.primary_contact_person_id"
+        },
+        "crm_opportunity.primary_contact_name": {
+          "ref": "$record.crm_opportunity.primary_contact_name"
+        },
+        "crm_opportunity.primary_contact_role": {
+          "ref": "$record.crm_opportunity.primary_contact_role"
+        },
+        "crm_opportunity.primary_contact_email": {
+          "ref": "$record.crm_opportunity.primary_contact_email"
+        },
+        "crm_opportunity.primary_contact_phone": {
+          "ref": "$record.crm_opportunity.primary_contact_phone"
+        },
+        "crm_opportunity.source": {
+          "ref": "$record.crm_opportunity.source"
+        },
+        "crm_opportunity.crop_type": {
+          "ref": "$record.crm_opportunity.crop_type"
+        },
+        "crm_opportunity.facility_type": {
+          "ref": "$record.crm_opportunity.facility_type"
+        },
+        "crm_opportunity.canopy_area": {
+          "ref": "$record.crm_opportunity.canopy_area"
+        },
+        "crm_opportunity.canopy_area_unit": {
+          "ref": "$record.crm_opportunity.canopy_area_unit"
+        },
+        "crm_opportunity.existing_lighting": {
+          "ref": "$record.crm_opportunity.existing_lighting"
+        },
+        "crm_opportunity.indicative_budget_range": {
+          "ref": "$record.crm_opportunity.indicative_budget_range"
+        },
+        "crm_opportunity.expected_close_date": {
+          "ref": "$record.crm_opportunity.expected_close_date"
+        },
+        "crm_opportunity.decision_process": {
+          "ref": "$record.crm_opportunity.decision_process"
+        },
+        "crm_opportunity.stage": "meeting",
+        "crm_opportunity.status": "open",
+        "crm_opportunity.probability": 25
+      },
+      "enabled_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "approved"
+          },
+          {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_opportunity.title"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.company_id"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.company_legal_name"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.company_country"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.company_tax_number"
+                  },
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.company_registration_number"
+                  }
+                ]
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.sales_entity"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.primary_contact_name"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.primary_contact_role"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.primary_contact_email"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.primary_contact_phone"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.source"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.crop_type"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.facility_type"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.canopy_area"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.existing_lighting"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.indicative_budget_range"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.expected_close_date"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.decision_process"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.crm_opportunity_back_to_lead",
+      "kind": "transform_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Move Back to Lead",
+      "modal_id": "modal.crm_opportunity_back_to_lead_gate",
+      "transformation_key": "opportunity_to_lead",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "in",
+            "field": "crm_opportunity.stage",
+            "value": [
+              "deal_qualification",
+              "meeting",
+              "proposal"
+            ]
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "crm_opportunity.linked_quote_id"
+            }
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "crm_opportunity.linked_order_id"
+            }
+          },
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "crm_opportunity.returned_lead_id"
+            }
+          }
+        ]
+      },
+      "enabled_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "crm_opportunity.title"
+          },
+          {
+            "op": "exists",
+            "field": "crm_opportunity.company_id"
+          }
+        ]
+      }
     },
     {
       "id": "action.crm_opportunity_back_to_qualification",
@@ -2861,6 +3974,7 @@
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Move to Proposal",
+      "modal_id": "modal.crm_opportunity_move_to_proposal",
       "patch": {
         "crm_opportunity.stage": "proposal",
         "crm_opportunity.status": "open",
@@ -2871,6 +3985,81 @@
         "op": "eq",
         "field": "crm_opportunity.stage",
         "value": "meeting"
+      },
+      "enabled_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "approved"
+          },
+          {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_opportunity.discovery_meeting_date"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.discovery_meeting_attendees"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.pain_points"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.target_ppfd_or_dli"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.available_power_kw"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.power_phase"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.power_voltage"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.mounting_height"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.ceiling_structure"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.decision_makers"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.decision_criteria"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.known_competitors"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.confirmed_budget"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.next_step"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.next_activity_date"
+              }
+            ]
+          }
+        ]
       },
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_proposal.label"
     },
@@ -2896,15 +4085,90 @@
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Move to Negotiation & Commitment",
+      "modal_id": "modal.crm_opportunity_move_to_negotiation",
       "patch": {
         "crm_opportunity.stage": "negotiation_commitment",
         "crm_opportunity.status": "open",
-        "crm_opportunity.probability": 75
+        "crm_opportunity.probability": 75,
+        "crm_opportunity.on_hold_reason_code": null,
+        "crm_opportunity.on_hold_reason": null,
+        "crm_opportunity.on_hold_follow_up_date": null,
+        "crm_opportunity.on_hold_follow_up_task_id": null
       },
       "visible_when": {
         "op": "eq",
         "field": "crm_opportunity.stage",
         "value": "proposal"
+      },
+      "enabled_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "approved"
+          },
+          {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_opportunity.linked_quote_id"
+              },
+              {
+                "op": "eq",
+                "field": "crm_opportunity.lighting_design_attached",
+                "value": true
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.fixture_model"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.spectrum_interest"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.fixture_count"
+              },
+              {
+                "op": "eq",
+                "field": "crm_opportunity.layout_drawing_attached",
+                "value": true
+              },
+              {
+                "op": "gt",
+                "field": "crm_opportunity.product_subtotal",
+                "value": 0
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.lead_time"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.warranty_term"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.payment_terms"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.quote_validity_period"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.compliance_certification"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.proposal_sent_date"
+              }
+            ]
+          }
+        ]
       },
       "action_label_key": "crm.actions.action_crm_opportunity_move_to_negotiation_commitment.label"
     },
@@ -2931,6 +4195,7 @@
       "kind": "transform_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Create Quote",
+      "modal_id": "modal.crm_opportunity_create_quote_gate",
       "transformation_key": "opportunity_to_quote",
       "visible_when": {
         "op": "and",
@@ -2953,8 +4218,22 @@
         ]
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "crm_opportunity.company_id"
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "crm_opportunity.company_id"
+          },
+          {
+            "op": "exists",
+            "field": "crm_opportunity.sales_entity"
+          },
+          {
+            "op": "gt",
+            "field": "crm_opportunity.product_line_count",
+            "value": 0
+          }
+        ]
       },
       "action_label_key": "crm.actions.action_crm_opportunity_create_quote.label"
     },
@@ -2963,11 +4242,7 @@
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Place On Hold",
-      "patch": {
-        "crm_opportunity.stage": "on_hold",
-        "crm_opportunity.status": "open",
-        "crm_opportunity.probability": 25
-      },
+      "modal_id": "modal.crm_opportunity_hold",
       "visible_when": {
         "op": "in",
         "field": "crm_opportunity.stage",
@@ -2986,7 +4261,11 @@
       "patch": {
         "crm_opportunity.stage": "negotiation_commitment",
         "crm_opportunity.status": "open",
-        "crm_opportunity.probability": 75
+        "crm_opportunity.probability": 75,
+        "crm_opportunity.on_hold_reason_code": null,
+        "crm_opportunity.on_hold_reason": null,
+        "crm_opportunity.on_hold_follow_up_date": null,
+        "crm_opportunity.on_hold_follow_up_task_id": null
       },
       "visible_when": {
         "op": "eq",
@@ -3000,6 +4279,7 @@
       "kind": "update_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Mark Opportunity Won",
+      "modal_id": "modal.crm_opportunity_mark_won_gate",
       "patch": {
         "crm_opportunity.stage": "won",
         "crm_opportunity.status": "won",
@@ -3015,7 +4295,147 @@
           "on_hold"
         ]
       },
+      "enabled_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "approved"
+          },
+          {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_opportunity.linked_quote_id"
+              },
+              {
+                "op": "eq",
+                "field": "crm_opportunity.final_bom_locked",
+                "value": true
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.fixture_discount_percent"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.fixture_discount_approver"
+              },
+              {
+                "op": "eq",
+                "field": "crm_opportunity.payment_schedule_agreed",
+                "value": true
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.site_address"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.site_contact"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.target_install_window"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.verbal_commitment"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.expected_po_date"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.probability"
+              }
+            ]
+          }
+        ]
+      },
       "action_label_key": "crm.actions.action_crm_opportunity_mark_opportunity_won.label"
+    },
+    {
+      "id": "action.crm_opportunity_request_gate_exception",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Request Gate Exception",
+      "modal_id": "modal.crm_opportunity_gate_exception_request",
+      "visible_when": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "not",
+            "condition": {
+              "op": "exists",
+              "field": "crm_opportunity.stage_gate_exception_status"
+            }
+          },
+          {
+            "op": "in",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": [
+              "none",
+              "rejected"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.crm_opportunity_approve_gate_exception",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Approve Gate Exception",
+      "modal_id": "modal.crm_opportunity_gate_exception_approve",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "requested"
+          },
+          {
+            "op": "eq",
+            "left": {
+              "ref": "$actor.user_id"
+            },
+            "right": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_approver_user_id"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "action.crm_opportunity_reject_gate_exception",
+      "kind": "update_record",
+      "entity_id": "entity.crm_opportunity",
+      "label": "Reject Gate Exception",
+      "modal_id": "modal.crm_opportunity_gate_exception_reject",
+      "visible_when": {
+        "op": "and",
+        "conditions": [
+          {
+            "op": "eq",
+            "field": "crm_opportunity.stage_gate_exception_status",
+            "value": "requested"
+          },
+          {
+            "op": "eq",
+            "left": {
+              "ref": "$actor.user_id"
+            },
+            "right": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_approver_user_id"
+            }
+          }
+        ]
+      }
     },
     {
       "id": "action.crm_opportunity_open_lost_modal",
@@ -3041,6 +4461,7 @@
       "kind": "transform_record",
       "entity_id": "entity.crm_opportunity",
       "label": "Create Order",
+      "modal_id": "modal.crm_opportunity_create_order_gate",
       "transformation_key": "opportunity_to_order",
       "visible_when": {
         "op": "and",
@@ -3060,8 +4481,70 @@
         ]
       },
       "enabled_when": {
-        "op": "exists",
-        "field": "crm_opportunity.company_id"
+        "op": "and",
+        "conditions": [
+          {
+            "op": "exists",
+            "field": "crm_opportunity.company_id"
+          },
+          {
+            "op": "or",
+            "conditions": [
+              {
+                "op": "eq",
+                "field": "crm_opportunity.stage_gate_exception_status",
+                "value": "approved"
+              },
+              {
+                "op": "and",
+                "conditions": [
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.linked_quote_id"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.signed_quote_contract_attached",
+                    "value": true
+                  },
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.po_number"
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.po_document_attached",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.deposit_invoice_raised",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.final_bom_locked",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.production_slot_requested",
+                    "value": true
+                  },
+                  {
+                    "op": "eq",
+                    "field": "crm_opportunity.handover_checklist_completed",
+                    "value": true
+                  },
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.won_reason"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "action_label_key": "crm.actions.action_crm_opportunity_create_order.label"
     },
@@ -3246,6 +4729,7 @@
             "crm_lead.contact_name",
             "crm_lead.contact_email",
             "crm_lead.contact_phone",
+            "crm_lead.contact_role",
             "crm_lead.owner_user_id",
             "crm_lead.sales_entity",
             "crm_lead.currency",
@@ -3380,7 +4864,13 @@
           "field_id": "crm_opportunity.next_activity_date"
         },
         {
+          "field_id": "crm_opportunity.is_rotting"
+        },
+        {
           "field_id": "crm_opportunity.quote_state"
+        },
+        {
+          "field_id": "crm_opportunity.stage_gate_exception_status"
         }
       ],
       "header": {
@@ -3435,6 +4925,42 @@
               "value": "quote_needed"
             },
             "label_key": "crm.views.list.filters.needs_quote.label"
+          },
+          {
+            "id": "gate_exception_requested",
+            "label": "Gate Exceptions - Pending",
+            "domain": {
+              "op": "eq",
+              "field": "crm_opportunity.stage_gate_exception_status",
+              "value": "requested"
+            }
+          },
+          {
+            "id": "gate_exception_approved",
+            "label": "Gate Exceptions - Approved",
+            "domain": {
+              "op": "eq",
+              "field": "crm_opportunity.stage_gate_exception_status",
+              "value": "approved"
+            }
+          },
+          {
+            "id": "gate_exception_rejected",
+            "label": "Gate Exceptions - Rejected",
+            "domain": {
+              "op": "eq",
+              "field": "crm_opportunity.stage_gate_exception_status",
+              "value": "rejected"
+            }
+          },
+          {
+            "id": "rotting_deals",
+            "label": "Rotting Deals",
+            "domain": {
+              "op": "eq",
+              "field": "crm_opportunity.is_rotting",
+              "value": true
+            }
           },
           {
             "id": "no_next_activity",
@@ -3540,14 +5066,20 @@
             "crm_opportunity.primary_contact_name",
             "crm_opportunity.primary_contact_email",
             "crm_opportunity.primary_contact_phone",
+            "crm_opportunity.primary_contact_role",
             "crm_opportunity.site_id",
             "crm_opportunity.source_lead_id",
             "crm_opportunity.owner_user_id",
             "crm_opportunity.sales_entity",
+            "crm_opportunity.company_legal_name",
+            "crm_opportunity.company_country",
+            "crm_opportunity.company_tax_number",
+            "crm_opportunity.company_registration_number",
             "crm_opportunity.pipeline",
             "crm_opportunity.source",
             "crm_opportunity.expected_close_date",
-            "crm_opportunity.next_activity_date"
+            "crm_opportunity.next_activity_date",
+            "crm_opportunity.on_hold_follow_up_date"
           ],
           "section_title_key": "crm.views.form.sections.summary.title"
         },
@@ -3564,6 +5096,7 @@
             "crm_opportunity.product_line_count",
             "crm_opportunity.product_subtotal",
             "crm_opportunity.quote_state",
+            "crm_opportunity.stage_gate_exception_status",
             "crm_opportunity.sector",
             "crm_opportunity.crop_type",
             "crm_opportunity.product_interest",
@@ -3574,6 +5107,92 @@
             "crm_opportunity.linked_order_id"
           ],
           "section_title_key": "crm.views.form.sections.commercial.title"
+        },
+        {
+          "id": "qualification_gate",
+          "title": "Qualification Gate",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.facility_type",
+            "crm_opportunity.crop_type",
+            "crm_opportunity.canopy_area",
+            "crm_opportunity.canopy_area_unit",
+            "crm_opportunity.existing_lighting",
+            "crm_opportunity.indicative_budget_range",
+            "crm_opportunity.expected_close_date",
+            "crm_opportunity.decision_process",
+            "crm_opportunity.partnership_name"
+          ]
+        },
+        {
+          "id": "meeting_gate",
+          "title": "Meeting Gate",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.discovery_meeting_date",
+            "crm_opportunity.discovery_meeting_attendees",
+            "crm_opportunity.pain_points",
+            "crm_opportunity.target_ppfd_or_dli",
+            "crm_opportunity.available_power_kw",
+            "crm_opportunity.power_phase",
+            "crm_opportunity.power_voltage",
+            "crm_opportunity.mounting_height",
+            "crm_opportunity.ceiling_structure",
+            "crm_opportunity.decision_makers",
+            "crm_opportunity.decision_criteria",
+            "crm_opportunity.known_competitors",
+            "crm_opportunity.confirmed_budget",
+            "crm_opportunity.next_step",
+            "crm_opportunity.next_activity_date"
+          ]
+        },
+        {
+          "id": "proposal_gate",
+          "title": "Proposal Gate",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.lighting_design_attached",
+            "crm_opportunity.fixture_model",
+            "crm_opportunity.spectrum_interest",
+            "crm_opportunity.fixture_count",
+            "crm_opportunity.layout_drawing_attached",
+            "crm_opportunity.product_subtotal",
+            "crm_opportunity.lead_time",
+            "crm_opportunity.warranty_term",
+            "crm_opportunity.payment_terms",
+            "crm_opportunity.quote_validity_period",
+            "crm_opportunity.compliance_certification",
+            "crm_opportunity.proposal_sent_date",
+            "crm_opportunity.linked_quote_id"
+          ]
+        },
+        {
+          "id": "commitment_gate",
+          "title": "Commitment & Handover Gate",
+          "layout": "columns",
+          "columns": 2,
+          "fields": [
+            "crm_opportunity.final_bom_locked",
+            "crm_opportunity.fixture_discount_percent",
+            "crm_opportunity.fixture_discount_approver",
+            "crm_opportunity.payment_schedule_agreed",
+            "crm_opportunity.site_address",
+            "crm_opportunity.site_contact",
+            "crm_opportunity.target_install_window",
+            "crm_opportunity.verbal_commitment",
+            "crm_opportunity.expected_po_date",
+            "crm_opportunity.probability",
+            "crm_opportunity.signed_quote_contract_attached",
+            "crm_opportunity.po_number",
+            "crm_opportunity.po_document_attached",
+            "crm_opportunity.deposit_invoice_raised",
+            "crm_opportunity.production_slot_requested",
+            "crm_opportunity.handover_checklist_completed",
+            "crm_opportunity.won_reason"
+          ]
         },
         {
           "id": "opportunity_lines",
@@ -3728,6 +5347,14 @@
           "title": "Notes",
           "fields": [
             "crm_opportunity.won_lost_reason",
+            "crm_opportunity.on_hold_reason_code",
+            "crm_opportunity.on_hold_reason",
+            "crm_opportunity.last_contact_date",
+            "crm_opportunity.is_rotting",
+            "crm_opportunity.stage_gate_exception_reason",
+            "crm_opportunity.stage_gate_exception_approver_user_id",
+            "crm_opportunity.stage_gate_exception_fields",
+            "crm_opportunity.stage_gate_exception_decision_notes",
             "crm_opportunity.description",
             "crm_opportunity.notes",
             "crm_opportunity.attachments"
@@ -3777,6 +5404,18 @@
         ],
         "secondary_actions": [
           {
+            "action_id": "action.crm_opportunity_back_to_lead"
+          },
+          {
+            "action_id": "action.crm_opportunity_request_gate_exception"
+          },
+          {
+            "action_id": "action.crm_opportunity_approve_gate_exception"
+          },
+          {
+            "action_id": "action.crm_opportunity_reject_gate_exception"
+          },
+          {
             "action_id": "action.crm_opportunity_open_lost_modal"
           }
         ],
@@ -3798,6 +5437,16 @@
               "tab_label_key": "common.commercial",
               "sections": [
                 "commercial"
+              ]
+            },
+            {
+              "id": "stage_gates",
+              "label": "Stage Gates",
+              "sections": [
+                "qualification_gate",
+                "meeting_gate",
+                "proposal_gate",
+                "commitment_gate"
               ]
             },
             {
@@ -4105,6 +5754,9 @@
           "field_id": "crm_site.country"
         },
         {
+          "field_id": "crm_site.full_address"
+        },
+        {
           "field_id": "crm_site.is_active"
         }
       ],
@@ -4120,6 +5772,7 @@
           "placeholder": "Search sites...",
           "fields": [
             "crm_site.name",
+            "crm_site.full_address",
             "crm_site.city",
             "crm_site.country",
             "crm_site.site_notes"
@@ -4160,6 +5813,7 @@
             "crm_site.region",
             "crm_site.postcode",
             "crm_site.country",
+            "crm_site.full_address",
             "crm_site.is_active"
           ],
           "section_title_key": "crm.views.form.sections.summary.title"
@@ -4455,6 +6109,51 @@
               "format": "number",
               "label_key": "crm.pages.dashboard_page.blocks.1.cards.crm_needs_quote.label",
               "subtitle_key": "crm.pages.dashboard_page.blocks.1.cards.crm_needs_quote.subtitle"
+            },
+            {
+              "id": "crm_gate_exceptions_pending",
+              "label": "Pending Gate Exceptions",
+              "subtitle": "Mandatory-field waivers awaiting decision",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "crm_opportunity.stage_gate_exception_status",
+                "value": "requested"
+              },
+              "icon": "lucide:ShieldQuestion",
+              "tone": "warning",
+              "format": "number"
+            },
+            {
+              "id": "crm_gate_exceptions_approved",
+              "label": "Approved Gate Exceptions",
+              "subtitle": "Deals progressed with waived mandatory fields",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "crm_opportunity.stage_gate_exception_status",
+                "value": "approved"
+              },
+              "icon": "lucide:ShieldCheck",
+              "tone": "info",
+              "format": "number"
+            },
+            {
+              "id": "crm_rotting_deals",
+              "label": "Rotting Deals",
+              "subtitle": "No logged activity for 14 days",
+              "entity_id": "entity.crm_opportunity",
+              "measure": "count",
+              "domain": {
+                "op": "eq",
+                "field": "crm_opportunity.is_rotting",
+                "value": true
+              },
+              "icon": "lucide:TimerOff",
+              "tone": "danger",
+              "format": "number"
             },
             {
               "id": "crm_overdue_activities",
@@ -4944,6 +6643,483 @@
       ],
       "title_key": "crm.modals.crm_lead_disqualify.title",
       "description_key": "crm.modals.crm_lead_disqualify.description"
+    },
+    {
+      "id": "modal.crm_lead_mark_contacted_gate",
+      "title": "Complete Contact Gate",
+      "description": "Add at least one contact detail before marking this lead as contacted.",
+      "entity_id": "entity.crm_lead",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_lead_mark_contacted",
+      "save_progress": true,
+      "fields": [
+        "crm_lead.contact_person_id",
+        "crm_lead.contact_name",
+        "crm_lead.contact_email",
+        "crm_lead.contact_phone"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_lead_mark_contacted",
+          "label": "Mark Contacted",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_lead_qualify_gate",
+      "title": "Complete Lead Qualification",
+      "description": "Complete the minimum lead details before creating the linked opportunity.",
+      "entity_id": "entity.crm_lead",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_lead_qualify",
+      "save_progress": true,
+      "fields": [
+        "crm_lead.title",
+        "crm_lead.company_id",
+        "crm_lead.contact_person_id",
+        "crm_lead.contact_name",
+        "crm_lead.contact_email",
+        "crm_lead.contact_phone"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_lead_qualify",
+          "label": "Qualify Lead",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_move_to_meeting",
+      "title": "Complete Qualification Gate",
+      "description": "Complete the required qualification fields before moving this opportunity to Meeting. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_confirm_meeting",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.company_id",
+        "crm_opportunity.company_legal_name",
+        "crm_opportunity.company_country",
+        "crm_opportunity.company_tax_number",
+        "crm_opportunity.company_registration_number",
+        "crm_opportunity.sales_entity",
+        "crm_opportunity.primary_contact_person_id",
+        "crm_opportunity.primary_contact_name",
+        "crm_opportunity.primary_contact_role",
+        "crm_opportunity.primary_contact_email",
+        "crm_opportunity.primary_contact_phone",
+        "crm_opportunity.source",
+        "crm_opportunity.crop_type",
+        "crm_opportunity.facility_type",
+        "crm_opportunity.canopy_area",
+        "crm_opportunity.canopy_area_unit",
+        "crm_opportunity.existing_lighting",
+        "crm_opportunity.indicative_budget_range",
+        "crm_opportunity.expected_close_date",
+        "crm_opportunity.decision_process"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_confirm_meeting",
+          "label": "Move to Meeting",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_back_to_lead_gate",
+      "title": "Complete Back-to-Lead Gate",
+      "description": "Complete the minimum opportunity details before moving this opportunity back to a lead.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_back_to_lead",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.title",
+        "crm_opportunity.company_id"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_back_to_lead",
+          "label": "Move Back to Lead",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_move_to_proposal",
+      "title": "Complete Meeting Gate",
+      "description": "Complete the required meeting discovery fields before moving this opportunity to Proposal. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_solution",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.discovery_meeting_date",
+        "crm_opportunity.discovery_meeting_attendees",
+        "crm_opportunity.pain_points",
+        "crm_opportunity.target_ppfd_or_dli",
+        "crm_opportunity.available_power_kw",
+        "crm_opportunity.power_phase",
+        "crm_opportunity.power_voltage",
+        "crm_opportunity.mounting_height",
+        "crm_opportunity.ceiling_structure",
+        "crm_opportunity.decision_makers",
+        "crm_opportunity.decision_criteria",
+        "crm_opportunity.known_competitors",
+        "crm_opportunity.confirmed_budget",
+        "crm_opportunity.next_step",
+        "crm_opportunity.next_activity_date"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_solution",
+          "label": "Move to Proposal",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_move_to_negotiation",
+      "title": "Complete Proposal Gate",
+      "description": "Complete the required quote and proposal fields before moving this opportunity to Negotiation & Commitment. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_quote_stage",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.linked_quote_id",
+        "crm_opportunity.lighting_design_attached",
+        "crm_opportunity.fixture_model",
+        "crm_opportunity.spectrum_interest",
+        "crm_opportunity.fixture_count",
+        "crm_opportunity.layout_drawing_attached",
+        "crm_opportunity.product_subtotal",
+        "crm_opportunity.lead_time",
+        "crm_opportunity.warranty_term",
+        "crm_opportunity.payment_terms",
+        "crm_opportunity.quote_validity_period",
+        "crm_opportunity.compliance_certification",
+        "crm_opportunity.proposal_sent_date"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_quote_stage",
+          "label": "Move to Negotiation & Commitment",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_create_quote_gate",
+      "title": "Complete Quote Creation Gate",
+      "description": "Complete the required opportunity details and product lines before creating a quote.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_create_quote",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.company_id",
+        "crm_opportunity.sales_entity",
+        "crm_opportunity.product_line_count"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_create_quote",
+          "label": "Create Quote",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_mark_won_gate",
+      "title": "Complete Commitment Gate",
+      "description": "Complete the required commitment fields before marking this opportunity as won. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_mark_won",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.linked_quote_id",
+        "crm_opportunity.final_bom_locked",
+        "crm_opportunity.fixture_discount_percent",
+        "crm_opportunity.fixture_discount_approver",
+        "crm_opportunity.payment_schedule_agreed",
+        "crm_opportunity.site_address",
+        "crm_opportunity.site_contact",
+        "crm_opportunity.target_install_window",
+        "crm_opportunity.verbal_commitment",
+        "crm_opportunity.expected_po_date",
+        "crm_opportunity.probability"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_mark_won",
+          "label": "Mark Opportunity Won",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_create_order_gate",
+      "title": "Complete Order Handover Gate",
+      "description": "Complete the required handover fields before creating the order. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "entity_id": "entity.crm_opportunity",
+      "show_missing_only": true,
+      "missing_fields_action_id": "action.crm_opportunity_create_order",
+      "save_progress": true,
+      "fields": [
+        "crm_opportunity.company_id",
+        "crm_opportunity.linked_quote_id",
+        "crm_opportunity.signed_quote_contract_attached",
+        "crm_opportunity.po_number",
+        "crm_opportunity.po_document_attached",
+        "crm_opportunity.deposit_invoice_raised",
+        "crm_opportunity.final_bom_locked",
+        "crm_opportunity.production_slot_requested",
+        "crm_opportunity.handover_checklist_completed",
+        "crm_opportunity.won_reason"
+      ],
+      "actions": [
+        {
+          "action_id": "action.crm_opportunity_create_order",
+          "label": "Create Order",
+          "variant": "primary",
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_gate_exception_request",
+      "title": "Request Stage Gate Exception",
+      "description": "Capture why this opportunity needs to progress before all mandatory stage-gate fields are complete.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": [
+        "crm_opportunity.stage_gate_exception_approver_user_id",
+        "crm_opportunity.stage_gate_exception_fields",
+        "crm_opportunity.stage_gate_exception_reason"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Request Exception",
+          "patch": {
+            "crm_opportunity.stage_gate_exception_status": "requested",
+            "crm_opportunity.stage_gate_exception_approver_user_id": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_approver_user_id"
+            },
+            "crm_opportunity.stage_gate_exception_fields": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_fields"
+            },
+            "crm_opportunity.stage_gate_exception_reason": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_reason"
+            },
+            "crm_opportunity.stage_gate_exception_decision_notes": null
+          },
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_gate_exception_approve",
+      "title": "Approve Stage Gate Exception",
+      "description": "Approve the exception and record the decision notes for audit.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": [
+        "crm_opportunity.stage_gate_exception_decision_notes"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Approve Exception",
+          "patch": {
+            "crm_opportunity.stage_gate_exception_status": "approved",
+            "crm_opportunity.stage_gate_exception_decision_notes": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_decision_notes"
+            }
+          },
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_gate_exception_reject",
+      "title": "Reject Stage Gate Exception",
+      "description": "Reject the exception and record the decision notes for audit.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": [
+        "crm_opportunity.stage_gate_exception_decision_notes"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Reject Exception",
+          "patch": {
+            "crm_opportunity.stage_gate_exception_status": "rejected",
+            "crm_opportunity.stage_gate_exception_decision_notes": {
+              "ref": "$record.crm_opportunity.stage_gate_exception_decision_notes"
+            }
+          },
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
+    },
+    {
+      "id": "modal.crm_opportunity_hold",
+      "title": "Place Opportunity On Hold",
+      "description": "Capture the hold reason and follow-up date before moving the opportunity to On Hold.",
+      "entity_id": "entity.crm_opportunity",
+      "fields": [
+        "crm_opportunity.on_hold_reason_code",
+        "crm_opportunity.on_hold_reason",
+        "crm_opportunity.on_hold_follow_up_date",
+        "crm_opportunity.last_contact_date"
+      ],
+      "actions": [
+        {
+          "kind": "update_record",
+          "entity_id": "entity.crm_opportunity",
+          "label": "Place On Hold",
+          "patch": {
+            "crm_opportunity.stage": "on_hold",
+            "crm_opportunity.status": "open",
+            "crm_opportunity.probability": 25,
+            "crm_opportunity.next_activity_date": {
+              "ref": "$record.crm_opportunity.on_hold_follow_up_date"
+            },
+            "crm_opportunity.on_hold_reason_code": {
+              "ref": "$record.crm_opportunity.on_hold_reason_code"
+            },
+            "crm_opportunity.on_hold_reason": {
+              "ref": "$record.crm_opportunity.on_hold_reason"
+            },
+            "crm_opportunity.on_hold_follow_up_date": {
+              "ref": "$record.crm_opportunity.on_hold_follow_up_date"
+            },
+            "crm_opportunity.last_contact_date": {
+              "ref": "$record.crm_opportunity.last_contact_date"
+            },
+            "crm_opportunity.on_hold_follow_up_task_id": null
+          },
+          "enabled_when": {
+            "op": "and",
+            "conditions": [
+              {
+                "op": "exists",
+                "field": "crm_opportunity.on_hold_reason_code"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.on_hold_follow_up_date"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.owner_user_id"
+              },
+              {
+                "op": "exists",
+                "field": "crm_opportunity.last_contact_date"
+              },
+              {
+                "op": "or",
+                "conditions": [
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "eq",
+                      "field": "crm_opportunity.on_hold_reason_code",
+                      "value": "other"
+                    }
+                  },
+                  {
+                    "op": "exists",
+                    "field": "crm_opportunity.on_hold_reason"
+                  }
+                ]
+              }
+            ]
+          },
+          "close_on_success": true
+        },
+        {
+          "kind": "close_modal",
+          "label": "Cancel",
+          "variant": "ghost"
+        }
+      ]
     },
     {
       "id": "modal.crm_opportunity_lost",

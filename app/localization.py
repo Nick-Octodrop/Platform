@@ -152,6 +152,8 @@ def load_locale_namespace(locale: str, namespace: str) -> dict[str, Any]:
     if not safe_namespace:
         return {}
     path = _LOCALES_ROOT / normalized_locale / f"{safe_namespace}.json"
+    if not path.exists() and normalized_locale != FALLBACK_LOCALE:
+        path = _LOCALES_ROOT / FALLBACK_LOCALE / f"{safe_namespace}.json"
     if not path.exists():
         return {}
     try:

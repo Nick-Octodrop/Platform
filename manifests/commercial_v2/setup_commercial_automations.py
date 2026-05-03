@@ -12,16 +12,50 @@ sys.path.insert(0, str(ROOT / "_shared"))
 from automation_tooling import upsert_automation_by_name
 
 
+ACTIVE_OPPORTUNITY_STAGES = [
+    "deal_qualification",
+    "meeting",
+    "proposal",
+    "negotiation_commitment",
+    "on_hold",
+]
+ROTTING_DEAL_DELAY_SECONDS = 14 * 24 * 60 * 60
+
+
 def eq_var(var_name: str, value: Any) -> dict[str, Any]:
     return {"op": "eq", "left": {"var": var_name}, "right": {"literal": value}}
+
+
+def eq_vars(left_var: str, right_var: str) -> dict[str, Any]:
+    return {"op": "eq", "left": {"var": left_var}, "right": {"var": right_var}}
+
+
+def neq_var(var_name: str, value: Any) -> dict[str, Any]:
+    return {"op": "neq", "left": {"var": var_name}, "right": {"literal": value}}
+
+
+def in_var(var_name: str, values: list[Any]) -> dict[str, Any]:
+    return {"op": "in", "left": {"var": var_name}, "right": {"literal": values}}
 
 
 def exists(var_name: str) -> dict[str, Any]:
     return {"op": "exists", "left": {"var": var_name}}
 
 
+def not_exists(var_name: str) -> dict[str, Any]:
+    return {"op": "not_exists", "left": {"var": var_name}}
+
+
 def and_(*conditions: dict[str, Any]) -> dict[str, Any]:
     return {"op": "and", "children": list(conditions)}
+
+
+def or_(*conditions: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "or", "children": list(conditions)}
+
+
+def not_true(var_name: str) -> dict[str, Any]:
+    return or_(not_exists(var_name), neq_var(var_name, True))
 
 
 def update_record_step(
@@ -45,6 +79,26 @@ def update_record_step(
     if store_as:
         step["store_as"] = store_as
     return step
+
+
+def completed_opportunity_activity_expr(prefix: str) -> dict[str, Any]:
+    return and_(
+        exists(f"{prefix}.fields.opportunity_id"),
+        exists(f"{prefix}.fields.completed_date"),
+        exists("trigger.timestamp"),
+        eq_var(f"{prefix}.fields.status", "done"),
+    )
+
+
+def active_opportunity_without_activity_expr(prefix: str) -> dict[str, Any]:
+    return and_(
+        exists(f"{prefix}.fields.stage"),
+        in_var(f"{prefix}.fields.stage", ACTIVE_OPPORTUNITY_STAGES),
+        exists(f"{prefix}.fields.owner_user_id"),
+        not_exists(f"{prefix}.fields.last_contact_date"),
+        not_exists(f"{prefix}.fields.last_activity_at"),
+        not_true(f"{prefix}.fields.is_rotting"),
+    )
 
 
 def build_generate_document_automation(
@@ -190,6 +244,352 @@ def build_sync_primary_product_supplier_automation(*, status: str) -> dict[str, 
     }
 
 
+def build_opportunity_on_hold_follow_up_task_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Create Opportunity On Hold Follow-Up Task",
+        "description": "When an opportunity is placed on hold, create a follow-up task for the owner and link it back to the opportunity.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "event_types": ["workflow.status_changed"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.crm_opportunity"},
+                {"path": "crm_opportunity.stage", "op": "changed_to", "value": "on_hold"},
+            ],
+            "expr": and_(
+                exists("trigger.after.fields.on_hold_reason_code"),
+                exists("trigger.after.fields.on_hold_follow_up_date"),
+                exists("trigger.after.fields.owner_user_id"),
+                exists("trigger.after.fields.last_contact_date"),
+                {"op": "not_exists", "left": {"var": "trigger.after.fields.on_hold_follow_up_task_id"}},
+            ),
+        },
+        "steps": [
+            {
+                "id": "create_on_hold_follow_up_task",
+                "kind": "action",
+                "action_id": "system.create_record",
+                "inputs": {
+                    "entity_id": "entity.biz_task",
+                    "values": {
+                        "biz_task.title": "Follow up on-hold opportunity: {{ trigger.after.fields.title }}",
+                        "biz_task.task_type": "follow_up",
+                        "biz_task.status": "open",
+                        "biz_task.priority": "high",
+                        "biz_task.owner_user_id": "{{ trigger.after.fields.owner_user_id }}",
+                        "biz_task.assignee_user_id": "{{ trigger.after.fields.owner_user_id }}",
+                        "biz_task.due_date": "{{ trigger.after.fields.on_hold_follow_up_date }}",
+                        "biz_task.company_id": "{{ trigger.after.fields.company_id }}",
+                        "biz_task.opportunity_id": "{{ trigger.record_id }}",
+                        "biz_task.site_id": "{{ trigger.after.fields.site_id }}",
+                        "biz_task.description": "Opportunity was placed on hold. Reason: {{ trigger.after.fields.on_hold_reason_code }}. Note: {{ trigger.after.fields.on_hold_reason }}",
+                    },
+                },
+            },
+            update_record_step(
+                "link_on_hold_follow_up_task",
+                entity_id="entity.crm_opportunity",
+                record_id="{{ trigger.record_id }}",
+                patch={
+                    "crm_opportunity.on_hold_follow_up_task_id": "{{ steps.create_on_hold_follow_up_task.record_id }}"
+                },
+            ),
+        ],
+    }
+
+
+def build_stage_gate_exception_approval_task_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Create Stage Gate Exception Approval Task",
+        "description": "When an opportunity mandatory-field exception is requested, create an approval task for the nominated approver.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "event_types": ["record.updated"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.crm_opportunity"},
+                {"path": "crm_opportunity.stage_gate_exception_status", "op": "changed_to", "value": "requested"},
+            ],
+            "expr": and_(
+                exists("trigger.after.fields.stage_gate_exception_approver_user_id"),
+                exists("trigger.after.fields.stage_gate_exception_fields"),
+                exists("trigger.after.fields.stage_gate_exception_reason"),
+            ),
+        },
+        "steps": [
+            {
+                "id": "create_gate_exception_approval_task",
+                "kind": "action",
+                "action_id": "system.create_record",
+                "inputs": {
+                    "entity_id": "entity.biz_task",
+                    "values": {
+                        "biz_task.title": "Approve stage-gate exception: {{ trigger.after.fields.title }}",
+                        "biz_task.task_type": "internal",
+                        "biz_task.status": "open",
+                        "biz_task.priority": "high",
+                        "biz_task.owner_user_id": "{{ trigger.after.fields.stage_gate_exception_approver_user_id }}",
+                        "biz_task.assignee_user_id": "{{ trigger.after.fields.stage_gate_exception_approver_user_id }}",
+                        "biz_task.due_date": "{{ trigger.after.fields.next_activity_date }}",
+                        "biz_task.company_id": "{{ trigger.after.fields.company_id }}",
+                        "biz_task.opportunity_id": "{{ trigger.record_id }}",
+                        "biz_task.description": "Mandatory fields waived: {{ trigger.after.fields.stage_gate_exception_fields }}. Reason: {{ trigger.after.fields.stage_gate_exception_reason }}",
+                    },
+                },
+            }
+        ],
+    }
+
+
+def build_sync_opportunity_last_contact_from_activity_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Sync Opportunity Last Activity From Completed CRM Activity",
+        "description": "When an activity linked to an opportunity is completed, refresh the opportunity last contact date and clear the rotting flag.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "ui": {
+                "show_toast": False,
+                "show_progress": False,
+            },
+            "event_types": ["record.created", "record.updated"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.crm_activity"},
+            ],
+            "expr": or_(
+                completed_opportunity_activity_expr("trigger.record"),
+                completed_opportunity_activity_expr("trigger.after"),
+            ),
+        },
+        "steps": [
+            {
+                "id": "fetch_opportunity",
+                "kind": "action",
+                "action_id": "system.query_records",
+                "store_as": "current_opportunity",
+                "inputs": {
+                    "entity_id": "entity.crm_opportunity",
+                    "limit": 1,
+                    "filter_expr": {
+                        "op": "eq",
+                        "field": "id",
+                        "value": "{{ trigger.record.fields.opportunity_id }}",
+                    },
+                },
+            },
+            {
+                "id": "complete_existing_rotting_task",
+                "kind": "condition",
+                "expr": exists("vars.current_opportunity.first.record.crm_opportunity.rotting_follow_up_task_id"),
+                "then_steps": [
+                    update_record_step(
+                        "mark_rotting_task_done",
+                        entity_id="entity.biz_task",
+                        record_id="{{ vars.current_opportunity.first.record.crm_opportunity.rotting_follow_up_task_id }}",
+                        patch={"biz_task.status": "done"},
+                    )
+                ],
+            },
+            update_record_step(
+                "update_opportunity_last_contact",
+                entity_id="entity.crm_opportunity",
+                record_id="{{ trigger.record.fields.opportunity_id }}",
+                patch={
+                    "crm_opportunity.last_contact_date": "{{ trigger.record.fields.completed_date }}",
+                    "crm_opportunity.last_activity_at": "{{ trigger.timestamp }}",
+                    "crm_opportunity.is_rotting": False,
+                    "crm_opportunity.rotting_follow_up_task_id": None,
+                },
+            ),
+        ],
+    }
+
+
+def build_opportunity_rotting_check_from_activity_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Check Opportunity Rotting 14 Days After Activity",
+        "description": "Fourteen days after a completed opportunity activity, create a follow-up task only if no newer activity has been logged.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "ui": {
+                "show_toast": False,
+                "show_progress": False,
+            },
+            "coalesce_key": (
+                "opportunity_rotting_after_activity:"
+                "{{ trigger.record.fields.opportunity_id"
+                "|default(trigger.after.fields.opportunity_id, true)"
+                "|default(trigger.record_id, true) }}"
+            ),
+            "event_types": ["record.created", "record.updated"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.crm_activity"},
+            ],
+            "expr": or_(
+                completed_opportunity_activity_expr("trigger.record"),
+                completed_opportunity_activity_expr("trigger.after"),
+            ),
+        },
+        "steps": [
+            {
+                "id": "wait_for_activity_window",
+                "kind": "delay",
+                "seconds": ROTTING_DEAL_DELAY_SECONDS,
+            },
+            {
+                "id": "fetch_opportunity",
+                "kind": "action",
+                "action_id": "system.query_records",
+                "store_as": "current_opportunity",
+                "inputs": {
+                    "entity_id": "entity.crm_opportunity",
+                    "limit": 1,
+                    "filter_expr": {
+                        "op": "eq",
+                        "field": "id",
+                        "value": "{{ trigger.record.fields.opportunity_id }}",
+                    },
+                },
+            },
+            {
+                "id": "still_rotting",
+                "kind": "condition",
+                "expr": and_(
+                    exists("vars.current_opportunity.first.record.crm_opportunity.stage"),
+                    in_var("vars.current_opportunity.first.record.crm_opportunity.stage", ACTIVE_OPPORTUNITY_STAGES),
+                    exists("vars.current_opportunity.first.record.crm_opportunity.last_activity_at"),
+                    eq_vars(
+                        "vars.current_opportunity.first.record.crm_opportunity.last_activity_at",
+                        "trigger.timestamp",
+                    ),
+                    not_true("vars.current_opportunity.first.record.crm_opportunity.is_rotting"),
+                    not_exists("vars.current_opportunity.first.record.crm_opportunity.rotting_follow_up_task_id"),
+                ),
+                "stop_on_false": True,
+            },
+            {
+                "id": "create_rotting_follow_up_task",
+                "kind": "action",
+                "action_id": "system.create_record",
+                "inputs": {
+                    "entity_id": "entity.biz_task",
+                    "values": {
+                        "biz_task.title": "Follow up inactive opportunity: {{ vars.current_opportunity.first.record.crm_opportunity.title }}",
+                        "biz_task.task_type": "follow_up",
+                        "biz_task.status": "open",
+                        "biz_task.priority": "high",
+                        "biz_task.owner_user_id": "{{ vars.current_opportunity.first.record.crm_opportunity.owner_user_id }}",
+                        "biz_task.assignee_user_id": "{{ vars.current_opportunity.first.record.crm_opportunity.owner_user_id }}",
+                        "biz_task.company_id": "{{ vars.current_opportunity.first.record.crm_opportunity.company_id }}",
+                        "biz_task.opportunity_id": "{{ trigger.record.fields.opportunity_id }}",
+                        "biz_task.site_id": "{{ vars.current_opportunity.first.record.crm_opportunity.site_id }}",
+                        "biz_task.description": "No logged opportunity activity for 14 days since {{ trigger.record.fields.completed_date }}.",
+                    },
+                },
+            },
+            update_record_step(
+                "mark_opportunity_rotting",
+                entity_id="entity.crm_opportunity",
+                record_id="{{ trigger.record.fields.opportunity_id }}",
+                patch={
+                    "crm_opportunity.is_rotting": True,
+                    "crm_opportunity.rotting_follow_up_task_id": "{{ steps.create_rotting_follow_up_task.record_id }}",
+                },
+            ),
+        ],
+    }
+
+
+def build_opportunity_rotting_check_without_activity_automation(*, status: str) -> dict[str, Any]:
+    return {
+        "name": "Commercial - Check Opportunity Rotting 14 Days Without Activity",
+        "description": "Fourteen days after an active opportunity is created or updated without a logged contact date, create a follow-up task if it is still inactive.",
+        "status": status,
+        "trigger": {
+            "kind": "event",
+            "ui": {
+                "show_toast": False,
+                "show_progress": False,
+            },
+            "coalesce_key": "opportunity_rotting_without_activity:{{ trigger.record_id }}",
+            "event_types": ["record.created", "record.updated"],
+            "filters": [
+                {"path": "entity_id", "op": "eq", "value": "entity.crm_opportunity"},
+            ],
+            "expr": or_(
+                active_opportunity_without_activity_expr("trigger.record"),
+                active_opportunity_without_activity_expr("trigger.after"),
+            ),
+        },
+        "steps": [
+            {
+                "id": "wait_for_initial_activity_window",
+                "kind": "delay",
+                "seconds": ROTTING_DEAL_DELAY_SECONDS,
+            },
+            {
+                "id": "fetch_opportunity",
+                "kind": "action",
+                "action_id": "system.query_records",
+                "store_as": "current_opportunity",
+                "inputs": {
+                    "entity_id": "entity.crm_opportunity",
+                    "limit": 1,
+                    "filter_expr": {
+                        "op": "eq",
+                        "field": "id",
+                        "value": "{{ trigger.record_id }}",
+                    },
+                },
+            },
+            {
+                "id": "still_has_no_activity",
+                "kind": "condition",
+                "expr": and_(
+                    exists("vars.current_opportunity.first.record.crm_opportunity.stage"),
+                    in_var("vars.current_opportunity.first.record.crm_opportunity.stage", ACTIVE_OPPORTUNITY_STAGES),
+                    exists("vars.current_opportunity.first.record.crm_opportunity.owner_user_id"),
+                    not_exists("vars.current_opportunity.first.record.crm_opportunity.last_contact_date"),
+                    not_exists("vars.current_opportunity.first.record.crm_opportunity.last_activity_at"),
+                    not_true("vars.current_opportunity.first.record.crm_opportunity.is_rotting"),
+                    not_exists("vars.current_opportunity.first.record.crm_opportunity.rotting_follow_up_task_id"),
+                ),
+                "stop_on_false": True,
+            },
+            {
+                "id": "create_rotting_follow_up_task",
+                "kind": "action",
+                "action_id": "system.create_record",
+                "inputs": {
+                    "entity_id": "entity.biz_task",
+                    "values": {
+                        "biz_task.title": "Follow up inactive opportunity: {{ vars.current_opportunity.first.record.crm_opportunity.title }}",
+                        "biz_task.task_type": "follow_up",
+                        "biz_task.status": "open",
+                        "biz_task.priority": "high",
+                        "biz_task.owner_user_id": "{{ vars.current_opportunity.first.record.crm_opportunity.owner_user_id }}",
+                        "biz_task.assignee_user_id": "{{ vars.current_opportunity.first.record.crm_opportunity.owner_user_id }}",
+                        "biz_task.company_id": "{{ vars.current_opportunity.first.record.crm_opportunity.company_id }}",
+                        "biz_task.opportunity_id": "{{ trigger.record_id }}",
+                        "biz_task.site_id": "{{ vars.current_opportunity.first.record.crm_opportunity.site_id }}",
+                        "biz_task.description": "No logged opportunity activity for 14 days.",
+                    },
+                },
+            },
+            update_record_step(
+                "mark_opportunity_rotting",
+                entity_id="entity.crm_opportunity",
+                record_id="{{ trigger.record_id }}",
+                patch={
+                    "crm_opportunity.is_rotting": True,
+                    "crm_opportunity.rotting_follow_up_task_id": "{{ steps.create_rotting_follow_up_task.record_id }}",
+                },
+            ),
+        ],
+    }
+
+
 def desired_automations(
     *,
     status: str,
@@ -202,7 +602,14 @@ def desired_automations(
     purchase_order_email_template_id: str | None,
     invoice_email_template_id: str | None,
 ) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = [build_sync_primary_product_supplier_automation(status=status)]
+    items: list[dict[str, Any]] = [
+        build_sync_primary_product_supplier_automation(status=status),
+        build_opportunity_on_hold_follow_up_task_automation(status=status),
+        build_stage_gate_exception_approval_task_automation(status=status),
+        build_sync_opportunity_last_contact_from_activity_automation(status=status),
+        build_opportunity_rotting_check_from_activity_automation(status=status),
+        build_opportunity_rotting_check_without_activity_automation(status=status),
+    ]
     if isinstance(quote_document_template_id, str) and quote_document_template_id.strip():
         items.append(
             build_generate_document_automation(

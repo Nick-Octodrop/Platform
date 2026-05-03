@@ -11,6 +11,24 @@ const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
 const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "dead", "cancelled"]);
 const FAILED_STATUSES = new Set(["failed", "dead", "cancelled"]);
 
+function automationRunUi(runOrTask) {
+  const ui = runOrTask?.ui || runOrTask?.automation_ui || runOrTask?.notifications;
+  return ui && typeof ui === "object" ? ui : {};
+}
+
+function shouldTrackAutomationRun(run, action = {}) {
+  const ui = { ...automationRunUi(action), ...automationRunUi(run) };
+  return ui.show_progress !== false && ui.track_progress !== false && ui.background_progress !== false;
+}
+
+function shouldToastAutomationRun(run, action = {}, phase = "start") {
+  const ui = { ...automationRunUi(action), ...automationRunUi(run) };
+  if (ui.show_toast === false || ui.toast === false || ui.notifications === false) return false;
+  if (phase === "start" && ui.toast_on_start === false) return false;
+  if (phase === "finish" && ui.toast_on_finish === false) return false;
+  return true;
+}
+
 function safeTasksFromStorage() {
   if (typeof window === "undefined") return [];
   try {
@@ -93,11 +111,19 @@ function deriveTaskState(task, statusPayload) {
   const failedJob = jobs.find((job) => FAILED_STATUSES.has(job?.status));
   const runStatus = run.effective_status || run.status || task.status || "queued";
   const isRunTerminal = TERMINAL_RUN_STATUSES.has(run.status || runStatus);
-  const done = Boolean(progress.done) || (isRunTerminal && activeJobs.length === 0);
+  const scheduledForLater =
+    !isRunTerminal &&
+    runStatus === "queued" &&
+    activeJobs.length === 0 &&
+    steps.length > 0 &&
+    steps.every((step) => TERMINAL_RUN_STATUSES.has(step?.status) || step?.status === "succeeded");
+  const done = Boolean(progress.done) || (isRunTerminal && activeJobs.length === 0) || scheduledForLater;
   const failed = FAILED_STATUSES.has(runStatus) || Boolean(failedJob);
+  const runUi = automationRunUi(run);
   return {
     ...task,
     status: runStatus,
+    ui: Object.keys(runUi).length ? runUi : automationRunUi(task),
     automationName: run.automation_name || task.automationName,
     triggerType: run.trigger_type || task.triggerType,
     startedAt: run.started_at || task.startedAt,
@@ -114,6 +140,7 @@ function deriveTaskState(task, statusPayload) {
     },
     done,
     failed,
+    scheduledForLater,
     finishedAt: done && !task.finishedAt ? Date.now() : task.finishedAt,
     pollError: null,
   };
@@ -210,8 +237,9 @@ export default function BackgroundAutomationTracker() {
       if (runs.length === 0) return;
       const freshRuns = runs.filter((run) => run?.id && !startedRef.current.has(run.id));
       for (const run of freshRuns) startedRef.current.add(run.id);
-      if (freshRuns.length > 0) {
-        pushToastRef.current("info", translateRuntime(startedToastKey(action, freshRuns), { count: freshRuns.length }));
+      const toastRuns = freshRuns.filter((run) => shouldToastAutomationRun(run, action, "start"));
+      if (toastRuns.length > 0) {
+        pushToastRef.current("info", translateRuntime(startedToastKey(action, toastRuns), { count: toastRuns.length }));
       }
       const now = Date.now();
       const documentRun = isDocumentAutomation(action, runs);
@@ -219,10 +247,15 @@ export default function BackgroundAutomationTracker() {
         const byId = new Map(prev.map((task) => [task.id, task]));
         for (const run of runs) {
           if (!run?.id) continue;
+          if (!shouldTrackAutomationRun(run, action)) {
+            byId.delete(run.id);
+            continue;
+          }
           const existing = byId.get(run.id);
           const actionMeta = initialActionFromRun(action, run);
           byId.set(run.id, {
             id: run.id,
+            ui: automationRunUi(run),
             automationName: run.automation_name || existing?.automationName || null,
             triggerType: run.trigger_type || existing?.triggerType || null,
             actionId: actionMeta?.id || existing?.actionId || null,
@@ -255,6 +288,7 @@ export default function BackgroundAutomationTracker() {
     let cancelled = false;
     const notifyCompleted = (task) => {
       if (!task?.id || !task.done || notifiedRef.current.has(task.id)) return;
+      if (task.scheduledForLater || shouldToastAutomationRun(task, {}, "finish") === false) return;
       notifiedRef.current.add(task.id);
       const title = titleForTask(task);
       if (task.failed) {

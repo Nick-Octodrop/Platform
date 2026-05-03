@@ -314,6 +314,8 @@
                 "biz_quote.payment_terms": "biz_contact.default_payment_terms",
                 "biz_quote.incoterm": "biz_contact.default_incoterm",
                 "biz_quote.tax_percent": "biz_contact.default_sales_tax_percent",
+                "biz_quote.company_address": "biz_contact.company_address",
+                "biz_quote.site_address": "biz_contact.default_delivery_address",
                 "biz_quote.customer_contact_email": "biz_contact.email",
                 "biz_quote.customer_contact_phone": "biz_contact.phone"
               },
@@ -1918,6 +1920,9 @@
         },
         "biz_order.delivery_terms": {
           "from": "biz_quote.shipping_terms"
+        },
+        "biz_order.shipping_destination": {
+          "from": "biz_quote.site_address"
         },
         "biz_order.notes": {
           "from": "biz_quote.internal_notes"

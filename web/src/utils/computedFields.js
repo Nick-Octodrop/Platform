@@ -12,6 +12,11 @@ function asNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function asText(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
 function normalizeEntityId(entityId) {
   if (typeof entityId !== "string" || !entityId) return "";
   return entityId.startsWith("entity.") ? entityId : `entity.${entityId}`;
@@ -130,6 +135,14 @@ function evaluateExpression(expr, context) {
       return Math.floor(asNumber(args[0]));
     case "coalesce":
       return args.find((arg) => arg !== null && arg !== undefined && arg !== "") ?? null;
+    case "concat":
+      return args.map(asText).join("");
+    case "join": {
+      const separator = typeof expr.separator === "string" ? expr.separator : " ";
+      const skipEmpty = expr.skip_empty !== false;
+      const parts = args.map(asText).filter((part) => !skipEmpty || part);
+      return parts.join(separator);
+    }
     case "and":
       return args.every(Boolean);
     case "or":

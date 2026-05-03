@@ -387,6 +387,7 @@ def crm_write_actions() -> list[RuleSpec]:
         action_rule("action.crm_lead_open_disqualify_modal", "hidden"),
         action_rule("action.crm_opportunity_new", "hidden"),
         action_rule("action.crm_opportunity_discovery", "hidden"),
+        action_rule("action.crm_opportunity_confirm_meeting", "hidden"),
         action_rule("action.crm_opportunity_solution", "hidden"),
         action_rule("action.crm_opportunity_quote_stage", "hidden"),
         action_rule("action.crm_opportunity_create_quote", "hidden"),
@@ -452,6 +453,8 @@ def finance_hidden_actions() -> list[RuleSpec]:
 def sales_hidden_actions() -> list[RuleSpec]:
     return [
         action_rule("action.quote_script_new", "hidden"),
+        action_rule("action.crm_opportunity_approve_gate_exception", "hidden"),
+        action_rule("action.crm_opportunity_reject_gate_exception", "hidden"),
         action_rule("action.quote_convert_to_order", "hidden"),
         action_rule("action.customer_order_new", "hidden"),
         action_rule("action.customer_order_confirm", "hidden"),
@@ -477,7 +480,6 @@ def sales_hidden_actions() -> list[RuleSpec]:
         action_rule("action.purchase_order_close", "hidden"),
         action_rule("action.purchase_order_open_cancel_modal", "hidden"),
         action_rule("action.purchase_order_create_document", "hidden"),
-        action_rule("action.purchase_order_send_email", "hidden"),
         action_rule("action.invoice_new", "hidden"),
         action_rule("action.invoice_issue", "hidden"),
         action_rule("action.invoice_mark_part_paid", "hidden"),
@@ -571,7 +573,6 @@ def engineer_hidden_actions() -> list[RuleSpec]:
         action_rule("action.purchase_order_close", "hidden"),
         action_rule("action.purchase_order_open_cancel_modal", "hidden"),
         action_rule("action.purchase_order_create_document", "hidden"),
-        action_rule("action.purchase_order_send_email", "hidden"),
         action_rule("action.invoice_new", "hidden"),
         action_rule("action.invoice_issue", "hidden"),
         action_rule("action.invoice_mark_part_paid", "hidden"),

@@ -5,6 +5,7 @@ export const DEFAULT_CURRENCY = "NZD";
 
 export const SUPPORTED_LOCALES = [
   { code: "en-NZ", label: "English (New Zealand)" },
+  { code: "en-GB", label: "English (United Kingdom)" },
   { code: "en-US", label: "English (United States)" },
   { code: "fr-FR", label: "Francais (France)" },
   { code: "nl-NL", label: "Nederlands (Nederland)" },

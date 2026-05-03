@@ -223,6 +223,14 @@ def _as_number(value: Any) -> float:
         return 0.0
 
 
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
 def _eval_expression(expr: Any, context: dict) -> Any:
     if isinstance(expr, (int, float, bool)) or expr is None:
         return expr
@@ -293,6 +301,19 @@ def _eval_expression(expr: Any, context: dict) -> Any:
             if arg not in (None, ""):
                 return arg
         return None
+    if op == "concat":
+        return "".join(_as_text(arg) for arg in resolved_args)
+    if op == "join":
+        separator = expr.get("separator")
+        if not isinstance(separator, str):
+            separator = " "
+        skip_empty = expr.get("skip_empty")
+        if skip_empty is None:
+            skip_empty = True
+        parts = [_as_text(arg) for arg in resolved_args]
+        if skip_empty:
+            parts = [part for part in parts if part]
+        return separator.join(parts)
     if op == "and":
         return all(bool(arg) for arg in resolved_args)
     if op == "or":

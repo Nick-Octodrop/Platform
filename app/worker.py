@@ -2748,7 +2748,8 @@ def _step_waits_for_document(step: dict, idx: int, total_steps: int) -> bool:
 def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore | MemoryAutomationStore | None = None, job_store: DbJobStore | MemoryJobStore | None = None) -> None:
     automation_store = automation_store or DbAutomationStore()
     job_store = job_store or DbJobStore()
-    run_id = (job.get("payload") or {}).get("run_id")
+    job_payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    run_id = job_payload.get("run_id")
     if not run_id:
         raise RuntimeError("automation.run missing run_id")
     run = automation_store.get_run(run_id)
@@ -2756,6 +2757,26 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
         logger.error("automation_run_missing run_id=%s org_id=%s job_id=%s", run_id, org_id, job.get("id"))
         raise RuntimeError("Automation run not found")
     if run.get("status") in {"succeeded", "failed", "cancelled"}:
+        return
+    expected_trigger_event_id = job_payload.get("trigger_event_id")
+    if expected_trigger_event_id and str(run.get("trigger_event_id") or "") != str(expected_trigger_event_id):
+        logger.info(
+            "automation_run_stale_job_skipped run_id=%s job_id=%s expected_trigger_event_id=%s current_trigger_event_id=%s",
+            run_id,
+            job.get("id"),
+            expected_trigger_event_id,
+            run.get("trigger_event_id"),
+        )
+        return
+    expected_step_index = job_payload.get("expected_step_index")
+    if isinstance(expected_step_index, int) and int(run.get("current_step_index") or 0) != expected_step_index:
+        logger.info(
+            "automation_run_stale_step_job_skipped run_id=%s job_id=%s expected_step_index=%s current_step_index=%s",
+            run_id,
+            job.get("id"),
+            expected_step_index,
+            run.get("current_step_index"),
+        )
         return
     automation = automation_store.get(run.get("automation_id"))
     if not automation:
@@ -2882,10 +2903,15 @@ def _run_automation(job: dict, org_id: str, automation_store: DbAutomationStore 
                 job_store.enqueue(
                     {
                         "type": "automation.run",
-                        "payload": {"run_id": run_id},
+                        "payload": {
+                            "run_id": run_id,
+                            "trigger_event_id": run.get("trigger_event_id"),
+                            "expected_step_index": next_index,
+                        },
                         "run_at": (_now_dt() + timedelta(seconds=delay_seconds)).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "idempotency_key": f"{run_id}:{next_index}:delay",
                         "workspace_id": org_id,
+                        "coalesce": True,
                     }
                 )
                 return

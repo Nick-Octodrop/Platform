@@ -36,7 +36,7 @@ ALLOWED_V1_NAV_GROUP_KEYS = {"group", "group_key", "items", "mode", "inline", "a
 ALLOWED_V1_NAV_ITEM_KEYS = {"label", "label_key", "menu_label_key", "to"}
 ALLOWED_V1_PAGE_KEYS = {"id", "title", "title_key", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
-ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id"}
+ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui"}
 ALLOWED_V1_BLOCK_KEYS = {
     "kind",
     "id",
@@ -165,10 +165,24 @@ ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions",
 ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
 ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
 ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record"}
-ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs"}
-ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id"}
-ALLOWED_V1_MODAL_KEYS = {"id", "title", "title_key", "description", "description_key", "entity_id", "fields", "defaults", "actions"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record", "validation_ui"}
+ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs", "validation_ui"}
+ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui"}
+ALLOWED_V1_MODAL_KEYS = {
+    "id",
+    "title",
+    "title_key",
+    "description",
+    "description_key",
+    "entity_id",
+    "fields",
+    "defaults",
+    "actions",
+    "show_missing_only",
+    "missing_fields_action_id",
+    "show_missing_only_from_action",
+    "save_progress",
+}
 ALLOWED_V1_MODAL_ACTION_KEYS = {
     "action_id",
     "kind",
@@ -447,6 +461,27 @@ def _validate_compute_spec(compute: Any, path: str, errors: list[Issue], warning
             _validate_condition(where, f"{path}.aggregate.where", errors)
 
 
+def _validate_validation_ui(value: Any, path: str, errors: list[Issue]) -> None:
+    if value is None or isinstance(value, bool):
+        return
+    if not isinstance(value, dict):
+        errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", "validation_ui must be boolean or object", path))
+        return
+    allowed = {"enabled", "mode", "behavior", "behaviour", "show_missing_only", "save_progress"}
+    _reject_unknown_keys(errors, value, allowed, path)
+    enabled = _get(value, "enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", "validation_ui.enabled must be boolean", f"{path}.enabled"))
+    for key in ("show_missing_only", "save_progress"):
+        item = _get(value, key)
+        if item is not None and not isinstance(item, bool):
+            errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", f"validation_ui.{key} must be boolean", f"{path}.{key}"))
+    for key in ("mode", "behavior", "behaviour"):
+        item = _get(value, key)
+        if item is not None and (not isinstance(item, str) or item not in {"modal_on_block", "none"}):
+            errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", f"validation_ui.{key} must be modal_on_block or none", f"{path}.{key}"))
+
+
 def _validate_view_header_actions(
     actions: Any,
     path: str,
@@ -505,6 +540,7 @@ def _validate_view_header_actions(
         confirm = _get(action, "confirm")
         if confirm is not None and not isinstance(confirm, dict):
             errors.append(_issue("MANIFEST_ACTION_CONFIRM_INVALID", "confirm must be object", f"{apath}.confirm"))
+        _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
 
 
 def _is_v11(manifest_version: str) -> bool:
@@ -1442,6 +1478,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             confirm = _get(action, "confirm")
             if confirm is not None and not isinstance(confirm, dict):
                 errors.append(_issue("MANIFEST_ACTION_CONFIRM_INVALID", "confirm must be object", f"{apath}.confirm"))
+            _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
 
     modals = _get(manifest, "modals", [])
     modal_by_id: dict[str, dict] = {}
@@ -1464,6 +1501,22 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                 errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.title must be string", f"{mpath}.title"))
             if _get(modal, "description") is not None and not isinstance(_get(modal, "description"), str):
                 errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.description must be string", f"{mpath}.description"))
+            if _get(modal, "show_missing_only") is not None and not isinstance(_get(modal, "show_missing_only"), bool):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.show_missing_only must be boolean", f"{mpath}.show_missing_only"))
+            if _get(modal, "save_progress") is not None and not isinstance(_get(modal, "save_progress"), bool):
+                errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.save_progress must be boolean", f"{mpath}.save_progress"))
+            missing_fields_action_id = _get(modal, "missing_fields_action_id")
+            if missing_fields_action_id is not None:
+                if not isinstance(missing_fields_action_id, str) or not missing_fields_action_id:
+                    errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.missing_fields_action_id must be string", f"{mpath}.missing_fields_action_id"))
+                elif missing_fields_action_id not in action_by_id:
+                    errors.append(_issue("MANIFEST_MODAL_ACTION_UNKNOWN", "modal missing_fields_action_id not found", f"{mpath}.missing_fields_action_id"))
+            show_missing_only_from_action = _get(modal, "show_missing_only_from_action")
+            if show_missing_only_from_action is not None:
+                if not isinstance(show_missing_only_from_action, str) or not show_missing_only_from_action:
+                    errors.append(_issue("MANIFEST_MODAL_INVALID", "modal.show_missing_only_from_action must be string", f"{mpath}.show_missing_only_from_action"))
+                elif show_missing_only_from_action not in action_by_id:
+                    errors.append(_issue("MANIFEST_MODAL_ACTION_UNKNOWN", "modal show_missing_only_from_action not found", f"{mpath}.show_missing_only_from_action"))
             fields = _get(modal, "fields")
             if fields is not None:
                 if not isinstance(fields, list):
@@ -1604,6 +1657,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                 errors.append(_issue("MANIFEST_VIEW_HEADER_INVALID", "view.header must be an object", f"{vpath}.header"))
             else:
                 _reject_unknown_keys(errors, header, ALLOWED_V1_VIEW_HEADER_KEYS, f"{vpath}.header")
+                _validate_validation_ui(_get(header, "validation_ui"), f"{vpath}.header.validation_ui", errors)
                 title_field = _get(header, "title_field")
                 if title_field is not None:
                     if not isinstance(title_field, str):
@@ -2234,6 +2288,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                                         errors.append(_issue("MANIFEST_PAGE_ACTION_INVALID", "enabled_when requires manifest_version >= 1.2", f"{apath}.enabled_when"))
                                     else:
                                         _validate_condition(enabled_when, f"{apath}.enabled_when", errors)
+                                _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
 
                 content = _get(page, "content", [])
                 _validate_blocks(content, f"{ppath}.content", view_ids, entity_by_id, action_by_id, errors, allow_layout=is_v11, allow_chatter=is_v12, allow_v13=is_v13, record_entity=None)

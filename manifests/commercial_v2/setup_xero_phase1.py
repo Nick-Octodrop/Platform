@@ -354,10 +354,15 @@ def build_request_templates() -> list[dict[str, Any]]:
     ]
 
 
-def build_invoice_refresh_mapping(connection_id: str) -> dict[str, Any]:
+def xero_setup_name(base: str, sales_entity: str) -> str:
+    suffix = str(sales_entity or "").strip()
+    return f"{base} - {suffix}" if suffix else base
+
+
+def build_invoice_refresh_mapping(connection_id: str, *, sales_entity: str) -> dict[str, Any]:
     return {
         "connection_id": connection_id,
-        "name": "Xero Phase 1 - Invoice Refresh Mapping",
+        "name": xero_setup_name("Xero Phase 1 - Invoice Refresh Mapping", sales_entity),
         "source_entity": "xero.invoices",
         "target_entity": "entity.biz_invoice",
         "mapping_json": {
@@ -453,8 +458,8 @@ def build_export_automation(
     contact_create_body = build_contact_create_body_template()
     invoice_create_body = build_invoice_create_body_template(sales_account_code, default_tax_type)
     return {
-        "name": "Xero Phase 1 - Export Issued Invoices",
-        "description": "On invoice issue, resolve or create the Xero contact, then create a draft ACCREC invoice in Xero for the configured commercial invoice types.",
+        "name": xero_setup_name("Xero Phase 1 - Export Issued Invoices", sales_entity),
+        "description": f"On invoice issue for {sales_entity}, resolve or create the Xero contact, then create a draft ACCREC invoice in Xero for the configured commercial invoice types.",
         "status": status,
         "trigger": {
             "kind": "event",
@@ -860,8 +865,8 @@ def build_refresh_automation(
 ) -> dict[str, Any]:
     timestamp_ref = "{{ trigger.scheduled_at }}"
     return {
-        "name": "Xero Phase 1 - Refresh Invoice Payments",
-        "description": "Scheduled pull from Xero to refresh invoice amounts and payment status for linked commercial invoices in the configured scope.",
+        "name": xero_setup_name("Xero Phase 1 - Refresh Invoice Payments", sales_entity),
+        "description": f"Scheduled pull from Xero to refresh invoice amounts and payment status for linked {sales_entity} commercial invoices.",
         "status": status,
         "trigger": {
             "kind": "schedule",
@@ -1116,27 +1121,35 @@ def main() -> None:
         existing_config.get("request_templates") if isinstance(existing_config.get("request_templates"), list) else [],
         desired_templates,
     )
+    phase1_config = {
+        "sales_entity": sales_entity,
+        "sales_account_code": sales_account_code,
+        "default_tax_type": default_tax_type,
+        "invoice_status": "DRAFT",
+        "refresh_interval_minutes": args.refresh_interval_minutes,
+        "matching_rules": [
+            "Use stored biz_contact.xero_contact_id when present.",
+            "Else exact TaxNumber match in Xero.",
+            "Else exact CompanyNumber match in Xero.",
+            "Else exact Name + EmailAddress match in Xero.",
+            "Else create the contact in Xero at first invoice export.",
+        ],
+        "scope": {
+            "invoice_types": invoice_types,
+            "sales_entity": sales_entity,
+        },
+    }
+    phase1_by_sales_entity = (
+        dict(existing_config.get("xero_phase1_by_sales_entity"))
+        if isinstance(existing_config.get("xero_phase1_by_sales_entity"), dict)
+        else {}
+    )
+    phase1_by_sales_entity[sales_entity] = phase1_config
     next_config = {
         **existing_config,
         "request_templates": merged_templates,
-        "xero_phase1": {
-            "sales_entity": sales_entity,
-            "sales_account_code": sales_account_code,
-            "default_tax_type": default_tax_type,
-            "invoice_status": "DRAFT",
-            "refresh_interval_minutes": args.refresh_interval_minutes,
-            "matching_rules": [
-                "Use stored biz_contact.xero_contact_id when present.",
-                "Else exact TaxNumber match in Xero.",
-                "Else exact CompanyNumber match in Xero.",
-                "Else exact Name + EmailAddress match in Xero.",
-                "Else create the contact in Xero at first invoice export.",
-            ],
-            "scope": {
-                "invoice_types": invoice_types,
-                "sales_entity": sales_entity,
-            },
-        },
+        "xero_phase1": phase1_config,
+        "xero_phase1_by_sales_entity": phase1_by_sales_entity,
     }
     if args.dry_run:
         print(f"[connection] update request templates/config on {connection.get('name')} -> {connection_id}")
@@ -1152,7 +1165,7 @@ def main() -> None:
 
     mapping = upsert_mapping_by_name(
         base_url,
-        build_invoice_refresh_mapping(connection_id),
+        build_invoice_refresh_mapping(connection_id, sales_entity=sales_entity),
         token=token,
         workspace_id=workspace_id,
         connection_id=connection_id,

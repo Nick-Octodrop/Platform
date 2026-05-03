@@ -7,7 +7,7 @@
     "contacts": "Contacts"
   },
   "entity": {
-    "contact": "Contact"
+    "contact": "Company / Account"
   },
   "fields": {
     "id": "ID",
@@ -19,28 +19,28 @@
     "website": "Website",
     "country": "Country",
     "currency_preference": "Currency preference",
-    "billing_street": "Billing street",
-    "billing_street2": "Billing street 2",
+    "billing_street": "Billing address line 1",
+    "billing_street2": "Billing address line 2",
     "billing_city": "Billing city",
     "billing_state": "Billing state / region",
     "billing_postcode": "Billing postcode",
     "billing_country": "Billing country",
-    "shipping_street": "Shipping street",
-    "shipping_street2": "Shipping street 2",
-    "shipping_city": "Shipping city",
-    "shipping_state": "Shipping state / region",
-    "shipping_postcode": "Shipping postcode",
-    "shipping_country": "Shipping country",
+    "shipping_street": "Default site / delivery address line 1",
+    "shipping_street2": "Default site / delivery address line 2",
+    "shipping_city": "Default site / delivery city",
+    "shipping_state": "Default site / delivery state / region",
+    "shipping_postcode": "Default site / delivery postcode",
+    "shipping_country": "Default site / delivery country",
     "notes": "Notes",
     "is_active": "Active"
   },
   "sections": {
-    "main": "Contact",
-    "addresses": "Addresses",
+    "main": "Company / Account",
+    "addresses": "Company, billing and delivery addresses",
     "notes": "Notes"
   },
   "actions": {
-    "new": "New contact",
+    "new": "New company / account",
     "deactivate": "Deactivate",
     "activate": "Activate"
   },
@@ -48,7 +48,7 @@
     "placeholder": "Search contacts..."
   },
   "filters": {
-    "all": "All contacts",
+    "all": "All companies / accounts",
     "customers": "Customers",
     "suppliers": "Suppliers",
     "factory_partners": "Factory partners",
@@ -56,7 +56,7 @@
   },
   "pages": {
     "list": "Contacts",
-    "form": "Contact"
+    "form": "Company / Account"
   },
   "options": {
     "contact_type": {
@@ -87,9 +87,9 @@
     }
   },
   "triggers": {
-    "contact_created": "Contact created",
-    "contact_updated": "Contact updated",
-    "new_contact_clicked": "New Contact clicked",
+    "contact_created": "Company / account created",
+    "contact_updated": "Company / account updated",
+    "new_contact_clicked": "New Company / Account clicked",
     "deactivate_clicked": "Deactivate clicked",
     "activate_clicked": "Activate clicked"
   },
@@ -100,7 +100,7 @@
     },
     "navigation": {
       "group": "Contacts",
-      "contact_list_page": "All Contacts",
+      "contact_list_page": "All Companies / Accounts",
       "contact_mine_page": "My Contacts",
       "contact_companies_page": "Companies",
       "contact_people_page": "People",
@@ -256,7 +256,7 @@
     },
     "actions": {
       "action_contact_new": {
-        "label": "+ New Contact"
+        "label": "+ New Company / Account"
       },
       "action_contact_mark_inactive": {
         "label": "Mark Inactive",

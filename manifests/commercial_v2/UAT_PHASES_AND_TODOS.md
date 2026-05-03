@@ -1,6 +1,6 @@
 # NLight UAT Phases and Todo Plan
 
-Last updated: 2026-04-29
+Last updated: 2026-05-03
 
 This plan is based on the current NLight/Shelly/Luke chat history and the current Commercial V2 build. It separates what must be ready for first UAT/go-live from follow-up work that should not block initial sales and quoting usage.
 
@@ -9,6 +9,44 @@ This plan is based on the current NLight/Shelly/Luke chat history and the curren
 NLight can test and then go live on the core Octodrop workflow for CRM, quoting, orders, invoicing, catalog products, document generation, and role-based access.
 
 Target first go-live window from chat: Monday 4 May 2026.
+
+## Current Readiness Position - 2026-05-03
+
+This is the current status after checking Shelly's 30.04 feedback, Natalie's mandatory-fields document, the chat history, and the Commercial V2 manifests.
+
+What is now structurally in place:
+
+- Commercial manifests validate with zero manifest errors.
+- CRM opportunity mandatory stage gates are implemented in the CRM manifest.
+- Mandatory-field exception request, approval, rejection, and audit fields exist on opportunities.
+- Exception approval actions are restricted to the nominated approver, not general Sales users.
+- On Hold follow-up task automation is configured.
+- Opportunity to quote and opportunity to order transformations exist.
+- Opportunity line items now copy into order line items when creating an order from CRM.
+- Rotting-deal detection is configured through workspace automations, not a hardcoded platform setting.
+- Opportunity can be moved back to lead.
+- Proposal/negotiation stage requires a quote or an approved exception.
+- `en-GB` is available as a user/workspace locale option.
+- Contacts now distinguish company/account records more clearly from people records.
+- Company, billing, default delivery, and CRM site full-address snapshots are now carried into CRM, quotes, and orders.
+- Pending and approved mandatory-field gate exceptions are visible from opportunity lists and CRM dashboard cards.
+- UAT setup can set workspace defaults to English UK and Europe/London.
+
+Current UAT risk:
+
+- Contacts/sites/address handling has been tightened for company, billing, site, and default delivery addresses. It still needs browser UAT across Contacts -> CRM -> Quote -> Order before marking complete.
+- Access profiles must still be tested by actually logging in as each user type, not just by reading rules.
+- Xero setup now supports one automation/mapping set per selling entity, but NLight BV and EcoTech FZCO tenant/account-code/tax-code values must still be explicitly verified before real finance testing.
+- Proposal and Claude scope is not Phase 1-ready unless a proposal model and example are supplied.
+- Outlook calendar/email logging is not part of the first go-live unless it is pulled forward as a hard requirement.
+- Exact missing-field messages and logging a blocked stage attempt will need a generic platform change, because current manifest conditions can disable actions but cannot yet explain every failed condition or log disabled-button attempts.
+- Rotting-deal automation needs elapsed-time live UAT because the 14-day checks run after delayed automation waits.
+
+Hard rule:
+
+- Do not hardcode NLight-specific business rules into generic platform code.
+- Generic platform code may support reusable capabilities, such as actor-aware action guards, locale fallback, line-item performance, audit trails, and generic validation.
+- NLight-specific setup belongs in `manifests/commercial_v2`, setup scripts, workspace automations, access profiles, templates, and seeded data.
 
 ## Phase 0 - UAT Workspace Reset and Setup
 
@@ -80,6 +118,8 @@ Included scope:
 
 Phase 1 todos:
 
+- [x] Set UAT workspace defaults to English UK and Europe/London.
+- [ ] Confirm user-level timezone/locale override works for Netherlands, CIS, and remote users.
 - [ ] Create staged users with temporary passwords.
 - [ ] Log in as each role before handoff and verify permissions.
 - [ ] Force password change only after internal access testing is complete.
@@ -96,10 +136,12 @@ Phase 1 todos:
 - [ ] Confirm `/home` load time is acceptable from UK/Netherlands.
 - [ ] Confirm record autosave does not revert changes.
 - [ ] Confirm lookup fields load quickly and keep selected values stable.
+- [ ] Confirm leaving an unsaved create/edit page warns or preserves the draft instead of silently losing work.
+- [ ] Confirm back navigation from people, sites, activities, quotes, and orders returns to the source company/opportunity where possible.
 - [ ] Confirm quote line items appear immediately, then calculations catch up without blocking entry.
 - [ ] Confirm expression totals recalculate after line item changes.
 - [ ] Confirm quote generate document requirements stay correct when opening existing quotes with existing line items.
-- [ ] Confirm disabled action buttons show exact unmet requirements, not only "requirements not met".
+- [ ] Confirm disabled action buttons show exact unmet requirements, not only "requirements not met". Platform approval required.
 - [ ] Confirm quote "Send quote" wording and confirmation modal are clear.
 - [ ] Confirm quote PDF template sits on the supplied NLight letterhead and does not render white boxes over the background.
 - [ ] Confirm quote scripts can be selected, edited, and included in generated quote documents.
@@ -107,6 +149,7 @@ Phase 1 todos:
 - [ ] Confirm product specs display where useful without exposing hidden supplier/cost data.
 - [ ] Confirm quote to order runs in seconds, not around one minute.
 - [ ] Confirm order contains quote line snapshots and customer/order chain links.
+- [x] Confirm order created directly from CRM contains CRM opportunity line snapshots structurally. Browser UAT still required.
 - [ ] Confirm sales invoice creation from order.
 - [ ] Confirm Xero contact create/link flow.
 - [ ] Confirm Xero sales invoice export to the correct Xero organisation and chart of accounts.
@@ -129,11 +172,186 @@ Phase 1 UAT scenarios:
 Phase 1 blockers or decisions:
 
 - [ ] Final user emails and roles from `Users and access.xlsx` must be confirmed before staged users are handed over.
-- [ ] Xero organisation mappings need final confirmation for NLight BV and EcoTech FZCO.
+- [ ] Decide whether Sales can see all contacts or only contacts within their assigned sales entity.
+- [ ] Decide whether supplier contacts live in Contacts but hidden from Sales, or in a separate procurement-only supplier area.
+- [ ] Confirm default sales entity per user/profile for new contacts, leads, opportunities, and quotes.
+- [ ] Xero organisation mappings need final confirmation for NLight BV and EcoTech FZCO. Setup script now namespaces Xero automations/mappings per selling entity.
 - [ ] Xero account codes/tax types need confirmation per organisation.
 - [ ] Invoice template reference is still needed if the current invoice output must match an existing layout.
 - [ ] Clean quote PDF reference is useful if current Simpro export formatting is not reliable.
 - [ ] Proposal example is needed because proposals are separate from quotes.
+
+## Shelly 30.04 Feedback Map
+
+This section maps the 30.04 feedback document to concrete readiness checks.
+
+Done or mostly done:
+
+- English UK locale option exists as `en-GB`; missing locale files fall back safely.
+- Lead to qualified opportunity flow exists.
+- Lead disqualify/qualified visibility should be covered by board/view defaults, but still needs browser UAT.
+- Create Quote from opportunity maps to `biz_quote.sector`; the old `biz-sector` mismatch should no longer be present.
+- Opportunity can move back to lead.
+- Proposal/negotiation movement now requires a quote or approved exception.
+- Opportunity line items copy into quotes and orders.
+
+Needs implementation or UAT hardening:
+
+- Workspace default should be set to English UK and Europe/London in the UAT setup path. Done in setup script; still needs live UAT run.
+- Contacts UI should make it clearer when the user is creating a company vs a person. Done for English UAT labels.
+- `+ Contact` wording should be reviewed because Shelly reads this as person/contact, not company. Done for English UAT labels.
+- Sales entity defaults should be applied consistently when creating records from profile context.
+- Payment terms should use the full customer-facing wording required on quotes.
+- Company, billing, site, and delivery addresses need a consistent cross-module model. First pass implemented; browser UAT required.
+- Multiple sites per company are supported through CRM sites from the company record. Browser UAT required.
+- Multiple delivery locations per job/order need a defined model before go-live if required.
+- Creating/editing a person from a company needs source-record return navigation.
+- Duplicate detection/merge is not implemented and should be treated as Phase 2 unless required for go-live.
+- Activity owner should default from lead/opportunity owner when created in context.
+- Activity company/lead/opportunity context should be prefilled when launched from a parent record.
+- New lead/opportunity drafts should not disappear if the user leaves before save completes.
+- Opportunity site search and site address pull-through need full address snapshots, not only address line 1. Done structurally.
+- Commercial site address should pull from the selected site and remain editable as a snapshot. Done structurally.
+
+## Module-by-Module UAT Repair Plan
+
+Use this order so fixes move from foundation modules into downstream commercial flows.
+
+### Contacts and Sites
+
+Goal: Contacts become the reliable address book and site source for CRM, quoting, ordering, and delivery.
+
+- [x] Rename or relabel company creation actions so users understand they are creating a company record.
+- [ ] Keep people as child records of companies, but add a clear "back to company" route after editing a person.
+- [ ] Add or confirm related lists for company people, CRM sites, leads, opportunities, quotes, orders, invoices, and documents.
+- [ ] Decide if `crm_site` remains owned by CRM or becomes a generic contacts/site entity shared across modules.
+- [x] Add full site address snapshot fields where only line 1 is currently copied.
+- [x] Add explicit address roles: registered/company, billing, site, and delivery.
+- [ ] Decide whether delivery locations are a reusable site record, an order child entity, or both.
+- [ ] Add default sales entity where needed without exposing other entities to restricted Sales profiles.
+- [ ] Confirm supplier contacts are hidden from Sales profiles.
+- [ ] Defer duplicate merge unless Shelly/Luke make it a UAT blocker.
+
+### CRM
+
+Goal: Contacts flow into Lead, Opportunity, Quote, and Order without missing mandatory data or confusing stage changes.
+
+- [ ] Browser-test Lead create, save, mark contacted, qualify, disqualify, and reopen/list visibility.
+- [ ] Browser-test Opportunity create from Lead, direct Opportunity create, stage movement, back movement, lost, won, on hold, and resume.
+- [ ] Confirm every blocked stage move gives the exact missing field list.
+- [ ] Confirm exception request creates an approval task and only the nominated approver can approve/reject.
+- [ ] Confirm approved exception unblocks only the intended gate and leaves an audit trail.
+- [ ] Confirm rejected exception leaves the stage blocked.
+- [ ] Confirm Opportunity line items stay in original order after add/edit/save/reload.
+- [ ] Confirm Create Quote from Opportunity copies CRM line items.
+- [x] Confirm Create Order from Opportunity copies CRM line items and requires at least one line structurally. Browser UAT still required.
+- [x] Add "rotting deals" saved views/dashboard alerts for inactive opportunities. Elapsed-time live UAT still required.
+- [ ] Confirm On Hold creates a follow-up task with the right owner/date/context.
+
+### Quotes and Proposals
+
+Goal: Quotes are fast and reliable for Phase 1; proposals stay explicitly separate.
+
+- [ ] Confirm quote scripts can be selected, edited, saved, and rendered.
+- [ ] Confirm line items add immediately and are replaced by persisted rows without flicker, duplicate rows, or reorder.
+- [ ] Confirm document generation waits for pending line-item writes before allowing a quote PDF to generate.
+- [ ] Confirm quote PDF includes the right script, line items, totals, terms, disposal fee, and delivery terms.
+- [ ] Confirm quote can exist without a proposal.
+- [ ] Confirm proposal should be a separate entity/document, not just a quote field.
+- [ ] Collect proposal example before building Claude-assisted proposal generation.
+- [ ] Decide if "Create Proposal" should require an existing quote or create one automatically.
+
+### Orders
+
+Goal: Accepted quotes and won CRM opportunities produce usable orders with line snapshots and delivery context.
+
+- [ ] Confirm Quote to Order copies quote lines, customer, contact person, sales entity, payment terms, delivery terms, site, and source links.
+- [ ] Confirm CRM Opportunity to Order copies opportunity lines, customer, contact person, sales entity, payment terms, delivery target, and source links.
+- [ ] Confirm order line edits do not reorder existing rows.
+- [ ] Decide if orders need one delivery address, multiple delivery locations, or delivery location child rows.
+- [ ] Confirm order status flow makes sense for operations and finance.
+- [ ] Confirm order documents, tasks, calendar events, quotes, invoices, and purchase orders are visible from the order.
+
+### Purchase Orders
+
+Goal: POs support operations/finance without exposing supplier details to Sales.
+
+- [ ] Confirm PO creation path: from order, from product requirement, or manual.
+- [ ] Confirm PO lines copy required order/product details and supplier-side data for procurement users.
+- [ ] Confirm Sales cannot view supplier cost, supplier identity, or purchase documents.
+- [ ] Confirm PO PDF template against Tamzin/Shelly examples, avoiding the grey Simpro box.
+- [ ] Confirm only documents attached to the PO sync to Xero.
+- [ ] Confirm PO sync target organisation and account/tax mappings before enabling live Xero writes.
+
+### Finance and Xero
+
+Goal: Phase 1 finance works for contacts and sales invoices; Phase 2 adds POs.
+
+- [ ] Confirm there are two distinct Xero organisation mappings: NLight BV and EcoTech FZCO.
+- [ ] Confirm sales entity decides the Xero organisation unless Finance needs manual override.
+- [ ] Confirm customer contact sync to the correct Xero organisation.
+- [ ] Confirm invoice export, payment refresh, and status sync in UAT only before live writes.
+- [ ] Confirm purchase order sync is disabled until PO Phase 2 mapping is approved.
+- [ ] Confirm finance access can see invoice/PO/accounting fields and Sales cannot.
+
+### Products
+
+Goal: Sales can quote from the catalogue without seeing protected procurement data.
+
+- [ ] Confirm catalogue seed from Shelly's workbook matches expected product count.
+- [ ] Confirm supplier field, supplier source row, buy price, EcoTech purchase cost, and intercompany cost are hidden from Sales.
+- [ ] Confirm NLight and EcoTech product prices/costs are selected by sales entity.
+- [ ] Confirm disposal fee is available for Netherlands quotes and has no markup.
+- [ ] Confirm delivery can be entered as a manual quote/order cost where required.
+- [ ] Confirm one-off/custom products still produce clean quote/order lines.
+
+### Documents
+
+Goal: Generated documents are fast, correctly attached, and traceable.
+
+- [ ] Confirm quote document preview and generation are fast after the recent renderer improvements.
+- [ ] Confirm generated PDFs are attached to the correct source record and related customer/order chain.
+- [ ] Confirm document registry metadata and numbering are correct.
+- [ ] Confirm document generation does not navigate users away unexpectedly.
+- [ ] Confirm PO attached documents can be selected for Xero sync in Phase 2.
+
+### Tasks and Calendar
+
+Goal: CRM activity and operational tasks support daily work without confusing overdue dates.
+
+- [ ] Confirm workspace timezone is Europe/London and user timezone overrides work.
+- [ ] Confirm activity due dates use the user/workspace timezone for overdue calculation.
+- [ ] Confirm activity owner defaults from lead/opportunity owner.
+- [ ] Confirm On Hold auto follow-up task appears on task/calendar views.
+- [ ] Confirm Outlook calendar sync remains a deferred integration unless pulled into Phase 1.
+- [ ] Confirm email logging is deferred after calendar sync unless Shelly changes priority.
+
+### Access Profiles
+
+Goal: Profiles match Shelly's access sheet and protect entity/cost data.
+
+- [ ] Log in as full access/director.
+- [ ] Log in as operations.
+- [ ] Log in as finance.
+- [ ] Log in as procurement.
+- [ ] Log in as NLight BV sales.
+- [ ] Log in as EcoTech/CIS sales.
+- [ ] Confirm NLight BV sales cannot see EcoTech/CIS deals.
+- [ ] Confirm EcoTech/CIS sales cannot see NLight BV deals.
+- [ ] Confirm Sales can request mandatory-field exceptions but cannot approve them.
+- [ ] Confirm only nominated approver can approve or reject a gate exception.
+- [ ] Confirm Sales cannot see suppliers, buy prices, cost of sale, margin, PO internals, or supplier documents.
+
+### Integrations
+
+Goal: Keep Phase 1 integrations narrow and safe, then layer in advanced workflows.
+
+- [ ] Xero Phase 1: contacts and sales invoices only.
+- [ ] Xero Phase 2: purchase orders and PO attachments once mapping is approved.
+- [ ] Outlook Phase 2/3: calendar first, then email logging and multiple inbox support.
+- [ ] Claude Phase 3: proposals only after proposal model, examples, and data-sharing rules are approved.
+- [ ] ClickUp Phase 3: define trigger, target workspace/list/folder, task fields, and sync direction.
+- [ ] Simpro/Pipedrive migration: import only after field mappings and duplicate strategy are clear.
 
 ## Phase 2 - Purchasing, Xero Purchase Orders, and Data Migration
 
@@ -347,4 +565,3 @@ These should not block Phase 1 unless Luke/Shelly explicitly move them forward:
 - Separate proposal document model.
 - Full Pipedrive historical migration if current CRM UAT is enough first.
 - Advanced dashboards/reports.
-

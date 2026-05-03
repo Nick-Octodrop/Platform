@@ -842,6 +842,7 @@ def _automation_run_response_items(runs: list[dict] | None) -> list[dict]:
                 "automation_name": run.get("automation_name"),
                 "status": run.get("status"),
                 "trigger_type": run.get("trigger_type"),
+                "ui": run.get("ui") if isinstance(run.get("ui"), dict) else {},
             }
         )
     return items
@@ -25288,11 +25289,12 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 record_context = existing_context_record.get("record") or {}
     try:
         t0 = time.perf_counter()
+        actor_ctx = _actor_domain_context(actor)
         enabled_when = action.get("enabled_when")
-        if enabled_when and not eval_condition(enabled_when, {"record": record_context}):
+        if enabled_when and not eval_condition(enabled_when, {"record": record_context, "actor": actor_ctx}):
             return _error_response("ACTION_DISABLED", "Action is disabled", "action_id", status=400)
         visible_when = action.get("visible_when")
-        if visible_when and not eval_condition(visible_when, {"record": record_context}):
+        if visible_when and not eval_condition(visible_when, {"record": record_context, "actor": actor_ctx}):
             return _error_response("ACTION_DISABLED", "Action is hidden", "action_id", status=400)
         phase_ms["guard_eval"] = (time.perf_counter() - t0) * 1000
     except Exception:
@@ -52330,6 +52332,8 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
         return denied
     body = await _safe_json(request)
     activity_options = body.get("_activity") if isinstance(body, dict) and isinstance(body.get("_activity"), dict) else {}
+    validation_options = body.get("_validation") if isinstance(body, dict) and isinstance(body.get("_validation"), dict) else {}
+    patch_validation = validation_options.get("mode") == "patch"
     suppress_activity_changes = activity_options.get("suppress_changes") is True or activity_options.get("suppress_activity") is True
     suppress_chatter = activity_options.get("suppress_chatter") is True or activity_options.get("suppress_activity") is True
     data = body.get("record") if isinstance(body, dict) and "record" in body else body
@@ -52355,7 +52359,18 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
         before_record=before_record,
     )
     merged = merged or {}
-    errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
+    if patch_validation:
+        errors, clean = _validate_patch_payload(found[1], data, before_record, workflow=workflow)
+        if not errors:
+            populated_patch = {
+                key: value
+                for key, value in (merged if isinstance(merged, dict) else {}).items()
+                if not isinstance(before_record, dict) or before_record.get(key) != value
+            }
+            if populated_patch:
+                errors, clean = _validate_patch_payload(found[1], populated_patch, before_record, workflow=workflow)
+    else:
+        errors, clean = _validate_record_payload(found[1], merged, for_create=False, workflow=workflow)
     lookup_errors = _validate_lookup_fields(found[1], _registry_for_request(request), lambda module_id, manifest_hash: _get_snapshot(request, module_id, manifest_hash))
     errors.extend(lookup_errors)
     domain_errors = _enforce_lookup_domains(found[1], clean if isinstance(clean, dict) else {})
@@ -65064,6 +65079,10 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
     configured_steps = automation.get("steps") if isinstance(automation, dict) else []
     if not isinstance(configured_steps, list):
         configured_steps = []
+    trigger_config = automation.get("trigger") if isinstance(automation, dict) else {}
+    automation_ui = trigger_config.get("ui") if isinstance(trigger_config, dict) else {}
+    if not isinstance(automation_ui, dict):
+        automation_ui = {}
 
     step_runs = automation_store.list_step_runs(run_id)
     latest_step_runs = _latest_automation_step_runs(step_runs)
@@ -65147,6 +65166,7 @@ async def get_automation_run_status(request: Request, run_id: str) -> dict:
                 "started_at": run.get("started_at"),
                 "ended_at": run.get("ended_at"),
                 "last_error": last_error,
+                "ui": automation_ui,
             },
             "steps": step_items,
             "jobs": jobs,

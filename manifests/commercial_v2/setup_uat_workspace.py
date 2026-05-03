@@ -83,6 +83,35 @@ def resolve_template_id(args: argparse.Namespace, name: str, env_name: str) -> s
     return None
 
 
+def set_workspace_defaults(args: argparse.Namespace) -> None:
+    body = {
+        "workspace": {
+            "default_locale": args.default_locale,
+            "default_timezone": args.default_timezone,
+        }
+    }
+    if args.dry_run:
+        print("\n[uat] Setup workspace locale/timezone")
+        print(f"[uat] PUT {args.base_url}/prefs/ui {body}")
+        return
+    status, payload = api_call(
+        "PUT",
+        f"{args.base_url}/prefs/ui",
+        token=args.token,
+        workspace_id=args.workspace_id,
+        body=body,
+        timeout=120,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"setup workspace locale/timezone failed: {collect_error_text(payload)}")
+    workspace = payload.get("workspace") if isinstance(payload.get("workspace"), dict) else {}
+    print(
+        "[uat] workspace defaults set: "
+        f"locale={workspace.get('default_locale') or args.default_locale} "
+        f"timezone={workspace.get('default_timezone') or args.default_timezone}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the repeatable Commercial V2 UAT workspace setup.")
     parser.add_argument("--base-url", default=os.getenv("OCTO_BASE_URL", "http://localhost:8000").strip())
@@ -99,6 +128,9 @@ def main() -> None:
     parser.add_argument("--xero-sales-entity", default=os.getenv("OCTO_XERO_SALES_ENTITY", "").strip())
     parser.add_argument("--xero-sales-account-code", default=os.getenv("OCTO_XERO_SALES_ACCOUNT_CODE", "200").strip())
     parser.add_argument("--xero-tax-type", default=os.getenv("OCTO_XERO_DEFAULT_TAX_TYPE", "OUTPUT").strip())
+    parser.add_argument("--default-locale", default=os.getenv("OCTO_DEFAULT_LOCALE", "en-GB").strip())
+    parser.add_argument("--default-timezone", default=os.getenv("OCTO_DEFAULT_TIMEZONE", "Europe/London").strip())
+    parser.add_argument("--skip-workspace-defaults", action="store_true")
     args = parser.parse_args()
 
     args.base_url = (args.base_url or "").rstrip("/")
@@ -112,6 +144,9 @@ def main() -> None:
         raise SystemExit("Missing --token or OCTO_API_TOKEN")
 
     shared = common_args(args)
+
+    if not args.skip_workspace_defaults:
+        set_workspace_defaults(args)
 
     if args.clear_records:
         clear_args = [str(SCRIPT_DIR / "clear_workspace_data.py"), *shared]

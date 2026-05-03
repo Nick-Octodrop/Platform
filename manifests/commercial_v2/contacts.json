@@ -49,7 +49,7 @@
     {
       "id": "entity.biz_contact",
       "label_key": "contacts.entity.contact",
-      "label": "Contact",
+      "label": "Company / Account",
       "display_field": "biz_contact.name",
       "fields": [
         {
@@ -235,6 +235,68 @@
           "label": "Company Registration Number"
         },
         {
+          "id": "biz_contact.company_address_street",
+          "type": "string",
+          "label": "Company Address Line 1"
+        },
+        {
+          "id": "biz_contact.company_address_street2",
+          "type": "string",
+          "label": "Company Address Line 2"
+        },
+        {
+          "id": "biz_contact.company_address_city",
+          "type": "string",
+          "label": "Company Address City"
+        },
+        {
+          "id": "biz_contact.company_address_state",
+          "type": "string",
+          "label": "Company Address State / Region"
+        },
+        {
+          "id": "biz_contact.company_address_postcode",
+          "type": "string",
+          "label": "Company Address Postcode"
+        },
+        {
+          "id": "biz_contact.company_address_country",
+          "type": "string",
+          "label": "Company Address Country"
+        },
+        {
+          "id": "biz_contact.company_address",
+          "type": "text",
+          "label": "Company Address",
+          "readonly": true,
+          "compute": {
+            "expression": {
+              "op": "join",
+              "separator": "\n",
+              "args": [
+                {
+                  "ref": "$current.biz_contact.company_address_street"
+                },
+                {
+                  "ref": "$current.biz_contact.company_address_street2"
+                },
+                {
+                  "ref": "$current.biz_contact.company_address_city"
+                },
+                {
+                  "ref": "$current.biz_contact.company_address_state"
+                },
+                {
+                  "ref": "$current.biz_contact.company_address_postcode"
+                },
+                {
+                  "ref": "$current.biz_contact.company_address_country"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "biz_contact.supplier_reference",
           "type": "string",
           "label": "Supplier / Factory Reference",
@@ -290,13 +352,13 @@
           "id": "biz_contact.billing_street",
           "type": "string",
           "label_key": "contacts.fields.billing_street",
-          "label": "Billing Street"
+          "label": "Billing Address Line 1"
         },
         {
           "id": "biz_contact.billing_street2",
           "type": "string",
           "label_key": "contacts.fields.billing_street2",
-          "label": "Billing Street 2"
+          "label": "Billing Address Line 2"
         },
         {
           "id": "biz_contact.billing_city",
@@ -323,40 +385,104 @@
           "label": "Billing Country"
         },
         {
+          "id": "biz_contact.billing_address",
+          "type": "text",
+          "label": "Billing Address",
+          "readonly": true,
+          "compute": {
+            "expression": {
+              "op": "join",
+              "separator": "\n",
+              "args": [
+                {
+                  "ref": "$current.biz_contact.billing_street"
+                },
+                {
+                  "ref": "$current.biz_contact.billing_street2"
+                },
+                {
+                  "ref": "$current.biz_contact.billing_city"
+                },
+                {
+                  "ref": "$current.biz_contact.billing_state"
+                },
+                {
+                  "ref": "$current.biz_contact.billing_postcode"
+                },
+                {
+                  "ref": "$current.biz_contact.billing_country"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "biz_contact.shipping_street",
           "type": "string",
           "label_key": "contacts.fields.shipping_street",
-          "label": "Shipping Street"
+          "label": "Default Site / Delivery Address Line 1"
         },
         {
           "id": "biz_contact.shipping_street2",
           "type": "string",
           "label_key": "contacts.fields.shipping_street2",
-          "label": "Shipping Street 2"
+          "label": "Default Site / Delivery Address Line 2"
         },
         {
           "id": "biz_contact.shipping_city",
           "type": "string",
           "label_key": "contacts.fields.shipping_city",
-          "label": "Shipping City"
+          "label": "Default Site / Delivery City"
         },
         {
           "id": "biz_contact.shipping_state",
           "type": "string",
           "label_key": "contacts.fields.shipping_state",
-          "label": "Shipping State / Region"
+          "label": "Default Site / Delivery State / Region"
         },
         {
           "id": "biz_contact.shipping_postcode",
           "type": "string",
           "label_key": "contacts.fields.shipping_postcode",
-          "label": "Shipping Postcode"
+          "label": "Default Site / Delivery Postcode"
         },
         {
           "id": "biz_contact.shipping_country",
           "type": "string",
           "label_key": "contacts.fields.shipping_country",
-          "label": "Shipping Country"
+          "label": "Default Site / Delivery Country"
+        },
+        {
+          "id": "biz_contact.default_delivery_address",
+          "type": "text",
+          "label": "Default Site / Delivery Address",
+          "readonly": true,
+          "compute": {
+            "expression": {
+              "op": "join",
+              "separator": "\n",
+              "args": [
+                {
+                  "ref": "$current.biz_contact.shipping_street"
+                },
+                {
+                  "ref": "$current.biz_contact.shipping_street2"
+                },
+                {
+                  "ref": "$current.biz_contact.shipping_city"
+                },
+                {
+                  "ref": "$current.biz_contact.shipping_state"
+                },
+                {
+                  "ref": "$current.biz_contact.shipping_postcode"
+                },
+                {
+                  "ref": "$current.biz_contact.shipping_country"
+                }
+              ]
+            }
+          }
         },
         {
           "id": "biz_contact.notes",
@@ -595,7 +721,7 @@
       "id": "action.contact_new",
       "kind": "open_form",
       "action_label_key": "contacts.actions.new",
-      "label": "New Contact",
+      "label": "New Company / Account",
       "target": "biz_contact.form"
     },
     {
@@ -719,7 +845,7 @@
           {
             "id": "all",
             "label_key": "contacts.filters.all",
-            "label": "All Contacts",
+            "label": "All Companies / Accounts",
             "domain": {
               "op": "exists",
               "field": "biz_contact.name"
@@ -800,7 +926,7 @@
         {
           "id": "main",
           "section_title_key": "contacts.sections.main",
-          "title": "Contact Account",
+          "title": "Company / Account",
           "layout": "columns",
           "columns": 2,
           "fields": [
@@ -846,22 +972,31 @@
         {
           "id": "addresses",
           "section_title_key": "contacts.sections.addresses",
-          "title": "Addresses",
+          "title": "Company, Billing and Delivery Addresses",
           "layout": "columns",
           "columns": 2,
           "fields": [
+            "biz_contact.company_address_street",
+            "biz_contact.company_address_street2",
+            "biz_contact.company_address_city",
+            "biz_contact.company_address_state",
+            "biz_contact.company_address_postcode",
+            "biz_contact.company_address_country",
+            "biz_contact.company_address",
             "biz_contact.billing_street",
             "biz_contact.billing_street2",
             "biz_contact.billing_city",
             "biz_contact.billing_state",
             "biz_contact.billing_postcode",
             "biz_contact.billing_country",
+            "biz_contact.billing_address",
             "biz_contact.shipping_street",
             "biz_contact.shipping_street2",
             "biz_contact.shipping_city",
             "biz_contact.shipping_state",
             "biz_contact.shipping_postcode",
-            "biz_contact.shipping_country"
+            "biz_contact.shipping_country",
+            "biz_contact.default_delivery_address"
           ]
         },
         {
@@ -941,6 +1076,51 @@
               ]
             },
             {
+              "id": "sites",
+              "label": "Sites",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_crm",
+                  "entity_id": "entity.crm_site",
+                  "target": "view:crm_site.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "crm_site.company_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "crm_site.company_id": {
+                      "ref": "$record.id"
+                    },
+                    "crm_site.address_line_1": {
+                      "ref": "$record.biz_contact.shipping_street"
+                    },
+                    "crm_site.address_line_2": {
+                      "ref": "$record.biz_contact.shipping_street2"
+                    },
+                    "crm_site.city": {
+                      "ref": "$record.biz_contact.shipping_city"
+                    },
+                    "crm_site.region": {
+                      "ref": "$record.biz_contact.shipping_state"
+                    },
+                    "crm_site.postcode": {
+                      "ref": "$record.biz_contact.shipping_postcode"
+                    },
+                    "crm_site.country": {
+                      "ref": "$record.biz_contact.shipping_country"
+                    },
+                    "crm_site.is_active": true
+                  }
+                }
+              ]
+            },
+            {
               "id": "addresses",
               "label": "Addresses",
               "sections": [
@@ -987,6 +1167,13 @@
           "biz_contact.country",
           "biz_contact.tax_number",
           "biz_contact.company_number",
+          "biz_contact.company_address_street",
+          "biz_contact.company_address_street2",
+          "biz_contact.company_address_city",
+          "biz_contact.company_address_state",
+          "biz_contact.company_address_postcode",
+          "biz_contact.company_address_country",
+          "biz_contact.company_address",
           "biz_contact.supplier_reference",
           "biz_contact.production_country",
           "biz_contact.supplier_payment_terms",
@@ -997,12 +1184,14 @@
           "biz_contact.billing_state",
           "biz_contact.billing_postcode",
           "biz_contact.billing_country",
+          "biz_contact.billing_address",
           "biz_contact.shipping_street",
           "biz_contact.shipping_street2",
           "biz_contact.shipping_city",
           "biz_contact.shipping_state",
           "biz_contact.shipping_postcode",
           "biz_contact.shipping_country",
+          "biz_contact.default_delivery_address",
           "biz_contact.notes",
           "biz_contact.xero_contact_id",
           "biz_contact.xero_last_sync_status",
@@ -1288,7 +1477,7 @@
     {
       "id": "biz_contact.form_page",
       "title_key": "contacts.pages.form",
-      "title": "Contact",
+      "title": "Company / Account",
       "layout": "single",
       "header": {
         "variant": "none"
@@ -1428,13 +1617,13 @@
   "triggers": [
     {
       "id": "biz_contacts.record.biz_contact.created",
-      "label": "Contact created",
+      "label": "Company / account created",
       "event": "record.created",
       "entity_id": "entity.biz_contact"
     },
     {
       "id": "biz_contacts.record.biz_contact.updated",
-      "label": "Contact updated",
+      "label": "Company / account updated",
       "event": "record.updated",
       "entity_id": "entity.biz_contact"
     },
@@ -1452,7 +1641,7 @@
     },
     {
       "id": "biz_contacts.action.contact_new.clicked",
-      "label": "New Contact clicked",
+      "label": "New Company / Account clicked",
       "event": "action.clicked",
       "action_id": "action.contact_new"
     },
