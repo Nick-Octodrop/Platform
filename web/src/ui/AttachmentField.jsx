@@ -14,6 +14,7 @@ export default function AttachmentField({
   previewMode = false,
   buttonLabel = "",
   description = "",
+  onAttachmentsChange = null,
 }) {
   const { t } = useI18n();
   const [attachments, setAttachments] = useState([]);
@@ -35,7 +36,9 @@ export default function AttachmentField({
     try {
       const qs = `purpose=${encodeURIComponent(attachmentPurpose)}`;
       const res = await apiFetch(`/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments?${qs}`);
-      setAttachments(Array.isArray(res?.attachments) ? res.attachments : []);
+      const nextAttachments = Array.isArray(res?.attachments) ? res.attachments : [];
+      setAttachments(nextAttachments);
+      onAttachmentsChange?.(nextAttachments);
     } catch (err) {
       setError(err?.message || t("common.attachments.load_failed"));
       setAttachments([]);
@@ -116,7 +119,11 @@ export default function AttachmentField({
         `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/${encodeURIComponent(toDelete.id)}?purpose=${encodeURIComponent(attachmentPurpose)}`,
         { method: "DELETE" }
       );
-      setAttachments((prev) => prev.filter((a) => a?.id !== toDelete.id));
+      setAttachments((prev) => {
+        const nextAttachments = prev.filter((a) => a?.id !== toDelete.id);
+        onAttachmentsChange?.(nextAttachments);
+        return nextAttachments;
+      });
       setToDelete(null);
     } catch (err) {
       setError(err?.message || t("common.attachments.delete_failed"));

@@ -3549,6 +3549,7 @@ function AppView({
                 previewMode={false}
                 canCreateLookup={(lookupEntityId) => canWriteRecords && Boolean(canCreateLookup?.(lookupEntityId))}
                 onLookupCreate={onLookupCreate}
+                syncAttachmentValues
                 hideHeader
               />
             ) : activeManifestModal.fields.length > 0 ? (

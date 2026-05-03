@@ -4463,6 +4463,74 @@ def _apply_attachment_metadata_fields(entity_def: dict | None, record: dict | No
     return updated if changed else record
 
 
+def _attachment_fields_for_entity(entity_def: dict | None) -> list[str]:
+    if not isinstance(entity_def, dict):
+        return []
+    fields = entity_def.get("fields") if isinstance(entity_def.get("fields"), list) else []
+    return [
+        field.get("id")
+        for field in fields
+        if isinstance(field, dict) and field.get("type") == "attachments" and isinstance(field.get("id"), str) and field.get("id")
+    ]
+
+
+def _linked_attachments_for_field(entity_id: str | None, record_id: str | None, field_id: str | None) -> list[dict]:
+    if not (isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id and isinstance(field_id, str) and field_id):
+        return []
+    purpose = f"field:{field_id}"
+    try:
+        links = attachment_store.list_links(entity_id, record_id, purpose)
+    except TypeError:
+        links = attachment_store.list_links(get_org_id(), entity_id, record_id, purpose)
+    except Exception:
+        return []
+    attachments: list[dict] = []
+    seen: set[str] = set()
+    for link in links or []:
+        attachment_id = link.get("attachment_id") if isinstance(link, dict) else None
+        if not isinstance(attachment_id, str) or not attachment_id or attachment_id in seen:
+            continue
+        att = attachment_store.get_attachment(attachment_id)
+        if isinstance(att, dict):
+            seen.add(attachment_id)
+            attachments.append(att)
+    return attachments
+
+
+def _hydrate_linked_attachment_fields(entity_def: dict | None, entity_id: str | None, record_id: str | None, record: dict | None) -> dict:
+    if not isinstance(record, dict):
+        return {}
+    hydrated = dict(record)
+    for field_id in _attachment_fields_for_entity(entity_def):
+        if _extract_attachment_refs_for_metadata(hydrated.get(field_id)):
+            continue
+        linked = _linked_attachments_for_field(entity_id, record_id, field_id)
+        if linked:
+            hydrated[field_id] = linked
+    return hydrated
+
+
+def _filter_satisfied_attachment_required_errors(entity_def: dict | None, entity_id: str | None, record_id: str | None, errors: list[dict]) -> list[dict]:
+    if not errors:
+        return errors
+    attachment_fields = set(_attachment_fields_for_entity(entity_def))
+    if not attachment_fields:
+        return errors
+    filtered: list[dict] = []
+    for error in errors:
+        path = error.get("path") if isinstance(error, dict) else None
+        if (
+            isinstance(error, dict)
+            and error.get("code") == "REQUIRED_FIELD"
+            and isinstance(path, str)
+            and path in attachment_fields
+            and _linked_attachments_for_field(entity_id, record_id, path)
+        ):
+            continue
+        filtered.append(error)
+    return filtered
+
+
 def _create_record_with_computed_fields(request: Request, entity_id: str, entity_def: dict, clean: dict) -> dict:
     payload = _apply_attachment_metadata_fields(entity_def, _recompute_record_for_entity(entity_def, clean))
     record = generic_records.create(entity_id, payload)
@@ -25287,6 +25355,13 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
             _, existing_context_record = _get_record_for_entity_candidates(candidate_entity_id, candidate_record_id)
             if isinstance(existing_context_record, dict) and isinstance(existing_context_record.get("record"), dict):
                 record_context = existing_context_record.get("record") or {}
+    candidate_entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else None
+    candidate_record_id = context.get("record_id") if isinstance(context, dict) else None
+    if isinstance(candidate_entity_id, str) and isinstance(candidate_record_id, str) and isinstance(record_context, dict):
+        normalized_candidate_entity = _normalize_entity_id(candidate_entity_id)
+        candidate_found = _find_entity_def(request, normalized_candidate_entity)
+        if candidate_found:
+            record_context = _hydrate_linked_attachment_fields(candidate_found[1], normalized_candidate_entity, candidate_record_id, record_context)
     try:
         t0 = time.perf_counter()
         actor_ctx = _actor_domain_context(actor)
@@ -25508,6 +25583,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         errors.extend(_field_write_policy_errors(actor, found[0], entity_def, patch if isinstance(patch, dict) else {}))
         errors.extend(_document_numbering_write_errors(actor, entity_def, existing_record, updated if isinstance(updated, dict) else {}))
         errors.extend(_document_numbering_assignment_errors(entity_def, existing_record, updated if isinstance(updated, dict) else {}, found[2], lifecycle_event="save"))
+        errors = _filter_satisfied_attachment_required_errors(entity_def, found_entity_id, record_id, errors)
         if errors:
             _log_record_validation_errors(entity_id, patch, errors, workflow)
             return _validation_response(errors, [])
@@ -52384,6 +52460,7 @@ async def update_generic_record(request: Request, entity_id: str, record_id: str
             system_field_ids=line_editor_system_fields,
         )
     )
+    errors = _filter_satisfied_attachment_required_errors(found[1], entity_id, record_id, errors)
     if errors:
         _log_record_validation_errors(entity_id, merged, errors, workflow)
         return _validation_response(errors, [])
@@ -64680,6 +64757,7 @@ async def ext_patch_record(request: Request, entity_id: str, record_id: str) -> 
     errors.extend(domain_errors)
     errors.extend(_document_numbering_write_errors(actor, found[1], before_record, clean if isinstance(clean, dict) else {}))
     errors.extend(_document_numbering_assignment_errors(found[1], before_record, clean if isinstance(clean, dict) else {}, found[2], lifecycle_event="save"))
+    errors = _filter_satisfied_attachment_required_errors(found[1], entity_id, record_id, errors)
     if errors:
         _log_record_validation_errors(entity_id, merged, errors, workflow)
         return _validation_response(errors, [])

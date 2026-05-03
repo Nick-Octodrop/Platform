@@ -420,6 +420,7 @@ export default function FormViewRenderer({
   onActiveFieldSnapshotChange,
   bottomActionsMode = "inline",
   renderBlocks = null,
+  syncAttachmentValues = false,
 }) {
   const { t, version: i18nVersion } = useI18n();
   if (!view) return <div className="alert">{t("common.missing_form_view")}</div>;
@@ -1181,9 +1182,14 @@ export default function FormViewRenderer({
                                 recordId={effectiveRecordId}
                                 fieldId={fieldId}
 	                                readonly={fieldReadonly}
-	                                previewMode={previewMode}
-	                                buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
-	                                description={field?.ui?.description || field?.help_text || ""}
+                                previewMode={previewMode}
+                                buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
+                                description={field?.ui?.description || field?.help_text || ""}
+                                onAttachmentsChange={
+                                  syncAttachmentValues
+                                    ? (items) => applyRecordChange(setFieldValue(computedRecord, fieldId, Array.isArray(items) ? items : []))
+                                    : null
+                                }
                               />
                             )
                           ) : field.type === "lookup" ? (
@@ -1291,6 +1297,14 @@ export default function FormViewRenderer({
                 previewMode={previewMode}
                 buttonLabel={mobileAttachmentSheet.buttonLabel}
                 description={mobileAttachmentSheet.description}
+                onAttachmentsChange={
+                  syncAttachmentValues
+                    ? (items) =>
+                        applyRecordChange(
+                          setFieldValue(computedRecord, mobileAttachmentSheet.fieldId, Array.isArray(items) ? items : [])
+                        )
+                    : null
+                }
               />
             </div>
           </div>
