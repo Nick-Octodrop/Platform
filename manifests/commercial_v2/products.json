@@ -949,6 +949,36 @@
             "label_key": "products.views.list.filters.inactive.label"
           },
           {
+            "id": "led_fixtures",
+            "label": "LED Fixtures",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.product_type",
+              "value": "led_fixture"
+            }
+          },
+          {
+            "id": "accessories",
+            "label": "Accessories",
+            "domain": {
+              "op": "eq",
+              "field": "biz_product.product_type",
+              "value": "accessory"
+            }
+          },
+          {
+            "id": "charges",
+            "label": "Charges",
+            "domain": {
+              "op": "in",
+              "field": "biz_product.product_type",
+              "value": [
+                "service_charge",
+                "delivery_charge"
+              ]
+            }
+          },
+          {
             "id": "eur_sales",
             "label": "EUR Sales Items",
             "domain": {
@@ -1393,7 +1423,8 @@
               },
               "icon": "lucide:Package2",
               "tone": "primary",
-              "format": "number"
+              "format": "number",
+              "target": "page:biz_product.list_page?mode=list&filter=active"
             },
             {
               "id": "led_fixtures",
@@ -1408,7 +1439,8 @@
               },
               "icon": "lucide:Lightbulb",
               "tone": "success",
-              "format": "number"
+              "format": "number",
+              "target": "page:biz_product.list_page?mode=list&filter=led_fixtures"
             },
             {
               "id": "accessories",
@@ -1423,7 +1455,8 @@
               },
               "icon": "lucide:PackagePlus",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "target": "page:biz_product.list_page?mode=list&filter=accessories"
             },
             {
               "id": "charges",
@@ -1441,7 +1474,8 @@
               },
               "icon": "lucide:ReceiptText",
               "tone": "accent",
-              "format": "number"
+              "format": "number",
+              "target": "page:biz_product.list_page?mode=list&filter=charges"
             }
           ]
         },

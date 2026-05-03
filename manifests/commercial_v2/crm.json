@@ -3222,6 +3222,7 @@
           "crm_opportunity.title",
           "crm_opportunity.company_id"
         ],
+        "require_child_records": true,
         "prevent_if_target_linked": true
       }
     },
@@ -4823,6 +4824,94 @@
                   }
                 }
               ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.lead_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Lead follow-up",
+                        "biz_task.task_type": "follow_up",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "team",
+                        "biz_task.lead_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.crm_lead.company_id"
+                        },
+                        "biz_task.sales_entity": {
+                          "ref": "$record.crm_lead.sales_entity"
+                        },
+                        "biz_task.owner_user_id": {
+                          "ref": "$record.crm_lead.owner_user_id"
+                        },
+                        "biz_task.assignee_user_id": {
+                          "ref": "$record.crm_lead.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.lead_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Lead follow-up",
+                        "biz_calendar_event.event_type": "call",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "team",
+                        "biz_calendar_event.lead_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.crm_lead.company_id"
+                        },
+                        "biz_calendar_event.sales_entity": {
+                          "ref": "$record.crm_lead.sales_entity"
+                        },
+                        "biz_calendar_event.owner_user_id": {
+                          "ref": "$record.crm_lead.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -5457,6 +5546,115 @@
               ]
             },
             {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Linked Quote",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_quotes",
+                      "entity_id": "entity.biz_quote",
+                      "target": "view:biz_quote.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_quote.id",
+                        "value": {
+                          "ref": "$record.crm_opportunity.linked_quote_id"
+                        }
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Linked Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.source_quote_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Documents",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_documents",
+                      "entity_id": "entity.biz_document",
+                      "target": "view:biz_document.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_document.related_quote_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.related_order_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.source_record_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.source_record_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
               "id": "notes",
               "label": "Notes & Files",
               "tab_label_key": "common.notes_files",
@@ -5524,6 +5722,148 @@
                     },
                     "crm_activity.status": "planned"
                   }
+                }
+              ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_task.opportunity_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "and",
+                            "conditions": [
+                              {
+                                "op": "exists",
+                                "field": "biz_task.lead_id"
+                              },
+                              {
+                                "op": "eq",
+                                "field": "biz_task.lead_id",
+                                "value": {
+                                  "ref": "$record.crm_opportunity.source_lead_id"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Opportunity follow-up",
+                        "biz_task.task_type": "follow_up",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "team",
+                        "biz_task.opportunity_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.lead_id": {
+                          "ref": "$record.crm_opportunity.source_lead_id"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.crm_opportunity.company_id"
+                        },
+                        "biz_task.site_id": {
+                          "ref": "$record.crm_opportunity.site_id"
+                        },
+                        "biz_task.sales_entity": {
+                          "ref": "$record.crm_opportunity.sales_entity"
+                        },
+                        "biz_task.owner_user_id": {
+                          "ref": "$record.crm_opportunity.owner_user_id"
+                        },
+                        "biz_task.assignee_user_id": {
+                          "ref": "$record.crm_opportunity.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_calendar_event.opportunity_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "and",
+                            "conditions": [
+                              {
+                                "op": "exists",
+                                "field": "biz_calendar_event.lead_id"
+                              },
+                              {
+                                "op": "eq",
+                                "field": "biz_calendar_event.lead_id",
+                                "value": {
+                                  "ref": "$record.crm_opportunity.source_lead_id"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Opportunity follow-up",
+                        "biz_calendar_event.event_type": "meeting",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "team",
+                        "biz_calendar_event.opportunity_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.lead_id": {
+                          "ref": "$record.crm_opportunity.source_lead_id"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.crm_opportunity.company_id"
+                        },
+                        "biz_calendar_event.site_id": {
+                          "ref": "$record.crm_opportunity.site_id"
+                        },
+                        "biz_calendar_event.sales_entity": {
+                          "ref": "$record.crm_opportunity.sales_entity"
+                        },
+                        "biz_calendar_event.owner_user_id": {
+                          "ref": "$record.crm_opportunity.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -5914,6 +6254,88 @@
                   }
                 }
               ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.site_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Site follow-up",
+                        "biz_task.task_type": "site_visit",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "team",
+                        "biz_task.site_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.crm_site.company_id"
+                        },
+                        "biz_task.sales_entity": {
+                          "ref": "$record.crm_site.sales_entity"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.site_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Site visit",
+                        "biz_calendar_event.event_type": "site_visit",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "team",
+                        "biz_calendar_event.site_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.crm_site.company_id"
+                        },
+                        "biz_calendar_event.sales_entity": {
+                          "ref": "$record.crm_site.sales_entity"
+                        },
+                        "biz_calendar_event.location": {
+                          "ref": "$record.crm_site.full_address"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -6067,6 +6489,7 @@
               "icon": "lucide:TrendingUp",
               "tone": "primary",
               "format": "currency",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=open",
               "label_key": "crm.pages.dashboard_page.blocks.1.cards.crm_open_pipeline_value.label",
               "subtitle_key": "crm.pages.dashboard_page.blocks.1.cards.crm_open_pipeline_value.subtitle"
             },
@@ -6090,6 +6513,7 @@
               "icon": "lucide:Scale",
               "tone": "success",
               "format": "currency",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=open",
               "label_key": "crm.pages.dashboard_page.blocks.1.cards.crm_weighted_pipeline_value.label",
               "subtitle_key": "crm.pages.dashboard_page.blocks.1.cards.crm_weighted_pipeline_value.subtitle"
             },
@@ -6107,6 +6531,7 @@
               "icon": "lucide:FilePlus2",
               "tone": "warning",
               "format": "number",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=needs_quote",
               "label_key": "crm.pages.dashboard_page.blocks.1.cards.crm_needs_quote.label",
               "subtitle_key": "crm.pages.dashboard_page.blocks.1.cards.crm_needs_quote.subtitle"
             },
@@ -6123,7 +6548,8 @@
               },
               "icon": "lucide:ShieldQuestion",
               "tone": "warning",
-              "format": "number"
+              "format": "number",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=gate_exception_requested"
             },
             {
               "id": "crm_gate_exceptions_approved",
@@ -6138,7 +6564,8 @@
               },
               "icon": "lucide:ShieldCheck",
               "tone": "info",
-              "format": "number"
+              "format": "number",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=gate_exception_approved"
             },
             {
               "id": "crm_rotting_deals",
@@ -6153,7 +6580,8 @@
               },
               "icon": "lucide:TimerOff",
               "tone": "danger",
-              "format": "number"
+              "format": "number",
+              "target": "page:crm_opportunity.list_page?mode=list&filter=rotting_deals"
             },
             {
               "id": "crm_overdue_activities",
@@ -6181,6 +6609,7 @@
               "icon": "lucide:AlarmClock",
               "tone": "accent",
               "format": "number",
+              "target": "page:crm_activity.list_page?mode=list&filter=overdue",
               "label_key": "crm.pages.dashboard_page.blocks.1.cards.crm_overdue_activities.label",
               "subtitle_key": "crm.pages.dashboard_page.blocks.1.cards.crm_overdue_activities.subtitle"
             }

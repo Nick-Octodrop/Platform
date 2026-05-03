@@ -1121,6 +1121,203 @@
               ]
             },
             {
+              "id": "sales_chain",
+              "label": "Sales Chain",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Leads",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_crm",
+                      "entity_id": "entity.crm_lead",
+                      "target": "view:crm_lead.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "crm_lead.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "crm_lead.company_id": {
+                          "ref": "$record.id"
+                        },
+                        "crm_lead.contact_email": {
+                          "ref": "$record.biz_contact.email"
+                        },
+                        "crm_lead.contact_phone": {
+                          "ref": "$record.biz_contact.phone"
+                        },
+                        "crm_lead.company_legal_name": {
+                          "ref": "$record.biz_contact.legal_name"
+                        },
+                        "crm_lead.company_country": {
+                          "ref": "$record.biz_contact.country"
+                        },
+                        "crm_lead.company_tax_number": {
+                          "ref": "$record.biz_contact.tax_number"
+                        },
+                        "crm_lead.company_registration_number": {
+                          "ref": "$record.biz_contact.company_number"
+                        },
+                        "crm_lead.company_address": {
+                          "ref": "$record.biz_contact.company_address"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Opportunities",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_crm",
+                      "entity_id": "entity.crm_opportunity",
+                      "target": "view:crm_opportunity.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "crm_opportunity.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "crm_opportunity.company_id": {
+                          "ref": "$record.id"
+                        },
+                        "crm_opportunity.primary_contact_email": {
+                          "ref": "$record.biz_contact.email"
+                        },
+                        "crm_opportunity.primary_contact_phone": {
+                          "ref": "$record.biz_contact.phone"
+                        },
+                        "crm_opportunity.company_legal_name": {
+                          "ref": "$record.biz_contact.legal_name"
+                        },
+                        "crm_opportunity.company_country": {
+                          "ref": "$record.biz_contact.country"
+                        },
+                        "crm_opportunity.company_tax_number": {
+                          "ref": "$record.biz_contact.tax_number"
+                        },
+                        "crm_opportunity.company_registration_number": {
+                          "ref": "$record.biz_contact.company_number"
+                        },
+                        "crm_opportunity.company_address": {
+                          "ref": "$record.biz_contact.company_address"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Quotes",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_quotes",
+                      "entity_id": "entity.biz_quote",
+                      "target": "view:biz_quote.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_quote.customer_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Orders",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_order.customer_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Invoices",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_invoices",
+                      "entity_id": "entity.biz_invoice",
+                      "target": "view:biz_invoice.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_invoice.customer_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.contact_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_contact_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
+                }
+              ]
+            },
+            {
               "id": "addresses",
               "label": "Addresses",
               "sections": [
@@ -1389,6 +1586,26 @@
                 "person_main",
                 "person_channels",
                 "person_preferences"
+              ]
+            },
+            {
+              "id": "company",
+              "label": "Company",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.biz_contact",
+                  "target": "view:biz_contact.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "biz_contact.id",
+                    "value": {
+                      "ref": "$record.biz_contact_person.company_id"
+                    }
+                  },
+                  "create_modal": false
+                }
               ]
             },
             {

@@ -262,6 +262,27 @@
           "label_key": "calendar.entities.biz_calendar_event.fields.visibility.label"
         },
         {
+          "id": "biz_calendar_event.sales_entity",
+          "type": "enum",
+          "label": "Entity",
+          "help_text": "Entity/team this event belongs to. Related events created from CRM, quote, and order records copy this automatically.",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "calendar.entities.biz_calendar_event.fields.sales_entity.options.nlight_bv",
+              "label_key": "calendar.entities.biz_calendar_event.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "calendar.entities.biz_calendar_event.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "calendar.entities.biz_calendar_event.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "calendar.entities.biz_calendar_event.fields.sales_entity.label"
+        },
+        {
           "id": "biz_calendar_event.location",
           "type": "string",
           "label": "Location",
@@ -385,6 +406,7 @@
           "biz_calendar_event.owner_user_id",
           "biz_calendar_event.participant_user_ids",
           "biz_calendar_event.visibility",
+          "biz_calendar_event.sales_entity",
           "biz_calendar_event.location",
           "biz_calendar_event.company_id",
           "biz_calendar_event.lead_id",
@@ -603,6 +625,9 @@
           "field_id": "biz_calendar_event.start_at"
         },
         {
+          "field_id": "biz_calendar_event.sales_entity"
+        },
+        {
           "field_id": "biz_calendar_event.owner_user_id"
         },
         {
@@ -669,6 +694,16 @@
               ]
             },
             "label_key": "calendar.views.list.filters.mine.label"
+          },
+          {
+            "id": "team",
+            "label": "Team Calendar",
+            "domain": {
+              "op": "eq",
+              "field": "biz_calendar_event.visibility",
+              "value": "team"
+            },
+            "label_key": "calendar.views.list.filters.team.label"
           },
           {
             "id": "crm",
@@ -750,7 +785,8 @@
         ],
         "badge_fields": [
           "biz_calendar_event.status",
-          "biz_calendar_event.event_type"
+          "biz_calendar_event.event_type",
+          "biz_calendar_event.visibility"
         ]
       }
     },
@@ -797,6 +833,7 @@
             "biz_calendar_event.owner_user_id",
             "biz_calendar_event.participant_user_ids",
             "biz_calendar_event.visibility",
+            "biz_calendar_event.sales_entity",
             "biz_calendar_event.location"
           ],
           "section_title_key": "calendar.views.form.sections.summary.title"

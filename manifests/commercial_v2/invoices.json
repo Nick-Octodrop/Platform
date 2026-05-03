@@ -2075,6 +2075,133 @@
               "tab_label_key": "common.related_records",
               "sections": [
                 "related"
+              ],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Source Customer Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_invoice.source_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.deposit_invoice_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.final_invoice_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.invoice_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Invoice follow-up",
+                        "biz_task.task_type": "finance",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "private",
+                        "biz_task.invoice_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.sales_entity": {
+                          "ref": "$record.biz_invoice.sales_entity"
+                        },
+                        "biz_task.order_id": {
+                          "ref": "$record.biz_invoice.source_order_id"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.biz_invoice.customer_id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.invoice_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Invoice follow-up",
+                        "biz_calendar_event.event_type": "finance_review",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "private",
+                        "biz_calendar_event.invoice_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.sales_entity": {
+                          "ref": "$record.biz_invoice.sales_entity"
+                        },
+                        "biz_calendar_event.order_id": {
+                          "ref": "$record.biz_invoice.source_order_id"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.biz_invoice.customer_id"
+                        }
+                      }
+                    }
+                  ]
+                }
               ]
             },
             {
@@ -2082,6 +2209,34 @@
               "label": "Documents",
               "sections": [
                 "documents"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_invoice_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
+                }
               ]
             },
             {
@@ -2283,6 +2438,7 @@
               "icon": "lucide:ReceiptText",
               "tone": "primary",
               "format": "number",
+              "target": "page:biz_invoice.list_page?mode=list&filter=open_receivables",
               "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_open_receivables_count.label",
               "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_open_receivables_count.subtitle"
             },
@@ -2300,6 +2456,7 @@
               "icon": "lucide:WalletCards",
               "tone": "warning",
               "format": "number",
+              "target": "page:biz_invoice.list_page?mode=list&filter=part_paid",
               "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.label",
               "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_part_paid_count.subtitle"
             },
@@ -2336,7 +2493,8 @@
               },
               "icon": "lucide:CircleAlert",
               "tone": "danger",
-              "format": "number"
+              "format": "number",
+              "target": "page:biz_invoice.list_page?mode=list&filter=overdue"
             },
             {
               "id": "invoice_paid_count",
@@ -2352,6 +2510,7 @@
               "icon": "lucide:CircleDollarSign",
               "tone": "success",
               "format": "number",
+              "target": "page:biz_invoice.list_page?mode=list&filter=paid",
               "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_paid_count.label",
               "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_paid_count.subtitle"
             },
@@ -2369,6 +2528,7 @@
               "icon": "lucide:Undo2",
               "tone": "accent",
               "format": "number",
+              "target": "page:biz_invoice.list_page?mode=list&filter=credit_notes",
               "label_key": "invoices.pages.list_page.blocks.1.cards.invoice_credit_note_count.label",
               "subtitle_key": "invoices.pages.list_page.blocks.1.cards.invoice_credit_note_count.subtitle"
             }

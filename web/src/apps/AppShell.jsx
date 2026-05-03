@@ -2308,7 +2308,12 @@ function AppView({
       return;
     }
     if (isWriteActionKind(resolvedAction.kind) && !canWriteRecords) return;
-    if (!(await confirmAction(resolvedAction))) return;
+    const modalActsAsConfirmation = Boolean(
+      activeManifestModal.validationSource ||
+      activeManifestModal.showMissingOnly ||
+      activeManifestModal.missingFieldsActionId
+    );
+    if (!modalActsAsConfirmation && !(await confirmAction(resolvedAction))) return;
     const modalDraft = activeManifestModal.draft || {};
     const closeOnSuccess = resolvedAction.close_on_success !== false;
     if (resolvedAction.kind === "update_record" && resolvedAction.patch && typeof resolvedAction.patch === "object") {
@@ -2487,7 +2492,10 @@ function AppView({
       if (source.type === "save") {
         ok = await handleSave(null, { force: true });
       } else if (source.type === "action" && source.action) {
-        const result = await handleHeaderAction({ ...source.action }, { recordDraft: nextDraft });
+        const result = await handleHeaderAction(
+          { ...source.action },
+          { recordDraft: nextDraft, validationRetry: true, skipConfirm: true }
+        );
         ok = Boolean(result);
       }
       if (ok) {
@@ -2520,7 +2528,7 @@ function AppView({
     }
     const actionModuleId = action?.moduleId || moduleId;
     if (isWriteActionKind(action.kind) && !canWriteRecords) return;
-    if (!(await confirmAction(action))) return;
+    if (!options?.skipConfirm && !(await confirmAction(action))) return;
     if (action.kind === "refresh") {
       // Run through the action pipeline so action.clicked triggers are emitted.
       if (onRunAction) {
@@ -3484,6 +3492,7 @@ function AppView({
             {
               id: "fields",
               title: "",
+              hideTitle: true,
               fields: activeManifestModal.fields,
             },
           ],

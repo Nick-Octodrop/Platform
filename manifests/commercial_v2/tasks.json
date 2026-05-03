@@ -260,6 +260,54 @@
           "label_key": "tasks.entities.biz_task.fields.participant_user_ids.label"
         },
         {
+          "id": "biz_task.visibility",
+          "type": "enum",
+          "label": "Visibility",
+          "default": "team",
+          "options": [
+            {
+              "value": "private",
+              "label": "Private",
+              "status_label_key": "tasks.entities.biz_task.fields.visibility.options.private",
+              "label_key": "tasks.entities.biz_task.fields.visibility.options.private"
+            },
+            {
+              "value": "team",
+              "label": "Team",
+              "status_label_key": "tasks.entities.biz_task.fields.visibility.options.team",
+              "label_key": "tasks.entities.biz_task.fields.visibility.options.team"
+            },
+            {
+              "value": "directors",
+              "label": "Directors",
+              "status_label_key": "tasks.entities.biz_task.fields.visibility.options.directors",
+              "label_key": "tasks.entities.biz_task.fields.visibility.options.directors"
+            }
+          ],
+          "label_key": "tasks.entities.biz_task.fields.visibility.label"
+        },
+        {
+          "id": "biz_task.sales_entity",
+          "type": "enum",
+          "label": "Entity",
+          "help_text": "Entity/team this task belongs to. Related tasks created from CRM, quote, and order records copy this automatically.",
+          "options": [
+            {
+              "value": "NLight BV",
+              "label": "NLight BV",
+              "status_label_key": "tasks.entities.biz_task.fields.sales_entity.options.nlight_bv",
+              "label_key": "tasks.entities.biz_task.fields.sales_entity.options.nlight_bv"
+            },
+            {
+              "value": "EcoTech FZCO",
+              "label": "EcoTech FZCO",
+              "status_label_key": "tasks.entities.biz_task.fields.sales_entity.options.ecotech_fzco",
+              "label_key": "tasks.entities.biz_task.fields.sales_entity.options.ecotech_fzco"
+            }
+          ],
+          "label_key": "tasks.entities.biz_task.fields.sales_entity.label"
+        },
+        {
           "id": "biz_task.start_date",
           "type": "date",
           "label": "Start Date",
@@ -398,6 +446,8 @@
           "biz_task.owner_user_id",
           "biz_task.assignee_user_id",
           "biz_task.participant_user_ids",
+          "biz_task.visibility",
+          "biz_task.sales_entity",
           "biz_task.start_date",
           "biz_task.due_date",
           "biz_task.company_id",
@@ -688,6 +738,9 @@
           "field_id": "biz_task.priority"
         },
         {
+          "field_id": "biz_task.sales_entity"
+        },
+        {
           "field_id": "biz_task.assignee_user_id"
         },
         {
@@ -755,10 +808,27 @@
                   "value": {
                     "ref": "$actor.user_id"
                   }
+                },
+                {
+                  "op": "contains",
+                  "field": "biz_task.participant_user_ids",
+                  "value": {
+                    "ref": "$actor.user_id"
+                  }
                 }
               ]
             },
             "label_key": "tasks.views.list.filters.mine.label"
+          },
+          {
+            "id": "team",
+            "label": "Team Tasks",
+            "domain": {
+              "op": "eq",
+              "field": "biz_task.visibility",
+              "value": "team"
+            },
+            "label_key": "tasks.views.list.filters.team.label"
           },
           {
             "id": "overdue",
@@ -867,7 +937,8 @@
         "badge_fields": [
           "biz_task.status",
           "biz_task.priority",
-          "biz_task.task_type"
+          "biz_task.task_type",
+          "biz_task.visibility"
         ]
       }
     },
@@ -910,6 +981,8 @@
             "biz_task.owner_user_id",
             "biz_task.assignee_user_id",
             "biz_task.participant_user_ids",
+            "biz_task.visibility",
+            "biz_task.sales_entity",
             "biz_task.start_date",
             "biz_task.due_date"
           ],

@@ -292,12 +292,74 @@ def and_condition(*conditions: dict[str, Any]) -> dict[str, Any]:
     return {"op": "and", "conditions": list(conditions)}
 
 
+def or_condition(*conditions: dict[str, Any]) -> dict[str, Any]:
+    return {"op": "or", "conditions": list(conditions)}
+
+
+def actor_user_ref() -> dict[str, str]:
+    return {"ref": "$actor.user_id"}
+
+
+def actor_eq_condition(field_id: str) -> dict[str, Any]:
+    return eq_condition(field_id, actor_user_ref())
+
+
+def contains_actor_condition(field_id: str) -> dict[str, Any]:
+    return {"op": "contains", "field": field_id, "value": actor_user_ref()}
+
+
 def sales_own_entity_condition(field_id: str, entity_scope: str) -> dict[str, Any]:
     return eq_condition(field_id, entity_scope)
 
 
 def sales_shared_entity_condition(field_id: str) -> dict[str, Any]:
     return eq_condition(field_id, "Shared")
+
+
+def task_personal_condition() -> dict[str, Any]:
+    return or_condition(
+        actor_eq_condition("biz_task.owner_user_id"),
+        actor_eq_condition("biz_task.assignee_user_id"),
+        contains_actor_condition("biz_task.participant_user_ids"),
+    )
+
+
+def calendar_personal_condition() -> dict[str, Any]:
+    return or_condition(
+        actor_eq_condition("biz_calendar_event.owner_user_id"),
+        contains_actor_condition("biz_calendar_event.participant_user_ids"),
+    )
+
+
+def entity_team_condition(scope_field: str, visibility_field: str, entity_scope: str) -> dict[str, Any]:
+    return and_condition(
+        eq_condition(visibility_field, "team"),
+        sales_own_entity_condition(scope_field, entity_scope),
+    )
+
+
+def sales_task_condition(entity_scope: str) -> dict[str, Any]:
+    return or_condition(
+        task_personal_condition(),
+        entity_team_condition("biz_task.sales_entity", "biz_task.visibility", entity_scope),
+    )
+
+
+def sales_calendar_condition(entity_scope: str) -> dict[str, Any]:
+    return or_condition(
+        calendar_personal_condition(),
+        entity_team_condition("biz_calendar_event.sales_entity", "biz_calendar_event.visibility", entity_scope),
+    )
+
+
+def sales_document_condition(entity_scope: str) -> dict[str, Any]:
+    return and_condition(
+        sales_own_entity_condition("biz_document.sales_entity", entity_scope),
+        in_condition(
+            "biz_document.document_type",
+            ["quote_pdf", "order_confirmation", "signed_customer_document"],
+        ),
+    )
 
 
 def modules_visible(include_settings: bool) -> list[RuleSpec]:
@@ -490,15 +552,8 @@ def sales_hidden_actions() -> list[RuleSpec]:
         action_rule("action.invoice_send_email", "hidden"),
         action_rule("action.invoice_mark_credited", "hidden"),
         action_rule("action.document_new", "hidden"),
-        action_rule("action.biz_task_new", "hidden"),
-        action_rule("action.biz_task_start", "hidden"),
-        action_rule("action.biz_task_block", "hidden"),
-        action_rule("action.biz_task_done", "hidden"),
-        action_rule("action.biz_task_cancel", "hidden"),
-        action_rule("action.biz_calendar_event_new", "hidden"),
-        action_rule("action.biz_calendar_event_confirm", "hidden"),
-        action_rule("action.biz_calendar_event_done", "hidden"),
-        action_rule("action.biz_calendar_event_cancel", "hidden"),
+        action_rule("action.document_approve", "hidden"),
+        action_rule("action.document_open_archive_modal", "hidden"),
     ]
 
 
@@ -605,7 +660,7 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
 
     def sales_rules_for(entity_scope: str) -> list[RuleSpec]:
         return (
-            visible_modules(["biz_contacts", "biz_products", "biz_quotes", "biz_crm"])
+            visible_modules(["biz_contacts", "biz_products", "biz_quotes", "biz_documents", "biz_crm", "biz_tasks", "biz_calendar"])
             + [
                 entity_rule(
                     "entity.biz_contact",
@@ -653,7 +708,10 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
             + [entity_rule("entity.biz_quote_script", "read", eq_condition("biz_quote_script.sales_entity", entity_scope))]
             + [entity_rule("entity.biz_quote", "write", eq_condition("biz_quote.sales_entity", entity_scope))]
             + [entity_rule("entity.biz_quote_line", "write", eq_condition("biz_quote_line.sales_entity_snapshot", entity_scope))]
-            + entities_access(ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + TASK_ENTITIES + CALENDAR_ENTITIES, "none")
+            + [entity_rule("entity.biz_document", "write", sales_document_condition(entity_scope))]
+            + [entity_rule("entity.biz_task", "write", sales_task_condition(entity_scope))]
+            + [entity_rule("entity.biz_calendar_event", "write", sales_calendar_condition(entity_scope))]
+            + entities_access(ORDER_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES, "none")
             + sales_hidden_fields()
             + sales_hidden_actions()
         )
@@ -663,7 +721,8 @@ def desired_profiles() -> dict[str, dict[str, Any]]:
         + entities_access(ORDER_ENTITIES, "read")
         + [entity_rule("entity.biz_contact", "read", eq_condition("biz_contact.contact_type", "customer"))]
         + [entity_rule("entity.biz_contact_person", "read", eq_condition("biz_contact_person.company_contact_type_snapshot", "customer"))]
-        + entities_access(TASK_ENTITIES + CALENDAR_ENTITIES, "write")
+        + [entity_rule("entity.biz_task", "write", task_personal_condition())]
+        + [entity_rule("entity.biz_calendar_event", "write", calendar_personal_condition())]
         + entities_access(PRODUCT_ENTITIES + PRODUCT_SOURCE_ENTITIES + QUOTE_ENTITIES + QUOTE_SCRIPT_ENTITIES + PO_ENTITIES + INVOICE_ENTITIES + DOCUMENT_ENTITIES + CRM_ENTITIES, "none")
         + engineer_hidden_fields()
         + engineer_hidden_actions()

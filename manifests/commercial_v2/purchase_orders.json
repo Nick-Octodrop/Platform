@@ -1978,6 +1978,128 @@
               ]
             },
             {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [
+                "summary"
+              ],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Source Customer Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_purchase_order.source_customer_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.primary_purchase_order_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.purchase_order_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Purchase order follow-up",
+                        "biz_task.task_type": "procurement",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "private",
+                        "biz_task.purchase_order_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.order_id": {
+                          "ref": "$record.biz_purchase_order.source_customer_order_id"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.biz_purchase_order.supplier_id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.purchase_order_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Purchase order follow-up",
+                        "biz_calendar_event.event_type": "supplier_check_in",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "private",
+                        "biz_calendar_event.purchase_order_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.order_id": {
+                          "ref": "$record.biz_purchase_order.source_customer_order_id"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.biz_purchase_order.supplier_id"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
               "id": "financials",
               "label": "Costs",
               "tab_label_key": "common.status_logistics",
@@ -1998,6 +2120,34 @@
               "label": "Documents",
               "sections": [
                 "documents"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_purchase_order_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
+                }
               ]
             }
           ]
@@ -2224,6 +2374,7 @@
               "icon": "lucide:FileClock",
               "tone": "primary",
               "format": "number",
+              "target": "page:biz_purchase_order.list_page?mode=list&filter=draft",
               "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_draft_count.label",
               "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_draft_count.subtitle"
             },
@@ -2241,6 +2392,7 @@
               "icon": "lucide:Factory",
               "tone": "warning",
               "format": "number",
+              "target": "page:biz_purchase_order.list_page?mode=list&filter=production",
               "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_production_count.label",
               "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_production_count.subtitle"
             },
@@ -2258,6 +2410,7 @@
               "icon": "lucide:Truck",
               "tone": "success",
               "format": "number",
+              "target": "page:biz_purchase_order.list_page?mode=list&filter=shipped",
               "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_shipped_count.label",
               "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_shipped_count.subtitle"
             },
@@ -2275,6 +2428,7 @@
               "icon": "lucide:PackageCheck",
               "tone": "accent",
               "format": "number",
+              "target": "page:biz_purchase_order.list_page?mode=list&filter=received",
               "label_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_received_count.label",
               "subtitle_key": "purchase_orders.pages.list_page.blocks.1.cards.purchase_orders_received_count.subtitle"
             }

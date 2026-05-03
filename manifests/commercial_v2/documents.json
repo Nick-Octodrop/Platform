@@ -800,6 +800,146 @@
               ]
             },
             {
+              "id": "linked_records",
+              "label": "Linked Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Quotes",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_quotes",
+                      "entity_id": "entity.biz_quote",
+                      "target": "view:biz_quote.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_quote.id",
+                            "value": {
+                              "ref": "$record.biz_document.related_quote_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_quote.id",
+                            "value": {
+                              "ref": "$record.biz_document.source_record_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Orders",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_document.related_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_document.source_record_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Purchase Orders",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_purchase_orders",
+                      "entity_id": "entity.biz_purchase_order",
+                      "target": "view:biz_purchase_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_purchase_order.id",
+                            "value": {
+                              "ref": "$record.biz_document.related_purchase_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_purchase_order.id",
+                            "value": {
+                              "ref": "$record.biz_document.source_record_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Invoices",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_invoices",
+                      "entity_id": "entity.biz_invoice",
+                      "target": "view:biz_invoice.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_invoice.id",
+                            "value": {
+                              "ref": "$record.biz_document.related_invoice_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_invoice.id",
+                            "value": {
+                              "ref": "$record.biz_document.source_record_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
               "id": "file_details",
               "label": "File Details",
               "sections": [

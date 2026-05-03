@@ -2535,6 +2535,18 @@
             "label_key": "quotes.views.list.filters.draft.label"
           },
           {
+            "id": "draft_sent",
+            "label": "Draft And Sent Quotes",
+            "domain": {
+              "op": "in",
+              "field": "biz_quote.status",
+              "value": [
+                "draft",
+                "sent"
+              ]
+            }
+          },
+          {
             "id": "sent",
             "label": "Sent Quotes",
             "domain": {
@@ -2585,6 +2597,18 @@
               "value": "expired"
             },
             "label_key": "quotes.views.list.filters.expired.label"
+          },
+          {
+            "id": "exceptions",
+            "label": "Quote Exceptions",
+            "domain": {
+              "op": "in",
+              "field": "biz_quote.status",
+              "value": [
+                "lost",
+                "expired"
+              ]
+            }
           },
           {
             "id": "lost",
@@ -2937,6 +2961,132 @@
               ]
             },
             {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Orders Created From This Quote",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.source_quote_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_quote.linked_customer_order_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Tasks",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.quote_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_task.title": "Quote follow-up",
+                        "biz_task.task_type": "quote",
+                        "biz_task.status": "open",
+                        "biz_task.visibility": "team",
+                        "biz_task.quote_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_task.sales_entity": {
+                          "ref": "$record.biz_quote.sales_entity"
+                        },
+                        "biz_task.company_id": {
+                          "ref": "$record.biz_quote.customer_id"
+                        },
+                        "biz_task.owner_user_id": {
+                          "ref": "$record.biz_quote.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Calendar Events",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.quote_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_modal": true,
+                      "create_defaults": {
+                        "biz_calendar_event.title": "Quote follow-up",
+                        "biz_calendar_event.event_type": "quote_follow_up",
+                        "biz_calendar_event.status": "planned",
+                        "biz_calendar_event.visibility": "team",
+                        "biz_calendar_event.quote_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_calendar_event.sales_entity": {
+                          "ref": "$record.biz_quote.sales_entity"
+                        },
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.biz_quote.customer_id"
+                        },
+                        "biz_calendar_event.owner_user_id": {
+                          "ref": "$record.biz_quote.owner_user_id"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
               "id": "totals",
               "label": "Totals",
               "tab_label_key": "common.totals",
@@ -2965,6 +3115,34 @@
               "label": "Documents",
               "sections": [
                 "documents"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_quote_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
+                }
               ]
             }
           ]
@@ -3296,6 +3474,7 @@
               "icon": "lucide:FileCheck2",
               "tone": "primary",
               "format": "number",
+              "target": "page:biz_quote.list_page?mode=list&filter=draft_sent",
               "label_key": "quotes.pages.list_page.blocks.1.cards.quote_open_count.label",
               "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_open_count.subtitle"
             },
@@ -3325,6 +3504,7 @@
               "icon": "lucide:BadgeCheck",
               "tone": "warning",
               "format": "number",
+              "target": "page:biz_quote.list_page?mode=list&filter=ready_to_convert",
               "label_key": "quotes.pages.list_page.blocks.1.cards.quote_ready_to_convert_count.label",
               "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_ready_to_convert_count.subtitle"
             },
@@ -3342,6 +3522,7 @@
               "icon": "lucide:Send",
               "tone": "success",
               "format": "number",
+              "target": "page:biz_quote.list_page?mode=list&filter=sent",
               "label_key": "quotes.pages.list_page.blocks.1.cards.quote_sent_count.label",
               "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_sent_count.subtitle"
             },
@@ -3362,6 +3543,7 @@
               "icon": "lucide:CircleOff",
               "tone": "accent",
               "format": "number",
+              "target": "page:biz_quote.list_page?mode=list&filter=exceptions",
               "label_key": "quotes.pages.list_page.blocks.1.cards.quote_exception_count.label",
               "subtitle_key": "quotes.pages.list_page.blocks.1.cards.quote_exception_count.subtitle"
             }

@@ -1095,7 +1095,7 @@ export default function FormViewRenderer({
         )}
         {activeTab !== activityTabId && renderedSections.map(({ section, fields, lineEditorConfig }) => (
           <div key={section.id} className={lineEditorConfig && isSingleLineEditorTab ? "h-full min-h-0" : "space-y-3"}>
-            {!hasTabs && (
+            {!hasTabs && !section.hideTitle && !section.hide_title && (
               <div className="text-sm font-semibold">{section.title || section.id}</div>
             )}
             {lineEditorConfig ? (

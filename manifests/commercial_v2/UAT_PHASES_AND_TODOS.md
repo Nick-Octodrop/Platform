@@ -222,8 +222,8 @@ Use this order so fixes move from foundation modules into downstream commercial 
 Goal: Contacts become the reliable address book and site source for CRM, quoting, ordering, and delivery.
 
 - [x] Rename or relabel company creation actions so users understand they are creating a company record.
-- [ ] Keep people as child records of companies, but add a clear "back to company" route after editing a person.
-- [ ] Add or confirm related lists for company people, CRM sites, leads, opportunities, quotes, orders, invoices, and documents.
+- [x] Keep people as child records of companies, but add a clear "back to company" route after editing a person. Browser UAT still required.
+- [x] Add or confirm related lists for company people, CRM sites, leads, opportunities, quotes, orders, invoices, and documents. Browser UAT still required.
 - [ ] Decide if `crm_site` remains owned by CRM or becomes a generic contacts/site entity shared across modules.
 - [x] Add full site address snapshot fields where only line 1 is currently copied.
 - [x] Add explicit address roles: registered/company, billing, site, and delivery.
@@ -243,7 +243,7 @@ Goal: Contacts flow into Lead, Opportunity, Quote, and Order without missing man
 - [ ] Confirm approved exception unblocks only the intended gate and leaves an audit trail.
 - [ ] Confirm rejected exception leaves the stage blocked.
 - [ ] Confirm Opportunity line items stay in original order after add/edit/save/reload.
-- [ ] Confirm Create Quote from Opportunity copies CRM line items.
+- [x] Confirm Create Quote from Opportunity copies CRM line items and requires at least one line structurally. Browser UAT still required.
 - [x] Confirm Create Order from Opportunity copies CRM line items and requires at least one line structurally. Browser UAT still required.
 - [x] Add "rotting deals" saved views/dashboard alerts for inactive opportunities. Elapsed-time live UAT still required.
 - [ ] Confirm On Hold creates a follow-up task with the right owner/date/context.
@@ -270,7 +270,7 @@ Goal: Accepted quotes and won CRM opportunities produce usable orders with line 
 - [ ] Confirm order line edits do not reorder existing rows.
 - [ ] Decide if orders need one delivery address, multiple delivery locations, or delivery location child rows.
 - [ ] Confirm order status flow makes sense for operations and finance.
-- [ ] Confirm order documents, tasks, calendar events, quotes, invoices, and purchase orders are visible from the order.
+- [x] Confirm order documents, tasks, calendar events, quotes, invoices, and purchase orders are visible from the order structurally. Browser UAT still required.
 
 ### Purchase Orders
 
@@ -377,7 +377,7 @@ Phase 2 todos:
 - [ ] Build and test PO export from Octodrop to Xero.
 - [ ] Confirm whether Xero PO receipt/status should sync back to Octodrop.
 - [ ] Generate purchase order PDF template using NLight/EcoTech branding rules.
-- [ ] Confirm PO-to-order/customer chain is visible for internal users.
+- [x] Confirm PO-to-order/customer chain is visible for internal users structurally. Browser UAT still required.
 - [ ] Confirm Sales cannot see supplier-side PO details.
 - [ ] Confirm job/order profitability compares customer sales, EcoTech supplier cost, NLight intercompany cost, delivery cost, disposal fee, and final margin.
 - [ ] Import Simpro product catalogue after cleanup/standardisation.
