@@ -75,6 +75,9 @@ export default function ListViewRenderer({
   showPaginationControls = true,
   enableSelection = true,
   emptyLabel = null,
+  autoHeight = false,
+  minBodyHeight = null,
+  maxBodyHeight = null,
 }) {
   const { t } = useI18n();
   if (!view) return <div className="alert">{t("common.missing_list_view")}</div>;
@@ -286,12 +289,27 @@ export default function ListViewRenderer({
   const useVirtual = !isMobile && pagedRecords.length > 200;
   const rowHeight = 40;
   const listHeight = Math.min(520, pagedRecords.length * rowHeight + 2);
+  const tableMinWidthPx = disableHorizontalScroll
+    ? null
+    : Math.max(720, columns.length * 140 + (enableSelection ? 48 : 0));
+  const tableStyle = tableMinWidthPx ? { minWidth: `${tableMinWidthPx}px` } : undefined;
+  const rowIdleClass = autoHeight ? "bg-base-100 hover:bg-base-200" : "bg-base-100 hover:bg-base-200";
+  const rowSelectedClass = "bg-base-200";
+  const emptyRowClass = "bg-base-100";
   const gridTemplate = enableSelection
     ? `2.5rem repeat(${columns.length}, minmax(140px, 1fr))`
     : `repeat(${columns.length}, minmax(140px, 1fr))`;
 
+  const bodyStyle = autoHeight
+    ? {
+        minHeight: minBodyHeight || "7rem",
+        maxHeight: maxBodyHeight || "26rem",
+        ...(isMobile ? { WebkitOverflowScrolling: "touch" } : {}),
+      }
+    : (isMobile ? { WebkitOverflowScrolling: "touch" } : undefined);
+
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4">
+    <div className={`${autoHeight ? "min-h-0" : "h-full min-h-0"} flex flex-col gap-4`}>
       {header && !hideHeader && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -402,13 +420,15 @@ export default function ListViewRenderer({
 
       <div
         className={
-          isMobile
+          autoHeight
+            ? "min-h-0 w-full overflow-x-auto overflow-y-auto overscroll-x-contain rounded-box bg-base-100"
+            : isMobile
             ? "flex-1 min-h-0 w-full overflow-x-auto overflow-y-auto no-scrollbar overscroll-x-contain"
             : disableHorizontalScroll
               ? "flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
               : "flex-1 min-h-0 overflow-x-auto overflow-y-auto"
         }
-        style={isMobile ? { WebkitOverflowScrolling: "touch" } : undefined}
+        style={bodyStyle}
       >
         {useVirtual ? (
           <div className="w-full">
@@ -446,7 +466,7 @@ export default function ListViewRenderer({
                 const selected = rowId && data.selectedSet.has(rowId);
                 return (
                   <div
-                    className={`grid items-center gap-2 px-3 border-b cursor-pointer ${selected ? "bg-base-200" : "hover:bg-base-200"}`}
+                    className={`grid items-center gap-2 px-3 border-b cursor-pointer ${selected ? rowSelectedClass : rowIdleClass}`}
                     style={{ ...style, gridTemplateColumns: data.gridTemplate }}
                     onClick={() => data.onSelectRow?.(row)}
                   >
@@ -480,7 +500,10 @@ export default function ListViewRenderer({
             </VirtualList>
           </div>
         ) : (
-          <table className={`table table-hover ${tableClassName} min-w-max ${isMobile ? "w-max min-w-full table-auto" : ""}`.trim()}>
+          <table
+            className={`table table-hover ${tableClassName} ${disableHorizontalScroll ? "" : "w-full table-auto"} ${isMobile ? "w-max min-w-full table-auto" : ""}`.trim()}
+            style={tableStyle}
+          >
             <thead className="[&_th]:border-b-0">
               <tr>
                 {enableSelection && (
@@ -506,7 +529,7 @@ export default function ListViewRenderer({
             </thead>
             <tbody>
               {pagedRecords.length === 0 && emptyLabel !== null ? (
-                <tr>
+                <tr className={emptyRowClass}>
                   <td
                     colSpan={columns.length + (enableSelection ? 1 : 0)}
                     className="py-10 text-center text-sm opacity-60"
@@ -520,7 +543,7 @@ export default function ListViewRenderer({
                 return (
                   <tr
                     key={rowId}
-                    className={`cursor-pointer hover:bg-base-200 ${selected ? "active" : ""}`}
+                    className={`cursor-pointer ${selected ? rowSelectedClass : rowIdleClass}`}
                     onClick={() => onSelectRow?.(row)}
                   >
                     {enableSelection && (

@@ -747,14 +747,38 @@
           "label": "UOM",
           "default": "EA",
           "options": [
-            { "value": "EA", "label": "Each" },
-            { "value": "SET", "label": "Set" },
-            { "value": "KIT", "label": "Kit" },
-            { "value": "LOT", "label": "Lot" },
-            { "value": "PALLET", "label": "Pallet" },
-            { "value": "CONTAINER", "label": "Container" },
-            { "value": "M", "label": "Meter" },
-            { "value": "HOUR", "label": "Hour" }
+            {
+              "value": "EA",
+              "label": "Each"
+            },
+            {
+              "value": "SET",
+              "label": "Set"
+            },
+            {
+              "value": "KIT",
+              "label": "Kit"
+            },
+            {
+              "value": "LOT",
+              "label": "Lot"
+            },
+            {
+              "value": "PALLET",
+              "label": "Pallet"
+            },
+            {
+              "value": "CONTAINER",
+              "label": "Container"
+            },
+            {
+              "value": "M",
+              "label": "Meter"
+            },
+            {
+              "value": "HOUR",
+              "label": "Hour"
+            }
           ]
         },
         {
@@ -764,10 +788,22 @@
           "help_text": "Currency this supplier charges in for this item.",
           "default": "USD",
           "options": [
-            { "value": "EUR", "label": "EUR" },
-            { "value": "USD", "label": "USD" },
-            { "value": "GBP", "label": "GBP" },
-            { "value": "AED", "label": "AED" }
+            {
+              "value": "EUR",
+              "label": "EUR"
+            },
+            {
+              "value": "USD",
+              "label": "USD"
+            },
+            {
+              "value": "GBP",
+              "label": "GBP"
+            },
+            {
+              "value": "AED",
+              "label": "AED"
+            }
           ]
         },
         {
@@ -1028,13 +1064,29 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "product_sales_pricing_divider",
+              "label": "Sales Pricing",
+              "spacing": "compact"
+            },
             "biz_product.default_sales_currency",
             "biz_product.default_sales_price",
             "biz_product.default_quote_cost_currency",
             "biz_product.default_quote_cost_price",
+            {
+              "kind": "divider",
+              "id": "product_purchase_pricing_divider",
+              "label": "Purchase Cost"
+            },
             "biz_product.quote_cost_mode",
             "biz_product.default_purchase_currency",
             "biz_product.default_buy_price",
+            {
+              "kind": "divider",
+              "id": "product_intercompany_pricing_divider",
+              "label": "Intercompany Cost"
+            },
             "biz_product.intercompany_cost_currency",
             "biz_product.intercompany_cost_price"
           ],
@@ -1350,16 +1402,32 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "product_supplier_source_divider",
+              "label": "Supplier Source",
+              "spacing": "compact"
+            },
             "biz_product_supplier.product_id",
             "biz_product_supplier.supplier_id",
             "biz_product_supplier.product_code_snapshot",
             "biz_product_supplier.product_name_snapshot",
             "biz_product_supplier.supplier_sku",
             "biz_product_supplier.uom_snapshot",
+            {
+              "kind": "divider",
+              "id": "product_supplier_commercial_divider",
+              "label": "Commercial Terms"
+            },
             "biz_product_supplier.purchase_currency",
             "biz_product_supplier.unit_cost",
             "biz_product_supplier.minimum_order_quantity",
             "biz_product_supplier.lead_time_weeks",
+            {
+              "kind": "divider",
+              "id": "product_supplier_terms_divider",
+              "label": "Supplier Terms"
+            },
             "biz_product_supplier.supplier_incoterm",
             "biz_product_supplier.is_primary",
             "biz_product_supplier.is_active"

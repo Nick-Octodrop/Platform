@@ -2046,11 +2046,11 @@
               ]
             },
             {
-              "id": "notes",
-              "label": "Notes",
-              "tab_label_key": "common.notes",
+              "id": "lines",
+              "label": "Line Items",
+              "tab_label_key": "common.line_items",
               "sections": [
-                "notes"
+                "lines"
               ]
             },
             {
@@ -2062,60 +2062,37 @@
               ]
             },
             {
-              "id": "lines",
-              "label": "Line Items",
-              "tab_label_key": "common.line_items",
+              "id": "documents",
+              "label": "Documents",
               "sections": [
-                "lines"
-              ]
-            },
-            {
-              "id": "related",
-              "label": "Related Records",
-              "tab_label_key": "common.related_records",
-              "sections": [
-                "related"
+                "documents"
               ],
               "content": [
                 {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Source Customer Order",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_orders",
-                      "entity_id": "entity.biz_order",
-                      "target": "view:biz_order.list",
-                      "record_domain": {
-                        "op": "or",
-                        "conditions": [
-                          {
-                            "op": "eq",
-                            "field": "biz_order.id",
-                            "value": {
-                              "ref": "$record.biz_invoice.source_order_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_order.deposit_invoice_id",
-                            "value": {
-                              "ref": "$record.id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_order.final_invoice_id",
-                            "value": {
-                              "ref": "$record.id"
-                            }
-                          }
-                        ]
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
                       },
-                      "create_modal": false
-                    }
-                  ]
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_invoice_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
                 }
               ]
             },
@@ -2205,37 +2182,60 @@
               ]
             },
             {
-              "id": "documents",
-              "label": "Documents",
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
               "sections": [
-                "documents"
+                "notes"
+              ]
+            },
+            {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [
+                "related"
               ],
               "content": [
                 {
-                  "kind": "related_list",
-                  "target_module_id": "biz_documents",
-                  "entity_id": "entity.biz_document",
-                  "target": "view:biz_document.list",
-                  "record_domain": {
-                    "op": "or",
-                    "conditions": [
-                      {
-                        "op": "eq",
-                        "field": "biz_document.source_record_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Source Customer Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_invoice.source_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.deposit_invoice_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.final_invoice_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        ]
                       },
-                      {
-                        "op": "eq",
-                        "field": "biz_document.related_invoice_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
-                      }
-                    ]
-                  },
-                  "create_modal": false
+                      "create_modal": false
+                    }
+                  ]
                 }
               ]
             },

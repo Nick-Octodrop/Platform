@@ -994,10 +994,26 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "task_primary_link_divider",
+              "label": "Primary Link",
+              "spacing": "compact"
+            },
             "biz_task.company_id",
+            {
+              "kind": "divider",
+              "id": "task_crm_links_divider",
+              "label": "CRM Links"
+            },
             "biz_task.lead_id",
             "biz_task.opportunity_id",
             "biz_task.site_id",
+            {
+              "kind": "divider",
+              "id": "task_commercial_links_divider",
+              "label": "Commercial Links"
+            },
             "biz_task.quote_id",
             "biz_task.order_id",
             "biz_task.purchase_order_id",
@@ -1052,19 +1068,19 @@
               ]
             },
             {
-              "id": "links",
-              "label": "Links",
-              "tab_label_key": "common.links",
-              "sections": [
-                "links"
-              ]
-            },
-            {
               "id": "details",
               "label": "Details",
               "tab_label_key": "common.details",
               "sections": [
                 "details"
+              ]
+            },
+            {
+              "id": "links",
+              "label": "Links",
+              "tab_label_key": "common.links",
+              "sections": [
+                "links"
               ]
             }
           ]

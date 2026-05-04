@@ -72,6 +72,8 @@ ALLOWED_V1_BLOCK_KEYS = {
     "page_size",
     "view",
     "create_defaults",
+    "create_mode",
+    "createMode",
     "create_modal",
     "cards",
     "title_key",
@@ -90,23 +92,26 @@ ALLOWED_V1_BLOCK_KEYS = {
     "include_categories",
     "exclude_categories",
     "saved_views_entity_id",
+    "visible_when",
+    "hidden_when",
 }
 ALLOWED_V1_ACTION_KINDS = {"navigate", "open_form", "refresh", "create_record", "update_record", "bulk_update", "transform_record"}
 ALLOWED_V1_TRIGGER_KEYS = {"id", "label", "event", "entity_id", "action_id", "status_field"}
 ALLOWED_V1_TRIGGER_EVENTS = {"record.created", "record.updated", "action.clicked", "workflow.status_changed"}
-ALLOWED_V1_STACK_KEYS = {"kind", "gap", "content"}
-ALLOWED_V1_GRID_KEYS = {"kind", "columns", "gap", "items"}
+ALLOWED_V1_BLOCK_VISIBILITY_KEYS = {"visible_when", "hidden_when"}
+ALLOWED_V1_STACK_KEYS = {"kind", "gap", "content"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_GRID_KEYS = {"kind", "columns", "gap", "items"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_GRID_ITEM_KEYS = {"span", "content"}
-ALLOWED_V1_TABS_KEYS = {"kind", "style", "tabs", "default_tab"}
+ALLOWED_V1_TABS_KEYS = {"kind", "style", "tabs", "default_tab"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_TAB_KEYS = {"id", "label", "label_key", "tab_label_key", "content"}
-ALLOWED_V1_TEXT_KEYS = {"kind", "text", "text_key"}
-ALLOWED_V1_CHATTER_KEYS = {"kind", "entity_id", "record_ref"}
-ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "title_key", "content"}
-ALLOWED_V1_STAT_CARDS_KEYS = {"kind", "title", "columns", "cards"}
+ALLOWED_V1_TEXT_KEYS = {"kind", "text", "text_key"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_CHATTER_KEYS = {"kind", "entity_id", "record_ref"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_CONTAINER_KEYS = {"kind", "variant", "title", "title_key", "content"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_STAT_CARDS_KEYS = {"kind", "title", "columns", "cards"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_STAT_CARD_KEYS = {"id", "label", "label_key", "title_key", "subtitle", "subtitle_key", "entity_id", "measure", "domain", "icon", "tone", "target", "date_field", "format"}
-ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"}
-ALLOWED_V1_STATUSBAR_KEYS = {"kind", "entity_id", "record_ref", "field_id", "mode"}
-ALLOWED_V1_RECORD_KEYS = {"kind", "entity_id", "record_id_query", "content"}
+ALLOWED_V1_TOOLBAR_KEYS = {"kind", "align", "actions"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_STATUSBAR_KEYS = {"kind", "entity_id", "record_ref", "field_id", "mode"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
+ALLOWED_V1_RECORD_KEYS = {"kind", "entity_id", "record_id_query", "content"} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_VIEW_MODES_KEYS = {
     "kind",
     "entity_id",
@@ -119,7 +124,7 @@ ALLOWED_V1_VIEW_MODES_KEYS = {
     "compact",
     "param_scope",
     "page_size",
-}
+} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_RELATED_LIST_KEYS = {
     "kind",
     "entity_id",
@@ -130,8 +135,11 @@ ALLOWED_V1_RELATED_LIST_KEYS = {
     "view",
     "record_domain",
     "create_defaults",
+    "create_mode",
+    "createMode",
     "create_modal",
-}
+    "page_size",
+} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_DOCUMENT_REGISTRY_KEYS = {
     "kind",
     "id",
@@ -153,7 +161,7 @@ ALLOWED_V1_DOCUMENT_REGISTRY_KEYS = {
     "include_categories",
     "exclude_categories",
     "saved_views_entity_id",
-}
+} | ALLOWED_V1_BLOCK_VISIBILITY_KEYS
 ALLOWED_V1_VIEW_MODE_ITEM_KEYS = {"mode", "target", "default_group_by", "default_measure"}
 MAX_BLOCK_DEPTH = 6
 MAX_CONDITION_DEPTH = 6
@@ -201,6 +209,7 @@ ALLOWED_V1_MODAL_ACTION_KEYS = {
 }
 ALLOWED_V1_VIEW_HEADER_SEARCH_KEYS = {"enabled", "placeholder", "placeholder_key", "fields"}
 ALLOWED_V1_VIEW_HEADER_FILTER_KEYS = {"id", "label", "label_key", "domain"}
+ALLOWED_V1_FORM_FIELD_ITEM_KEYS = {"kind", "id", "label", "label_key", "title", "title_key", "spacing", "visible_when", "hidden_when"}
 ALLOWED_V1_VIEW_ACTIVITY_KEYS = {"enabled", "mode", "tab_label", "tab_label_key", "allow_comments", "allow_attachments", "show_changes", "tracked_fields"}
 ALLOWED_V1_VIEW_CARD_KEYS = {"title_field", "subtitle_fields", "badge_fields"}
 ALLOWED_V1_VIEW_GRAPH_KEYS = {"default"}
@@ -589,6 +598,10 @@ def _validate_blocks(
             errors.append(_issue("MANIFEST_BLOCK_INVALID", "page block must be an object", bpath))
             continue
         _reject_unknown_keys(errors, block, ALLOWED_V1_BLOCK_KEYS, bpath)
+        for condition_key in ("visible_when", "hidden_when"):
+            condition = _get(block, condition_key)
+            if condition is not None:
+                _validate_condition(condition, f"{bpath}.{condition_key}", errors)
         kind = _get(block, "kind")
         if kind == "view":
             target = _get(block, "target")
@@ -838,6 +851,12 @@ def _validate_blocks(
             record_domain = _get(block, "record_domain")
             if record_domain is not None:
                 _validate_condition(record_domain, f"{bpath}.record_domain", errors)
+            page_size = _get(block, "page_size")
+            if page_size is not None and (not isinstance(page_size, int) or page_size <= 0):
+                errors.append(_issue("MANIFEST_RELATED_LIST_INVALID", "related_list.page_size must be a positive integer", f"{bpath}.page_size"))
+            create_mode = _get(block, "create_mode") or _get(block, "createMode")
+            if create_mode is not None and create_mode not in {"modal", "page"}:
+                errors.append(_issue("MANIFEST_RELATED_LIST_INVALID", "related_list.create_mode must be modal or page", f"{bpath}.create_mode"))
         elif kind == "document_registry":
             if not allow_v13:
                 errors.append(_issue("MANIFEST_BLOCK_KIND_INVALID", "document_registry blocks require manifest_version >= 1.3", f"{bpath}.kind"))
@@ -1912,6 +1931,21 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                                             f"{vpath}.sections[{sidx}].fields[{fidx}]",
                                         )
                                     )
+                            elif isinstance(fid, dict):
+                                ipath = f"{vpath}.sections[{sidx}].fields[{fidx}]"
+                                _reject_unknown_keys(errors, fid, ALLOWED_V1_FORM_FIELD_ITEM_KEYS, ipath)
+                                kind = _get(fid, "kind")
+                                if kind != "divider":
+                                    errors.append(_issue("MANIFEST_VIEW_FIELD_ITEM_INVALID", "form field item kind must be divider", f"{ipath}.kind"))
+                                spacing = _get(fid, "spacing")
+                                if spacing is not None and spacing not in {"compact", "normal", "loose"}:
+                                    errors.append(_issue("MANIFEST_VIEW_FIELD_ITEM_INVALID", "divider.spacing must be compact|normal|loose", f"{ipath}.spacing"))
+                                for condition_key in ("visible_when", "hidden_when"):
+                                    condition = _get(fid, condition_key)
+                                    if condition is not None:
+                                        _validate_condition(condition, f"{ipath}.{condition_key}", errors)
+                            else:
+                                errors.append(_issue("MANIFEST_VIEW_FIELD_ITEM_INVALID", "form fields entries must be field ids or divider objects", f"{vpath}.sections[{sidx}].fields[{fidx}]"))
                     layout = _get(section, "layout")
                     if layout is not None:
                         if not is_v13:

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { apiFetch, getManifest } from "../api";
 import FormViewRenderer from "../ui/FormViewRenderer.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -23,9 +23,26 @@ import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js"
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import { registerFormNavigationGuard } from "../navigation/formNavigationGuard.js";
 
+const FORM_RETURN_TO_PARAM = "return_to";
+const FORM_RETURN_LABEL_PARAM = "return_label";
+const FORM_DEFAULTS_PARAM = "defaults";
+
+function normalizeInternalReturnPath(path) {
+  const value = String(path || "").trim();
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  const [basePath, rawQuery = ""] = value.split("?");
+  const params = new URLSearchParams(rawQuery);
+  params.delete(FORM_RETURN_TO_PARAM);
+  params.delete(FORM_RETURN_LABEL_PARAM);
+  params.delete(FORM_DEFAULTS_PARAM);
+  const suffix = params.toString();
+  return `${basePath}${suffix ? `?${suffix}` : ""}`;
+}
+
 export default function EntityRecordPage() {
   const { t, version } = useI18n();
   const { entity, id } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { modules } = useModuleStore();
   const { pushToast } = useToast();
@@ -51,6 +68,8 @@ export default function EntityRecordPage() {
   const pendingActivityCommitRef = React.useRef(null);
   const activeFieldSnapshotRef = React.useRef(null);
   const draftRef = React.useRef({});
+  const returnTo = useMemo(() => normalizeInternalReturnPath(new URLSearchParams(location.search).get(FORM_RETURN_TO_PARAM)), [location.search]);
+  const returnLabel = useMemo(() => String(new URLSearchParams(location.search).get(FORM_RETURN_LABEL_PARAM) || "").trim(), [location.search]);
 
   useEffect(() => {
     async function buildIndex() {
@@ -434,7 +453,9 @@ export default function EntityRecordPage() {
         <div className="md:mt-4 flex flex-col gap-4 min-w-0">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold">{selected.displayName}</h2>
-            <button className="btn btn-sm" onClick={() => navigateAfterSave(`/data/${entity}`)}>{t("common.back")}</button>
+            <button className="btn btn-sm" onClick={() => navigateAfterSave(returnTo || `/data/${entity}`)}>
+              {returnLabel ? `Back to ${returnLabel}` : t("common.back")}
+            </button>
           </div>
           {devMode && (
             <div className="rounded-box border border-base-300 bg-base-100 p-4">

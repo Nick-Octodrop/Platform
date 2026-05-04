@@ -1667,6 +1667,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "purchase_order_supplier_divider",
+              "label": "Supplier",
+              "spacing": "compact"
+            },
             "biz_purchase_order.po_number",
             "biz_purchase_order.status",
             "biz_purchase_order.supplier_id",
@@ -1674,6 +1680,11 @@
             "biz_purchase_order.supplier_contact_name",
             "biz_purchase_order.supplier_contact_email",
             "biz_purchase_order.supplier_contact_phone",
+            {
+              "kind": "divider",
+              "id": "purchase_order_commercial_divider",
+              "label": "Commercial & Delivery Terms"
+            },
             "biz_purchase_order.purchasing_entity",
             "biz_purchase_order.source_customer_order_id",
             "biz_purchase_order.currency",
@@ -1706,10 +1717,21 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "purchase_order_quantities_divider",
+              "label": "Quantities",
+              "spacing": "compact"
+            },
             "biz_purchase_order.line_count",
             "biz_purchase_order.ordered_quantity_total",
             "biz_purchase_order.received_quantity_total",
             "biz_purchase_order.outstanding_quantity_total",
+            {
+              "kind": "divider",
+              "id": "purchase_order_costs_divider",
+              "label": "Costs"
+            },
             "biz_purchase_order.po_total",
             "biz_purchase_order.freight_estimate",
             "biz_purchase_order.landed_cost_estimate"
@@ -1978,45 +2000,45 @@
               ]
             },
             {
-              "id": "related",
-              "label": "Related Records",
-              "tab_label_key": "common.related_records",
+              "id": "financials",
+              "label": "Costs",
+              "tab_label_key": "common.status_logistics",
               "sections": [
-                "summary"
+                "financials"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
               ],
               "content": [
                 {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Source Customer Order",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_orders",
-                      "entity_id": "entity.biz_order",
-                      "target": "view:biz_order.list",
-                      "record_domain": {
-                        "op": "or",
-                        "conditions": [
-                          {
-                            "op": "eq",
-                            "field": "biz_order.id",
-                            "value": {
-                              "ref": "$record.biz_purchase_order.source_customer_order_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_order.primary_purchase_order_id",
-                            "value": {
-                              "ref": "$record.id"
-                            }
-                          }
-                        ]
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
                       },
-                      "create_modal": false
-                    }
-                  ]
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_purchase_order_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
                 }
               ]
             },
@@ -2100,14 +2122,6 @@
               ]
             },
             {
-              "id": "financials",
-              "label": "Costs",
-              "tab_label_key": "common.status_logistics",
-              "sections": [
-                "financials"
-              ]
-            },
-            {
               "id": "notes",
               "label": "Notes",
               "tab_label_key": "common.notes",
@@ -2116,37 +2130,43 @@
               ]
             },
             {
-              "id": "documents",
-              "label": "Documents",
-              "sections": [
-                "documents"
-              ],
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
               "content": [
                 {
-                  "kind": "related_list",
-                  "target_module_id": "biz_documents",
-                  "entity_id": "entity.biz_document",
-                  "target": "view:biz_document.list",
-                  "record_domain": {
-                    "op": "or",
-                    "conditions": [
-                      {
-                        "op": "eq",
-                        "field": "biz_document.source_record_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Source Customer Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_purchase_order.source_customer_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.primary_purchase_order_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        ]
                       },
-                      {
-                        "op": "eq",
-                        "field": "biz_document.related_purchase_order_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
-                      }
-                    ]
-                  },
-                  "create_modal": false
+                      "create_modal": false
+                    }
+                  ]
                 }
               ]
             }
@@ -2290,21 +2310,42 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "purchase_order_line_product_divider",
+              "label": "Product Snapshot",
+              "spacing": "compact"
+            },
             "biz_purchase_order_line.purchase_order_id",
             "biz_purchase_order_line.product_supplier_id",
             "biz_purchase_order_line.product_code_snapshot",
             "biz_purchase_order_line.product_name_snapshot",
             "biz_purchase_order_line.supplier_sku_snapshot",
             "biz_purchase_order_line.description",
+            {
+              "kind": "divider",
+              "id": "purchase_order_line_quantities_divider",
+              "label": "Quantities & Receipt"
+            },
             "biz_purchase_order_line.uom",
             "biz_purchase_order_line.quantity",
             "biz_purchase_order_line.quantity_received",
             "biz_purchase_order_line.quantity_outstanding",
             "biz_purchase_order_line.is_fully_received",
+            {
+              "kind": "divider",
+              "id": "purchase_order_line_commercial_divider",
+              "label": "Commercials"
+            },
             "biz_purchase_order_line.minimum_order_quantity_snapshot",
             "biz_purchase_order_line.lead_time_weeks_snapshot",
             "biz_purchase_order_line.unit_cost",
             "biz_purchase_order_line.line_total",
+            {
+              "kind": "divider",
+              "id": "purchase_order_line_source_divider",
+              "label": "Source Links"
+            },
             "biz_purchase_order_line.source_order_line_id",
             "biz_purchase_order_line.source_order_line_ref"
           ],

@@ -90,6 +90,7 @@ function resolveEntityDefaultHomePage(appDefaults, entityFullId) {
 
 const FORM_RETURN_TO_PARAM = "return_to";
 const FORM_RETURN_LABEL_PARAM = "return_label";
+const FORM_DEFAULTS_PARAM = "defaults";
 
 function stripFormReturnParams(path) {
   if (!path || typeof path !== "string") return "";
@@ -97,6 +98,7 @@ function stripFormReturnParams(path) {
   const params = new URLSearchParams(rawQuery);
   params.delete(FORM_RETURN_TO_PARAM);
   params.delete(FORM_RETURN_LABEL_PARAM);
+  params.delete(FORM_DEFAULTS_PARAM);
   const suffix = params.toString();
   return `${basePath}${suffix ? `?${suffix}` : ""}`;
 }
@@ -105,6 +107,17 @@ function normalizeInternalReturnPath(path) {
   const value = String(path || "").trim();
   if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
   return stripFormReturnParams(value);
+}
+
+function parseCreateDefaultsParam(searchParams) {
+  const raw = searchParams?.get?.(FORM_DEFAULTS_PARAM);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function formatBackToEntityLabel(entityLabel) {
@@ -816,6 +829,7 @@ export default function AppShell({
           initialDraft: {},
           showValidation: false,
           saving: false,
+          error: "",
           initialized: false,
         },
       ]);
@@ -975,9 +989,16 @@ export default function AppShell({
       if (opts.recordId) {
         const recordParam = opts.recordParamName || "record";
         params.set(recordParam, opts.recordId);
+        params.delete(FORM_DEFAULTS_PARAM);
       } else {
         const recordParam = opts.recordParamName || "record";
         params.delete(recordParam);
+        const createDefaults = opts.createDefaults || opts.defaults || null;
+        if (createDefaults && typeof createDefaults === "object" && Object.keys(createDefaults).length > 0) {
+          params.set(FORM_DEFAULTS_PARAM, JSON.stringify(createDefaults));
+        } else if (!opts.preserveParams) {
+          params.delete(FORM_DEFAULTS_PARAM);
+        }
       }
       const returnTo = opts.returnTo || (opts.returnToCurrent ? stripFormReturnParams(`${location.pathname}${location.search || ""}`) : null);
       if (returnTo) {
@@ -999,9 +1020,16 @@ export default function AppShell({
     const recordParam = opts.recordParamName || "record";
     if (opts.recordId) {
       params.set(recordParam, opts.recordId);
+      params.delete(FORM_DEFAULTS_PARAM);
     }
     if (!opts.recordId) {
       params.delete(recordParam);
+      const createDefaults = opts.createDefaults || opts.defaults || null;
+      if (createDefaults && typeof createDefaults === "object" && Object.keys(createDefaults).length > 0) {
+        params.set(FORM_DEFAULTS_PARAM, JSON.stringify(createDefaults));
+      } else if (!opts.preserveParams) {
+        params.delete(FORM_DEFAULTS_PARAM);
+      }
     }
     const returnTo = opts.returnTo || (opts.returnToCurrent ? stripFormReturnParams(`${location.pathname}${location.search || ""}`) : null);
     if (returnTo) {
@@ -1601,7 +1629,7 @@ export default function AppShell({
     if (validationErrors && Object.keys(validationErrors).length > 0) return;
     if (!createEntityId) return;
     if (createSaving) return;
-    updateCreateModalByKey(createModal.key, (current) => ({ ...current, saving: true }));
+    updateCreateModalByKey(createModal.key, (current) => ({ ...current, saving: true, error: "" }));
     try {
       const payload = normalizeManifestRecordPayload(createFieldIndex, createDraft);
       const res = await apiFetch(`/records/${createEntityId}`, {
@@ -1617,7 +1645,10 @@ export default function AppShell({
       pushToast("success", translateRuntime("common.created"));
       closeCreateModal({ record_id: recordId, record, label });
     } catch (err) {
-      pushToast("error", err?.message || translateRuntime("common.create_failed"));
+      updateCreateModalByKey(createModal.key, (current) => ({
+        ...current,
+        error: err?.message || translateRuntime("common.create_failed"),
+      }));
     } finally {
       if (createModal) {
         updateCreateModalByKey(createModal.key, (current) => ({ ...current, saving: false }));
@@ -1699,6 +1730,7 @@ export default function AppShell({
                 onConfirm={confirmDialog}
                 onPrompt={promptDialog}
                 onLookupCreate={openCreateModal}
+                onFallback={guardedFallbackNavigate}
                 externalRefreshTick={viewModesRefreshTick}
                 previewMode={previewMode}
                 canWriteRecords={canWriteRecords}
@@ -1805,39 +1837,43 @@ export default function AppShell({
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
                       {modalView ? (
-                        <FormViewRenderer
-                          view={modalView}
-                          entityId={modalEntityId}
-                          recordId={null}
-                          fieldIndex={modalFieldIndex || {}}
-                          entityDefs={modalManifest?.entities || []}
-                          record={modalDraft}
-                          entityLabel={modalEntityDef?.label}
-                          displayField={modalEntityDef?.display_field}
-                          autoSaveState="idle"
-                          hasRecord={false}
-                          onChange={(next) =>
-                            updateCreateModalByKey(modalEntry.key, (current) => ({
-                              ...current,
-                              draft: applyComputedFields(modalFieldIndex || {}, next),
-                            }))
-                          }
-                          onSave={handleCreateSave}
-                          onDiscard={() => closeCreateModal(null)}
-                          isDirty={modalIsDirty}
-                          header={{ ...(modalView?.header || {}), save_mode: "bottom", auto_save: false }}
-                          primaryActions={[]}
-                          secondaryActions={[]}
-                          onActionClick={null}
-                          readonly={!canWriteRecords || modalEntry?.saving}
-                          showValidation={Boolean(modalEntry?.showValidation)}
-                          applyDefaults
-                          requiredFields={[]}
-                          hiddenFields={[]}
-                          previewMode={false}
-                          hideHeader
-                          bottomActionsMode="sticky_right"
-                        />
+                        <>
+                          {modalEntry?.error ? <div className="alert alert-error mb-3">{modalEntry.error}</div> : null}
+                          <FormViewRenderer
+                            view={modalView}
+                            entityId={modalEntityId}
+                            recordId={null}
+                            fieldIndex={modalFieldIndex || {}}
+                            entityDefs={modalManifest?.entities || []}
+                            record={modalDraft}
+                            entityLabel={modalEntityDef?.label}
+                            displayField={modalEntityDef?.display_field}
+                            autoSaveState="idle"
+                            hasRecord={false}
+                            onChange={(next) =>
+                              updateCreateModalByKey(modalEntry.key, (current) => ({
+                                ...current,
+                                draft: applyComputedFields(modalFieldIndex || {}, next),
+                                error: "",
+                              }))
+                            }
+                            onSave={handleCreateSave}
+                            onDiscard={() => closeCreateModal(null)}
+                            isDirty={modalIsDirty}
+                            header={{ ...(modalView?.header || {}), save_mode: "bottom", auto_save: false }}
+                            primaryActions={[]}
+                            secondaryActions={[]}
+                            onActionClick={null}
+                            readonly={!canWriteRecords || modalEntry?.saving}
+                            showValidation={Boolean(modalEntry?.showValidation)}
+                            applyDefaults
+                            requiredFields={[]}
+                            hiddenFields={[]}
+                            previewMode={false}
+                            hideHeader
+                            bottomActionsMode="sticky_right"
+                          />
+                        </>
                       ) : (
                         <div className="alert alert-error">Form view not found.</div>
                       )}
@@ -2746,6 +2782,9 @@ function AppView({
   }, [kind, previewMode, recordEntityId]);
 
   const effectiveRecordId = recordContext?.recordId || recordId;
+  const createDefaultsParam = !effectiveRecordId ? searchParams?.get?.(FORM_DEFAULTS_PARAM) || "" : "";
+  const createReturnToParam = !effectiveRecordId ? searchParams?.get?.(FORM_RETURN_TO_PARAM) || "" : "";
+  const createDefaults = useMemo(() => parseCreateDefaultsParam(searchParams), [createDefaultsParam, searchParams]);
   const formDraftStorageKey = useMemo(
     () =>
       kind === "form" && !previewMode
@@ -2754,10 +2793,10 @@ function AppView({
             entityId: recordEntityId || "",
             recordId: effectiveRecordId || "new",
             viewId: view?.id || "",
-            routeKey: `module:${moduleId || ""}`,
+            routeKey: `module:${moduleId || ""}${!effectiveRecordId ? `:create:${createReturnToParam}:${createDefaultsParam}` : ""}`,
           })
         : null,
-    [effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
+    [createDefaultsParam, createReturnToParam, effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
   );
   const isDirty = useMemo(() => !formDraftValuesEqual(draft, initialDraft), [draft, initialDraft]);
   const isDirtyRef = useRef(false);
@@ -3062,7 +3101,7 @@ function AppView({
       setShowValidation(false);
       if (!effectiveRecordId) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
-        const resolvedDraft = resolvePersistedFormDraft({}, persisted, applyDraftComputed);
+        const resolvedDraft = resolvePersistedFormDraft(createDefaults, persisted, applyDraftComputed);
         applyLoadedDraft(resolvedDraft.draft, resolvedDraft.initialDraft);
         lastLoadedDraftKeyRef.current = formDraftStorageKey;
         if (persisted?.dirty && !resolvedDraft.dirty && formDraftStorageKey) {
@@ -3154,7 +3193,7 @@ function AppView({
           setState({ status: "error", error: msg });
         });
     }
-  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed, formDraftStorageKey]);
+  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed, formDraftStorageKey, createDefaults]);
 
   useEffect(() => {
     if (kind !== "form" || effectiveRecordId || recordEntityId !== "entity.material_log") return;
@@ -3526,15 +3565,6 @@ function AppView({
                   setActiveManifestModal((prev) => {
                     if (!prev) return prev;
                     const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, next || {});
-                    if (prev.validationSource) {
-                      const patch = {};
-                      for (const fieldId of prev.fields || []) {
-                        patch[fieldId] = getFieldValue(nextModalDraft, fieldId);
-                      }
-                      const nextFormDraft = applyDraftComputed({ ...(draftRef.current || draft || {}), ...patch });
-                      draftRef.current = nextFormDraft;
-                      setDraft(nextFormDraft);
-                    }
                     return {
                       ...prev,
                       draft: nextModalDraft,
@@ -4080,6 +4110,7 @@ function AppView({
                   onConfirm={onConfirm}
                   onPrompt={onPrompt}
                   onLookupCreate={onLookupCreate}
+                  onFallback={onFallback}
                   externalRefreshTick={refreshTick}
                   previewMode={previewMode}
                   canWriteRecords={canWriteRecords}

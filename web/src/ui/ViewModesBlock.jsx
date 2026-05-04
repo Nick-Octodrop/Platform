@@ -34,6 +34,10 @@ import DaisyTooltip from "../components/DaisyTooltip.jsx";
 import useMediaQuery from "../hooks/useMediaQuery.js";
 import { translateRuntime } from "../i18n/runtime.js";
 
+const FORM_RETURN_TO_PARAM = "return_to";
+const FORM_RETURN_LABEL_PARAM = "return_label";
+const FORM_DEFAULTS_PARAM = "defaults";
+
 function IconList() {
   return <List className="h-4 w-4" />;
 }
@@ -213,6 +217,43 @@ function humanizeEntityId(entityId) {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function toRouteEntityId(entityId) {
+  if (!entityId || typeof entityId !== "string") return "";
+  return entityId.startsWith("entity.") ? entityId.slice("entity.".length) : entityId;
+}
+
+function stripFormReturnParams(path) {
+  if (!path || typeof path !== "string") return "";
+  const [basePath, rawQuery = ""] = path.split("?");
+  const params = new URLSearchParams(rawQuery);
+  params.delete(FORM_RETURN_TO_PARAM);
+  params.delete(FORM_RETURN_LABEL_PARAM);
+  params.delete(FORM_DEFAULTS_PARAM);
+  const suffix = params.toString();
+  return `${basePath}${suffix ? `?${suffix}` : ""}`;
+}
+
+function normalizeCreateMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return mode === "modal" || mode === "page" ? mode : "";
+}
+
+function buildEntityCreatePath(entityId, { defaults = null, returnLabel = "" } = {}) {
+  const routeEntityId = toRouteEntityId(entityId);
+  if (!routeEntityId) return "";
+  const params = new URLSearchParams();
+  if (defaults && typeof defaults === "object" && Object.keys(defaults).length > 0) {
+    params.set(FORM_DEFAULTS_PARAM, JSON.stringify(defaults));
+  }
+  if (typeof window !== "undefined") {
+    const returnTo = stripFormReturnParams(`${window.location.pathname}${window.location.search || ""}`);
+    if (returnTo) params.set(FORM_RETURN_TO_PARAM, returnTo);
+  }
+  if (returnLabel) params.set(FORM_RETURN_LABEL_PARAM, String(returnLabel));
+  const suffix = params.toString();
+  return `/data/${encodeURIComponent(routeEntityId)}/new${suffix ? `?${suffix}` : ""}`;
 }
 
 function buildFieldIndex(manifest, entityFullId) {
@@ -1788,13 +1829,17 @@ export default function ViewModesBlock({
   bootstrap = null,
   bootstrapVersion = 0,
   bootstrapLoading = false,
+  onFallback,
   canWriteRecords = true,
   recordContext = null,
   forceListOnly = false,
   onPageSectionLoadingChange = null,
+  onRecordCountChange = null,
 }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const compact = block?.compact === true;
+  const embeddedRelatedList = block?.embedded_related_list === true;
+  const embeddedRelatedListFrameProvided = block?.embedded_related_list_frame_provided === true;
   const compactMobile = compact && isMobile;
   const modes = Array.isArray(block?.modes) ? block.modes : [];
   const views = Array.isArray(manifest?.views) ? manifest.views : [];
@@ -2037,6 +2082,7 @@ export default function ViewModesBlock({
   const showListMode = activeMode === "list";
   const showKanbanMode = activeMode === "kanban";
   const showCalendarMode = activeMode === "calendar";
+  const showToolbarEntityLabel = true;
   const sectionKey = useMemo(
     () => `view_modes:${entityFullId || "entity"}:${activeView?.id || activeMode || "view"}`,
     [entityFullId, activeView?.id, activeMode]
@@ -2045,7 +2091,9 @@ export default function ViewModesBlock({
     ? Number(block?.page_size)
     : Number.isFinite(Number(listView?.page_size)) && Number(listView?.page_size) > 0
       ? Number(listView?.page_size)
-      : 25;
+      : embeddedRelatedList
+        ? 10
+        : 25;
   const pivotRowGroupBy = pivotRowParam || effectiveGroupByParam || activeModeDef?.default_group_by || block?.default_group_by || "";
   const pivotColGroupBy = pivotColParam || "";
   const pivotMeasure = pivotMeasureParam || activeModeDef?.default_measure || block?.default_measure || "count";
@@ -2074,7 +2122,7 @@ export default function ViewModesBlock({
     const base = recordContext?.record && typeof recordContext.record === "object" ? recordContext.record : {};
     const id = recordContext?.recordId || base?.id || null;
     return id ? { ...base, id } : base;
-  }, [recordContext]);
+  }, [recordContext?.record, recordContext?.recordId]);
   const recordDomain = useMemo(
     () => resolveConditionRefs(block?.record_domain || null, recordScope),
     [block?.record_domain, recordScope]
@@ -2330,6 +2378,12 @@ export default function ViewModesBlock({
     recordsLoading,
     waitingForInitialParams,
   ]);
+
+  useEffect(() => {
+    if (!embeddedRelatedList || typeof onRecordCountChange !== "function") return;
+    if (recordsLoading || waitingForInitialParams) return;
+    onRecordCountChange(Array.isArray(records) ? records.length : 0);
+  }, [embeddedRelatedList, onRecordCountChange, records, recordsLoading, waitingForInitialParams]);
 
   useEffect(() => {
     if (previewMode) return undefined;
@@ -2761,7 +2815,7 @@ export default function ViewModesBlock({
       moduleId: block?.target_module_id || moduleId || undefined,
       recordId,
       recordParamName: openRecordParam,
-      preserveParams: true,
+      preserveParams: !embeddedRelatedList,
       returnToCurrent: Boolean(recordContextReturnLabel),
       returnLabel: recordContextReturnLabel || undefined,
     });
@@ -2807,7 +2861,10 @@ export default function ViewModesBlock({
     }
     return opts;
   }, [entityDef]);
-  const createInModal = Boolean(!compact && forceListOnly && block?.create_modal !== false && typeof onLookupCreate === "function");
+  const createMode = normalizeCreateMode(block?.create_mode || block?.createMode) || "modal";
+  const createDisabledByLegacyFlag = block?.create_modal === false && createMode !== "page";
+  const createInModal = Boolean(!compact && forceListOnly && createMode === "modal" && !createDisabledByLegacyFlag && typeof onLookupCreate === "function");
+  const createInPage = Boolean(createMode === "page" && !previewMode);
   const searchEnabled = Boolean(listView?.header?.search?.enabled);
   const showSearch = !compact && searchEnabled;
   const showFilters = !compact && !forceListOnly && (manifestFilterList.length > 0 || filterableFields.length > 0);
@@ -2817,7 +2874,7 @@ export default function ViewModesBlock({
   const showPivotMeasure = activeMode === "pivot" && measureOptions.length > 0;
   const hideRecordViewsWhileLoading = (showListMode || showKanbanMode || showCalendarMode) && recordsLoading;
   const preserveMobileKanbanHeight = compactMobile && activeViewKind === "kanban" && showKanbanMode;
-  const showCreateButton = canWriteRecords && block?.allow_create !== false && block?.show_create !== false;
+  const showCreateButton = canWriteRecords && block?.allow_create !== false && block?.show_create !== false && !createDisabledByLegacyFlag;
   const showMobileToolbarActions = isMobile && (
     showFilters
     || showSavedViews
@@ -2830,6 +2887,16 @@ export default function ViewModesBlock({
     || templateFieldDefs.length > 0
     || canWriteRecords
   );
+  const showEmbeddedEmptyListShell =
+    embeddedRelatedList &&
+    activeView &&
+    activeViewKind === "list" &&
+    showListMode &&
+    records.length === 0 &&
+    !searchText &&
+    !filterParam &&
+    clientFilters.length === 0;
+  const embeddedEmptyListShellLoading = showEmbeddedEmptyListShell && (recordsLoading || waitingForInitialParams);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileModeSheetOpen, setMobileModeSheetOpen] = useState(false);
   const [mobileMenuSheet, setMobileMenuSheet] = useState("");
@@ -2845,6 +2912,37 @@ export default function ViewModesBlock({
   const settingsMenuClass = isMobile
     ? "absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-[calc(100vw-2rem)] max-w-64 z-[210] border border-base-300"
     : "absolute right-0 mt-2 menu p-2 shadow bg-base-100 rounded-box w-64 z-[210] border border-base-300";
+
+  async function handleCreateRecord() {
+    if (!showCreateButton) return;
+    if (createInModal) {
+      const created = await onLookupCreate({
+        entityId: entityFullId,
+        displayField: entityDef?.display_field,
+        defaults: createDefaults,
+      });
+      if (created?.record_id) setRefreshTick((v) => v + 1);
+      return;
+    }
+    if (createInPage) {
+      const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
+      const returnLabel = recordContextReturnLabel || entityLabel;
+      if (target && typeof onNavigate === "function") {
+        onNavigate(target, {
+          moduleId: block?.target_module_id || moduleId || undefined,
+          createDefaults,
+          returnToCurrent: true,
+          returnLabel,
+        });
+        return;
+      }
+      const path = buildEntityCreatePath(entityFullId, { defaults: createDefaults, returnLabel });
+      if (path) onFallback?.(path);
+      return;
+    }
+    const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
+    if (target) onNavigate?.(target);
+  }
 
   useEffect(() => {
     setMobileSearchOpen(false);
@@ -3158,11 +3256,35 @@ export default function ViewModesBlock({
   return (
     <div
       className={
-        compactMobile && !preserveMobileKanbanHeight
+        embeddedRelatedList
+          ? `flex min-w-0 flex-col ${compact ? "gap-3" : "gap-4"}`
+          : compactMobile && !preserveMobileKanbanHeight
           ? `flex min-w-0 flex-col ${compact ? "gap-3" : "gap-4"}`
           : `flex flex-col ${compact ? "gap-3" : "gap-4"} h-full min-h-0 overflow-hidden`
       }
     >
+      {showEmbeddedEmptyListShell ? (
+        <div className={embeddedRelatedListFrameProvided ? "min-w-0" : "min-w-0 rounded-box border border-base-300 bg-base-100 px-3 py-3"}>
+          <div className="flex min-h-10 items-center gap-2">
+            {showCreateButton ? (
+              <DaisyTooltip label={translateRuntime("common.new_record_named", { name: entityLabel })} placement="bottom">
+                <button
+                  className={PRIMARY_BUTTON_SM}
+                  type="button"
+                  onClick={handleCreateRecord}
+                >
+                  <IconPlus />
+                </button>
+              </DaisyTooltip>
+            ) : null}
+            <div className="text-lg font-semibold">{entityLabel}</div>
+            {embeddedEmptyListShellLoading ? (
+              <span className="loading loading-spinner loading-xs text-base-content/40" aria-label="Loading" />
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <>
       {!compact && (
         <div className={isMobile ? "flex flex-wrap items-center justify-between gap-3 relative z-30 shrink-0" : "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 relative z-30 shrink-0"}>
           <div className="flex items-center gap-2 min-w-0">
@@ -3170,25 +3292,13 @@ export default function ViewModesBlock({
             <DaisyTooltip label={translateRuntime("common.new_record_named", { name: entityLabel })} placement="bottom">
               <button
                 className={PRIMARY_BUTTON_SM}
-                onClick={async () => {
-                  if (createInModal) {
-                    const created = await onLookupCreate({
-                      entityId: entityFullId,
-                      displayField: entityDef?.display_field,
-                      defaults: createDefaults,
-                    });
-                    if (created?.record_id) setRefreshTick((v) => v + 1);
-                    return;
-                  }
-                  const target = resolveEntityDefaultFormPage(appDefaults, entityFullId);
-                  if (target) onNavigate?.(target);
-                }}
+                onClick={handleCreateRecord}
               >
                 <IconPlus />
               </button>
             </DaisyTooltip>
           )}
-          <div className="text-lg font-semibold">{entityLabel}</div>
+          {showToolbarEntityLabel ? <div className="text-lg font-semibold">{entityLabel}</div> : null}
         </div>
 
         <div className="order-3 sm:order-none flex items-center justify-start sm:justify-center flex-none min-w-0">
@@ -3666,14 +3776,22 @@ export default function ViewModesBlock({
 
       <div
         className={
-          compactMobile
+          embeddedRelatedList
+            ? "relative z-0 min-w-0 overflow-visible"
+            : compactMobile
             ? "relative z-0 min-w-0 overflow-visible"
             : `flex-1 min-h-0 relative z-0 ${activeMode === "calendar" ? "overflow-hidden" : "overflow-auto"}`
         }
       >
         {activeView && activeViewKind === "list" && showListMode && (
-          <div className={compactMobile ? "min-w-0" : "h-full min-h-0"}>
-            <div className={hideRecordViewsWhileLoading ? (compactMobile ? "min-w-0 opacity-0 pointer-events-none" : "h-full min-h-0 opacity-0 pointer-events-none") : (compactMobile ? "min-w-0" : "h-full min-h-0")}>
+          <div className={embeddedRelatedList || compactMobile ? "min-w-0" : "h-full min-h-0"}>
+            <div
+              className={
+                hideRecordViewsWhileLoading
+                  ? (embeddedRelatedList || compactMobile ? "min-w-0 opacity-0 pointer-events-none" : "h-full min-h-0 opacity-0 pointer-events-none")
+                  : (embeddedRelatedList || compactMobile ? "min-w-0" : "h-full min-h-0")
+              }
+            >
               <ListViewRenderer
                 view={activeView}
                 fieldIndex={fieldIndex}
@@ -3709,6 +3827,9 @@ export default function ViewModesBlock({
                   setSelectedIds(allIds);
                 }}
                 onSelectRow={handleOpenRecord}
+                autoHeight={embeddedRelatedList}
+                minBodyHeight={embeddedRelatedList ? "7.5rem" : null}
+                maxBodyHeight={embeddedRelatedList ? "28rem" : null}
               />
             </div>
           </div>
@@ -3755,6 +3876,8 @@ export default function ViewModesBlock({
           </div>
         )}
       </div>
+        </>
+      )}
 
       {exportModalOpen && (
         <div className="modal modal-open">

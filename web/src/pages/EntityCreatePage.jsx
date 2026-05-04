@@ -17,6 +17,41 @@ import {
 import { DESKTOP_PAGE_SHELL, DESKTOP_PAGE_SHELL_BODY } from "../ui/pageShell.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 
+const FORM_RETURN_TO_PARAM = "return_to";
+const FORM_RETURN_LABEL_PARAM = "return_label";
+const FORM_DEFAULTS_PARAM = "defaults";
+
+function normalizeInternalReturnPath(path) {
+  const value = String(path || "").trim();
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  const [basePath, rawQuery = ""] = value.split("?");
+  const params = new URLSearchParams(rawQuery);
+  params.delete(FORM_RETURN_TO_PARAM);
+  params.delete(FORM_RETURN_LABEL_PARAM);
+  params.delete(FORM_DEFAULTS_PARAM);
+  const suffix = params.toString();
+  return `${basePath}${suffix ? `?${suffix}` : ""}`;
+}
+
+function parseCreateDefaults(search) {
+  const raw = new URLSearchParams(search || "").get(FORM_DEFAULTS_PARAM);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function buildCreatedRecordPath(entityId, recordId, { returnTo = "", returnLabel = "" } = {}) {
+  const params = new URLSearchParams();
+  if (returnTo) params.set(FORM_RETURN_TO_PARAM, returnTo);
+  if (returnLabel) params.set(FORM_RETURN_LABEL_PARAM, returnLabel);
+  const suffix = params.toString();
+  return `/data/${entityId}/${recordId}${suffix ? `?${suffix}` : ""}`;
+}
+
 export default function EntityCreatePage({ entityId }) {
   const { t, version } = useI18n();
   const params = useParams();
@@ -34,6 +69,9 @@ export default function EntityCreatePage({ entityId }) {
   const [showValidation, setShowValidation] = useState(false);
   const [error, setError] = useState(null);
   const [indexEntry, setIndexEntry] = useState(null);
+  const createDefaults = useMemo(() => parseCreateDefaults(location.search), [location.search]);
+  const returnTo = useMemo(() => normalizeInternalReturnPath(new URLSearchParams(location.search).get(FORM_RETURN_TO_PARAM)), [location.search]);
+  const returnLabel = useMemo(() => String(new URLSearchParams(location.search).get(FORM_RETURN_LABEL_PARAM) || "").trim(), [location.search]);
   const draftStorageKey = useMemo(
     () =>
       buildFormDraftStorageKey({
@@ -41,9 +79,9 @@ export default function EntityCreatePage({ entityId }) {
         entityId: routeEntity || entityId || "",
         recordId: "new",
         viewId: indexEntry?.formViewId || "",
-        routeKey: location.pathname || "",
+        routeKey: `${location.pathname || ""}${location.search || ""}`,
       }),
-    [entityId, indexEntry?.formViewId, location.pathname, routeEntity]
+    [entityId, indexEntry?.formViewId, location.pathname, location.search, routeEntity]
   );
   const hasMeaningfulDraft = useMemo(
     () =>
@@ -88,7 +126,12 @@ export default function EntityCreatePage({ entityId }) {
         const persisted = loadFormDraftSnapshot(draftStorageKey);
         if (persisted?.dirty && persisted?.draft && typeof persisted.draft === "object") {
           setDraft(applyComputedFields(index, persisted.draft));
+        } else if (createDefaults && Object.keys(createDefaults).length > 0) {
+          setDraft(applyComputedFields(index, createDefaults));
+        } else {
+          setDraft(applyComputedFields(index, {}));
         }
+        setShowValidation(false);
         setError(null);
       } catch (err) {
         setError(err.message || "Failed to load form");
@@ -97,7 +140,7 @@ export default function EntityCreatePage({ entityId }) {
       }
     }
     load();
-  }, [draftStorageKey, indexEntry, isDataRoute, version]);
+  }, [createDefaults, draftStorageKey, indexEntry, isDataRoute, version]);
 
   useEffect(() => {
     if (!draftStorageKey) return;
@@ -122,9 +165,12 @@ export default function EntityCreatePage({ entityId }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  async function handleSave() {
-    if (!(isDataRoute && indexEntry)) return;
+  async function handleSave(validationErrors = {}) {
+    if (!(isDataRoute && indexEntry)) return false;
     setShowValidation(true);
+    if (validationErrors && Object.keys(validationErrors).length > 0) {
+      return false;
+    }
     setLoading(true);
     try {
       const endpoint = `/records/${routeEntity}`;
@@ -138,20 +184,22 @@ export default function EntityCreatePage({ entityId }) {
       pushToast("success", t("common.created"));
       if (newId) {
         if (isDataRoute && routeEntity) {
-          navigate(`/data/${routeEntity}/${newId}`);
+          navigate(buildCreatedRecordPath(routeEntity, newId, { returnTo, returnLabel }));
         } else {
-          navigate(`/data/${routeEntity}/${newId}`);
+          navigate(buildCreatedRecordPath(routeEntity, newId, { returnTo, returnLabel }));
         }
       } else {
         if (isDataRoute && routeEntity) {
-          navigate(`/data/${routeEntity}`);
+          navigate(returnTo || `/data/${routeEntity}`);
         } else {
-          navigate(`/data/${routeEntity}`);
+          navigate(returnTo || `/data/${routeEntity}`);
         }
       }
+      return true;
     } catch (err) {
       setError(err.message || t("common.create_failed"));
       pushToast("error", err.message || t("common.create_failed"));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -169,8 +217,8 @@ export default function EntityCreatePage({ entityId }) {
         <div className="md:mt-4 flex flex-col gap-4 min-w-0">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold">{t("common.new_record_named", { name: displayName })}</h2>
-            <button className="btn btn-sm" type="button" onClick={() => navigate(`/data/${routeEntity}`)}>
-              {t("common.back")}
+            <button className="btn btn-sm" type="button" onClick={() => navigate(returnTo || `/data/${routeEntity}`)}>
+              {returnLabel ? `Back to ${returnLabel}` : t("common.back")}
             </button>
           </div>
           {error && <div className="alert alert-error">{error}</div>}

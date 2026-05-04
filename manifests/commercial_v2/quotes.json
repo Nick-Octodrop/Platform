@@ -2634,6 +2634,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "quote_customer_context_divider",
+              "label": "Customer Context",
+              "spacing": "compact"
+            },
             "biz_quote.quote_number",
             "biz_quote.status",
             "biz_quote.customer_id",
@@ -2641,6 +2647,11 @@
             "biz_quote.customer_contact_name",
             "biz_quote.customer_contact_email",
             "biz_quote.customer_contact_phone",
+            {
+              "kind": "divider",
+              "id": "quote_commercial_context_divider",
+              "label": "Commercial Terms"
+            },
             "biz_quote.sales_entity",
             "biz_quote.currency",
             "biz_quote.quote_date",
@@ -2652,10 +2663,20 @@
             "biz_quote.payment_terms",
             "biz_quote.incoterm",
             "biz_quote.shipping_terms",
+            {
+              "kind": "divider",
+              "id": "quote_market_context_divider",
+              "label": "Market Context"
+            },
             "biz_quote.sector",
             "biz_quote.crop_type",
             "biz_quote.product_interest",
             "biz_quote.spectrum_interest",
+            {
+              "kind": "divider",
+              "id": "quote_address_context_divider",
+              "label": "Addresses & Linked Order"
+            },
             "biz_quote.company_address",
             "biz_quote.site_address",
             "biz_quote.linked_customer_order_id"
@@ -2876,6 +2897,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "quote_profitability_divider",
+              "spacing": "loose",
+              "label": "Profitability"
+            },
             "biz_quote.estimated_buy_total",
             "biz_quote.inbound_freight_cost",
             "biz_quote.estimated_margin_amount",
@@ -2961,43 +2988,45 @@
               ]
             },
             {
-              "id": "related",
-              "label": "Related Records",
-              "tab_label_key": "common.related_records",
-              "sections": [],
+              "id": "totals",
+              "label": "Commercials",
+              "sections": [
+                "totals",
+                "profitability"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
+              ],
               "content": [
                 {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Orders Created From This Quote",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_orders",
-                      "entity_id": "entity.biz_order",
-                      "target": "view:biz_order.list",
-                      "record_domain": {
-                        "op": "or",
-                        "conditions": [
-                          {
-                            "op": "eq",
-                            "field": "biz_order.source_quote_id",
-                            "value": {
-                              "ref": "$record.id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_order.id",
-                            "value": {
-                              "ref": "$record.biz_quote.linked_customer_order_id"
-                            }
-                          }
-                        ]
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
                       },
-                      "create_modal": false
-                    }
-                  ]
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_quote_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
                 }
               ]
             },
@@ -3087,22 +3116,6 @@
               ]
             },
             {
-              "id": "totals",
-              "label": "Totals",
-              "tab_label_key": "common.totals",
-              "sections": [
-                "totals"
-              ]
-            },
-            {
-              "id": "profitability",
-              "label": "Profitability",
-              "tab_label_key": "common.profitability",
-              "sections": [
-                "profitability"
-              ]
-            },
-            {
               "id": "notes",
               "label": "Notes & Terms",
               "tab_label_key": "common.notes_terms",
@@ -3111,37 +3124,43 @@
               ]
             },
             {
-              "id": "documents",
-              "label": "Documents",
-              "sections": [
-                "documents"
-              ],
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
               "content": [
                 {
-                  "kind": "related_list",
-                  "target_module_id": "biz_documents",
-                  "entity_id": "entity.biz_document",
-                  "target": "view:biz_document.list",
-                  "record_domain": {
-                    "op": "or",
-                    "conditions": [
-                      {
-                        "op": "eq",
-                        "field": "biz_document.source_record_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Orders Created From This Quote",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.source_quote_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.biz_quote.linked_customer_order_id"
+                            }
+                          }
+                        ]
                       },
-                      {
-                        "op": "eq",
-                        "field": "biz_document.related_quote_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
-                      }
-                    ]
-                  },
-                  "create_modal": false
+                      "create_modal": false
+                    }
+                  ]
                 }
               ]
             }
@@ -3271,6 +3290,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "quote_line_details_divider",
+              "label": "Line Details",
+              "spacing": "compact"
+            },
             "biz_quote_line.quote_id",
             "biz_quote_line.line_type",
             "biz_quote_line.product_id",
@@ -3282,12 +3307,22 @@
             "biz_quote_line.unit_price",
             "biz_quote_line.line_discount_percent",
             "biz_quote_line.line_total",
+            {
+              "kind": "divider",
+              "id": "quote_line_costing_divider",
+              "label": "Costing & Supplier Snapshot"
+            },
             "biz_quote_line.default_buy_price_snapshot",
             "biz_quote_line.buy_currency_snapshot",
             "biz_quote_line.procurement_supplier_id",
             "biz_quote_line.supplier_sku_snapshot",
             "biz_quote_line.minimum_order_quantity_snapshot",
             "biz_quote_line.lead_time_weeks_snapshot",
+            {
+              "kind": "divider",
+              "id": "quote_line_specs_divider",
+              "label": "Product Specifications"
+            },
             "biz_quote_line.product_type_snapshot",
             "biz_quote_line.quote_cost_mode_snapshot",
             "biz_quote_line.wattage_snapshot",
@@ -3299,6 +3334,11 @@
             "biz_quote_line.ip_rating_snapshot",
             "biz_quote_line.max_ambient_temp_snapshot",
             "biz_quote_line.modules_snapshot",
+            {
+              "kind": "divider",
+              "id": "quote_line_margin_divider",
+              "label": "Margin Estimate"
+            },
             "biz_quote_line.buy_fx_to_quote_rate",
             "biz_quote_line.buy_total",
             "biz_quote_line.buy_total_quote_currency",

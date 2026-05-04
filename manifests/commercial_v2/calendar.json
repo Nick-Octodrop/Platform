@@ -844,11 +844,27 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "calendar_primary_link_divider",
+              "label": "Primary Link",
+              "spacing": "compact"
+            },
             "biz_calendar_event.company_id",
+            {
+              "kind": "divider",
+              "id": "calendar_crm_links_divider",
+              "label": "CRM Links"
+            },
             "biz_calendar_event.lead_id",
             "biz_calendar_event.opportunity_id",
             "biz_calendar_event.site_id",
             "biz_calendar_event.task_id",
+            {
+              "kind": "divider",
+              "id": "calendar_commercial_links_divider",
+              "label": "Commercial Links"
+            },
             "biz_calendar_event.quote_id",
             "biz_calendar_event.order_id",
             "biz_calendar_event.purchase_order_id",
@@ -898,19 +914,19 @@
               ]
             },
             {
-              "id": "links",
-              "label": "Links",
-              "tab_label_key": "common.links",
-              "sections": [
-                "links"
-              ]
-            },
-            {
               "id": "details",
               "label": "Details",
               "tab_label_key": "common.details",
               "sections": [
                 "details"
+              ]
+            },
+            {
+              "id": "links",
+              "label": "Links",
+              "tab_label_key": "common.links",
+              "sections": [
+                "links"
               ]
             }
           ]

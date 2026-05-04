@@ -83,7 +83,7 @@ function hasViewModes(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "document_registry") return true;
+    if (block.kind === "view_modes" || block.kind === "document_registry") return true;
     if (block.kind === "container" && hasViewModes(block.content)) return true;
     if (block.kind === "stack" && hasViewModes(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasViewModes(item?.content))) return true;
@@ -97,7 +97,7 @@ function hasFillHeight(blocks) {
   if (!Array.isArray(blocks)) return false;
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") return true;
+    if (block.kind === "view_modes" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") return true;
     if (block.kind === "container" && hasFillHeight(block.content)) return true;
     if (block.kind === "stack" && hasFillHeight(block.content)) return true;
     if (block.kind === "grid" && Array.isArray(block.items) && block.items.some((item) => hasFillHeight(item?.content))) return true;
@@ -108,7 +108,7 @@ function hasFillHeight(blocks) {
 
 function blockPrefersFill(block) {
   if (!block || typeof block !== "object") return false;
-  if (block.kind === "view_modes" || block.kind === "related_list" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") {
+  if (block.kind === "view_modes" || block.kind === "view" || block.kind === "record" || block.kind === "chatter" || block.kind === "document_registry") {
     return true;
   }
   if (block.kind === "container") return hasFillHeight(block.content);
@@ -116,6 +116,44 @@ function blockPrefersFill(block) {
   if (block.kind === "grid") return Array.isArray(block.items) && block.items.some((item) => hasFillHeight(item?.content));
   if (block.kind === "tabs") return Array.isArray(block.tabs) && block.tabs.some((tab) => hasFillHeight(tab?.content));
   return false;
+}
+
+function blockContainsRelatedList(block) {
+  if (!block || typeof block !== "object") return false;
+  if (block.kind === "related_list") return true;
+  if (Array.isArray(block.content) && block.content.some(blockContainsRelatedList)) return true;
+  if (Array.isArray(block.items) && block.items.some((item) => Array.isArray(item?.content) && item.content.some(blockContainsRelatedList))) return true;
+  if (Array.isArray(block.tabs) && block.tabs.some((tab) => Array.isArray(tab?.content) && tab.content.some(blockContainsRelatedList))) return true;
+  return false;
+}
+
+function isRelatedListWrapper(block) {
+  if (!block || typeof block !== "object") return false;
+  const content = Array.isArray(block.content) ? block.content : [];
+  return content.length > 0 && content.every(blockContainsRelatedList);
+}
+
+function shouldSortRelatedBlocks(entries) {
+  if (!Array.isArray(entries) || entries.length < 2) return false;
+  return entries.every(({ block }) => blockContainsRelatedList(block));
+}
+
+function sumKnownRecordCounts(counts) {
+  const values = Object.values(counts || {}).filter((value) => Number.isFinite(Number(value)));
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function sortRelatedBlockEntries(entries, counts) {
+  if (!shouldSortRelatedBlocks(entries)) return entries;
+  return [...entries].sort((a, b) => {
+    const aCount = counts?.[a.idx];
+    const bCount = counts?.[b.idx];
+    const aHasRecords = Number.isFinite(Number(aCount)) && Number(aCount) > 0;
+    const bHasRecords = Number.isFinite(Number(bCount)) && Number(bCount) > 0;
+    if (aHasRecords !== bHasRecords) return aHasRecords ? -1 : 1;
+    return a.idx - b.idx;
+  });
 }
 
 function StatValueSkeleton() {
@@ -133,26 +171,46 @@ function ActivityItemSkeleton({ wide = false }) {
   );
 }
 
-export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null, onPageSectionLoadingChange = null }) {
+export default function ContentBlocksRenderer({ blocks, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, onFallback, externalRefreshTick = 0, previewMode = false, bootstrap = null, bootstrapVersion = 0, bootstrapLoading = false, canWriteRecords = null, recordContext = null, onPageSectionLoadingChange = null, onRecordCountChange = null, frameRelatedLists = true, relatedListFrameProvided = false }) {
   const safeBlocks = Array.isArray(blocks) ? blocks : [];
+  const [blockRecordCounts, setBlockRecordCounts] = useState({});
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const mobileRecordPage = isMobile && (safeBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
-  const singleFillBlock = safeBlocks.length === 1 && blockPrefersFill(safeBlocks[0]);
-  const fullHeight = !mobileRecordPage && (isMobile ? singleFillBlock : (hasViewModes(safeBlocks) || hasFillHeight(safeBlocks)));
   const inherited = useContext(RecordScopeContext);
   const fallbackContext = useMemo(
     () => (recordId ? { entityId: null, recordId, record: null, setRecord: () => {} } : null),
     [recordId]
   );
-  const baseContext = inherited || recordContext || fallbackContext;
+  const baseContext = recordContext || inherited || fallbackContext;
+  const shouldProvideContext = Boolean(baseContext && baseContext !== inherited);
+  const visibleBlockEntries = useMemo(
+    () => safeBlocks
+      .map((block, idx) => ({ block, idx }))
+      .filter(({ block }) => isBlockVisible(block, baseContext?.record)),
+    [safeBlocks, baseContext?.record]
+  );
+  const sortedVisibleBlockEntries = useMemo(
+    () => sortRelatedBlockEntries(visibleBlockEntries, blockRecordCounts),
+    [visibleBlockEntries, blockRecordCounts]
+  );
+  const visibleBlocks = sortedVisibleBlockEntries.map(({ block }) => block);
+  const mobileRecordPage = isMobile && (visibleBlocks.some((block) => block?.kind === "record") || Boolean(recordContext?.recordId) || Boolean(recordId));
+  const singleFillBlock = visibleBlocks.length === 1 && blockPrefersFill(visibleBlocks[0]);
+  const fullHeight = !mobileRecordPage && (isMobile ? singleFillBlock : (hasViewModes(visibleBlocks) || hasFillHeight(visibleBlocks)));
   const { hasCapability } = useAccessContext();
   const effectiveCanWriteRecords =
     typeof canWriteRecords === "boolean"
       ? canWriteRecords
       : hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
+  useEffect(() => {
+    if (typeof onRecordCountChange !== "function") return;
+    const total = sumKnownRecordCounts(blockRecordCounts);
+    if (total === null) return;
+    onRecordCountChange(total);
+  }, [blockRecordCounts, onRecordCountChange]);
+
   const content = (
     <div className={fullHeight ? "h-full min-h-0 flex flex-col overflow-hidden gap-4" : "space-y-4"}>
-      {safeBlocks.map((block, idx) => {
+      {sortedVisibleBlockEntries.map(({ block, idx }) => {
         const node = (
           <BlockRenderer
             key={`${block?.kind || "block"}-${idx}`}
@@ -169,6 +227,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             onConfirm={onConfirm}
             onPrompt={onPrompt}
             onLookupCreate={onLookupCreate}
+            onFallback={onFallback}
             externalRefreshTick={externalRefreshTick}
             recordContext={baseContext}
             previewMode={previewMode}
@@ -177,6 +236,14 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             bootstrapLoading={bootstrapLoading}
             canWriteRecords={effectiveCanWriteRecords}
             onPageSectionLoadingChange={onPageSectionLoadingChange}
+            frameRelatedLists={frameRelatedLists}
+            relatedListFrameProvided={relatedListFrameProvided}
+            onRecordCountChange={(count) => {
+              setBlockRecordCounts((prev) => {
+                if (prev[idx] === count) return prev;
+                return { ...prev, [idx]: count };
+              });
+            }}
           />
         );
         if (!fullHeight || !blockPrefersFill(block)) return node;
@@ -188,16 +255,20 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
       })}
     </div>
   );
-  if (!inherited && baseContext) {
+  if (shouldProvideContext) {
     return <RecordScopeContext.Provider value={baseContext}>{content}</RecordScopeContext.Provider>;
   }
   return content;
 }
 
-function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords, onPageSectionLoadingChange = null }) {
+function BlockRenderer({ block, renderView, recordId, searchParams, setSearchParams, manifest, moduleId, actionsMap, recordContext, onNavigate, onRunAction, onConfirm, onPrompt, onLookupCreate, onFallback, externalRefreshTick = 0, previewMode = false, bootstrap, bootstrapVersion, bootstrapLoading, canWriteRecords, onPageSectionLoadingChange = null, onRecordCountChange = null, frameRelatedLists = true, relatedListFrameProvided = false }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const mobileRecordPage = isMobile && Boolean(recordContext?.recordId || recordId);
   const constrainHeight = !mobileRecordPage && (!isMobile || blockPrefersFill(block));
+  const relatedListBlock = useMemo(
+    () => (frameRelatedLists || relatedListFrameProvided ? { ...block, embedded_frame: true } : block),
+    [block, frameRelatedLists, relatedListFrameProvided]
+  );
   if (!block || typeof block !== "object") {
     return <div className="alert alert-warning">Invalid block</div>;
   }
@@ -227,6 +298,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         onConfirm={onConfirm}
         onPrompt={onPrompt}
         onLookupCreate={onLookupCreate}
+        onFallback={onFallback}
         externalRefreshTick={externalRefreshTick}
         previewMode={previewMode}
         bootstrap={bootstrap}
@@ -234,14 +306,15 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
         recordContext={recordContext}
+        onRecordCountChange={onRecordCountChange}
       />
     );
   }
 
   if (kind === "related_list") {
-    return (
+    const content = (
       <RelatedListBlock
-        block={block}
+        block={relatedListBlock}
         manifest={manifest}
         moduleId={moduleId}
         searchParams={searchParams}
@@ -252,6 +325,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         onConfirm={onConfirm}
         onPrompt={onPrompt}
         onLookupCreate={onLookupCreate}
+        onFallback={onFallback}
         externalRefreshTick={externalRefreshTick}
         previewMode={previewMode}
         bootstrap={bootstrap}
@@ -259,7 +333,14 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
         recordContext={recordContext}
+        onRecordCountChange={onRecordCountChange}
       />
+    );
+    if (!frameRelatedLists) return content;
+    return (
+      <div className="min-w-0 rounded-box border border-base-300 bg-base-100 px-3 py-3">
+        {content}
+      </div>
     );
   }
 
@@ -282,7 +363,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
   if (kind === "stack") {
     return (
       <div className={`${constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${gapClass(block.gap)}`}>
-        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} />
+        <ContentBlocksRenderer blocks={block.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} onFallback={onFallback} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} onRecordCountChange={onRecordCountChange} frameRelatedLists={frameRelatedLists} relatedListFrameProvided={relatedListFrameProvided} />
       </div>
     );
   }
@@ -307,6 +388,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
                 onConfirm={onConfirm}
                 onPrompt={onPrompt}
                 onLookupCreate={onLookupCreate}
+                onFallback={onFallback}
                 externalRefreshTick={externalRefreshTick}
                 previewMode={previewMode}
                 bootstrap={bootstrap}
@@ -314,6 +396,9 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
                 bootstrapLoading={bootstrapLoading}
                 canWriteRecords={canWriteRecords}
                 onPageSectionLoadingChange={onPageSectionLoadingChange}
+                onRecordCountChange={onRecordCountChange}
+                frameRelatedLists={frameRelatedLists}
+                relatedListFrameProvided={relatedListFrameProvided}
               />
             </div>
           </div>
@@ -336,7 +421,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         <div className={shouldFill ? "mt-4 flex-1 min-h-0 overflow-hidden" : "mt-4"}>
           {tabs.map((tab) =>
             tab.id === activeId ? (
-              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} />
+              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} onFallback={onFallback} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} onRecordCountChange={onRecordCountChange} frameRelatedLists={frameRelatedLists} relatedListFrameProvided={relatedListFrameProvided} />
             ) : null
           )}
         </div>
@@ -363,10 +448,10 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 
   if (kind === "container") {
     const variant = block.variant || "card";
-    const title = block.title;
-    const hasViewModes = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry");
-    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry" || b?.kind === "tabs");
-    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "related_list" || b?.kind === "document_registry" || b?.kind === "chatter" || b?.kind === "tabs");
+    const relatedListWrapper = isRelatedListWrapper(block);
+    const title = relatedListWrapper ? null : block.title;
+    const hasInnerScroll = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "document_registry" || b?.kind === "tabs");
+    const shouldFill = Array.isArray(block.content) && block.content.some((b) => b?.kind === "view" || b?.kind === "view_modes" || b?.kind === "document_registry" || b?.kind === "chatter" || b?.kind === "tabs");
     const content = (
       <ContentBlocksRenderer
         blocks={block.content || []}
@@ -382,6 +467,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         onConfirm={onConfirm}
         onPrompt={onPrompt}
         onLookupCreate={onLookupCreate}
+        onFallback={onFallback}
         externalRefreshTick={externalRefreshTick}
         previewMode={previewMode}
         bootstrap={bootstrap}
@@ -389,17 +475,26 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         bootstrapLoading={bootstrapLoading}
         canWriteRecords={canWriteRecords}
         onPageSectionLoadingChange={onPageSectionLoadingChange}
+        onRecordCountChange={onRecordCountChange}
+        frameRelatedLists={!relatedListWrapper}
+        relatedListFrameProvided={relatedListWrapper}
       />
     );
     if (variant === "panel") {
+      const panelContentPadding = relatedListWrapper
+        ? "px-3 py-3"
+        : `${isMobile ? "px-4 pb-4" : "px-4 pb-4"} ${title ? (isMobile ? "pt-3" : "pt-3") : (isMobile ? "pt-4" : "pt-4")}`;
+      const panelSurfaceClass = relatedListWrapper
+        ? "border border-base-300 bg-base-100"
+        : "bg-base-200";
       return (
-        <div className={`bg-base-200 ${isMobile ? "rounded-none" : "rounded-box"} ${shouldFill && constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
+        <div className={`${panelSurfaceClass} ${isMobile ? "rounded-none" : "rounded-box"} ${shouldFill && constrainHeight ? "h-full min-h-0" : ""} flex flex-col ${constrainHeight ? "overflow-hidden" : ""}`}>
           {title && (
             <div className={`shrink-0 text-sm font-semibold ${isMobile ? "px-4 pt-4" : "px-4 pt-4"}`}>
               {title}
             </div>
           )}
-          <div className={`${constrainHeight ? "flex-1 min-h-0" : ""} ${constrainHeight ? (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto") : ""} ${isMobile ? "px-4 pb-4" : "px-4 pb-4"} ${title ? (isMobile ? "pt-3" : "pt-3") : (isMobile ? "pt-4" : "pt-4")}`}>{content}</div>
+          <div className={`${constrainHeight ? "flex-1 min-h-0" : ""} ${constrainHeight ? (hasInnerScroll ? "overflow-hidden flex flex-col" : "overflow-auto") : ""} ${panelContentPadding}`}>{content}</div>
         </div>
       );
     }
@@ -451,6 +546,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
             onConfirm={onConfirm}
             onPrompt={onPrompt}
             onLookupCreate={onLookupCreate}
+            onFallback={onFallback}
             externalRefreshTick={externalRefreshTick}
             previewMode={previewMode}
             bootstrap={bootstrap}
@@ -458,6 +554,9 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
             bootstrapLoading={bootstrapLoading}
             canWriteRecords={canWriteRecords}
             onPageSectionLoadingChange={onPageSectionLoadingChange}
+            onRecordCountChange={onRecordCountChange}
+            frameRelatedLists={frameRelatedLists}
+            relatedListFrameProvided={relatedListFrameProvided}
           />
         </RecordScopeProvider>
       );
@@ -484,6 +583,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
               onConfirm={onConfirm}
               onPrompt={onPrompt}
               onLookupCreate={onLookupCreate}
+              onFallback={onFallback}
               externalRefreshTick={externalRefreshTick}
               previewMode={previewMode}
               bootstrap={bootstrap}
@@ -491,6 +591,9 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
               bootstrapLoading={bootstrapLoading}
               canWriteRecords={canWriteRecords}
               onPageSectionLoadingChange={onPageSectionLoadingChange}
+              onRecordCountChange={onRecordCountChange}
+              frameRelatedLists={frameRelatedLists}
+              relatedListFrameProvided={relatedListFrameProvided}
             />
           </div>
         </RecordScopeProvider>
@@ -542,7 +645,11 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
 }
 
 function ScopedViewModesBlock(props) {
-  const useLocalParams = props?.block?.compact === true || props?.block?.param_scope === "local";
+  const useLocalParams =
+    props?.block?.compact === true ||
+    props?.block?.param_scope === "local" ||
+    props?.block?.embedded_related_list === true ||
+    Boolean(props?.recordContext?.recordId);
   const [localSearchParams, setLocalSearchParams] = useState(() => new URLSearchParams());
 
   function handleSetLocalSearchParams(next) {
@@ -592,6 +699,7 @@ function RelatedListBlock({
   onConfirm,
   onPrompt,
   onLookupCreate,
+  onFallback,
   externalRefreshTick,
   previewMode,
   bootstrap,
@@ -599,6 +707,7 @@ function RelatedListBlock({
   bootstrapLoading,
   canWriteRecords,
   recordContext,
+  onRecordCountChange,
 }) {
   const targetViewId = normalizeViewTarget(block?.target || block?.view);
   const entityId = block?.entity_id;
@@ -667,18 +776,42 @@ function RelatedListBlock({
     };
   }, [needsExternalManifest, targetModuleId, targetViewId, entityId, moduleId]);
 
-  const mappedBlock = {
-    kind: "view_modes",
-    entity_id: entityId,
-    default_mode: "list",
-    modes: [{ mode: "list", target: `view:${targetViewId || ""}` }],
-    record_domain: block.record_domain || null,
-    create_defaults: block.create_defaults || null,
-    create_modal: block.create_modal !== false,
-    allow_create: block.create_modal !== false && block.allow_create !== false && block.show_create !== false,
-    target_module_id: effectiveModuleId,
-    param_scope: block.param_scope || "local",
-  };
+  const mappedBlock = useMemo(
+    () => ({
+      kind: "view_modes",
+      entity_id: entityId,
+      default_mode: "list",
+      modes: [{ mode: "list", target: `view:${targetViewId || ""}` }],
+      record_domain: block.record_domain || null,
+      create_defaults: block.create_defaults || null,
+      create_mode: block.create_mode || block.createMode || null,
+      create_modal: block.create_modal !== false,
+      allow_create:
+        (block.create_modal !== false || block.create_mode === "page" || block.createMode === "page") &&
+        block.allow_create !== false &&
+        block.show_create !== false,
+      target_module_id: effectiveModuleId,
+      param_scope: block.param_scope || "local",
+      page_size: block.page_size || 10,
+      embedded_related_list: true,
+      embedded_related_list_frame_provided: block.embedded_frame === true,
+    }),
+    [
+      block.allow_create,
+      block.createMode,
+      block.create_defaults,
+      block.create_modal,
+      block.create_mode,
+      block.embedded_frame,
+      block.page_size,
+      block.param_scope,
+      block.record_domain,
+      block.show_create,
+      effectiveModuleId,
+      entityId,
+      targetViewId,
+    ]
+  );
 
   const effectiveActionsMap = useMemo(() => {
     const map = new Map();
@@ -720,6 +853,7 @@ function RelatedListBlock({
       onConfirm={onConfirm}
       onPrompt={onPrompt}
       onLookupCreate={onLookupCreate}
+      onFallback={onFallback}
       externalRefreshTick={externalRefreshTick}
       previewMode={previewMode}
       bootstrap={needsExternalManifest ? null : bootstrap}
@@ -728,6 +862,7 @@ function RelatedListBlock({
       canWriteRecords={canWriteRecords}
       recordContext={recordContext}
       forceListOnly={true}
+      onRecordCountChange={onRecordCountChange}
     />
   );
 }
@@ -844,6 +979,13 @@ function evalConditionSafe(condition, record) {
   } catch {
     return false;
   }
+}
+
+function isBlockVisible(block, record) {
+  if (!block || typeof block !== "object") return true;
+  if (block.visible_when && !evalConditionSafe(block.visible_when, record)) return false;
+  if (block.hidden_when && evalConditionSafe(block.hidden_when, record)) return false;
+  return true;
 }
 
 function buildStatCardShells(block) {

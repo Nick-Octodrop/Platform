@@ -71,29 +71,15 @@ function resolveAddressAutocompleteMapping(fieldId) {
       placeIdField: `${base}.place_id`,
     };
   }
-  if (fieldId.endsWith(".billing_street")) {
-    const base = fieldId.slice(0, -".billing_street".length);
+  if (fieldId.endsWith("_street")) {
+    const base = fieldId.slice(0, -"_street".length);
     return {
       line1Field: fieldId,
-      line2Field: `${base}.billing_street2`,
-      cityField: `${base}.billing_city`,
-      regionField: `${base}.billing_state`,
-      postcodeField: `${base}.billing_postcode`,
-      countryField: `${base}.billing_country`,
-      latitudeField: null,
-      longitudeField: null,
-      placeIdField: null,
-    };
-  }
-  if (fieldId.endsWith(".shipping_street")) {
-    const base = fieldId.slice(0, -".shipping_street".length);
-    return {
-      line1Field: fieldId,
-      line2Field: `${base}.shipping_street2`,
-      cityField: `${base}.shipping_city`,
-      regionField: `${base}.shipping_state`,
-      postcodeField: `${base}.shipping_postcode`,
-      countryField: `${base}.shipping_country`,
+      line2Field: `${base}_street2`,
+      cityField: `${base}_city`,
+      regionField: `${base}_state`,
+      postcodeField: `${base}_postcode`,
+      countryField: `${base}_country`,
       latitudeField: null,
       longitudeField: null,
       placeIdField: null,
@@ -431,7 +417,7 @@ export default function FormViewRenderer({
         .map((section) => {
           if (!section || typeof section !== "object") return null;
           const fields = Array.isArray(section.fields)
-            ? section.fields.filter((fieldId) => typeof fieldId === "string" && fieldIndex[fieldId])
+            ? section.fields.filter((item) => isFormDividerItem(item) || (typeof item === "string" && fieldIndex[item]))
             : [];
           return { ...section, fields };
         })
@@ -474,7 +460,7 @@ export default function FormViewRenderer({
     [i18nVersion, t]
   );
   const sectionFieldIds = useMemo(
-    () => sections.flatMap((s) => (Array.isArray(s?.fields) ? s.fields : [])),
+    () => sections.flatMap((s) => (Array.isArray(s?.fields) ? s.fields.filter((item) => typeof item === "string") : [])),
     [sections]
   );
   const isWorkorderForm = useMemo(() => {
@@ -759,10 +745,33 @@ export default function FormViewRenderer({
   const activeTabBlocks = Array.isArray(activeTabConfig?.content) ? activeTabConfig.content : [];
   const hasCustomTabBlocks = activeTabBlocks.length > 0;
 
-  function getVisibleFields(section) {
+  function isFormDividerItem(item) {
+    return item && typeof item === "object" && item.kind === "divider";
+  }
+
+  function formItemKey(item, index) {
+    if (typeof item === "string") return item;
+    if (item && typeof item === "object") return item.id || `${item.kind || "item"}-${index}`;
+    return `item-${index}`;
+  }
+
+  function isFormItemVisible(item) {
+    if (!item || typeof item !== "object") return true;
+    if (item.visible_when && !evalCondition(item.visible_when, { record: computedRecord })) return false;
+    if (item.hidden_when && evalCondition(item.hidden_when, { record: computedRecord })) return false;
+    return true;
+  }
+
+  function getVisibleFormItems(section) {
     const fields = Array.isArray(section?.fields) ? section.fields : [];
     const visible = [];
-    for (const fieldId of fields) {
+    for (const item of fields) {
+      if (isFormDividerItem(item)) {
+        if (isFormItemVisible(item)) visible.push(item);
+        continue;
+      }
+      const fieldId = item;
+      if (typeof fieldId !== "string") continue;
       if (hiddenSet.has(fieldId)) continue;
       const field = fieldIndex[fieldId];
       const visibleWhen = field?.visible_when;
@@ -837,7 +846,7 @@ export default function FormViewRenderer({
   let renderedSections = renderSections
     .map((section) => ({
       section,
-      fields: getVisibleFields(section),
+      fields: getVisibleFormItems(section),
       lineEditorConfig:
         ((section?.line_editor ?? section?.lineEditor) && typeof (section?.line_editor ?? section?.lineEditor) === "object"
           ? (section?.line_editor ?? section?.lineEditor)
@@ -1068,7 +1077,7 @@ export default function FormViewRenderer({
       )}
       <div className={
         hasCustomTabBlocks
-          ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden")
+          ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-auto space-y-4")
           : isSingleLineEditorTab
             ? (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-hidden")
             : (isMobile ? "space-y-4" : "flex-1 min-h-0 overflow-auto space-y-4")
@@ -1085,7 +1094,7 @@ export default function FormViewRenderer({
         {activeTab !== activityTabId && hasCustomTabBlocks && renderBlocks?.(activeTabBlocks, {
           entityId,
           recordId: effectiveRecordId,
-          record,
+          record: computedRecord,
           hiddenFields: Array.from(hiddenSet),
         })}
         {emptyTabState && (
@@ -1121,7 +1130,10 @@ export default function FormViewRenderer({
               const sectionTabId = isSectionTabs ? getActiveSectionTab(section) : null;
               const sectionTab = isSectionTabs ? section.tabs.find((t) => t?.id === sectionTabId) : null;
               const sectionTabFields = Array.isArray(sectionTab?.fields) ? sectionTab.fields : [];
-              const activeFields = isSectionTabs ? sectionTabFields.filter((fieldId) => fields.includes(fieldId)) : fields;
+              const visibleKeys = new Set(fields.map((item, index) => formItemKey(item, index)));
+              const activeFields = isSectionTabs
+                ? sectionTabFields.filter((item, index) => visibleKeys.has(formItemKey(item, index)))
+                : fields;
               return (
                 <>
                   {isSectionTabs && (
@@ -1130,10 +1142,28 @@ export default function FormViewRenderer({
                       activeId={sectionTabId}
                       onChange={(next) => setSectionTabs((prev) => ({ ...prev, [section.id]: next }))}
                     />
-                  )}
-                  <div className={gridClass}>
-                    {activeFields.map((fieldId) => {
+	                  )}
+	                  <div className={gridClass}>
+	                    {activeFields.map((item, itemIndex) => {
+	                    if (isFormDividerItem(item)) {
+	                      const spacing = item.spacing === "compact" ? "py-1" : item.spacing === "loose" ? "py-5" : "py-3";
+                        const label = item.label_key || item.title_key
+                          ? translateRuntime(item.label_key || item.title_key)
+                          : item.label || item.title || "";
+                      return (
+                        <div key={formItemKey(item, itemIndex)} className={`col-span-full ${spacing}`}>
+                            {label ? (
+                              <div className="mb-2 text-[0.75rem] font-bold uppercase tracking-[0.16em] text-base-content/80">
+                                {label}
+                              </div>
+                            ) : null}
+                          <div className="border-t border-base-content/15" aria-hidden="true" />
+                        </div>
+                      );
+                    }
+                    const fieldId = item;
                     const field = fieldIndex[fieldId];
+                    if (!field) return null;
                     const value = getFieldValue(computedRecord, fieldId);
                     const disabledWhen = field?.disabled_when;
                     const isDisabled = disabledWhen ? evalCondition(disabledWhen, { record: computedRecord }) : false;

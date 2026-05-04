@@ -3299,6 +3299,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "order_finance_divider",
+              "spacing": "loose",
+              "label": "Finance & Invoicing"
+            },
             "biz_order.payment_terms",
             "biz_order.deposit_percent",
             "biz_order.invoiced_total",
@@ -3357,6 +3363,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "order_profitability_divider",
+              "spacing": "loose",
+              "label": "Profitability"
+            },
             "biz_order.estimated_buy_total",
             "biz_order.estimated_margin_amount",
             "biz_order.estimated_margin_percent"
@@ -3602,14 +3614,9 @@
               "label": "Commercials",
               "tab_label_key": "common.commercials",
               "sections": [
-                "commercials"
-              ]
-            },
-            {
-              "id": "finance",
-              "label": "Finance",
-              "sections": [
-                "finance"
+                "commercials",
+                "finance",
+                "profitability"
               ]
             },
             {
@@ -3638,6 +3645,41 @@
               "label": "Logistics",
               "sections": [
                 "logistics"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [
+                "documents"
+              ],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "target_module_id": "biz_documents",
+                  "entity_id": "entity.biz_document",
+                  "target": "view:biz_document.list",
+                  "record_domain": {
+                    "op": "or",
+                    "conditions": [
+                      {
+                        "op": "eq",
+                        "field": "biz_document.source_record_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      {
+                        "op": "eq",
+                        "field": "biz_document.related_order_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    ]
+                  },
+                  "create_modal": false
+                }
               ]
             },
             {
@@ -3726,6 +3768,14 @@
                     }
                   ]
                 }
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
               ]
             },
             {
@@ -3842,57 +3892,6 @@
                     }
                   ]
                 }
-              ]
-            },
-            {
-              "id": "documents",
-              "label": "Documents",
-              "sections": [
-                "documents"
-              ],
-              "content": [
-                {
-                  "kind": "related_list",
-                  "target_module_id": "biz_documents",
-                  "entity_id": "entity.biz_document",
-                  "target": "view:biz_document.list",
-                  "record_domain": {
-                    "op": "or",
-                    "conditions": [
-                      {
-                        "op": "eq",
-                        "field": "biz_document.source_record_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
-                      },
-                      {
-                        "op": "eq",
-                        "field": "biz_document.related_order_id",
-                        "value": {
-                          "ref": "$record.id"
-                        }
-                      }
-                    ]
-                  },
-                  "create_modal": false
-                }
-              ]
-            },
-            {
-              "id": "profitability",
-              "label": "Profitability",
-              "tab_label_key": "common.profitability",
-              "sections": [
-                "profitability"
-              ]
-            },
-            {
-              "id": "notes",
-              "label": "Notes",
-              "tab_label_key": "common.notes",
-              "sections": [
-                "notes"
               ]
             }
           ]
@@ -4114,6 +4113,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "order_line_details_divider",
+              "label": "Line Details",
+              "spacing": "compact"
+            },
             "biz_order_line.customer_order_id",
             "biz_order_line.product_id",
             "biz_order_line.description",
@@ -4123,6 +4128,11 @@
             "biz_order_line.quantity",
             "biz_order_line.unit_price",
             "biz_order_line.line_total",
+            {
+              "kind": "divider",
+              "id": "order_line_procurement_divider",
+              "label": "Procurement Setup"
+            },
             "biz_order_line.unit_cost_snapshot",
             "biz_order_line.available_stock_snapshot",
             "biz_order_line.stock_quantity_allocated",
@@ -4133,6 +4143,11 @@
             "biz_order_line.supplier_sku_snapshot",
             "biz_order_line.minimum_order_quantity_snapshot",
             "biz_order_line.lead_time_weeks_snapshot",
+            {
+              "kind": "divider",
+              "id": "order_line_specs_divider",
+              "label": "Product Specifications"
+            },
             "biz_order_line.product_type_snapshot",
             "biz_order_line.quote_cost_mode_snapshot",
             "biz_order_line.wattage_snapshot",
@@ -4144,8 +4159,18 @@
             "biz_order_line.ip_rating_snapshot",
             "biz_order_line.max_ambient_temp_snapshot",
             "biz_order_line.modules_snapshot",
+            {
+              "kind": "divider",
+              "id": "order_line_costs_divider",
+              "label": "Costing"
+            },
             "biz_order_line.buy_total",
             "biz_order_line.buy_total_order_currency",
+            {
+              "kind": "divider",
+              "id": "order_line_tracking_divider",
+              "label": "Procurement Tracking"
+            },
             "biz_order_line.procurement_quantity_required",
             "biz_order_line.procurement_required",
             "biz_order_line.source_quote_line_ref",

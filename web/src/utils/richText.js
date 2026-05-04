@@ -126,6 +126,22 @@ function serializeList(node, ordered) {
     .join("\n");
 }
 
+function isBlockElement(node) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+  return ["div", "h1", "h2", "h3", "ol", "p", "ul"].includes(node.tagName.toLowerCase());
+}
+
+function serializeChildBlocks(node) {
+  const blocks = Array.from(node.childNodes || [])
+    .map((child) => {
+      if (child.nodeType === Node.TEXT_NODE) return normalizeText(child.textContent || "").trim();
+      if (isBlockElement(child)) return serializeBlock(child);
+      return serializeInline(child).trim();
+    })
+    .filter((entry) => entry && entry.trim());
+  return blocks.join("\n\n");
+}
+
 function serializeBlock(node) {
   if (!node) return "";
   if (node.nodeType === Node.TEXT_NODE) {
@@ -139,6 +155,9 @@ function serializeBlock(node) {
   if (tag === "ul") return serializeList(node, false);
   if (tag === "ol") return serializeList(node, true);
   if (tag === "p" || tag === "div") {
+    if (Array.from(node.childNodes || []).some(isBlockElement)) {
+      return serializeChildBlocks(node);
+    }
     return serializeInline(node).trim();
   }
   return serializeInline(node).trim();

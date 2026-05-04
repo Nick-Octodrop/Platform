@@ -724,6 +724,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "document_file_details_divider",
+              "spacing": "compact",
+              "label": "File Details"
+            },
             "biz_document.file_name",
             "biz_document.file_extension",
             "biz_document.mime_type"
@@ -792,18 +798,29 @@
               ]
             },
             {
-              "id": "source",
-              "label": "Source",
-              "tab_label_key": "common.related_records",
+              "id": "files",
+              "label": "Files",
+              "tab_label_key": "common.files",
               "sections": [
-                "source"
+                "files",
+                "file_details"
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
               ]
             },
             {
               "id": "linked_records",
               "label": "Linked Records",
               "tab_label_key": "common.related_records",
-              "sections": [],
+              "sections": [
+                "source"
+              ],
               "content": [
                 {
                   "kind": "container",
@@ -940,34 +957,11 @@
               ]
             },
             {
-              "id": "file_details",
-              "label": "File Details",
-              "sections": [
-                "file_details"
-              ]
-            },
-            {
-              "id": "files",
-              "label": "Files",
-              "tab_label_key": "common.files",
-              "sections": [
-                "files"
-              ]
-            },
-            {
               "id": "external",
               "label": "External",
               "tab_label_key": "common.external",
               "sections": [
                 "external"
-              ]
-            },
-            {
-              "id": "notes",
-              "label": "Notes",
-              "tab_label_key": "common.notes",
-              "sections": [
-                "notes"
               ]
             }
           ]

@@ -1359,7 +1359,7 @@
         },
         {
           "id": "crm_opportunity.payment_terms",
-          "type": "string",
+          "type": "text",
           "label": "Payment Terms"
         },
         {
@@ -5148,6 +5148,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "opportunity_contact_divider",
+              "label": "Opportunity Contact",
+              "spacing": "compact"
+            },
             "crm_opportunity.title",
             "crm_opportunity.stage",
             "crm_opportunity.company_id",
@@ -5156,6 +5162,11 @@
             "crm_opportunity.primary_contact_email",
             "crm_opportunity.primary_contact_phone",
             "crm_opportunity.primary_contact_role",
+            {
+              "kind": "divider",
+              "id": "opportunity_company_divider",
+              "label": "Company & Legal Details"
+            },
             "crm_opportunity.site_id",
             "crm_opportunity.source_lead_id",
             "crm_opportunity.owner_user_id",
@@ -5178,6 +5189,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "opportunity_commercial_snapshot_divider",
+              "label": "Commercial Snapshot",
+              "spacing": "compact"
+            },
             "crm_opportunity.currency",
             "crm_opportunity.value",
             "crm_opportunity.probability",
@@ -5186,6 +5203,11 @@
             "crm_opportunity.product_subtotal",
             "crm_opportunity.quote_state",
             "crm_opportunity.stage_gate_exception_status",
+            {
+              "kind": "divider",
+              "id": "opportunity_market_divider",
+              "label": "Market & Project Context"
+            },
             "crm_opportunity.sector",
             "crm_opportunity.crop_type",
             "crm_opportunity.product_interest",
@@ -5220,6 +5242,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "meeting_gate_divider",
+              "spacing": "loose",
+              "label": "Meeting Discovery"
+            },
             "crm_opportunity.discovery_meeting_date",
             "crm_opportunity.discovery_meeting_attendees",
             "crm_opportunity.pain_points",
@@ -5243,6 +5271,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "proposal_gate_divider",
+              "spacing": "loose",
+              "label": "Proposal Readiness"
+            },
             "crm_opportunity.lighting_design_attached",
             "crm_opportunity.fixture_model",
             "crm_opportunity.spectrum_interest",
@@ -5264,6 +5298,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "commitment_gate_divider",
+              "spacing": "loose",
+              "label": "Commitment & Handover"
+            },
             "crm_opportunity.final_bom_locked",
             "crm_opportunity.fixture_discount_percent",
             "crm_opportunity.fixture_discount_approver",
@@ -5546,123 +5586,6 @@
               ]
             },
             {
-              "id": "related",
-              "label": "Related Records",
-              "tab_label_key": "common.related_records",
-              "sections": [],
-              "content": [
-                {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Linked Quote",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_quotes",
-                      "entity_id": "entity.biz_quote",
-                      "target": "view:biz_quote.list",
-                      "record_domain": {
-                        "op": "eq",
-                        "field": "biz_quote.id",
-                        "value": {
-                          "ref": "$record.crm_opportunity.linked_quote_id"
-                        }
-                      },
-                      "create_modal": false
-                    }
-                  ]
-                },
-                {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Linked Order",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_orders",
-                      "entity_id": "entity.biz_order",
-                      "target": "view:biz_order.list",
-                      "record_domain": {
-                        "op": "or",
-                        "conditions": [
-                          {
-                            "op": "eq",
-                            "field": "biz_order.id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_order_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_order.source_quote_id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_quote_id"
-                            }
-                          }
-                        ]
-                      },
-                      "create_modal": false
-                    }
-                  ]
-                },
-                {
-                  "kind": "container",
-                  "variant": "panel",
-                  "title": "Documents",
-                  "content": [
-                    {
-                      "kind": "related_list",
-                      "target_module_id": "biz_documents",
-                      "entity_id": "entity.biz_document",
-                      "target": "view:biz_document.list",
-                      "record_domain": {
-                        "op": "or",
-                        "conditions": [
-                          {
-                            "op": "eq",
-                            "field": "biz_document.related_quote_id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_quote_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_document.related_order_id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_order_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_document.source_record_id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_quote_id"
-                            }
-                          },
-                          {
-                            "op": "eq",
-                            "field": "biz_document.source_record_id",
-                            "value": {
-                              "ref": "$record.crm_opportunity.linked_order_id"
-                            }
-                          }
-                        ]
-                      },
-                      "create_modal": false
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "id": "notes",
-              "label": "Notes & Files",
-              "tab_label_key": "common.notes_files",
-              "sections": [
-                "notes"
-              ]
-            },
-            {
               "id": "activities",
               "label": "Activities",
               "tab_label_key": "common.activities",
@@ -5862,6 +5785,123 @@
                           "ref": "$record.crm_opportunity.owner_user_id"
                         }
                       }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes & Files",
+              "tab_label_key": "common.notes_files",
+              "sections": [
+                "notes"
+              ]
+            },
+            {
+              "id": "related",
+              "label": "Related Records",
+              "tab_label_key": "common.related_records",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Linked Quote",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_quotes",
+                      "entity_id": "entity.biz_quote",
+                      "target": "view:biz_quote.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_quote.id",
+                        "value": {
+                          "ref": "$record.crm_opportunity.linked_quote_id"
+                        }
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Linked Order",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_orders",
+                      "entity_id": "entity.biz_order",
+                      "target": "view:biz_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_order.id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_order.source_quote_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Documents",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_documents",
+                      "entity_id": "entity.biz_document",
+                      "target": "view:biz_document.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_document.related_quote_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.related_order_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.source_record_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_quote_id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.source_record_id",
+                            "value": {
+                              "ref": "$record.crm_opportunity.linked_order_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
                     }
                   ]
                 }
@@ -6189,40 +6229,6 @@
               ]
             },
             {
-              "id": "opportunities",
-              "label": "Opportunities",
-              "tab_label_key": "common.opportunities",
-              "sections": [],
-              "content": [
-                {
-                  "kind": "related_list",
-                  "entity_id": "entity.crm_opportunity",
-                  "target": "view:crm_opportunity.list",
-                  "record_domain": {
-                    "op": "eq",
-                    "field": "crm_opportunity.site_id",
-                    "value": {
-                      "ref": "$record.id"
-                    }
-                  },
-                  "create_modal": true,
-                  "create_defaults": {
-                    "crm_opportunity.site_id": {
-                      "ref": "$record.id"
-                    },
-                    "crm_opportunity.company_id": {
-                      "ref": "$record.crm_site.company_id"
-                    },
-                    "crm_opportunity.sales_entity": {
-                      "ref": "$record.crm_site.sales_entity"
-                    },
-                    "crm_opportunity.stage": "deal_qualification",
-                    "crm_opportunity.status": "open"
-                  }
-                }
-              ]
-            },
-            {
               "id": "activities",
               "label": "Activities",
               "tab_label_key": "common.activities",
@@ -6336,6 +6342,40 @@
                   ]
                 }
               ]
+            },
+            {
+              "id": "opportunities",
+              "label": "Opportunities",
+              "tab_label_key": "common.opportunities",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "related_list",
+                  "entity_id": "entity.crm_opportunity",
+                  "target": "view:crm_opportunity.list",
+                  "record_domain": {
+                    "op": "eq",
+                    "field": "crm_opportunity.site_id",
+                    "value": {
+                      "ref": "$record.id"
+                    }
+                  },
+                  "create_modal": true,
+                  "create_defaults": {
+                    "crm_opportunity.site_id": {
+                      "ref": "$record.id"
+                    },
+                    "crm_opportunity.company_id": {
+                      "ref": "$record.crm_site.company_id"
+                    },
+                    "crm_opportunity.sales_entity": {
+                      "ref": "$record.crm_site.sales_entity"
+                    },
+                    "crm_opportunity.stage": "deal_qualification",
+                    "crm_opportunity.status": "open"
+                  }
+                }
+              ]
             }
           ]
         }
@@ -6396,6 +6436,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "opportunity_line_details_divider",
+              "label": "Line Details",
+              "spacing": "compact"
+            },
             "crm_opportunity_line.opportunity_id",
             "crm_opportunity_line.line_type",
             "crm_opportunity_line.product_id",
@@ -6409,12 +6455,22 @@
             "crm_opportunity_line.unit_price",
             "crm_opportunity_line.line_discount_percent",
             "crm_opportunity_line.line_total",
+            {
+              "kind": "divider",
+              "id": "opportunity_line_costing_divider",
+              "label": "Costing & Supplier Snapshot"
+            },
             "crm_opportunity_line.default_buy_price_snapshot",
             "crm_opportunity_line.buy_currency_snapshot",
             "crm_opportunity_line.procurement_supplier_id",
             "crm_opportunity_line.supplier_sku_snapshot",
             "crm_opportunity_line.minimum_order_quantity_snapshot",
             "crm_opportunity_line.lead_time_weeks_snapshot",
+            {
+              "kind": "divider",
+              "id": "opportunity_line_specs_divider",
+              "label": "Product Specifications"
+            },
             "crm_opportunity_line.product_type_snapshot",
             "crm_opportunity_line.quote_cost_mode_snapshot",
             "crm_opportunity_line.wattage_snapshot",
@@ -6426,6 +6482,11 @@
             "crm_opportunity_line.ip_rating_snapshot",
             "crm_opportunity_line.max_ambient_temp_snapshot",
             "crm_opportunity_line.modules_snapshot",
+            {
+              "kind": "divider",
+              "id": "opportunity_line_margin_divider",
+              "label": "Margin Estimate"
+            },
             "crm_opportunity_line.buy_fx_to_quote_rate",
             "crm_opportunity_line.buy_total",
             "crm_opportunity_line.buy_total_quote_currency",

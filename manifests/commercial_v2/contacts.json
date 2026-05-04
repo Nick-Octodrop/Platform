@@ -976,6 +976,12 @@
           "layout": "columns",
           "columns": 2,
           "fields": [
+            {
+              "kind": "divider",
+              "id": "company_address_divider",
+              "label": "Company Address",
+              "spacing": "compact"
+            },
             "biz_contact.company_address_street",
             "biz_contact.company_address_street2",
             "biz_contact.company_address_city",
@@ -983,6 +989,11 @@
             "biz_contact.company_address_postcode",
             "biz_contact.company_address_country",
             "biz_contact.company_address",
+            {
+              "kind": "divider",
+              "id": "billing_address_divider",
+              "label": "Billing Address"
+            },
             "biz_contact.billing_street",
             "biz_contact.billing_street2",
             "biz_contact.billing_city",
@@ -990,6 +1001,11 @@
             "biz_contact.billing_postcode",
             "biz_contact.billing_country",
             "biz_contact.billing_address",
+            {
+              "kind": "divider",
+              "id": "delivery_address_divider",
+              "label": "Default Site / Delivery Address"
+            },
             "biz_contact.shipping_street",
             "biz_contact.shipping_street2",
             "biz_contact.shipping_city",
@@ -1044,91 +1060,211 @@
               ]
             },
             {
-              "id": "people",
-              "label": "People",
-              "sections": [],
-              "content": [
-                {
-                  "kind": "related_list",
-                  "entity_id": "entity.biz_contact_person",
-                  "target": "view:biz_contact_person.list",
-                  "record_domain": {
-                    "op": "eq",
-                    "field": "biz_contact_person.company_id",
-                    "value": {
-                      "ref": "$record.id"
-                    }
-                  },
-                  "create_modal": true,
-                  "create_defaults": {
-                    "biz_contact_person.company_id": {
-                      "ref": "$record.id"
-                    },
-                    "biz_contact_person.company_contact_type_snapshot": {
-                      "ref": "$record.biz_contact.contact_type"
-                    },
-                    "biz_contact_person.company_entity_scope_snapshot": {
-                      "ref": "$record.biz_contact.company_entity_scope"
-                    },
-                    "biz_contact_person.is_active": true
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sites",
-              "label": "Sites",
-              "sections": [],
-              "content": [
-                {
-                  "kind": "related_list",
-                  "target_module_id": "biz_crm",
-                  "entity_id": "entity.crm_site",
-                  "target": "view:crm_site.list",
-                  "record_domain": {
-                    "op": "eq",
-                    "field": "crm_site.company_id",
-                    "value": {
-                      "ref": "$record.id"
-                    }
-                  },
-                  "create_modal": true,
-                  "create_defaults": {
-                    "crm_site.company_id": {
-                      "ref": "$record.id"
-                    },
-                    "crm_site.address_line_1": {
-                      "ref": "$record.biz_contact.shipping_street"
-                    },
-                    "crm_site.address_line_2": {
-                      "ref": "$record.biz_contact.shipping_street2"
-                    },
-                    "crm_site.city": {
-                      "ref": "$record.biz_contact.shipping_city"
-                    },
-                    "crm_site.region": {
-                      "ref": "$record.biz_contact.shipping_state"
-                    },
-                    "crm_site.postcode": {
-                      "ref": "$record.biz_contact.shipping_postcode"
-                    },
-                    "crm_site.country": {
-                      "ref": "$record.biz_contact.shipping_country"
-                    },
-                    "crm_site.is_active": true
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sales_chain",
-              "label": "Sales Chain",
+              "id": "people_sites",
+              "label": "People & Sites",
               "sections": [],
               "content": [
                 {
                   "kind": "container",
                   "variant": "panel",
-                  "title": "Leads",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "entity_id": "entity.biz_contact_person",
+                      "target": "view:biz_contact_person.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_contact_person.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_contact_person.company_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_contact_person.company_contact_type_snapshot": {
+                          "ref": "$record.biz_contact.contact_type"
+                        },
+                        "biz_contact_person.company_entity_scope_snapshot": {
+                          "ref": "$record.biz_contact.company_entity_scope"
+                        },
+                        "biz_contact_person.is_active": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_crm",
+                      "entity_id": "entity.crm_site",
+                      "target": "view:crm_site.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "crm_site.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "crm_site.company_id": {
+                          "ref": "$record.id"
+                        },
+                        "crm_site.address_line_1": {
+                          "ref": "$record.biz_contact.shipping_street"
+                        },
+                        "crm_site.address_line_2": {
+                          "ref": "$record.biz_contact.shipping_street2"
+                        },
+                        "crm_site.city": {
+                          "ref": "$record.biz_contact.shipping_city"
+                        },
+                        "crm_site.region": {
+                          "ref": "$record.biz_contact.shipping_state"
+                        },
+                        "crm_site.postcode": {
+                          "ref": "$record.biz_contact.shipping_postcode"
+                        },
+                        "crm_site.country": {
+                          "ref": "$record.biz_contact.shipping_country"
+                        },
+                        "crm_site.is_active": true
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "addresses",
+              "label": "Addresses",
+              "sections": [
+                "addresses"
+              ]
+            },
+            {
+              "id": "documents",
+              "label": "Documents",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_documents",
+                      "entity_id": "entity.biz_document",
+                      "target": "view:biz_document.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_document.contact_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_document.related_contact_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "tasks_calendar",
+              "label": "Tasks & Calendar",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_tasks",
+                      "entity_id": "entity.biz_task",
+                      "target": "view:biz_task.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_task.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_task.company_id": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_calendar",
+                      "entity_id": "entity.biz_calendar_event",
+                      "target": "view:biz_calendar_event.list",
+                      "record_domain": {
+                        "op": "eq",
+                        "field": "biz_calendar_event.company_id",
+                        "value": {
+                          "ref": "$record.id"
+                        }
+                      },
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_calendar_event.company_id": {
+                          "ref": "$record.id"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "notes",
+              "label": "Notes",
+              "tab_label_key": "common.notes",
+              "sections": [
+                "notes"
+              ]
+            },
+            {
+              "id": "related_records",
+              "label": "Related Records",
+              "sections": [],
+              "content": [
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "visible_when": {
+                    "op": "eq",
+                    "field": "biz_contact.contact_type",
+                    "value": "customer"
+                  },
                   "content": [
                     {
                       "kind": "related_list",
@@ -1142,7 +1278,7 @@
                           "ref": "$record.id"
                         }
                       },
-                      "create_modal": true,
+                      "create_mode": "page",
                       "create_defaults": {
                         "crm_lead.company_id": {
                           "ref": "$record.id"
@@ -1175,7 +1311,11 @@
                 {
                   "kind": "container",
                   "variant": "panel",
-                  "title": "Opportunities",
+                  "visible_when": {
+                    "op": "eq",
+                    "field": "biz_contact.contact_type",
+                    "value": "customer"
+                  },
                   "content": [
                     {
                       "kind": "related_list",
@@ -1189,7 +1329,7 @@
                           "ref": "$record.id"
                         }
                       },
-                      "create_modal": true,
+                      "create_mode": "page",
                       "create_defaults": {
                         "crm_opportunity.company_id": {
                           "ref": "$record.id"
@@ -1222,7 +1362,11 @@
                 {
                   "kind": "container",
                   "variant": "panel",
-                  "title": "Quotes",
+                  "visible_when": {
+                    "op": "eq",
+                    "field": "biz_contact.contact_type",
+                    "value": "customer"
+                  },
                   "content": [
                     {
                       "kind": "related_list",
@@ -1236,14 +1380,47 @@
                           "ref": "$record.id"
                         }
                       },
-                      "create_modal": false
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_quote.customer_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_quote.currency": {
+                          "ref": "$record.biz_contact.currency_preference"
+                        },
+                        "biz_quote.payment_terms": {
+                          "ref": "$record.biz_contact.default_payment_terms"
+                        },
+                        "biz_quote.incoterm": {
+                          "ref": "$record.biz_contact.default_incoterm"
+                        },
+                        "biz_quote.tax_percent": {
+                          "ref": "$record.biz_contact.default_sales_tax_percent"
+                        },
+                        "biz_quote.company_address": {
+                          "ref": "$record.biz_contact.company_address"
+                        },
+                        "biz_quote.site_address": {
+                          "ref": "$record.biz_contact.default_delivery_address"
+                        },
+                        "biz_quote.customer_contact_email": {
+                          "ref": "$record.biz_contact.email"
+                        },
+                        "biz_quote.customer_contact_phone": {
+                          "ref": "$record.biz_contact.phone"
+                        }
+                      }
                     }
                   ]
                 },
                 {
                   "kind": "container",
                   "variant": "panel",
-                  "title": "Orders",
+                  "visible_when": {
+                    "op": "eq",
+                    "field": "biz_contact.contact_type",
+                    "value": "customer"
+                  },
                   "content": [
                     {
                       "kind": "related_list",
@@ -1257,14 +1434,38 @@
                           "ref": "$record.id"
                         }
                       },
-                      "create_modal": false
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_order.customer_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_order.currency": {
+                          "ref": "$record.biz_contact.currency_preference"
+                        },
+                        "biz_order.payment_terms": {
+                          "ref": "$record.biz_contact.default_payment_terms"
+                        },
+                        "biz_order.shipping_destination": {
+                          "ref": "$record.biz_contact.default_delivery_address"
+                        },
+                        "biz_order.customer_contact_email": {
+                          "ref": "$record.biz_contact.email"
+                        },
+                        "biz_order.customer_contact_phone": {
+                          "ref": "$record.biz_contact.phone"
+                        }
+                      }
                     }
                   ]
                 },
                 {
                   "kind": "container",
                   "variant": "panel",
-                  "title": "Invoices",
+                  "visible_when": {
+                    "op": "eq",
+                    "field": "biz_contact.contact_type",
+                    "value": "customer"
+                  },
                   "content": [
                     {
                       "kind": "related_list",
@@ -1278,58 +1479,112 @@
                           "ref": "$record.id"
                         }
                       },
-                      "create_modal": false
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_invoice.customer_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_invoice.currency": {
+                          "ref": "$record.biz_contact.currency_preference"
+                        },
+                        "biz_invoice.payment_terms": {
+                          "ref": "$record.biz_contact.default_payment_terms"
+                        },
+                        "biz_invoice.customer_contact_email": {
+                          "ref": "$record.biz_contact.email"
+                        },
+                        "biz_invoice.customer_contact_phone": {
+                          "ref": "$record.biz_contact.phone"
+                        }
+                      }
                     }
                   ]
-                }
-              ]
-            },
-            {
-              "id": "documents",
-              "label": "Documents",
-              "sections": [],
-              "content": [
+                },
                 {
-                  "kind": "related_list",
-                  "target_module_id": "biz_documents",
-                  "entity_id": "entity.biz_document",
-                  "target": "view:biz_document.list",
-                  "record_domain": {
-                    "op": "or",
-                    "conditions": [
-                      {
+                  "kind": "container",
+                  "variant": "panel",
+                  "visible_when": {
+                    "op": "in",
+                    "field": "biz_contact.contact_type",
+                    "value": [
+                      "supplier",
+                      "factory_partner"
+                    ]
+                  },
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_products",
+                      "entity_id": "entity.biz_product_supplier",
+                      "target": "view:biz_product_supplier.list",
+                      "record_domain": {
                         "op": "eq",
-                        "field": "biz_document.contact_id",
+                        "field": "biz_product_supplier.supplier_id",
                         "value": {
                           "ref": "$record.id"
                         }
                       },
-                      {
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_product_supplier.supplier_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_product_supplier.supplier_name_snapshot": {
+                          "ref": "$record.biz_contact.name"
+                        },
+                        "biz_product_supplier.purchase_currency": {
+                          "ref": "$record.biz_contact.currency_preference"
+                        },
+                        "biz_product_supplier.supplier_incoterm": {
+                          "ref": "$record.biz_contact.supplier_incoterm_default"
+                        },
+                        "biz_product_supplier.is_active": true
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "visible_when": {
+                    "op": "in",
+                    "field": "biz_contact.contact_type",
+                    "value": [
+                      "supplier",
+                      "factory_partner"
+                    ]
+                  },
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_purchase_orders",
+                      "entity_id": "entity.biz_purchase_order",
+                      "target": "view:biz_purchase_order.list",
+                      "record_domain": {
                         "op": "eq",
-                        "field": "biz_document.related_contact_id",
+                        "field": "biz_purchase_order.supplier_id",
                         "value": {
                           "ref": "$record.id"
                         }
+                      },
+                      "create_mode": "page",
+                      "create_defaults": {
+                        "biz_purchase_order.supplier_id": {
+                          "ref": "$record.id"
+                        },
+                        "biz_purchase_order.currency": {
+                          "ref": "$record.biz_contact.currency_preference"
+                        },
+                        "biz_purchase_order.supplier_reference": {
+                          "ref": "$record.biz_contact.supplier_reference"
+                        },
+                        "biz_purchase_order.incoterm": {
+                          "ref": "$record.biz_contact.supplier_incoterm_default"
+                        }
                       }
-                    ]
-                  },
-                  "create_modal": false
+                    }
+                  ]
                 }
-              ]
-            },
-            {
-              "id": "addresses",
-              "label": "Addresses",
-              "sections": [
-                "addresses"
-              ]
-            },
-            {
-              "id": "notes",
-              "label": "Notes",
-              "tab_label_key": "common.notes",
-              "sections": [
-                "notes"
               ]
             },
             {
@@ -1589,6 +1844,13 @@
               ]
             },
             {
+              "id": "notes",
+              "label": "Notes",
+              "sections": [
+                "person_notes"
+              ]
+            },
+            {
               "id": "company",
               "label": "Company",
               "sections": [],
@@ -1606,13 +1868,6 @@
                   },
                   "create_modal": false
                 }
-              ]
-            },
-            {
-              "id": "notes",
-              "label": "Notes",
-              "sections": [
-                "person_notes"
               ]
             }
           ]

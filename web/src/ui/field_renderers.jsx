@@ -80,7 +80,7 @@ function RichTextPreview({ value, emptyLabel = "No content yet." }) {
     >
       {html ? (
         <div
-          className="space-y-2 [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+          className="space-y-2 [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
@@ -193,15 +193,16 @@ function RichTextEditor({ value, onChange, disabled }) {
     (command) => {
       if (disabled) return;
       if (!restoreSelection()) return;
+      const commandValue = command === "h1" ? "H1" : command === "h2" ? "H2" : null;
       switch (command) {
         case "bold":
           document.execCommand("bold", false);
           break;
         case "h1":
-          document.execCommand("formatBlock", false, "h1");
+          document.execCommand("formatBlock", false, commandValue);
           break;
         case "h2":
-          document.execCommand("formatBlock", false, "h2");
+          document.execCommand("formatBlock", false, commandValue);
           break;
         case "bullet":
           document.execCommand("insertUnorderedList", false);
@@ -237,7 +238,7 @@ function RichTextEditor({ value, onChange, disabled }) {
       >
         {hasSelection ? (
           <div className="absolute right-2 top-2 z-20">
-            <div className="dropdown dropdown-end">
+            <div className="relative flex justify-end">
               <button
                 type="button"
                 className="btn btn-xs border border-base-300 bg-base-100 shadow-sm"
@@ -250,7 +251,7 @@ function RichTextEditor({ value, onChange, disabled }) {
                 Format
               </button>
               {menuOpen ? (
-                <ul className="menu menu-compact mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow">
+                <ul className="menu menu-compact absolute right-0 top-full mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-2 shadow">
                   {toolbarButtons.map((button) => (
                     <li key={button.id}>
                       <button
@@ -271,7 +272,7 @@ function RichTextEditor({ value, onChange, disabled }) {
           ref={editorRef}
           contentEditable={!disabled}
           suppressContentEditableWarning
-          className="min-h-[10rem] pr-16 outline-none [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+          className="min-h-[10rem] pr-16 outline-none [&_a]:link [&_a]:text-primary [&_a]:underline [&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-[0.95rem] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:text-[0.9rem] [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-0 [&_p+ol]:mt-2 [&_p+ul]:mt-2 [&_strong]:font-semibold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
           onFocus={() => {
             setIsFocused(true);
             syncEditorFromValue(value);
