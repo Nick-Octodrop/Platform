@@ -2931,14 +2931,6 @@
             "biz_quote.internal_notes"
           ],
           "section_title_key": "quotes.views.form.sections.notes.title"
-        },
-        {
-          "id": "documents",
-          "title": "Documents",
-          "fields": [
-            "biz_quote.primary_document_id",
-            "biz_quote.generated_files"
-          ]
         }
       ],
       "header": {
@@ -3208,9 +3200,7 @@
           "biz_quote.spectrum_interest",
           "biz_quote.tax_percent",
           "biz_quote.grand_total",
-          "biz_quote.linked_customer_order_id",
-          "biz_quote.primary_document_id",
-          "biz_quote.generated_files"
+          "biz_quote.linked_customer_order_id"
         ]
       }
     },

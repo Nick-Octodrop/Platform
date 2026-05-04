@@ -479,9 +479,11 @@ def _sync_generated_document_record(
     if not (isinstance(attachment_id, str) and any(item.get("id") == attachment_id for item in existing_items if isinstance(item, dict))):
         next_items.append(_attachment_item(attachment))
     filename = attachment.get("filename") if isinstance(attachment.get("filename"), str) else ""
+    display_name = _document_filename_stem(filename) or filename or record_data.get("biz_document.name") or "Document"
     updated_record = dict(record_data)
     updated_record.update(
         {
+            "biz_document.name": display_name,
             "biz_document.attachments": next_items,
             "biz_document.file_name": filename,
             "biz_document.file_extension": _attachment_extension_from_filename(filename),

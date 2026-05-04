@@ -439,6 +439,7 @@ class TestPhase1Jobs(unittest.TestCase):
 
         self.assertEqual(captured.get("context_entity_id"), "entity.biz_quote")
         self.assertEqual(captured.get("context_record", {}).get("biz_quote.quote_number"), "QUO-1001")
+        self.assertEqual(record_store.rows[("entity.biz_document", "doc_1")].get("biz_document.name"), "quote-file")
         self.assertEqual(record_store.rows[("entity.biz_document", "doc_1")].get("biz_document.attachments"), [{"id": "att_1", "filename": "quote-file.pdf", "mime_type": "application/pdf", "size": 21, "storage_key": "default/quote-file.pdf"}])
         self.assertEqual(record_store.rows[("entity.biz_quote", "quote_1")].get("biz_quote.generated_files"), [{"id": "att_1", "filename": "quote-file.pdf", "mime_type": "application/pdf", "size": 21, "storage_key": "default/quote-file.pdf"}])
         self.assertIn(

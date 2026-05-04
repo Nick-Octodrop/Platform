@@ -201,12 +201,14 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
     typeof canWriteRecords === "boolean"
       ? canWriteRecords
       : hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
+  const trackRecordCounts = baseContext?.suppressRecordCountSorting !== true;
   useEffect(() => {
+    if (!trackRecordCounts) return;
     if (typeof onRecordCountChange !== "function") return;
     const total = sumKnownRecordCounts(blockRecordCounts);
     if (total === null) return;
     onRecordCountChange(total);
-  }, [blockRecordCounts, onRecordCountChange]);
+  }, [blockRecordCounts, onRecordCountChange, trackRecordCounts]);
 
   const content = (
     <div className={fullHeight ? "h-full min-h-0 flex flex-col overflow-hidden gap-4" : "space-y-4"}>
@@ -239,6 +241,7 @@ export default function ContentBlocksRenderer({ blocks, renderView, recordId, se
             frameRelatedLists={frameRelatedLists}
             relatedListFrameProvided={relatedListFrameProvided}
             onRecordCountChange={(count) => {
+              if (!trackRecordCounts) return;
               setBlockRecordCounts((prev) => {
                 if (prev[idx] === count) return prev;
                 return { ...prev, [idx]: count };

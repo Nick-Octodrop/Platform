@@ -25622,6 +25622,8 @@ async def preview_action_email_compose(request: Request) -> dict:
         wrapper = generic_records.get(email_entity_id, email_record_id) or {}
         if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict):
             email_record_data = wrapper.get("record") or {}
+        if isinstance(email_record_data, dict):
+            email_record_data = _hydrate_linked_attachment_fields(email_entity_def, email_entity_id, email_record_id, email_record_data)
     render_context = _build_template_render_context(
         email_record_data,
         email_entity_def,
@@ -52809,6 +52811,7 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
             resolved_record = recomputed_record
     if not _record_visible_for_actor(actor, found[0], entity_id, resolved_record):
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
+    resolved_record = _hydrate_linked_attachment_fields(found[1], entity_id, resolved_id, resolved_record)
     response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})
     _resp_cache_set(cache_key, response)
     logger.info("cache_miss=record_get key=%s", cache_key)

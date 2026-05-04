@@ -1099,6 +1099,7 @@ export default function FormViewRenderer({
           record: computedRecord,
           hiddenFields: Array.from(hiddenSet),
           suppressPageSectionLoading: true,
+          suppressRecordCountSorting: true,
         })}
         {emptyTabState && (
           <div className="text-sm opacity-70 py-2">
@@ -1155,12 +1156,16 @@ export default function FormViewRenderer({
                           : item.label || item.title || "";
                       return (
                         <div key={formItemKey(item, itemIndex)} className={`col-span-full ${spacing}`}>
-                            {label ? (
-                              <div className="mb-2 text-[0.75rem] font-bold uppercase tracking-[0.16em] text-base-content/80">
+                          {label ? (
+                            <div className="flex items-center gap-3">
+                              <div className="shrink-0 text-sm font-semibold text-base-content/75">
                                 {label}
                               </div>
-                            ) : null}
-                          <div className="border-t border-base-content/15" aria-hidden="true" />
+                              <div className="min-w-0 flex-1 border-t border-base-content/12" aria-hidden="true" />
+                            </div>
+                          ) : (
+                            <div className="border-t border-base-content/12" aria-hidden="true" />
+                          )}
                         </div>
                       );
                     }

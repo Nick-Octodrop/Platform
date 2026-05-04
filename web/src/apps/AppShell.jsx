@@ -11,6 +11,7 @@ import { notifyAutomationRunsStarted } from "../components/BackgroundAutomationT
 import { useToast } from "../components/Toast.jsx";
 import LoadingSpinner from "../components/LoadingSpinner.jsx";
 import DaisyTooltip from "../components/DaisyTooltip.jsx";
+import AppSelect from "../components/AppSelect.jsx";
 import { PRIMARY_BUTTON, PRIMARY_BUTTON_SM, SOFT_BUTTON_SM, SOFT_BUTTON_XS } from "../components/buttonStyles.js";
 import { buildRouteWithQuery, buildTargetRoute, deriveAppHomeRoute, resolveAppTarget, resolveRouteTarget } from "./appShellUtils.js";
 import { evalCondition } from "../utils/conditions.js";
@@ -255,7 +256,18 @@ function _conditionEvalContext(record, actor = null) {
 }
 
 function isEmptyFieldValue(value) {
-  return value === "" || value === null || value === undefined || (Array.isArray(value) && value.length === 0);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return true;
+    return !value.some((item) => {
+      if (typeof item === "string") return item.trim().length > 0;
+      if (!item || typeof item !== "object") return false;
+      return Boolean(item.id || item.attachment_id || item.storage_key || item.filename);
+    });
+  }
+  if (value && typeof value === "object") {
+    return !Boolean(value.id || value.attachment_id || value.storage_key || value.filename);
+  }
+  return value === "" || value === null || value === undefined;
 }
 
 function isValidationUiEnabled(config) {
@@ -2217,6 +2229,40 @@ function AppView({
     });
   }
 
+  async function hydrateMissingValidationAttachments(action, contextRecord = draft || {}) {
+    const missingFieldIds = getActionValidationFieldIds(action, contextRecord);
+    if (!effectiveRecordId || missingFieldIds.length === 0) return contextRecord || {};
+    const attachmentFieldIds = missingFieldIds.filter((fieldId) => fieldIndex?.[fieldId]?.type === "attachments");
+    if (attachmentFieldIds.length === 0) return contextRecord || {};
+    const entityIdForAttachments =
+      resolveEntityFullId(manifest, action?.entity_id) ||
+      recordEntityId ||
+      entityFullId;
+    if (!entityIdForAttachments) return contextRecord || {};
+    const patch = {};
+    await Promise.all(
+      attachmentFieldIds.map(async (fieldId) => {
+        try {
+          const purpose = `field:${fieldId}`;
+          const res = await apiFetch(
+            `/records/${encodeURIComponent(entityIdForAttachments)}/${encodeURIComponent(effectiveRecordId)}/attachments?purpose=${encodeURIComponent(purpose)}`,
+            { cacheTtl: 0 }
+          );
+          const attachments = Array.isArray(res?.attachments) ? res.attachments : [];
+          if (attachments.length > 0) patch[fieldId] = attachments;
+        } catch {
+          // Validation can still open normally if the attachment lookup fails.
+        }
+      })
+    );
+    if (Object.keys(patch).length === 0) return contextRecord || {};
+    const nextDraft = applyDraftComputed({ ...(contextRecord || {}), ...patch });
+    draftRef.current = applyDraftComputed({ ...(draftRef.current || {}), ...patch });
+    setDraft((prev) => applyDraftComputed({ ...(prev || {}), ...patch }));
+    setInitialDraft((prev) => applyDraftComputed({ ...(prev || {}), ...patch }));
+    return nextDraft;
+  }
+
   function openValidationFieldsModal({
     fieldIds,
     errors = [],
@@ -2369,7 +2415,7 @@ function AppView({
         subject: compose.subject || "",
         bodyHtml: compose.body_html || "",
         bodyText: compose.body_text || "",
-        bodyMode: compose.body_html ? "html" : "plain",
+        bodyMode: compose.template_id && compose.body_html ? "html" : "plain",
         error: null,
       }));
       return res;
@@ -2393,6 +2439,7 @@ function AppView({
       return;
     }
     setEmailComposeModal((prev) => (prev ? { ...prev, status: "sending", error: null } : prev));
+    const useTemplateBody = modal.bodyMode !== "plain" && Boolean(compose.template_id && modal.bodyHtml);
     const result = await runViewAction(modal.action, {
       moduleId: modal.moduleId,
       recordId: modal.recordId,
@@ -2405,9 +2452,9 @@ function AppView({
           to: splitEmailInput(modal.toText),
           cc: splitEmailInput(modal.ccText),
           bcc: splitEmailInput(modal.bccText),
-          template_id: modal.bodyMode === "plain" ? null : compose.template_id,
+          template_id: useTemplateBody ? compose.template_id : null,
           subject: modal.subject,
-          body_html: modal.bodyMode === "plain" ? "" : modal.bodyHtml,
+          body_html: useTemplateBody ? modal.bodyHtml : "",
           body_text: modal.bodyText,
           attachment_ids: selectedAttachmentIds,
           replace_recipients: true,
@@ -2690,7 +2737,7 @@ function AppView({
   async function handleHeaderAction(action, options = {}) {
     if (!action) return;
     if (actionRunningRef.current) return;
-    const contextDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draft || {};
+    let contextDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draft || {};
     if (action.modal_id) {
       const completedModalAction = resolveCompletedMissingOnlyModalAction(action.modal_id, contextDraft);
       if (completedModalAction) {
@@ -2699,8 +2746,9 @@ function AppView({
         openManifestModal(action.modal_id, contextDraft);
         return;
       }
-    } else if (!options?.validationRetry && openActionValidationModal(action, contextDraft)) {
-      return;
+    } else if (!options?.validationRetry) {
+      contextDraft = await hydrateMissingValidationAttachments(action, contextDraft);
+      if (openActionValidationModal(action, contextDraft)) return;
     }
     const actionModuleId = action?.moduleId || moduleId;
     if (isWriteActionKind(action.kind) && !canWriteRecords) return;
@@ -3729,9 +3777,11 @@ function AppView({
                   setActiveManifestModal((prev) => {
                     if (!prev) return prev;
                     const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, next || {});
+                    const missingFieldIds = computeManifestModalMissingFieldIds(prev, nextModalDraft);
                     return {
                       ...prev,
                       draft: nextModalDraft,
+                      missingFieldIds,
                       error: "",
                       savedAt: null,
                     };
@@ -3828,6 +3878,14 @@ function AppView({
       </div>,
       document.body
     );
+  const emailComposeHasTemplate = Boolean(emailComposeModal?.compose?.template_id && emailComposeModal?.bodyHtml);
+  const emailComposeBodyMode = emailComposeHasTemplate && emailComposeModal?.bodyMode !== "plain" ? "html" : "plain";
+  const emailComposeSendTypeOptions = emailComposeHasTemplate
+    ? [
+        { value: "html", label: "Template" },
+        { value: "plain", label: "Plain text" },
+      ]
+    : [{ value: "plain", label: "Plain text" }];
   const emailComposeNode =
     emailComposeModal &&
     createPortal(
@@ -3847,91 +3905,91 @@ function AppView({
             ) : (
               <>
                 {emailComposeModal.error ? <div className="alert alert-error text-sm">{emailComposeModal.error}</div> : null}
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label className="form-control md:col-span-2">
-                    <span className="label label-text">To</span>
-                    <input
-                      className="input input-bordered input-sm"
-                      value={emailComposeModal.toText || ""}
-                      onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, toText: event.target.value } : prev))}
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label label-text">Cc</span>
-                    <input
-                      className="input input-bordered input-sm"
-                      value={emailComposeModal.ccText || ""}
-                      onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, ccText: event.target.value } : prev))}
-                    />
-                  </label>
-                  <label className="form-control">
-                    <span className="label label-text">Bcc</span>
-                    <input
-                      className="input input-bordered input-sm"
-                      value={emailComposeModal.bccText || ""}
-                      onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, bccText: event.target.value } : prev))}
-                    />
-                  </label>
-                  <label className="form-control md:col-span-2">
-                    <span className="label label-text">Subject</span>
-                    <input
-                      className="input input-bordered input-sm"
-                      value={emailComposeModal.subject || ""}
-                      onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, subject: event.target.value } : prev))}
-                    />
-                  </label>
-                </div>
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-semibold">Preview</div>
-                      {emailComposeModal.bodyHtml ? (
-                        <div className="join">
-                          <button
-                            type="button"
-                            className={`btn join-item btn-xs ${emailComposeModal.bodyMode !== "plain" ? "btn-active" : ""}`}
-                            onClick={() => setEmailComposeModal((prev) => (prev ? { ...prev, bodyMode: "html" } : prev))}
-                          >
-                            Template
-                          </button>
-                          <button
-                            type="button"
-                            className={`btn join-item btn-xs ${emailComposeModal.bodyMode === "plain" ? "btn-active" : ""}`}
-                            onClick={() => setEmailComposeModal((prev) => (prev ? { ...prev, bodyMode: "plain" } : prev))}
-                          >
-                            Plain text
-                          </button>
-                        </div>
-                      ) : null}
+                <div className="space-y-5">
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Details</div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="form-control md:col-span-2">
+                        <span className="label label-text">To</span>
+                        <input
+                          className="input input-bordered input-sm"
+                          value={emailComposeModal.toText || ""}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, toText: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label className="form-control">
+                        <span className="label label-text">Cc</span>
+                        <input
+                          className="input input-bordered input-sm"
+                          value={emailComposeModal.ccText || ""}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, ccText: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label className="form-control">
+                        <span className="label label-text">Bcc</span>
+                        <input
+                          className="input input-bordered input-sm"
+                          value={emailComposeModal.bccText || ""}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, bccText: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label className="form-control">
+                        <span className="label label-text">Subject</span>
+                        <input
+                          className="input input-bordered input-sm"
+                          value={emailComposeModal.subject || ""}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, subject: event.target.value } : prev))}
+                        />
+                      </label>
+                      <label className="form-control">
+                        <span className="label label-text">Send Type</span>
+                        <AppSelect
+                          className="select select-bordered select-sm"
+                          value={emailComposeBodyMode}
+                          disabled={emailComposeModal.status === "sending"}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, bodyMode: event.target.value } : prev))}
+                        >
+                          {emailComposeSendTypeOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </AppSelect>
+                      </label>
                     </div>
-                    <div className="h-[420px] overflow-hidden rounded-box border border-base-300 bg-base-100">
-                      {emailComposeModal.bodyHtml && emailComposeModal.bodyMode !== "plain" ? (
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">Preview</div>
+                      <div className="text-xs opacity-60">
+                        {emailComposeBodyMode === "html" ? "Template" : "Plain text"}
+                      </div>
+                    </div>
+                    <div className="min-h-56 overflow-hidden rounded-box border border-base-300 bg-base-100">
+                      {emailComposeBodyMode === "html" ? (
                         <iframe
                           title="Email preview"
-                          className="h-full w-full bg-base-100"
+                          className="h-72 w-full bg-base-100"
                           sandbox=""
                           srcDoc={emailComposeModal.bodyHtml}
                         />
+                      ) : emailComposeModal.compose?.allow_edit_body ? (
+                        <textarea
+                          className="textarea min-h-56 w-full rounded-none border-0 text-sm leading-6 text-base-content focus:outline-none"
+                          value={emailComposeModal.bodyText || ""}
+                          onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, bodyText: event.target.value } : prev))}
+                        />
                       ) : (
-                        <div className="h-full overflow-auto whitespace-pre-wrap p-4 text-sm leading-6 text-base-content">
+                        <div className="min-h-56 overflow-auto whitespace-pre-wrap p-4 text-sm leading-6 text-base-content">
                           {emailComposeModal.bodyText || ""}
                         </div>
                       )}
                     </div>
-                    {emailComposeModal.compose?.allow_edit_body && (!emailComposeModal.bodyHtml || emailComposeModal.bodyMode === "plain") ? (
-                      <textarea
-                        className="textarea textarea-bordered min-h-28 w-full text-sm leading-6 text-base-content"
-                        value={emailComposeModal.bodyText || ""}
-                        onChange={(event) => setEmailComposeModal((prev) => (prev ? { ...prev, bodyText: event.target.value } : prev))}
-                      />
-                    ) : null}
                   </div>
-                  <div className="min-w-0 space-y-2">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-semibold">Attachments</div>
                       <div className="text-xs opacity-60">{(emailComposeModal.selectedAttachmentIds || new Set()).size} selected</div>
                     </div>
-                    <div className="max-h-[470px] overflow-y-auto rounded-box border border-base-300">
+                    <div className="max-h-64 overflow-y-auto rounded-box border border-base-300">
                       {(emailComposeModal.compose?.attachments || []).length === 0 ? (
                         <div className="p-3 text-sm opacity-60">No attachments available.</div>
                       ) : (
