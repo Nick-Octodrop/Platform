@@ -5,7 +5,7 @@
     "key": "biz_orders",
     "name": "Orders",
     "version": "1.0.0",
-    "description": "Accepted customer orders after quote approval, with procurement and invoice links.",
+    "description": "Customer orders, fulfilment, and billing links.",
     "category": "Commercial",
     "icon_key": "lucide:ClipboardList",
     "name_key": "orders.module.name",
@@ -216,19 +216,19 @@
           "id": "biz_order.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
-          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available."
+          "help_text": "Auto-filled from contact. Edit if needed."
         },
         {
           "id": "biz_order.customer_contact_email",
           "type": "string",
           "label": "Customer Contact Email",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so the order keeps contact details after reload."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_order.customer_contact_phone",
           "type": "string",
           "label": "Customer Contact Phone",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the order."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_order.source_quote_id",
@@ -255,7 +255,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity for this customer order. Orders created from quotes copy this automatically.",
+          "help_text": "Choose the selling entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -1280,7 +1280,7 @@
           "id": "biz_order_line.unit_price",
           "type": "number",
           "label": "Unit Price",
-          "help_text": "Customer sell price carried from the accepted quote or entered directly on the order.",
+          "help_text": "Customer sell price.",
           "default": 0,
           "label_key": "orders.entities.biz_order_line.fields.unit_price.label"
         },
@@ -1315,7 +1315,7 @@
           "id": "biz_order_line.unit_cost_snapshot",
           "type": "number",
           "label": "Unit Cost Snapshot",
-          "help_text": "Internal cost snapshot used for order margin/procurement. From quotes this carries the quote cost; selecting a supplier source can replace it with supplier purchase cost.",
+          "help_text": "Internal cost for margin and procurement.",
           "default": 0,
           "label_key": "orders.entities.biz_order_line.fields.unit_cost_snapshot.label"
         },
@@ -1330,7 +1330,7 @@
           "id": "biz_order_line.buy_currency_snapshot",
           "type": "enum",
           "label": "Buy Currency Snapshot",
-          "help_text": "Currency for the internal cost snapshot on this order line.",
+          "help_text": "Internal cost currency.",
           "default": "USD",
           "options": [
             {
@@ -1355,7 +1355,7 @@
           "id": "biz_order_line.procurement_supplier_id",
           "type": "lookup",
           "label": "Procurement Supplier",
-          "help_text": "Actual supplier/factory used by operations/procurement. Hidden from Sales users.",
+          "help_text": "Supplier or factory.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "domain": {
@@ -1381,7 +1381,7 @@
           "id": "biz_order_line.product_supplier_id",
           "type": "lookup",
           "label": "Supplier Source",
-          "help_text": "Specific supplier source row for this product. Selecting it can refresh supplier, cost, MOQ, SKU, and lead time snapshots.",
+          "help_text": "Supplier source for this line.",
           "entity": "entity.biz_product_supplier",
           "display_field": "biz_product_supplier.product_name_snapshot",
           "domain": {
@@ -1425,7 +1425,7 @@
           "id": "biz_order_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU Snapshot",
-          "help_text": "Supplier/factory product reference copied for purchase order preparation.",
+          "help_text": "Supplier product reference.",
           "readonly": true
         },
         {
@@ -1446,14 +1446,14 @@
           "id": "biz_order_line.product_type_snapshot",
           "type": "string",
           "label": "Product Type",
-          "help_text": "Read-only product type copied from the quote or product so the order stays stable if the catalogue changes later.",
+          "help_text": "Product type snapshot.",
           "readonly": true
         },
         {
           "id": "biz_order_line.quote_cost_mode_snapshot",
           "type": "string",
           "label": "Quote Cost Mode",
-          "help_text": "Copied from the source quote/product so operations can see whether costing came from catalogue, manual quote cost, or pass-through.",
+          "help_text": "Costing method snapshot.",
           "readonly": true
         },
         {
@@ -1514,7 +1514,7 @@
           "id": "biz_order_line.buy_total",
           "type": "number",
           "label": "Buy Total",
-          "help_text": "Internal cost total before conversion into the order currency. Hidden from Sales users.",
+          "help_text": "Internal cost before FX.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1542,14 +1542,14 @@
           "id": "biz_order_line.buy_fx_to_order_rate",
           "type": "number",
           "label": "Buy FX To Order",
-          "help_text": "Exchange rate used to convert internal cost into the order currency for profitability reporting.",
+          "help_text": "FX rate for margin reporting.",
           "default": 1
         },
         {
           "id": "biz_order_line.buy_total_order_currency",
           "type": "number",
           "label": "Buy Total (Order Currency)",
-          "help_text": "Internal cost total converted into the customer order currency for margin/profitability.",
+          "help_text": "Internal cost in order currency.",
           "readonly": true,
           "default": 0,
           "format": {
@@ -1581,7 +1581,7 @@
           "id": "biz_order_line.procurement_quantity_required",
           "type": "number",
           "label": "Qty To Procure",
-          "help_text": "Calculated quantity still requiring purchase based on procurement route and available stock.",
+          "help_text": "Quantity still to purchase.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -2585,7 +2585,7 @@
       },
       "confirm": {
         "title": "Confirm order?",
-        "body": "Use this once the commercial order is agreed and ready for execution.",
+        "body": "Confirm this order now.",
         "title_key": "orders.actions.action_customer_order_confirm.confirm.title"
       },
       "visible_when": {
@@ -2752,7 +2752,7 @@
       "transformation_key": "customer_order_to_purchase_order",
       "confirm": {
         "title": "Raise purchase order?",
-        "body": "This will create a supplier PO from the current order lines.",
+        "body": "Create supplier POs from this order.",
         "title_key": "orders.actions.action_customer_order_create_purchase_order.confirm.title"
       },
       "visible_when": {
@@ -2816,7 +2816,7 @@
       "selection_mode": "selected_records",
       "confirm": {
         "title": "Raise supplier purchase order?",
-        "body": "This will create one purchase order from the selected supplier-matched order lines."
+        "body": "Create one PO for the selected supplier lines."
       }
     },
     {
@@ -2857,7 +2857,7 @@
       "transformation_key": "customer_order_to_deposit_invoice",
       "confirm": {
         "title": "Raise deposit invoice?",
-        "body": "This will create a draft deposit invoice linked to this order.",
+        "body": "Create a linked deposit invoice.",
         "title_key": "orders.actions.action_customer_order_create_deposit_invoice.confirm.title"
       },
       "visible_when": {
@@ -2911,7 +2911,7 @@
       "transformation_key": "customer_order_to_progress_invoice",
       "confirm": {
         "title": "Raise progress invoice?",
-        "body": "This will create a draft progress invoice linked to this order."
+        "body": "Create a linked progress invoice."
       },
       "visible_when": {
         "op": "and",
@@ -2971,7 +2971,7 @@
       "transformation_key": "customer_order_to_final_invoice",
       "confirm": {
         "title": "Raise final invoice?",
-        "body": "This will create the final commercial invoice for the shipped order.",
+        "body": "Create the final invoice.",
         "title_key": "orders.actions.action_customer_order_create_final_invoice.confirm.title"
       },
       "visible_when": {
@@ -3049,7 +3049,7 @@
       },
       "confirm": {
         "title": "Generate order document?",
-        "body": "This creates or refreshes the linked order document record, stores the generated file on this order, and makes it visible in the Documents module.",
+        "body": "Generate the order document.",
         "title_key": "orders.actions.action_customer_order_create_document.confirm.title"
       },
       "action_label_key": "orders.actions.action_customer_order_create_document.label"
@@ -3093,7 +3093,7 @@
       },
       "confirm": {
         "title": "Send order confirmation?",
-        "body": "Send the latest generated order confirmation PDF to the customer.",
+        "body": "Send the latest order confirmation.",
         "title_key": "orders.actions.action_customer_order_send_confirmation.confirm.title"
       }
     }
@@ -4649,7 +4649,7 @@
     {
       "id": "modal.customer_order_hold",
       "title": "Put Order On Hold",
-      "description": "Capture why execution is being paused.",
+      "description": "Add the pause reason.",
       "entity_id": "entity.biz_order",
       "fields": [
         "biz_order.hold_reason"
@@ -4683,7 +4683,7 @@
     {
       "id": "modal.customer_order_cancel",
       "title": "Cancel Order",
-      "description": "Capture why this order is being cancelled.",
+      "description": "Add the cancellation reason.",
       "entity_id": "entity.biz_order",
       "fields": [
         "biz_order.cancellation_reason"

@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Tâches",
-    "description": "Travail assigné pour le suivi des ventes, des opérations, des achats, des finances et du transfert des clients."
+    "description": "Tâches de suivi, transfert et travail interne."
   },
   "navigation": {
     "biz_task_list_page": "Tâches",

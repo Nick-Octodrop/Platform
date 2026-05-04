@@ -5,7 +5,7 @@
     "key": "biz_products",
     "name": "Products",
     "version": "1.0.0",
-    "description": "Product catalogue items for quoting and supplier purchasing.",
+    "description": "Products, pricing, supplier sources, and specs.",
     "category": "Commercial",
     "icon_key": "lucide:Package2",
     "name_key": "products.module.name",
@@ -212,7 +212,7 @@
           "id": "biz_product.default_sales_price",
           "type": "number",
           "label": "Sales Price",
-          "help_text": "Default customer sell price copied onto quote lines. It can still be adjusted per quote line.",
+          "help_text": "Default sell price for quotes.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -225,7 +225,7 @@
           "id": "biz_product.default_quote_cost_currency",
           "type": "enum",
           "label": "Quote Cost Currency",
-          "help_text": "Currency for the default quote cost of sale. For the NLight catalogue this is EUR from the workbook cost-of-sale column.",
+          "help_text": "Currency for quote cost.",
           "default": "EUR",
           "options": [
             {
@@ -250,7 +250,7 @@
           "id": "biz_product.default_quote_cost_price",
           "type": "number",
           "label": "Quote Cost",
-          "help_text": "Default cost of sale used for quote margin calculations. For NLight this is the EUR cost copied to quote lines, not the direct supplier purchase cost.",
+          "help_text": "Default quote cost for margins.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -262,7 +262,7 @@
           "id": "biz_product.quote_cost_mode",
           "type": "enum",
           "label": "Quote Cost Mode",
-          "help_text": "Controls how quote costing should be handled: use catalogue cost, require manual cost per quote, or pass the cost through with no markup.",
+          "help_text": "Choose how quote cost is handled.",
           "default": "catalogue",
           "options": [
             {
@@ -283,7 +283,7 @@
           "id": "biz_product.default_purchase_currency",
           "type": "enum",
           "label": "Purchase Currency",
-          "help_text": "Currency used for purchasing from the actual supplier/factory. This feeds supplier and purchase order costing.",
+          "help_text": "Supplier purchase currency.",
           "default": "USD",
           "options": [
             {
@@ -317,7 +317,7 @@
           "id": "biz_product.default_buy_price",
           "type": "number",
           "label": "Buy Price",
-          "help_text": "Direct supplier/factory purchase cost. For NLight this is EcoTech's USD supplier cost from the catalogue, separate from quote cost.",
+          "help_text": "Direct supplier purchase cost.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -330,7 +330,7 @@
           "id": "biz_product.intercompany_cost_currency",
           "type": "enum",
           "label": "Intercompany Cost Currency",
-          "help_text": "Currency for the internal transfer price between entities. For NLight this is the USD price charged from EcoTech to NLight BV.",
+          "help_text": "Internal transfer currency.",
           "default": "USD",
           "options": [
             {
@@ -355,7 +355,7 @@
           "id": "biz_product.intercompany_cost_price",
           "type": "number",
           "label": "Intercompany Cost",
-          "help_text": "Internal transfer cost between entities. For NLight this is column N in the catalogue and is hidden from Sales users.",
+          "help_text": "Internal transfer cost.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -367,7 +367,7 @@
           "id": "biz_product.fulfilment_mode",
           "type": "enum",
           "label": "Fulfilment Mode",
-          "help_text": "Use made to order for factory-supplied catalogue items, stocked for inventory items, and hybrid when both are possible.",
+          "help_text": "Choose the procurement route.",
           "default": "made_to_order",
           "options": [
             {
@@ -476,7 +476,7 @@
           "id": "biz_product.lead_time_weeks",
           "type": "number",
           "label": "Lead Time (Weeks)",
-          "help_text": "Expected supplier/factory lead time copied onto quote and order lines for internal planning.",
+          "help_text": "Expected supplier lead time.",
           "default": 0,
           "label_key": "products.entities.biz_product.fields.lead_time_weeks.label"
         },
@@ -484,7 +484,7 @@
           "id": "biz_product.minimum_order_quantity",
           "type": "number",
           "label": "Minimum Order Quantity",
-          "help_text": "Minimum quantity normally required by the supplier. Copied to quote and order lines for purchasing reference.",
+          "help_text": "Supplier minimum order quantity.",
           "default": 1,
           "label_key": "products.entities.biz_product.fields.minimum_order_quantity.label"
         },
@@ -542,7 +542,7 @@
           "id": "biz_product.preferred_supplier_id",
           "type": "lookup",
           "label": "Preferred Supplier",
-          "help_text": "Internal supplier/factory used for purchasing defaults. Hidden from Sales access profiles.",
+          "help_text": "Default supplier/factory.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "label_key": "products.entities.biz_product.fields.preferred_supplier_id.label"
@@ -551,56 +551,56 @@
           "id": "biz_product.supplier_factory_reference",
           "type": "string",
           "label": "Supplier / Factory Ref",
-          "help_text": "Supplier SKU or factory reference used by procurement. Hidden from Sales access profiles.",
+          "help_text": "Supplier SKU or factory reference.",
           "label_key": "products.entities.biz_product.fields.supplier_factory_reference.label"
         },
         {
           "id": "biz_product.catalog_source",
           "type": "string",
           "label": "Catalogue Source",
-          "help_text": "Reference to the source file or import that created the catalogue item."
+          "help_text": "Source import reference."
         },
         {
           "id": "biz_product.catalog_row_number",
           "type": "number",
           "label": "Catalogue Row Number",
-          "help_text": "Source row number from the supplier/customer catalogue import for audit and re-import checks."
+          "help_text": "Source import row."
         },
         {
           "id": "biz_product.manufacturer_model",
           "type": "string",
           "label": "Manufacturer Model",
-          "help_text": "Original supplier/manufacturer model code. This can differ from the internal product code."
+          "help_text": "Original supplier model code."
         },
         {
           "id": "biz_product.wattage",
           "type": "number",
           "label": "Wattage",
-          "help_text": "Fixture wattage used for quoting, specifications, and customer-facing document detail."
+          "help_text": "Fixture wattage."
         },
         {
           "id": "biz_product.spectrum",
           "type": "string",
           "label": "Spectrum",
-          "help_text": "Light spectrum or LED mix, copied onto quote/order line snapshots."
+          "help_text": "Light spectrum or LED mix."
         },
         {
           "id": "biz_product.input_voltage",
           "type": "string",
           "label": "Input Voltage",
-          "help_text": "Electrical input voltage specification copied onto quote/order line snapshots."
+          "help_text": "Input voltage."
         },
         {
           "id": "biz_product.ppe_umol_per_w",
           "type": "string",
           "label": "PPE (umol/s/W)",
-          "help_text": "Photosynthetic photon efficacy. Stored as text because some catalogue rows include notes or combined values."
+          "help_text": "Fixture efficacy."
         },
         {
           "id": "biz_product.ppf_umol_s",
           "type": "number",
           "label": "PPF (umol/s)",
-          "help_text": "Photosynthetic photon flux output used in lighting specifications."
+          "help_text": "Fixture PPF output."
         },
         {
           "id": "biz_product.dimmable",
@@ -621,7 +621,7 @@
           "id": "biz_product.modules",
           "type": "string",
           "label": "Modules",
-          "help_text": "Fixture module count or catalogue module note. Kept as text because some accessory rows are not numeric."
+          "help_text": "Module count or note."
         },
         {
           "id": "biz_product.stock_notes",
@@ -701,7 +701,7 @@
           "id": "biz_product_supplier.supplier_id",
           "type": "lookup",
           "label": "Supplier",
-          "help_text": "Actual supplier/factory for this source row. Sales profiles should not have access to this entity.",
+          "help_text": "Supplier or factory.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
@@ -733,13 +733,13 @@
           "id": "biz_product_supplier.supplier_sku",
           "type": "string",
           "label": "Supplier SKU / Factory Ref",
-          "help_text": "Supplier's own product reference used on purchase orders."
+          "help_text": "Supplier product reference."
         },
         {
           "id": "biz_product_supplier.purchase_description",
           "type": "text",
           "label": "Purchase Description",
-          "help_text": "Description to use internally or on supplier purchase orders if it differs from the sales description."
+          "help_text": "Supplier-facing description."
         },
         {
           "id": "biz_product_supplier.uom_snapshot",
@@ -785,7 +785,7 @@
           "id": "biz_product_supplier.purchase_currency",
           "type": "enum",
           "label": "Purchase Currency",
-          "help_text": "Currency this supplier charges in for this item.",
+          "help_text": "Supplier currency.",
           "default": "USD",
           "options": [
             {
@@ -810,7 +810,7 @@
           "id": "biz_product_supplier.unit_cost",
           "type": "number",
           "label": "Unit Cost",
-          "help_text": "Supplier purchase unit cost for this source row. Hidden from Sales.",
+          "help_text": "Supplier unit cost.",
           "default": 0,
           "format": {
             "kind": "currency",
@@ -822,27 +822,27 @@
           "id": "biz_product_supplier.minimum_order_quantity",
           "type": "number",
           "label": "MOQ",
-          "help_text": "Minimum order quantity for this supplier source.",
+          "help_text": "Minimum order quantity.",
           "default": 1
         },
         {
           "id": "biz_product_supplier.lead_time_weeks",
           "type": "number",
           "label": "Lead Time (Weeks)",
-          "help_text": "Expected lead time from this supplier source.",
+          "help_text": "Expected lead time.",
           "default": 0
         },
         {
           "id": "biz_product_supplier.supplier_incoterm",
           "type": "string",
           "label": "Supplier Incoterm",
-          "help_text": "Default purchase/shipping term for this supplier source."
+          "help_text": "Default purchase/shipping term."
         },
         {
           "id": "biz_product_supplier.is_primary",
           "type": "bool",
           "label": "Primary Supplier",
-          "help_text": "When active, this supplier row can sync defaults back onto the product.",
+          "help_text": "Use this source for product defaults.",
           "default": false
         },
         {

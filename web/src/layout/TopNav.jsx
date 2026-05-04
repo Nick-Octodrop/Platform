@@ -140,7 +140,7 @@ function buildRecordLabel(record, { preferredFields = [], entity = null, fallbac
 }
 
 export default function TopNav({ user, onSignOut, frameMode = false }) {
-  const { t, locale, version, workspaceKey, workspacePrefs } = useI18n();
+  const { t, locale, version, workspaceKey, workspacePrefs, loading: i18nLoading } = useI18n();
   const { context: accessContext } = useAccessContext();
   const isMobile = useMediaQuery("(max-width: 768px)");
   const location = useLocation();
@@ -806,8 +806,9 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
       || workspacePrefs?.name
       || workspacePrefs?.title
       || "";
-    return String(raw).trim() || "Octodrop";
+    return String(raw).trim();
   }, [activeWorkspace, workspacePrefs]);
+  const hasWorkspaceDisplayName = Boolean(workspaceDisplayName);
   const workspaceNavLogoUrl = useMemo(() => {
     const raw = workspacePrefs?.nav_logo_url || workspacePrefs?.logo_url || "";
     return String(raw).trim();
@@ -825,12 +826,15 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
     <span className={workspaceNavLogoBoxClass}>
       <img
         src={workspaceNavLogoUrl}
-        alt={`${workspaceDisplayName} logo`}
+        alt={workspaceDisplayName ? `${workspaceDisplayName} logo` : "Workspace logo"}
         className={workspaceNavLogoImageClass}
         onError={() => setWorkspaceNavLogoFailed(true)}
       />
     </span>
   ) : null;
+  const workspaceNavLogoPlaceholder = (
+    <span className={workspaceNavLogoBoxClass} aria-hidden="true" />
+  );
   const homeCrumbContent = t("navigation.home");
   const mobileTitle = useMemo(() => {
     if (isAppRoute) {
@@ -1175,16 +1179,20 @@ export default function TopNav({ user, onSignOut, frameMode = false }) {
         </button>
         {showWorkspaceNavLogo ? (
           workspaceNavLogo
-        ) : (
+        ) : hasWorkspaceDisplayName && !i18nLoading ? (
           <div className="text-sm font-semibold truncate">{mobileTitle}</div>
+        ) : (
+          workspaceNavLogoPlaceholder
         )}
       </div>
     ) : (
       <div className="min-w-0">
         {showWorkspaceNavLogo ? (
           workspaceNavLogo
-        ) : (
+        ) : hasWorkspaceDisplayName && !i18nLoading ? (
           <div className="text-sm font-semibold truncate">{workspaceDisplayName}</div>
+        ) : (
+          workspaceNavLogoPlaceholder
         )}
       </div>
     )

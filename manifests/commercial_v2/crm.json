@@ -5,7 +5,7 @@
     "key": "biz_crm",
     "name": "CRM",
     "version": "1.0.0",
-    "description": "Sales workspace replacing CRM handoff gaps, with quote and order handoff built in.",
+    "description": "Leads, opportunities, activities, and sales handoff.",
     "category": "Commercial",
     "icon_key": "lucide:Handshake",
     "name_key": "crm.module.name",
@@ -138,7 +138,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity for this record. Sales users only retain access to records in their assigned entity.",
+          "help_text": "Choose the selling entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -191,7 +191,7 @@
           "type": "text",
           "label": "Full Site Address",
           "readonly": true,
-          "help_text": "Computed from the site address fields and copied into opportunities, quotes, and orders as an editable snapshot.",
+          "help_text": "Built from the site address fields.",
           "compute": {
             "expression": {
               "op": "join",
@@ -278,7 +278,7 @@
           "id": "crm_lead.status",
           "type": "enum",
           "label": "Status",
-          "help_text": "Lead workflow status. Use the status bar/actions to move the lead through the CRM process.",
+          "help_text": "Move the lead with the status actions.",
           "ui": {
             "widget": "steps"
           },
@@ -403,7 +403,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity before saving. NLight BV and EcoTech/CIS sales teams only see records assigned to their own entity.",
+          "help_text": "Choose the selling entity before saving.",
           "options": [
             {
               "value": "NLight BV",
@@ -443,58 +443,58 @@
           "id": "crm_lead.contact_name",
           "type": "string",
           "label": "Contact Name",
-          "help_text": "Auto-filled from the selected contact person, but can be typed manually for new leads before the person record exists.",
+          "help_text": "Auto-filled from contact. Edit if needed.",
           "label_key": "crm.entities.crm_lead.fields.contact_name.label"
         },
         {
           "id": "crm_lead.contact_email",
           "type": "string",
           "label": "Contact Email",
-          "help_text": "Auto-filled from the selected contact person or company. Editable so lead contact details are not lost when the person has not been created yet.",
+          "help_text": "Auto-filled from contact/company. Edit if needed.",
           "label_key": "crm.entities.crm_lead.fields.contact_email.label"
         },
         {
           "id": "crm_lead.contact_phone",
           "type": "string",
           "label": "Contact Phone",
-          "help_text": "Auto-filled from the selected contact person or company. Editable so call details can be captured directly on the lead.",
+          "help_text": "Auto-filled from contact/company. Edit if needed.",
           "label_key": "crm.entities.crm_lead.fields.contact_phone.label"
         },
         {
           "id": "crm_lead.contact_role",
           "type": "string",
           "label": "Contact Role",
-          "help_text": "Auto-filled from the selected contact person and carried into the opportunity when the lead is qualified."
+          "help_text": "Carried into the opportunity."
         },
         {
           "id": "crm_lead.company_legal_name",
           "type": "string",
           "label": "Company Legal Name",
-          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_lead.company_country",
           "type": "string",
           "label": "Company Country",
-          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_lead.company_tax_number",
           "type": "string",
           "label": "VAT / Tax Number",
-          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_lead.company_registration_number",
           "type": "string",
           "label": "Company Registration Number",
-          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_lead.company_address",
           "type": "text",
           "label": "Company Address",
-          "help_text": "Snapshot from the company record and carried into the opportunity when the lead is qualified."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_lead.owner_user_id",
@@ -689,32 +689,32 @@
           "id": "crm_opportunity.company_legal_name",
           "type": "string",
           "label": "Company Legal Name",
-          "help_text": "Snapshot from the company record for mandatory qualification checks."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_opportunity.company_country",
           "type": "string",
           "label": "Company Country",
-          "help_text": "Snapshot from the company record for mandatory qualification checks."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_opportunity.company_tax_number",
           "type": "string",
           "label": "VAT / Tax Number",
-          "help_text": "Snapshot from the company record for mandatory qualification checks."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_opportunity.company_registration_number",
           "type": "string",
           "label": "Company Registration Number",
-          "help_text": "Snapshot from the company record for mandatory qualification checks."
+          "help_text": "Copied from the company."
         },
         {
           "id": "crm_opportunity.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity for this opportunity. Qualified leads copy this automatically.",
+          "help_text": "Choose the selling entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -754,27 +754,27 @@
           "id": "crm_opportunity.primary_contact_name",
           "type": "string",
           "label": "Primary Contact",
-          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available.",
+          "help_text": "Auto-filled from contact. Edit if needed.",
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_name.label"
         },
         {
           "id": "crm_opportunity.primary_contact_email",
           "type": "string",
           "label": "Contact Email",
-          "help_text": "Auto-filled from the selected contact person or company. Editable so opportunity contact details remain visible after reload.",
+          "help_text": "Auto-filled from contact/company. Edit if needed.",
           "label_key": "crm.entities.crm_opportunity.fields.primary_contact_email.label"
         },
         {
           "id": "crm_opportunity.primary_contact_phone",
           "type": "string",
           "label": "Contact Phone",
-          "help_text": "Auto-filled from the selected contact person or company. Editable so phone details can be captured directly on the opportunity."
+          "help_text": "Auto-filled from contact/company. Edit if needed."
         },
         {
           "id": "crm_opportunity.primary_contact_role",
           "type": "string",
           "label": "Primary Contact Role",
-          "help_text": "Role or job title of the primary contact for stage-gate qualification."
+          "help_text": "Primary contact role."
         },
         {
           "id": "crm_opportunity.site_id",
@@ -806,7 +806,7 @@
           "label": "Source Lead",
           "entity": "entity.crm_lead",
           "display_field": "crm_lead.title",
-          "help_text": "Filled when this opportunity is created by qualifying a lead, so lead activity context remains visible.",
+          "help_text": "Source lead for this opportunity.",
           "label_key": "crm.entities.crm_opportunity.fields.source_lead_id.label"
         },
         {
@@ -815,7 +815,7 @@
           "label": "Returned Lead",
           "entity": "entity.crm_lead",
           "display_field": "crm_lead.title",
-          "help_text": "Filled when this opportunity is moved back to a lead for nurture."
+          "help_text": "Nurture lead created from this opportunity."
         },
         {
           "id": "crm_opportunity.owner_user_id",
@@ -854,7 +854,7 @@
           "id": "crm_opportunity.stage",
           "type": "enum",
           "label": "Stage",
-          "help_text": "Main opportunity workflow stage. This drives the status bar, kanban columns, workflow buttons, and reporting.",
+          "help_text": "Current opportunity stage.",
           "ui": {
             "widget": "steps"
           },
@@ -915,7 +915,7 @@
           "id": "crm_opportunity.status",
           "type": "enum",
           "label": "Status",
-          "help_text": "Derived lifecycle state used for imports/reporting. In normal use, move opportunities with the Stage bar and action buttons instead.",
+          "help_text": "Reporting status.",
           "default": "open",
           "options": [
             {
@@ -1174,13 +1174,13 @@
               "label": "Other"
             }
           ],
-          "help_text": "Facility category required before progressing from Deal Qualification."
+          "help_text": "Required for qualification."
         },
         {
           "id": "crm_opportunity.canopy_area",
           "type": "number",
           "label": "Canopy Area",
-          "help_text": "Growing canopy area required before progressing from Deal Qualification."
+          "help_text": "Required for qualification."
         },
         {
           "id": "crm_opportunity.canopy_area_unit",
@@ -1202,25 +1202,25 @@
           "id": "crm_opportunity.existing_lighting",
           "type": "string",
           "label": "Existing Lighting",
-          "help_text": "Existing lighting technology, for example HPS, LED, vertical lighting, or none."
+          "help_text": "Current lighting setup."
         },
         {
           "id": "crm_opportunity.indicative_budget_range",
           "type": "string",
           "label": "Indicative Budget Range",
-          "help_text": "Early budget range captured during qualification."
+          "help_text": "Estimated budget range."
         },
         {
           "id": "crm_opportunity.decision_process",
           "type": "text",
           "label": "Decision-Making Process",
-          "help_text": "Short note describing who decides and how approval happens."
+          "help_text": "Who decides and how approval works."
         },
         {
           "id": "crm_opportunity.partnership_name",
           "type": "string",
           "label": "Partnership Name",
-          "help_text": "Optional partnership or channel name."
+          "help_text": "Partner or channel name."
         },
         {
           "id": "crm_opportunity.discovery_meeting_date",
@@ -1441,7 +1441,7 @@
           "label": "Rotting Follow-Up Task",
           "entity": "entity.biz_task",
           "display_field": "biz_task.title",
-          "help_text": "System-created follow-up task when no logged activity has occurred for the rotting-deal window."
+          "help_text": "Auto follow-up task for stalled deals."
         },
         {
           "id": "crm_opportunity.signed_quote_contract_attached",
@@ -1506,7 +1506,7 @@
               "label": "Rejected"
             }
           ],
-          "help_text": "Approval status for progressing an opportunity when a mandatory stage-gate field cannot be completed yet."
+          "help_text": "Stage-gate exception status."
         },
         {
           "id": "crm_opportunity.stage_gate_exception_reason",
@@ -1521,7 +1521,7 @@
               "rejected"
             ]
           },
-          "help_text": "Reason the mandatory stage-gate requirement cannot be completed before progressing."
+          "help_text": "Why this gate needs an exception."
         },
         {
           "id": "crm_opportunity.stage_gate_exception_approver_user_id",
@@ -1536,7 +1536,7 @@
               "rejected"
             ]
           },
-          "help_text": "Nominated approver for the mandatory-field exception request."
+          "help_text": "Exception approver."
         },
         {
           "id": "crm_opportunity.stage_gate_exception_fields",
@@ -1551,13 +1551,13 @@
               "rejected"
             ]
           },
-          "help_text": "Mandatory fields being waived by this exception request."
+          "help_text": "Fields covered by the exception."
         },
         {
           "id": "crm_opportunity.stage_gate_exception_decision_notes",
           "type": "text",
           "label": "Stage Gate Decision Notes",
-          "help_text": "Approval or rejection notes for mandatory-field exception requests."
+          "help_text": "Decision notes."
         },
         {
           "id": "crm_opportunity.on_hold_reason",
@@ -1568,7 +1568,7 @@
             "field": "crm_opportunity.on_hold_reason_code",
             "value": "other"
           },
-          "help_text": "Additional note required when the hold reason is Other."
+          "help_text": "Explain the hold reason."
         },
         {
           "id": "crm_opportunity.on_hold_reason_code",
@@ -1601,7 +1601,7 @@
             "field": "crm_opportunity.stage",
             "value": "on_hold"
           },
-          "help_text": "Mandatory hold reason category from Natalie and Shelly's stage-gate document."
+          "help_text": "Choose the hold reason."
         },
         {
           "id": "crm_opportunity.on_hold_follow_up_date",
@@ -1612,7 +1612,7 @@
             "field": "crm_opportunity.stage",
             "value": "on_hold"
           },
-          "help_text": "Date the owner must follow up while this opportunity is on hold."
+          "help_text": "Next hold follow-up date."
         },
         {
           "id": "crm_opportunity.on_hold_follow_up_task_id",
@@ -1620,43 +1620,43 @@
           "label": "On Hold Follow-Up Task",
           "entity": "entity.biz_task",
           "display_field": "biz_task.title",
-          "help_text": "System-created follow-up task for the current on-hold cycle."
+          "help_text": "Auto follow-up task for this hold."
         },
         {
           "id": "crm_opportunity.sector",
           "type": "string",
           "label": "Sector",
-          "help_text": "Commercial sector for reporting and handover, for example greenhouse, vertical farm, research, or propagation."
+          "help_text": "Commercial sector."
         },
         {
           "id": "crm_opportunity.crop_type",
           "type": "string",
           "label": "Type of Crop",
-          "help_text": "Primary crop or crop group for the opportunity."
+          "help_text": "Primary crop or crop group."
         },
         {
           "id": "crm_opportunity.product_interest",
           "type": "string",
           "label": "Products",
-          "help_text": "Products, product family, or system type discussed with the customer."
+          "help_text": "Product interest."
         },
         {
           "id": "crm_opportunity.spectrum_interest",
           "type": "string",
           "label": "Spectrum",
-          "help_text": "Spectrum or lighting recipe requirement discussed for this opportunity."
+          "help_text": "Spectrum requirement."
         },
         {
           "id": "crm_opportunity.company_address",
           "type": "text",
           "label": "Company Address",
-          "help_text": "Customer company address snapshot for opportunity context."
+          "help_text": "Customer address snapshot."
         },
         {
           "id": "crm_opportunity.site_address",
           "type": "text",
           "label": "Site Address",
-          "help_text": "Project/site address snapshot for opportunity context."
+          "help_text": "Site address snapshot."
         },
         {
           "id": "crm_opportunity.linked_quote_id",
@@ -1916,7 +1916,7 @@
           "id": "crm_opportunity_line.available_stock_snapshot",
           "type": "number",
           "label": "Available Stock Snapshot",
-          "help_text": "Current available stock copied from the product. 0 is expected for made-to-order, custom, or non-stock products.",
+          "help_text": "Current available stock.",
           "readonly": true,
           "default": 0
         },
@@ -1970,7 +1970,7 @@
           "id": "crm_opportunity_line.unit_price",
           "type": "number",
           "label": "Sell Unit Price",
-          "help_text": "Customer sell price for this opportunity product. This is copied to the quote when a quote is created.",
+          "help_text": "Sell price for this opportunity.",
           "default": 0
         },
         {
@@ -2029,7 +2029,7 @@
           "id": "crm_opportunity_line.default_buy_price_snapshot",
           "type": "number",
           "label": "Unit Cost",
-          "help_text": "Internal quote cost snapshot copied from the product so quote margin remains stable after handoff.",
+          "help_text": "Internal quote cost snapshot.",
           "default": 0
         },
         {
@@ -2418,7 +2418,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity for this activity. Activities created from leads, opportunities, or sites copy this automatically.",
+          "help_text": "Choose the selling entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -2486,7 +2486,7 @@
           "id": "crm_activity.completed_date",
           "type": "date",
           "label": "Completed Date",
-          "help_text": "Set when the activity is marked done.",
+          "help_text": "Set when completed.",
           "label_key": "crm.entities.crm_activity.fields.completed_date.label"
         },
         {
@@ -7105,7 +7105,7 @@
     {
       "id": "modal.crm_lead_disqualify",
       "title": "Disqualify Lead",
-      "description": "Capture why this enquiry should not move into the sales pipeline.",
+      "description": "Add the disqualification reason.",
       "entity_id": "entity.crm_lead",
       "fields": [
         "crm_lead.disqualification_reason"
@@ -7137,7 +7137,7 @@
     {
       "id": "modal.crm_lead_mark_contacted_gate",
       "title": "Complete Contact Gate",
-      "description": "Add at least one contact detail before marking this lead as contacted.",
+      "description": "Add at least one contact detail.",
       "entity_id": "entity.crm_lead",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_lead_mark_contacted",
@@ -7165,7 +7165,7 @@
     {
       "id": "modal.crm_lead_qualify_gate",
       "title": "Complete Lead Qualification",
-      "description": "Complete the minimum lead details before creating the linked opportunity.",
+      "description": "Complete the required lead details.",
       "entity_id": "entity.crm_lead",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_lead_qualify",
@@ -7195,7 +7195,7 @@
     {
       "id": "modal.crm_opportunity_move_to_meeting",
       "title": "Complete Qualification Gate",
-      "description": "Complete the required qualification fields before moving this opportunity to Meeting. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "description": "Complete the qualification fields to continue.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_confirm_meeting",
@@ -7239,7 +7239,7 @@
     {
       "id": "modal.crm_opportunity_back_to_lead_gate",
       "title": "Complete Back-to-Lead Gate",
-      "description": "Complete the minimum opportunity details before moving this opportunity back to a lead.",
+      "description": "Complete the required opportunity details.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_back_to_lead",
@@ -7265,7 +7265,7 @@
     {
       "id": "modal.crm_opportunity_move_to_proposal",
       "title": "Complete Meeting Gate",
-      "description": "Complete the required meeting discovery fields before moving this opportunity to Proposal. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "description": "Complete meeting discovery to continue.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_solution",
@@ -7304,7 +7304,7 @@
     {
       "id": "modal.crm_opportunity_move_to_negotiation",
       "title": "Complete Proposal Gate",
-      "description": "Complete the required quote and proposal fields before moving this opportunity to Negotiation & Commitment. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "description": "Complete proposal readiness to continue.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_quote_stage",
@@ -7341,7 +7341,7 @@
     {
       "id": "modal.crm_opportunity_create_quote_gate",
       "title": "Complete Quote Creation Gate",
-      "description": "Complete the required opportunity details and product lines before creating a quote.",
+      "description": "Complete the required details before creating a quote.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_create_quote",
@@ -7368,7 +7368,7 @@
     {
       "id": "modal.crm_opportunity_mark_won_gate",
       "title": "Complete Commitment Gate",
-      "description": "Complete the required commitment fields before marking this opportunity as won. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "description": "Complete commitment details to continue.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_mark_won",
@@ -7403,7 +7403,7 @@
     {
       "id": "modal.crm_opportunity_create_order_gate",
       "title": "Complete Order Handover Gate",
-      "description": "Complete the required handover fields before creating the order. If the deal genuinely needs to move before all fields are available, use Request Gate Exception from the opportunity actions.",
+      "description": "Complete handover details before creating the order.",
       "entity_id": "entity.crm_opportunity",
       "show_missing_only": true,
       "missing_fields_action_id": "action.crm_opportunity_create_order",
@@ -7437,7 +7437,7 @@
     {
       "id": "modal.crm_opportunity_gate_exception_request",
       "title": "Request Stage Gate Exception",
-      "description": "Capture why this opportunity needs to progress before all mandatory stage-gate fields are complete.",
+      "description": "Explain why this gate needs an exception.",
       "entity_id": "entity.crm_opportunity",
       "fields": [
         "crm_opportunity.stage_gate_exception_approver_user_id",
@@ -7474,7 +7474,7 @@
     {
       "id": "modal.crm_opportunity_gate_exception_approve",
       "title": "Approve Stage Gate Exception",
-      "description": "Approve the exception and record the decision notes for audit.",
+      "description": "Approve the exception and add decision notes.",
       "entity_id": "entity.crm_opportunity",
       "fields": [
         "crm_opportunity.stage_gate_exception_decision_notes"
@@ -7502,7 +7502,7 @@
     {
       "id": "modal.crm_opportunity_gate_exception_reject",
       "title": "Reject Stage Gate Exception",
-      "description": "Reject the exception and record the decision notes for audit.",
+      "description": "Reject the exception and add decision notes.",
       "entity_id": "entity.crm_opportunity",
       "fields": [
         "crm_opportunity.stage_gate_exception_decision_notes"
@@ -7530,7 +7530,7 @@
     {
       "id": "modal.crm_opportunity_hold",
       "title": "Place Opportunity On Hold",
-      "description": "Capture the hold reason and follow-up date before moving the opportunity to On Hold.",
+      "description": "Add the hold reason and follow-up date.",
       "entity_id": "entity.crm_opportunity",
       "fields": [
         "crm_opportunity.on_hold_reason_code",
@@ -7614,7 +7614,7 @@
     {
       "id": "modal.crm_opportunity_lost",
       "title": "Mark Opportunity Lost",
-      "description": "Capture the loss reason so the pipeline remains useful.",
+      "description": "Add the loss reason.",
       "entity_id": "entity.crm_opportunity",
       "fields": [
         "crm_opportunity.won_lost_reason"

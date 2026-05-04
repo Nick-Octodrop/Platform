@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "CRM",
-    "description": "De verkoopwerkruimte vervangt de hiaten in de overdracht van CRM, met ingebouwde overdracht van offertes en orders."
+    "description": "Leads, kansen, activiteiten en verkoopoverdracht."
   },
   "navigation": {
     "crm_dashboard_page": "CRM",

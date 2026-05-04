@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Documents",
-    "description": "Contrôle des documents pour les dossiers commerciaux, y compris les devis PDF, les lots de commandes, les documents des fournisseurs, les fichiers de factures et les documents clients signés."
+    "description": "Documents commerciaux et fichiers signés."
   },
   "navigation": {
     "biz_document_list_page": "Documents",

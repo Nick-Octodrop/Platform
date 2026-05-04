@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Tasks",
-    "description": "Assigned work for sales, operations, procurement, finance, and customer handoff follow-ups."
+    "description": "Tasks for follow-ups, handoffs, and internal work."
   },
   "navigation": {
     "biz_task_list_page": "Tasks",

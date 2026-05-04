@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Taken",
-    "description": "Toegewezen werk voor verkoop, bedrijfsvoering, inkoop, financiën en opvolging van de klantoverdracht."
+    "description": "Taken voor opvolging, overdracht en intern werk."
   },
   "navigation": {
     "biz_task_list_page": "Taken",

@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "CRM",
-    "description": "Espace de travail de vente remplaçant les écarts de transfert CRM, avec transfert de devis et de commande intégré."
+    "description": "Leads, opportunités, activités et transferts commerciaux."
   },
   "navigation": {
     "crm_dashboard_page": "CRM",

@@ -5,7 +5,7 @@
     "key": "biz_quotes",
     "name": "Quotes",
     "version": "1.0.0",
-    "description": "Quote workflow from pricing and customer approval through order conversion.",
+    "description": "Quotes from pricing through customer approval.",
     "category": "Commercial",
     "icon_key": "lucide:FileCheck2",
     "name_key": "quotes.module.name",
@@ -140,7 +140,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose which sales entity this script is available to.",
+          "help_text": "Choose who can use this script.",
           "options": [
             {
               "value": "NLight BV",
@@ -275,14 +275,14 @@
           "id": "biz_quote.expiry_date",
           "type": "date",
           "label": "Expiry Date",
-          "help_text": "Required before generating the customer quote PDF.",
+          "help_text": "Required before generating the quote PDF.",
           "label_key": "quotes.entities.biz_quote.fields.expiry_date.label"
         },
         {
           "id": "biz_quote.sales_entity",
           "type": "enum",
           "label": "Sales Entity",
-          "help_text": "Controls entity-specific access, numbering, reporting, and which sales team should see this quote.",
+          "help_text": "Choose the selling entity.",
           "required": true,
           "options": [
             {
@@ -363,20 +363,20 @@
           "id": "biz_quote.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
-          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available.",
+          "help_text": "Auto-filled from contact. Edit if needed.",
           "label_key": "quotes.entities.biz_quote.fields.customer_contact_name.label"
         },
         {
           "id": "biz_quote.customer_contact_email",
           "type": "string",
           "label": "Customer Contact Email",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so the quote keeps contact details after reload."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_quote.customer_contact_phone",
           "type": "string",
           "label": "Customer Contact Phone",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the quote."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_quote.customer_reference",
@@ -389,7 +389,7 @@
           "type": "enum",
           "label": "Currency",
           "default": "EUR",
-          "help_text": "Defaults from the customer. You can override it before line items are added.",
+          "help_text": "Defaults from the customer.",
           "disabled_when": {
             "op": "or",
             "conditions": [
@@ -439,7 +439,7 @@
           "id": "biz_quote.owner_user_id",
           "type": "user",
           "label": "Quote Owner",
-          "help_text": "Internal owner for pipeline, activity, automations, and generated documents."
+          "help_text": "Internal owner."
         },
         {
           "id": "biz_quote.sales_owner",
@@ -451,7 +451,7 @@
           "id": "biz_quote.document_language",
           "type": "enum",
           "label": "Document Language",
-          "help_text": "Language used for quote document text and selected script content.",
+          "help_text": "Quote document language.",
           "default": "EN",
           "options": [
             {
@@ -485,7 +485,7 @@
           "id": "biz_quote.script_template_id",
           "type": "lookup",
           "label": "Quote Script Template",
-          "help_text": "Selects a standard script and fills the editable quote text sections. Existing edited text is preserved unless it still matches the previous template.",
+          "help_text": "Select the quote text template.",
           "entity": "entity.biz_quote_script",
           "display_field": "biz_quote_script.script_name",
           "ui": {
@@ -622,7 +622,7 @@
           "id": "biz_quote.payment_terms",
           "type": "text",
           "label": "Payment Terms",
-          "help_text": "Customer-facing payment terms. Use this for longer staged or project-specific payment wording.",
+          "help_text": "Customer payment terms.",
           "label_key": "quotes.entities.biz_quote.fields.payment_terms.label"
         },
         {
@@ -635,44 +635,44 @@
           "id": "biz_quote.shipping_terms",
           "type": "text",
           "label": "Shipping Terms",
-          "help_text": "Customer-facing shipping, delivery, and logistics terms.",
+          "help_text": "Shipping and delivery terms.",
           "label_key": "quotes.entities.biz_quote.fields.shipping_terms.label"
         },
         {
           "id": "biz_quote.sector",
           "type": "string",
           "label": "Sector",
-          "help_text": "Commercial sector copied from the opportunity where available."
+          "help_text": "Commercial sector."
         },
         {
           "id": "biz_quote.crop_type",
           "type": "string",
           "label": "Type of Crop",
-          "help_text": "Primary crop or crop group copied from the opportunity where available."
+          "help_text": "Primary crop or crop group."
         },
         {
           "id": "biz_quote.product_interest",
           "type": "string",
           "label": "Products",
-          "help_text": "Products, product family, or system type discussed with the customer."
+          "help_text": "Product interest."
         },
         {
           "id": "biz_quote.spectrum_interest",
           "type": "string",
           "label": "Spectrum",
-          "help_text": "Spectrum or lighting recipe requirement discussed for this quote."
+          "help_text": "Spectrum requirement."
         },
         {
           "id": "biz_quote.company_address",
           "type": "text",
           "label": "Company Address",
-          "help_text": "Customer company address snapshot for quote context."
+          "help_text": "Customer address snapshot."
         },
         {
           "id": "biz_quote.site_address",
           "type": "text",
           "label": "Site Address",
-          "help_text": "Project/site address snapshot for quote context."
+          "help_text": "Site address snapshot."
         },
         {
           "id": "biz_quote.validity_notes",
@@ -716,7 +716,7 @@
           "id": "biz_quote.quote_script_body",
           "type": "rich_text",
           "label": "Quote Script",
-          "help_text": "Editable customer-facing script copied from the selected template and included in the generated quote document.",
+          "help_text": "Editable quote document text.",
           "label_key": "quotes.entities.biz_quote.fields.quote_script_body.label"
         },
         {
@@ -760,7 +760,7 @@
           "id": "biz_quote.primary_document_id",
           "type": "lookup",
           "label": "Primary Document",
-          "help_text": "Linked document record created by the Generate Document action. The generated PDF is attached back to this quote.",
+          "help_text": "Generated document record.",
           "entity": "entity.biz_document",
           "display_field": "biz_document.name",
           "readonly": true,
@@ -774,7 +774,7 @@
           "id": "biz_quote.generated_files",
           "type": "attachments",
           "label": "Generated Files",
-          "help_text": "Generated quote PDFs and related customer-facing files attached to this quote.",
+          "help_text": "Quote PDFs and customer files.",
           "label_key": "quotes.entities.biz_quote.fields.generated_files.label"
         },
         {
@@ -845,7 +845,7 @@
             "kind": "percent",
             "precision": 2
           },
-          "help_text": "Default VAT / sales tax rate for this quote. Usually inherited from the customer account and adjustable per quote."
+          "help_text": "VAT/tax rate for this quote."
         },
         {
           "id": "biz_quote.tax_total",
@@ -970,7 +970,7 @@
             "currency_field": "biz_quote.currency",
             "precision": 2
           },
-          "help_text": "Internal freight or delivery cost not charged to the customer. Included in quote margin."
+          "help_text": "Internal freight cost for margin."
         },
         {
           "id": "biz_quote.estimated_margin_amount",
@@ -1191,7 +1191,7 @@
           "id": "biz_quote_line.available_stock_snapshot",
           "type": "number",
           "label": "Available Stock Snapshot",
-          "help_text": "Current available stock copied from the product. 0 is expected for made-to-order, custom, or non-stock products.",
+          "help_text": "Current available stock.",
           "readonly": true,
           "default": 0
         },
@@ -1261,7 +1261,7 @@
           "id": "biz_quote_line.unit_price",
           "type": "number",
           "label": "Sell Unit Price",
-          "help_text": "Customer sell price for this quote line. Sales users can adjust this per quote.",
+          "help_text": "Customer sell price.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.unit_price.label"
         },
@@ -1323,7 +1323,7 @@
           "id": "biz_quote_line.default_buy_price_snapshot",
           "type": "number",
           "label": "Unit Cost",
-          "help_text": "Quote cost snapshot copied from the product Quote Cost. Adjust for custom items so margin stays accurate.",
+          "help_text": "Quote cost for margin.",
           "default": 0,
           "label_key": "quotes.entities.biz_quote_line.fields.default_buy_price_snapshot.label"
         },
@@ -1331,7 +1331,7 @@
           "id": "biz_quote_line.buy_currency_snapshot",
           "type": "enum",
           "label": "Buy Currency Snapshot",
-          "help_text": "Currency for the quote cost snapshot. Usually the quote cost currency from the selected product.",
+          "help_text": "Quote cost currency.",
           "default": "USD",
           "options": [
             {
@@ -1365,7 +1365,7 @@
           "id": "biz_quote_line.procurement_supplier_id",
           "type": "lookup",
           "label": "Procurement Supplier",
-          "help_text": "Internal supplier/factory reference for operations and procurement. Hidden from Sales users.",
+          "help_text": "Supplier or factory reference.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "domain": {
@@ -1381,7 +1381,7 @@
           "id": "biz_quote_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU Snapshot",
-          "help_text": "Supplier/factory product reference copied at quote time for internal procurement. Hidden from Sales users.",
+          "help_text": "Supplier product reference.",
           "readonly": true
         },
         {
@@ -1402,14 +1402,14 @@
           "id": "biz_quote_line.product_type_snapshot",
           "type": "string",
           "label": "Product Type",
-          "help_text": "Read-only product type copied at quote time so the quote stays stable if the catalogue changes later.",
+          "help_text": "Product type snapshot.",
           "readonly": true
         },
         {
           "id": "biz_quote_line.quote_cost_mode_snapshot",
           "type": "string",
           "label": "Quote Cost Mode",
-          "help_text": "Copied from the product to explain whether this line uses catalogue cost, manual quote cost, or pass-through costing.",
+          "help_text": "Costing method snapshot.",
           "readonly": true
         },
         {
@@ -1470,14 +1470,14 @@
           "id": "biz_quote_line.buy_fx_to_quote_rate",
           "type": "number",
           "label": "Buy FX To Quote",
-          "help_text": "Exchange rate used to convert the quote cost into the quote currency for margin calculations.",
+          "help_text": "FX rate for margin.",
           "default": 1
         },
         {
           "id": "biz_quote_line.buy_total",
           "type": "number",
           "label": "Buy Total",
-          "help_text": "Internal cost total before quote-currency conversion. Hidden from Sales users.",
+          "help_text": "Internal cost before FX.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1505,7 +1505,7 @@
           "id": "biz_quote_line.buy_total_quote_currency",
           "type": "number",
           "label": "Buy Total (Quote Currency)",
-          "help_text": "Internal cost total converted into the quote currency for margin calculations. Hidden from Sales users.",
+          "help_text": "Internal cost in quote currency.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1532,7 +1532,7 @@
           "id": "biz_quote_line.estimated_margin_amount",
           "type": "number",
           "label": "Estimated Margin Amount",
-          "help_text": "Estimated margin for this quote line after quote cost conversion. Hidden from Sales users.",
+          "help_text": "Estimated margin.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -1560,7 +1560,7 @@
           "id": "biz_quote_line.estimated_margin_percent",
           "type": "number",
           "label": "Estimated Margin %",
-          "help_text": "Estimated margin percentage for this quote line. Hidden from Sales users.",
+          "help_text": "Estimated margin percentage.",
           "readonly": true,
           "default": 0,
           "compute": {
@@ -2086,7 +2086,7 @@
       },
       "confirm": {
         "title": "Reset quote script from the selected template?",
-        "body": "This replaces the quote-specific script with the current selected template content."
+        "body": "Replace the quote text with the selected template."
       },
       "visible_when": {
         "op": "exists",
@@ -2103,7 +2103,7 @@
       },
       "confirm": {
         "title": "Send quote email?",
-        "body": "Send the latest generated quote PDF to the customer and mark the quote as sent.",
+        "body": "Send the latest quote PDF and mark it sent.",
         "title_key": "quotes.actions.action_quote_mark_sent.confirm.title"
       },
       "visible_when": {
@@ -2157,7 +2157,7 @@
       },
       "confirm": {
         "title": "Mark quote as accepted?",
-        "body": "Use this once the customer has accepted the quote and the deal is ready for order conversion.",
+        "body": "Mark this quote as accepted.",
         "title_key": "quotes.actions.action_quote_mark_accepted.confirm.title"
       },
       "visible_when": {
@@ -2236,7 +2236,7 @@
       },
       "confirm": {
         "title": "Create order from quote?",
-        "body": "This will create an Order and copy the accepted quote lines.",
+        "body": "Create an order from this quote.",
         "title_key": "quotes.actions.action_quote_convert_to_order.confirm.title"
       },
       "action_label_key": "quotes.actions.action_quote_convert_to_order.label"
@@ -2289,7 +2289,7 @@
       },
       "confirm": {
         "title": "Generate quote document?",
-        "body": "This creates or refreshes the linked quote document record, stores the generated file on this quote, and makes it visible in the Documents module.",
+        "body": "Generate the quote document.",
         "title_key": "quotes.actions.action_quote_create_document.confirm.title"
       },
       "action_label_key": "quotes.actions.action_quote_create_document.label"
@@ -3847,7 +3847,7 @@
     {
       "id": "modal.quote_mark_lost",
       "title": "Mark Quote Lost",
-      "description": "Capture why the quote was lost before moving it out of the active pipeline.",
+      "description": "Add the loss reason.",
       "entity_id": "entity.biz_quote",
       "fields": [
         "biz_quote.loss_reason"
@@ -3878,7 +3878,7 @@
     {
       "id": "modal.quote_mark_expired",
       "title": "Mark Quote Expired",
-      "description": "Capture the expiry note before closing this quote out of the live pipeline.",
+      "description": "Add the expiry note.",
       "entity_id": "entity.biz_quote",
       "fields": [
         "biz_quote.loss_reason"

@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Commandes",
-    "description": "Commandes clients acceptées après approbation du devis, avec liens d'approvisionnement et de facturation."
+    "description": "Commandes clients, exécution et facturation."
   },
   "navigation": {
     "biz_order_list_page": "Commandes",

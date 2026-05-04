@@ -246,7 +246,7 @@
   "modals": {
     "invoice_cancel": {
       "title": "Annuler la facture",
-      "description": "Enregistrez le motif de l'annulation avant de supprimer cette facture du flux de créances actif.",
+      "description": "Ajoutez le motif d'annulation.",
       "actions": {
         "update_record": {
           "label": "Annuler la facture"

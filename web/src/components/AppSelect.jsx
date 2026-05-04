@@ -184,7 +184,7 @@ export default function AppSelect({
         ? createPortal(
             <ul
               ref={menuRef}
-              className="menu menu-compact menu-vertical block overflow-y-auto overflow-x-hidden whitespace-normal rounded-box border border-base-300 bg-base-100 p-2 shadow"
+              className="menu menu-compact menu-vertical flex flex-col overflow-y-auto overflow-x-hidden whitespace-normal rounded-box border border-base-300 bg-base-100 p-2 shadow"
               style={{ ...menuStyle, zIndex: 1000 }}
             >
               {groupedOptions.map((group, groupIndex) => (

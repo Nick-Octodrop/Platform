@@ -246,7 +246,7 @@
   "modals": {
     "invoice_cancel": {
       "title": "Cancel Invoice",
-      "description": "Record the cancellation reason before removing this invoice from the active receivables flow.",
+      "description": "Add the cancellation reason.",
       "actions": {
         "update_record": {
           "label": "Cancel Invoice"

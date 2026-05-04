@@ -1871,6 +1871,7 @@ export default function AppShell({
                             hiddenFields={[]}
                             previewMode={false}
                             hideHeader
+                            hideStatusBar
                             bottomActionsMode="sticky_right"
                           />
                         </>

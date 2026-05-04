@@ -7,7 +7,7 @@
     "name": "Contacts",
     "version": "1.0.0",
     "description_key": "contacts.module.description",
-    "description": "Customers, suppliers, factory partners, and linked people for the commercial workflow.",
+    "description": "Customers, suppliers, partners, and people.",
     "category": "Commercial",
     "icon_key": "lucide:Users"
   },
@@ -81,7 +81,7 @@
           "type": "enum",
           "label_key": "contacts.fields.contact_type",
           "label": "Type",
-          "help_text": "Sales users only see Customer contacts. Supplier and Factory Partner contacts are hidden from sales profiles.",
+          "help_text": "Choose the contact type.",
           "required": true,
           "default": "customer",
           "options": [
@@ -111,7 +111,7 @@
           "label_key": "contacts.fields.company_entity_scope",
           "label": "Sales Entity Visibility",
           "required": true,
-          "help_text": "Controls which entity owns this contact. For customers, it also controls which sales team can see and use the contact. Choose Shared when both teams need access.",
+          "help_text": "Choose who owns and can use this contact.",
           "options": [
             {
               "value": "NLight BV",
@@ -538,7 +538,7 @@
           "id": "biz_contact_person.company_id",
           "type": "lookup",
           "label": "Company / Account",
-          "help_text": "Person visibility follows the selected company type and entity scope. If the company scope changes later, reselect the company here to refresh the snapshots.",
+          "help_text": "Choose the company this person belongs to.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "ui": {
@@ -575,7 +575,7 @@
           "id": "biz_contact_person.company_entity_scope_snapshot",
           "type": "enum",
           "label": "Sales Entity Visibility Snapshot",
-          "help_text": "Copied from the company so access profiles can filter people by NLight BV, EcoTech/CIS, or shared visibility.",
+          "help_text": "Copied from the company.",
           "readonly": true,
           "options": [
             {

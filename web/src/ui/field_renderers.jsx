@@ -2,6 +2,7 @@ import React from "react";
 import { formatFieldValue, getFieldInputAffixes } from "../utils/fieldFormatting.js";
 import { renderHtmlToRichText, renderRichTextToHtml } from "../utils/richText.js";
 import { translateRuntime } from "../i18n/runtime.js";
+import AppSelect from "../components/AppSelect.jsx";
 
 const FIELD_TEXT_STYLE = {
   fontSize: "var(--octo-field-font-size, 0.95rem)",
@@ -312,7 +313,7 @@ function normalizeEnumOptions(options) {
     if (opt && typeof opt === "object") {
       const value = opt.value ?? opt.id ?? opt.key;
       const label = opt.label ?? opt.value ?? opt.id ?? opt.key;
-      return { value, label };
+      return { value, label, disabled: Boolean(opt.disabled) };
     }
     return null;
   }).filter(Boolean);
@@ -401,42 +402,26 @@ export function renderField(field, value, onChange, readonly, record = null) {
         );
       }
       const options = normalizeEnumOptions(field.options);
-      const selected = options.find((opt) => opt.value === value);
-      const selectedLabel = selected?.label ?? selected?.value ?? translateRuntime("common.select");
       const isDisabled = readonly || field.readonly;
       return (
-        <div className={`dropdown dropdown-bottom w-full ${isDisabled ? "pointer-events-none opacity-60" : ""}`}>
-          <label
-            tabIndex={0}
-            className="input input-bordered w-full flex items-center justify-between cursor-pointer"
-            style={FIELD_TEXT_STYLE}
-            aria-disabled={isDisabled}
-          >
-            <span className="truncate">{selectedLabel}</span>
-            <span className="opacity-60 pointer-events-none">▾</span>
-          </label>
-          <ul tabIndex={0} className="dropdown-content menu menu-compact menu-vertical p-2 shadow bg-base-100 rounded-box w-full max-h-60 overflow-auto z-30">
-            {options.map((opt) => (
-              <li key={opt.value}>
-                <button
-                  type="button"
-                  className={opt.value === value ? "active" : ""}
-                  onClick={(event) => {
-                    onChange(opt.value);
-                    const dropdown = event.currentTarget.closest(".dropdown");
-                    const trigger = dropdown?.querySelector('[tabindex="0"]');
-                    trigger?.blur();
-                    if (document.activeElement instanceof HTMLElement) {
-                      document.activeElement.blur();
-                    }
-                  }}
-                >
-                  {opt.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <AppSelect
+          className="select select-bordered w-full"
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={isDisabled}
+          placeholder={translateRuntime("common.select")}
+        >
+          <option value="">{translateRuntime("common.select")}</option>
+          {options.map((opt) => (
+            <option
+              key={opt.value}
+              value={opt.value ?? ""}
+              disabled={Boolean(opt.disabled)}
+            >
+              {opt.label}
+            </option>
+          ))}
+        </AppSelect>
       );
     case "date":
       return (

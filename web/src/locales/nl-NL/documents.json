@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Documenten",
-    "description": "Documentbeheer voor commerciële documenten, inclusief offerte-pdf's, orderpakketten, leveranciersdocumenten, factuurbestanden en ondertekende klantdocumenten."
+    "description": "Commerciële documenten en ondertekende bestanden."
   },
   "navigation": {
     "biz_document_list_page": "Documenten",

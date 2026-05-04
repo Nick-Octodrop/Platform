@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Calendar",
-    "description": "Team calendar for sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones."
+    "description": "Calendar for follow-ups, site visits, handoffs, and key milestones."
   },
   "navigation": {
     "biz_calendar_event_calendar_page": "Calendar",

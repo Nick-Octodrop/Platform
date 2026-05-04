@@ -96,7 +96,7 @@
   "contacts": {
     "module": {
       "name": "Répertoire",
-      "description": "Gestion centralisée des contacts pour les entreprises, les personnes, les clients, les fournisseurs et les sites d'intervention."
+      "description": "Clients, fournisseurs, partenaires et personnes."
     },
     "navigation": {
       "group": "Contacts",

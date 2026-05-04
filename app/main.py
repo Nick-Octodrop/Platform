@@ -16484,13 +16484,21 @@ async def page_bootstrap(
             return denied
         record = generic_records.get(view_entity, record_id)
         found_form_entity = _find_entity_def(request, view_entity)
-        raw_form_record = record.get("record") if record else None
-        if record and isinstance(raw_form_record, dict) and not _record_visible_for_actor(actor, module_id, view_entity, raw_form_record):
-            record = None
+        resolved_id, resolved_record = _unwrap_store_record(record if isinstance(record, dict) else None)
+        if isinstance(resolved_record, dict) and found_form_entity:
+            recomputed_record = _recompute_record_for_entity(found_form_entity[1], resolved_record)
+            if recomputed_record != resolved_record and isinstance(resolved_id, str):
+                persisted = _persist_computed_record(view_entity, found_form_entity[1], resolved_id, resolved_record)
+                persisted_record = None
+                if isinstance(persisted, dict):
+                    _, persisted_record = _unwrap_store_record(persisted)
+                resolved_record = persisted_record if isinstance(persisted_record, dict) else recomputed_record
+        if isinstance(resolved_record, dict) and not _record_visible_for_actor(actor, module_id, view_entity, resolved_record):
+            resolved_record = None
         payload["record"] = {
             "entity_id": view_entity,
             "record_id": record_id,
-            "record": _mask_record_for_actor(actor, module_id, found_form_entity[1] if found_form_entity else None, record.get("record") if record else None),
+            "record": _mask_record_for_actor(actor, module_id, found_form_entity[1] if found_form_entity else None, resolved_record),
         }
 
     data_ms = _perf_ms(phase)
@@ -24753,6 +24761,7 @@ def _run_transform_record_action(
             selected_record = existing.get("record") if isinstance(existing, dict) else None
             if not isinstance(selected_record, dict):
                 return _error_response("RECORD_NOT_FOUND", "Selected source record not found", f"selected_ids[{idx}]", status=404)
+            selected_record = _recompute_record_for_entity(source_found[1], selected_record)
             if not _record_visible_for_actor(actor, source_found[0], source_entity, selected_record):
                 return _error_response("RECORD_NOT_FOUND", "Selected source record not found", f"selected_ids[{idx}]", status=404)
             if not _record_write_allowed_for_actor(actor, source_found[0], source_entity, selected_record):
@@ -24766,6 +24775,7 @@ def _run_transform_record_action(
         source_id, source_record = _unwrap_store_record(source_raw)
         if not source_id or not isinstance(source_record, dict):
             return _error_response("RECORD_NOT_FOUND", "Source record not found", "record_id", status=404)
+        source_record = _recompute_record_for_entity(source_found[1], source_record)
         if not _record_visible_for_actor(actor, source_found[0], source_entity, source_record):
             return _error_response("RECORD_NOT_FOUND", "Source record not found", "record_id", status=404)
         if not _record_write_allowed_for_actor(actor, source_found[0], source_entity, source_record):

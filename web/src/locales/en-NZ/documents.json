@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Documents",
-    "description": "Document control for commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents."
+    "description": "Commercial documents and signed files."
   },
   "navigation": {
     "biz_document_list_page": "Documents",

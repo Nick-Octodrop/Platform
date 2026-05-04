@@ -5,7 +5,7 @@
     "key": "biz_invoices",
     "name": "Invoices",
     "version": "1.0.0",
-    "description": "Deposit, progress, final, and credit-note customer invoicing.",
+    "description": "Customer invoices and credit notes.",
     "category": "Commercial",
     "icon_key": "lucide:Receipt",
     "name_key": "invoices.module.name",
@@ -241,19 +241,19 @@
           "id": "biz_invoice.customer_contact_name",
           "type": "string",
           "label": "Customer Contact",
-          "help_text": "Auto-filled from the selected contact person, but can be typed manually when the person record is not yet available."
+          "help_text": "Auto-filled from contact. Edit if needed."
         },
         {
           "id": "biz_invoice.customer_contact_email",
           "type": "string",
           "label": "Customer Contact Email",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so the invoice keeps contact details after reload."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_invoice.customer_contact_phone",
           "type": "string",
           "label": "Customer Contact Phone",
-          "help_text": "Auto-filled from the selected contact person or customer. Editable so phone details can be captured directly on the invoice."
+          "help_text": "Auto-filled from contact/customer. Edit if needed."
         },
         {
           "id": "biz_invoice.source_order_id",
@@ -326,7 +326,7 @@
           "type": "enum",
           "label": "Sales Entity",
           "required": true,
-          "help_text": "Choose the selling entity for this invoice. Invoices created from orders copy this automatically.",
+          "help_text": "Choose the selling entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -736,35 +736,35 @@
           "id": "biz_invoice.xero_invoice_id",
           "type": "string",
           "label": "Xero Invoice ID",
-          "help_text": "Identifier returned by Xero after this invoice is exported. Leave blank manually; it is managed by sync.",
+          "help_text": "Managed by Xero sync.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_credit_note_id",
           "type": "string",
           "label": "Xero Credit Note ID",
-          "help_text": "Identifier returned by Xero for linked credit-note exports. Managed by sync.",
+          "help_text": "Managed by Xero sync.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_status",
           "type": "string",
           "label": "Xero Sync Status",
-          "help_text": "Latest Xero sync result for this invoice, such as exported, paid, failed, or skipped.",
+          "help_text": "Latest Xero sync status.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_at",
           "type": "datetime",
           "label": "Xero Last Sync At",
-          "help_text": "When this invoice was last exported to or refreshed from Xero.",
+          "help_text": "Last Xero sync time.",
           "readonly": true
         },
         {
           "id": "biz_invoice.xero_last_sync_error",
           "type": "text",
           "label": "Xero Sync Error",
-          "help_text": "Last Xero error message if export or payment refresh failed.",
+          "help_text": "Latest Xero sync error.",
           "readonly": true
         }
       ],
@@ -1360,7 +1360,7 @@
       },
       "confirm": {
         "title": "Issue invoice?",
-        "body": "Use this once the invoice is ready to be sent to the customer.",
+        "body": "Issue this invoice now.",
         "title_key": "invoices.actions.action_invoice_issue.confirm.title"
       },
       "visible_when": {
@@ -1493,7 +1493,7 @@
       "transformation_key": "invoice_to_credit_note",
       "confirm": {
         "title": "Create credit note?",
-        "body": "This will create a draft credit note linked back to the current invoice.",
+        "body": "Create a linked draft credit note.",
         "title_key": "invoices.actions.action_invoice_create_credit_note.confirm.title"
       },
       "visible_when": {
@@ -1564,7 +1564,7 @@
       },
       "confirm": {
         "title": "Generate invoice document?",
-        "body": "This creates or refreshes the linked invoice document record, stores the generated file on this invoice, and makes it visible in the Documents module.",
+        "body": "Generate the invoice document.",
         "title_key": "invoices.actions.action_invoice_create_document.confirm.title"
       },
       "action_label_key": "invoices.actions.action_invoice_create_document.label"
@@ -1606,7 +1606,7 @@
       },
       "confirm": {
         "title": "Send invoice email?",
-        "body": "Send the latest generated invoice PDF to the customer.",
+        "body": "Send the latest invoice PDF.",
         "title_key": "invoices.actions.action_invoice_send_email.confirm.title"
       }
     },
@@ -1620,7 +1620,7 @@
       },
       "confirm": {
         "title": "Mark invoice as credited?",
-        "body": "Use this after the related credit note has been issued and the invoice should be treated as fully credited.",
+        "body": "Mark this invoice as credited.",
         "title_key": "invoices.actions.action_invoice_mark_credited.confirm.title"
       },
       "visible_when": {
@@ -2893,7 +2893,7 @@
     {
       "id": "modal.invoice_cancel",
       "title": "Cancel Invoice",
-      "description": "Record the cancellation reason before removing this invoice from the active receivables flow.",
+      "description": "Add the cancellation reason.",
       "entity_id": "entity.biz_invoice",
       "fields": [
         "biz_invoice.cancellation_reason"

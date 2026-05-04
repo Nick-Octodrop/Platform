@@ -5,7 +5,7 @@
     "key": "biz_calendar",
     "name": "Calendar",
     "version": "1.0.0",
-    "description": "Team calendar for sales follow-ups, site visits, order handoffs, procurement calls, and finance milestones.",
+    "description": "Calendar for follow-ups, site visits, handoffs, and key milestones.",
     "category": "Operations",
     "icon_key": "lucide:CalendarDays",
     "name_key": "calendar.module.name",
@@ -265,7 +265,7 @@
           "id": "biz_calendar_event.sales_entity",
           "type": "enum",
           "label": "Entity",
-          "help_text": "Entity/team this event belongs to. Related events created from CRM, quote, and order records copy this automatically.",
+          "help_text": "Owning entity/team for this event.",
           "options": [
             {
               "value": "NLight BV",

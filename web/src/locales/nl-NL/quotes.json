@@ -289,7 +289,7 @@
   "modals": {
     "quote_mark_lost": {
       "title": "Markeer citaat verloren",
-      "description": "Leg vast waarom de offerte verloren is gegaan voordat u deze uit de actieve pijplijn verwijdert.",
+      "description": "Voeg de verliesreden toe.",
       "actions": {
         "update_record": {
           "label": "Merk verloren"

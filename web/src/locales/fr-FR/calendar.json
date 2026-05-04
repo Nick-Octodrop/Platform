@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Calendrier",
-    "description": "Calendrier d'équipe pour le suivi des ventes, les visites de sites, les transferts de commandes, les appels d'approvisionnement et les étapes financières."
+    "description": "Calendrier des suivis, visites, transferts et jalons."
   },
   "navigation": {
     "biz_calendar_event_calendar_page": "Calendrier",

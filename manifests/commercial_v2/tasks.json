@@ -5,7 +5,7 @@
     "key": "biz_tasks",
     "name": "Tasks",
     "version": "1.0.0",
-    "description": "Assigned work for sales, operations, procurement, finance, and customer handoff follow-ups.",
+    "description": "Tasks for follow-ups, handoffs, and internal work.",
     "category": "Operations",
     "icon_key": "lucide:ListTodo",
     "name_key": "tasks.module.name",
@@ -290,7 +290,7 @@
           "id": "biz_task.sales_entity",
           "type": "enum",
           "label": "Entity",
-          "help_text": "Entity/team this task belongs to. Related tasks created from CRM, quote, and order records copy this automatically.",
+          "help_text": "Owning entity/team for this task.",
           "options": [
             {
               "value": "NLight BV",

@@ -2861,8 +2861,9 @@ export default function ViewModesBlock({
     }
     return opts;
   }, [entityDef]);
-  const createMode = normalizeCreateMode(block?.create_mode || block?.createMode) || "modal";
-  const createDisabledByLegacyFlag = block?.create_modal === false && createMode !== "page";
+  const explicitCreateMode = normalizeCreateMode(block?.create_mode || block?.createMode);
+  const createMode = explicitCreateMode || (embeddedRelatedList ? "page" : "modal");
+  const createDisabledByLegacyFlag = block?.create_modal === false && explicitCreateMode !== "page";
   const createInModal = Boolean(!compact && forceListOnly && createMode === "modal" && !createDisabledByLegacyFlag && typeof onLookupCreate === "function");
   const createInPage = Boolean(createMode === "page" && !previewMode);
   const searchEnabled = Boolean(listView?.header?.search?.enabled);

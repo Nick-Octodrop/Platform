@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Kalender",
-    "description": "Teamkalender voor verkoopopvolgingen, locatiebezoeken, orderoverdrachten, inkoopgesprekken en financiële mijlpalen."
+    "description": "Kalender voor opvolgingen, bezoeken, overdrachten en mijlpalen."
   },
   "navigation": {
     "biz_calendar_event_calendar_page": "Kalender",

@@ -1,7 +1,7 @@
 {
   "module": {
     "name": "Citations",
-    "description": "Flux de travail de devis, depuis la tarification et l'approbation du client jusqu'à la conversion des commandes."
+    "description": "Devis, de la tarification à l'approbation client."
   },
   "navigation": {
     "biz_quote_list_page": "Citations",

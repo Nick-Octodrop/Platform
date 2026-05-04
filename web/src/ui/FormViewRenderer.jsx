@@ -396,6 +396,7 @@ export default function FormViewRenderer({
   actionBusyLabel = null,
   isDirty = false,
   hideHeader = false,
+  hideStatusBar = false,
   previewMode = false,
   canCreateLookup,
   onLookupCreate,
@@ -1065,7 +1066,7 @@ export default function FormViewRenderer({
           </div>
         </div>
       )}
-      {header?.statusbar?.field_id && (
+      {header?.statusbar?.field_id && !hideStatusBar && (
         <div className="shrink-0 pt-1">
           <StatusBar field={fieldIndex[header.statusbar.field_id]} value={getFieldValue(computedRecord, header.statusbar.field_id)} />
         </div>

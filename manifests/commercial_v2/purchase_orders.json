@@ -5,7 +5,7 @@
     "key": "biz_purchase_orders",
     "name": "Purchase Orders",
     "version": "1.0.0",
-    "description": "Supplier purchasing linked back to customer orders.",
+    "description": "Supplier purchase orders linked to customer orders.",
     "category": "Commercial",
     "icon_key": "lucide:Truck",
     "name_key": "purchase_orders.module.name",
@@ -164,7 +164,7 @@
           "id": "biz_purchase_order.supplier_id",
           "type": "lookup",
           "label": "Supplier",
-          "help_text": "Actual supplier/factory for this purchase order. Hidden from Sales profiles.",
+          "help_text": "Supplier or factory.",
           "entity": "entity.biz_contact",
           "display_field": "biz_contact.name",
           "required": true,
@@ -233,7 +233,7 @@
           "id": "biz_purchase_order.purchasing_entity",
           "type": "enum",
           "label": "Purchasing Entity",
-          "help_text": "Entity placing the purchase order. For factory purchases this will normally be EcoTech FZCO.",
+          "help_text": "Buying entity.",
           "default": "EcoTech FZCO",
           "options": [
             {
@@ -255,7 +255,7 @@
           "id": "biz_purchase_order.source_customer_order_id",
           "type": "lookup",
           "label": "Source Order",
-          "help_text": "Customer order this purchase order was created from, keeping the quote/order/PO chain linked.",
+          "help_text": "Linked customer order.",
           "entity": "entity.biz_order",
           "display_field": "biz_order.order_number",
           "readonly": true,
@@ -282,7 +282,7 @@
           "id": "biz_purchase_order.currency",
           "type": "enum",
           "label": "Currency",
-          "help_text": "Supplier purchase currency for this PO. Usually inherited from the supplier.",
+          "help_text": "Purchase currency.",
           "default": "USD",
           "options": [
             {
@@ -316,14 +316,14 @@
           "id": "biz_purchase_order.supplier_reference",
           "type": "string",
           "label": "Supplier Reference",
-          "help_text": "Supplier account/reference number or factory reference for the purchase order.",
+          "help_text": "Supplier account/reference.",
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.supplier_reference.label"
         },
         {
           "id": "biz_purchase_order.incoterm",
           "type": "string",
           "label": "Incoterm",
-          "help_text": "Purchase/shipping term agreed with the supplier for this order.",
+          "help_text": "Agreed purchase/shipping term.",
           "label_key": "purchase_orders.entities.biz_purchase_order.fields.incoterm.label"
         },
         {
@@ -633,7 +633,7 @@
           "id": "biz_purchase_order_line.product_supplier_id",
           "type": "lookup",
           "label": "Supplier Source",
-          "help_text": "Specific supplier source row used to create this purchase line and preserve the supplier cost reference.",
+          "help_text": "Supplier source for this line.",
           "entity": "entity.biz_product_supplier",
           "display_field": "biz_product_supplier.product_name_snapshot",
           "ui": {
@@ -657,14 +657,14 @@
           "id": "biz_purchase_order_line.product_code_snapshot",
           "type": "string",
           "label": "Product Code",
-          "help_text": "Readable product code copied onto the PO line so the supplier line does not show an internal product ID.",
+          "help_text": "Product code for the PO line.",
           "readonly": true
         },
         {
           "id": "biz_purchase_order_line.product_name_snapshot",
           "type": "string",
           "label": "Product Name",
-          "help_text": "Readable product name copied onto the PO line for stable display and supplier documents.",
+          "help_text": "Product name for the PO line.",
           "readonly": true
         },
         {
@@ -678,7 +678,7 @@
           "id": "biz_purchase_order_line.purchasing_entity_snapshot",
           "type": "enum",
           "label": "Purchasing Entity Snapshot",
-          "help_text": "Purchasing entity copied from the PO header so line reporting stays stable if the header changes later.",
+          "help_text": "Buying entity snapshot.",
           "default": "EcoTech FZCO",
           "options": [
             {
@@ -700,7 +700,7 @@
           "id": "biz_purchase_order_line.currency_snapshot",
           "type": "enum",
           "label": "Currency Snapshot",
-          "help_text": "Purchase currency copied from the PO header for line totals.",
+          "help_text": "Purchase currency snapshot.",
           "default": "USD",
           "options": [
             {
@@ -798,7 +798,7 @@
           "id": "biz_purchase_order_line.unit_cost",
           "type": "number",
           "label": "Unit Cost",
-          "help_text": "Supplier/factory purchase unit cost used on this purchase order line.",
+          "help_text": "Supplier unit cost.",
           "default": 0,
           "label_key": "purchase_orders.entities.biz_purchase_order_line.fields.unit_cost.label"
         },
@@ -806,7 +806,7 @@
           "id": "biz_purchase_order_line.supplier_sku_snapshot",
           "type": "string",
           "label": "Supplier SKU",
-          "help_text": "Supplier/factory product reference copied from the supplier source.",
+          "help_text": "Supplier product reference.",
           "readonly": true
         },
         {
@@ -1251,7 +1251,7 @@
       },
       "confirm": {
         "title": "Send purchase order?",
-        "body": "Send the latest generated purchase order PDF to the supplier and mark the PO as sent.",
+        "body": "Send the latest PO PDF and mark it sent.",
         "title_key": "purchase_orders.actions.action_purchase_order_mark_sent.confirm.title"
       },
       "visible_when": {
@@ -1437,7 +1437,7 @@
       },
       "confirm": {
         "title": "Close purchase order?",
-        "body": "Use this when goods have been received and the buying side is operationally complete.",
+        "body": "Close this PO now.",
         "title_key": "purchase_orders.actions.action_purchase_order_close.confirm.title"
       },
       "visible_when": {
@@ -1482,7 +1482,7 @@
       },
       "confirm": {
         "title": "Generate supplier document?",
-        "body": "This creates or refreshes the linked supplier document record, stores the generated file on this purchase order, and makes it visible in the Documents module.",
+        "body": "Generate the supplier document.",
         "title_key": "purchase_orders.actions.action_purchase_order_create_document.confirm.title"
       },
       "action_label_key": "purchase_orders.actions.action_purchase_order_create_document.label"
@@ -2772,7 +2772,7 @@
     {
       "id": "modal.purchase_order_hold",
       "title": "Put Purchase Order On Hold",
-      "description": "Capture why the supplier-side flow is being paused.",
+      "description": "Add the pause reason.",
       "entity_id": "entity.biz_purchase_order",
       "fields": [
         "biz_purchase_order.hold_reason"
@@ -2806,7 +2806,7 @@
     {
       "id": "modal.purchase_order_cancel",
       "title": "Cancel Purchase Order",
-      "description": "Capture why this PO is being cancelled.",
+      "description": "Add the cancellation reason.",
       "entity_id": "entity.biz_purchase_order",
       "fields": [
         "biz_purchase_order.cancellation_reason"

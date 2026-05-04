@@ -5,7 +5,7 @@
     "key": "biz_documents",
     "name": "Documents",
     "version": "1.0.0",
-    "description": "Document control for commercial records, including quote PDFs, order packs, supplier documents, invoice files, and signed customer documents.",
+    "description": "Commercial documents and signed files.",
     "category": "Commercial",
     "icon_key": "lucide:FolderOpen",
     "name_key": "documents.module.name",
@@ -336,7 +336,7 @@
           "type": "enum",
           "label": "Entity",
           "required": true,
-          "help_text": "Choose the entity this document belongs to. Documents created from quotes, orders, or invoices copy this automatically.",
+          "help_text": "Choose the owning entity.",
           "options": [
             {
               "value": "NLight BV",
@@ -1278,7 +1278,7 @@
     {
       "id": "modal.document_archive",
       "title": "Archive Document",
-      "description": "Capture why this document is being archived.",
+      "description": "Add the archive reason.",
       "entity_id": "entity.biz_document",
       "fields": [
         "biz_document.archive_reason"

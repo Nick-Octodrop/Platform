@@ -246,7 +246,7 @@
   "modals": {
     "invoice_cancel": {
       "title": "Factuur annuleren",
-      "description": "Leg de annuleringsreden vast voordat u deze factuur uit de actieve debiteurenstroom verwijdert.",
+      "description": "Voeg de annuleringsreden toe.",
       "actions": {
         "update_record": {
           "label": "Factuur annuleren"
