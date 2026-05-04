@@ -72,7 +72,17 @@ def _resolve_ref(ref: str, context: dict) -> Any:
     candidate_value = _get_by_path(context.get("candidate", {}), ref)
     if candidate_value is not None:
         return candidate_value
-    return _get_by_path(context.get("record", {}), ref)
+    record_value = _get_by_path(context.get("record", {}), ref)
+    if record_value is not None:
+        return record_value
+    if ref.endswith(".id"):
+        candidate_id = _get_by_path(context.get("candidate", {}), "id")
+        if candidate_id is not None:
+            return candidate_id
+        record_id = _get_by_path(context.get("record", {}), "id")
+        if record_id is not None:
+            return record_id
+    return None
 
 
 def _resolve_operand(operand: Any, context: dict) -> Any:

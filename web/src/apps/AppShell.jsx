@@ -474,7 +474,7 @@ export default function AppShell({
 
   const recordId = (previewMode ? previewSearchParams : searchParams).get("record");
   const { actor: currentActor, hasCapability, isSuperadmin } = useAccessContext();
-  const { version: i18nVersion } = useI18n();
+  const { locale: i18nLocale } = useI18n();
   // Respect both platform/workspace permissions and optional per-page bootstrap overrides.
   const canWriteRecords = hasCapability("records.write") && bootstrap?.permissions?.records_write !== false;
 
@@ -512,7 +512,7 @@ export default function AppShell({
     setError(null);
     setSelectedIds([]);
     setRecordDraft({});
-  }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride, i18nVersion]);
+  }, [moduleId, pageId, viewId, recordId, workspaceKey, manifestOverride, i18nLocale]);
 
   const handlePageSectionLoadingChange = useCallback((key, isLoading) => {
     const safeKey = String(key || "").trim();
@@ -563,7 +563,7 @@ export default function AppShell({
       }
     }
     loadManifest();
-  }, [moduleId, manifestOverride, pageId, viewId, workspaceKey, i18nVersion]);
+  }, [moduleId, manifestOverride, pageId, viewId, workspaceKey, i18nLocale]);
 
   useEffect(() => {
     if (!error) return;
@@ -664,7 +664,7 @@ export default function AppShell({
     return () => {
       cancelled = true;
     };
-  }, [moduleId, pageId, viewId, recordId, manifestOverride, workspaceKey, i18nVersion]);
+  }, [moduleId, pageId, viewId, recordId, manifestOverride, workspaceKey, i18nLocale]);
 
   const appDef = manifest?.app || null;
   const formPageIds = useMemo(() => collectFormPageIds(appDef?.defaults), [appDef?.defaults]);

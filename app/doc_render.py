@@ -327,6 +327,66 @@ def _render_pdf_with_playwright(
                     pass
 
 
+def _thumbnail_viewport_for_paper_size(paper_size: str | None) -> dict[str, int]:
+    normalized = str(paper_size or "A4").strip().lower()
+    if normalized in {"letter", "us-letter", "8.5x11"}:
+        return {"width": 816, "height": 1056}
+    if normalized in {"legal", "us-legal"}:
+        return {"width": 816, "height": 1344}
+    if normalized == "a3":
+        return {"width": 1123, "height": 1587}
+    if normalized == "a5":
+        return {"width": 559, "height": 794}
+    return {"width": 794, "height": 1123}
+
+
+def render_thumbnail(
+    html: str,
+    paper_size: str | None = None,
+    margins: dict | None = None,
+    header_html: str | None = None,
+    footer_html: str | None = None,
+) -> bytes:
+    started_at = time.perf_counter()
+    wrapped_html = _inline_header_footer_assets(html) or ""
+    context = None
+    browser = None
+    try:
+        browser = _get_shared_browser()
+        viewport = _thumbnail_viewport_for_paper_size(paper_size)
+        context = browser.new_context(
+            viewport=viewport,
+            device_scale_factor=0.75,
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        _block_unresolved_external_requests(page)
+        page.set_default_timeout(10000)
+        try:
+            page.emulate_media(media="print")
+        except Exception:
+            pass
+        page.set_content(wrapped_html, wait_until="domcontentloaded", timeout=10000)
+        try:
+            page.wait_for_load_state("load", timeout=1500)
+        except PlaywrightTimeoutError:
+            pass
+        screenshot = page.screenshot(type="png", full_page=False, timeout=10000)
+        logger.info(
+            "doc_render:thumbnail_complete bytes=%s total_ms=%.1f paper_size=%s",
+            len(screenshot or b""),
+            (time.perf_counter() - started_at) * 1000.0,
+            paper_size or "",
+        )
+        return screenshot
+    finally:
+        if context is not None:
+            try:
+                context.close()
+            except Exception:
+                pass
+
+
 def _render_pdf_child(
     result_queue: Any,
     html: str,

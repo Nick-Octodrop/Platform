@@ -195,7 +195,8 @@ from app.webhook_signing import verify_webhook_signature as verify_signed_webhoo
 from app.integration_mapping_runtime import preview_integration_mapping
 from app.template_render import collect_undeclared_vars, describe_template_render_error, validate_templates
 from app.secrets import create_secret, encrypt_secret, get_secret, resolve_secret, rotate_secret, SecretStoreError
-from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, using_supabase_storage, delete_storage
+from app.attachments import store_bytes, resolve_path, read_bytes, public_url, branding_bucket, attachments_bucket, using_supabase_storage, delete_storage
+from app.attachment_thumbnails import maybe_build_pdf_thumbnail_payload
 from app.doc_render import render_html, render_pdf, normalize_margins, prewarm_pdf_renderer
 from app.automations import match_event
 from app.automations_runtime import handle_event as handle_automation_event
@@ -4856,7 +4857,25 @@ def _domain_scalar_to_sql_text(value: Any) -> str | None:
     return None
 
 
-def _build_simple_domain_sql_clause(domain: Any) -> tuple[str, list[Any]] | None:
+def _entity_record_id_slug(entity_id: str | None) -> str | None:
+    if not isinstance(entity_id, str) or not entity_id.strip():
+        return None
+    normalized = _normalize_entity_id(entity_id)
+    if isinstance(normalized, str) and normalized.startswith("entity."):
+        return normalized[len("entity.") :]
+    return normalized if isinstance(normalized, str) and normalized else None
+
+
+def _is_record_id_domain_field(field_id: str | None, entity_id: str | None = None) -> bool:
+    if not isinstance(field_id, str) or not field_id.strip():
+        return False
+    if field_id == "id":
+        return True
+    slug = _entity_record_id_slug(entity_id)
+    return bool(slug and field_id == f"{slug}.id")
+
+
+def _build_simple_domain_sql_clause(domain: Any, entity_id: str | None = None) -> tuple[str, list[Any]] | None:
     if not isinstance(domain, dict):
         return None
     op = str(domain.get("op") or "").strip().lower()
@@ -4867,7 +4886,7 @@ def _build_simple_domain_sql_clause(domain: Any) -> tuple[str, list[Any]] | None
         parts: list[str] = []
         params: list[Any] = []
         for condition in conditions:
-            built = _build_simple_domain_sql_clause(condition)
+            built = _build_simple_domain_sql_clause(condition, entity_id=entity_id)
             if built is None:
                 return None
             sql, sql_params = built
@@ -4881,7 +4900,7 @@ def _build_simple_domain_sql_clause(domain: Any) -> tuple[str, list[Any]] | None
         parts = []
         params: list[Any] = []
         for condition in conditions:
-            built = _build_simple_domain_sql_clause(condition)
+            built = _build_simple_domain_sql_clause(condition, entity_id=entity_id)
             if built is None:
                 return None
             sql, sql_params = built
@@ -4890,13 +4909,36 @@ def _build_simple_domain_sql_clause(domain: Any) -> tuple[str, list[Any]] | None
         return " or ".join(parts), params
     if op == "not":
         condition = domain.get("condition")
-        built = _build_simple_domain_sql_clause(condition)
+        built = _build_simple_domain_sql_clause(condition, entity_id=entity_id)
         if built is None:
             return None
         sql, sql_params = built
         return f"not ({sql})", sql_params
     field_id = domain.get("field")
     if not _is_safe_sql_field_id(field_id):
+        return None
+    if _is_record_id_domain_field(field_id, entity_id):
+        if op == "exists":
+            return "id is not null", []
+        raw_value = domain.get("value")
+        if op in {"eq", "lt", "lte", "gt", "gte"}:
+            scalar = _domain_scalar_to_sql_text(raw_value)
+            if scalar is None:
+                return None
+            if op == "eq":
+                return "id = %s", [scalar]
+            comparator = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">="}[op]
+            return f"id {comparator} %s", [scalar]
+        if op == "in":
+            if not isinstance(raw_value, list) or not raw_value:
+                return None
+            values: list[str] = []
+            for item in raw_value:
+                scalar = _domain_scalar_to_sql_text(item)
+                if scalar is None:
+                    return None
+                values.append(scalar)
+            return "id = any(%s)", [values]
         return None
     if op == "exists":
         return "data ? %s", [field_id]
@@ -4935,7 +4977,7 @@ def _records_list_page_with_simple_domain(
     fields: list[str] | None = None,
     order: str | None = None,
 ) -> tuple[list[dict], str | None] | None:
-    built_domain = _build_simple_domain_sql_clause(domain)
+    built_domain = _build_simple_domain_sql_clause(domain, entity_id=entity_id)
     if built_domain is None:
         return None
     order_key = str(order or "").strip().lower()
@@ -5445,6 +5487,12 @@ def _resp_cache_get(key: str):
 
 def _resp_cache_set(key: str, value):
     _response_cache[key] = {"value": value, "ts": time.time()}
+
+
+def _request_bypasses_response_cache(request: Request) -> bool:
+    cache_control = str(request.headers.get("cache-control") or "").lower()
+    pragma = str(request.headers.get("pragma") or "").lower()
+    return "no-cache" in cache_control or "no-store" in cache_control or "no-cache" in pragma
 
 
 def _resp_cache_invalidate_prefix(prefix: str) -> None:
@@ -50497,7 +50545,8 @@ async def list_generic_records(
         f"records:list:{get_org_id()}:{entity_id}:{limit_cap}:{offset_val}:{cursor or ''}:{fields or ''}:"
         f"{search_fields or ''}:{q or ''}:{order or ''}:{_domain_hash(parsed_domain)}:{_context_hash(actor_ctx)}"
     )
-    cached = _resp_cache_get(cache_key)
+    bypass_cache = _request_bypasses_response_cache(request)
+    cached = None if bypass_cache else _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=records_list key=%s", cache_key)
         return cached
@@ -50556,7 +50605,8 @@ async def list_generic_records(
     if next_cursor:
         payload["next_cursor"] = next_cursor
     response = _ok_response(payload)
-    _resp_cache_set(cache_key, response)
+    if not bypass_cache:
+        _resp_cache_set(cache_key, response)
     logger.info("cache_miss=records_list key=%s", cache_key)
     return response
 
@@ -52789,7 +52839,8 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
     if denied:
         return denied
     cache_key = f"records:get:{get_org_id()}:{entity_id}:{record_id}:{actor.get('user_id') or ''}"
-    cached = _resp_cache_get(cache_key)
+    bypass_cache = _request_bypasses_response_cache(request)
+    cached = None if bypass_cache else _resp_cache_get(cache_key)
     if cached is not None:
         logger.info("cache_hit=record_get key=%s", cache_key)
         return cached
@@ -52813,7 +52864,8 @@ async def get_generic_record(request: Request, entity_id: str, record_id: str) -
         return _error_response("RECORD_NOT_FOUND", "Record not found", "record_id", status=404)
     resolved_record = _hydrate_linked_attachment_fields(found[1], entity_id, resolved_id, resolved_record)
     response = _ok_response({"record": _mask_record_for_actor(actor, found[0], found[1], resolved_record), "record_id": resolved_id})
-    _resp_cache_set(cache_key, response)
+    if not bypass_cache:
+        _resp_cache_set(cache_key, response)
     logger.info("cache_miss=record_get key=%s", cache_key)
     return response
 
@@ -53459,17 +53511,18 @@ async def add_activity_attachment(
     except Exception as exc:
         logger.exception("activity_attachment_store_failed filename=%s", file.filename)
         return _error_response("ATTACHMENT_UPLOAD_FAILED", str(exc), "file", status=400)
-    attachment = attachment_store.create_attachment(
-        {
-            "filename": file.filename,
-            "mime_type": file.content_type or "application/octet-stream",
-            "size": stored["size"],
-            "storage_key": stored["storage_key"],
-            "sha256": stored["sha256"],
-            "created_by": (actor or {}).get("user_id"),
-            "source": "activity",
-        }
-    )
+    mime_type = file.content_type or "application/octet-stream"
+    attachment_payload = {
+        "filename": file.filename,
+        "mime_type": mime_type,
+        "size": stored["size"],
+        "storage_key": stored["storage_key"],
+        "sha256": stored["sha256"],
+        "created_by": (actor or {}).get("user_id"),
+        "source": "activity",
+    }
+    attachment_payload.update(maybe_build_pdf_thumbnail_payload(get_org_id(), file.filename, mime_type, data))
+    attachment = attachment_store.create_attachment(attachment_payload)
     attachment_store.link(
         {
             "attachment_id": attachment.get("id"),
@@ -65773,16 +65826,17 @@ async def upload_attachment(request: Request, file: UploadFile = File(...)) -> d
     except Exception as exc:
         logger.exception("attachment_store_failed filename=%s", file.filename)
         return _error_response("ATTACHMENT_UPLOAD_FAILED", str(exc), "file", status=400)
-    attachment = attachment_store.create_attachment(
-        {
-            "filename": file.filename,
-            "mime_type": file.content_type or "application/octet-stream",
-            "size": stored["size"],
-            "storage_key": stored["storage_key"],
-            "sha256": stored["sha256"],
-            "created_by": actor.get("user_id"),
-        }
-    )
+    mime_type = file.content_type or "application/octet-stream"
+    attachment_payload = {
+        "filename": file.filename,
+        "mime_type": mime_type,
+        "size": stored["size"],
+        "storage_key": stored["storage_key"],
+        "sha256": stored["sha256"],
+        "created_by": actor.get("user_id"),
+    }
+    attachment_payload.update(maybe_build_pdf_thumbnail_payload(get_org_id(), file.filename, mime_type, data))
+    attachment = attachment_store.create_attachment(attachment_payload)
     return _ok_response({"attachment": attachment})
 
 
@@ -66186,6 +66240,44 @@ async def download_attachment(request: Request, attachment_id: str):
     return Response(content=data, media_type=attachment.get("mime_type") or "application/octet-stream", headers=headers)
 
 
+@app.get("/attachments/{attachment_id}/thumbnail")
+async def download_attachment_thumbnail(request: Request, attachment_id: str):
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    attachment, attachment_org_id = _get_attachment_for_actor(actor, attachment_id)
+    if not attachment:
+        return _error_response("ATTACHMENT_NOT_FOUND", "Attachment not found", "attachment_id", status=404)
+    can_read_attachment = _has_capability(actor, "records.read")
+    can_read_preview_attachment = (
+        attachment.get("source") == "preview"
+        and _has_capability(actor, "templates.manage")
+    )
+    if not can_read_attachment and not can_read_preview_attachment:
+        return _error_response("FORBIDDEN", "Read access required", status=403)
+    thumbnail_key = str(attachment.get("thumbnail_storage_key") or "").strip()
+    if not thumbnail_key:
+        return _error_response("ATTACHMENT_THUMBNAIL_NOT_FOUND", "Attachment thumbnail not found", "attachment_id", status=404)
+    org_id = attachment_org_id or get_org_id()
+    bucket = str(attachment.get("thumbnail_bucket") or "").strip() or attachments_bucket()
+    try:
+        data = read_bytes(org_id, thumbnail_key, bucket=bucket)
+    except FileNotFoundError:
+        return _error_response("ATTACHMENT_THUMBNAIL_MISSING", "Attachment thumbnail file missing", "storage_key", status=404)
+    except RuntimeError:
+        path = resolve_path(org_id, thumbnail_key)
+        if not path.exists():
+            return _error_response("ATTACHMENT_THUMBNAIL_MISSING", "Attachment thumbnail file missing", "storage_key", status=404)
+        from fastapi.responses import FileResponse
+
+        return FileResponse(path, media_type=attachment.get("thumbnail_mime_type") or "image/png")
+    headers = {
+        "Cache-Control": "private, max-age=3600",
+        "Content-Disposition": "inline",
+    }
+    return Response(content=data, media_type=attachment.get("thumbnail_mime_type") or "image/png", headers=headers)
+
+
 @app.post("/attachments/link")
 async def link_attachment(request: Request) -> dict:
     actor = _resolve_actor(request)
@@ -66334,6 +66426,16 @@ async def delete_record_attachment(request: Request, entity_id: str, record_id: 
                     delete_storage(get_org_id(), storage_key)
                 except Exception:
                     logger.exception("attachment_storage_delete_failed attachment_id=%s storage_key=%s", attachment_id, storage_key)
+            thumbnail_key = str((removed or {}).get("thumbnail_storage_key") or "").strip()
+            if thumbnail_key:
+                try:
+                    delete_storage(
+                        get_org_id(),
+                        thumbnail_key,
+                        bucket=str((removed or {}).get("thumbnail_bucket") or "").strip() or attachments_bucket(),
+                    )
+                except Exception:
+                    logger.exception("attachment_thumbnail_storage_delete_failed attachment_id=%s storage_key=%s", attachment_id, thumbnail_key)
 
     return _ok_response(
         {

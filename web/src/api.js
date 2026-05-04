@@ -355,6 +355,10 @@ export async function apiFetch(path, options = {}) {
   const policy = resolvePolicy(path, method);
   const cacheTtl =
     sandboxActive ? 0 : typeof requestOptions.cacheTtl === "number" ? requestOptions.cacheTtl : policy?.ttl ?? REQUEST_DEFAULT_TTL_MS;
+  if (cacheTtl === 0) {
+    headers["Cache-Control"] = "no-cache";
+    headers.Pragma = "no-cache";
+  }
   const cacheKey = requestOptions.cacheKey || null;
   const cacheAllowed = cacheTtl > 0;
   const key = requestKey(method, path, body, cacheKey, activeWorkspaceId);

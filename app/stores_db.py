@@ -79,6 +79,7 @@ def reset_org_id(token):
 # Auto-migration allowlist (ALLOWED_AUTO_MIGRATION)
 _ALLOWED_AUTO_MIGRATION_TABLES = {"module_draft_versions"}
 _AUTO_MIGRATION_LOGGED: set[str] = set()
+_ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE: bool | None = None
 
 
 def _now() -> str:
@@ -5179,8 +5180,67 @@ class DbEmailStore:
 
 
 class DbAttachmentStore:
+    def _thumbnail_columns_available(self) -> bool:
+        global _ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE
+        if _ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE is not None:
+            return _ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE
+        try:
+            with get_conn() as conn:
+                row = fetch_one(
+                    conn,
+                    """
+                    select count(*)::int as total
+                    from information_schema.columns
+                    where table_schema = current_schema()
+                      and table_name = 'attachments'
+                      and column_name in (
+                        'thumbnail_storage_key',
+                        'thumbnail_mime_type',
+                        'thumbnail_size',
+                        'thumbnail_sha256',
+                        'thumbnail_bucket'
+                      )
+                    """,
+                    [],
+                    query_name="attachments.thumbnail_columns_check",
+                )
+            _ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE = int((row or {}).get("total") or 0) == 5
+        except Exception as exc:
+            logger.warning("attachments_thumbnail_column_check_failed error=%s", exc)
+            _ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE = False
+        return bool(_ATTACHMENT_THUMBNAIL_COLUMNS_AVAILABLE)
+
     def create_attachment(self, record: dict) -> dict:
+        has_thumbnail = bool(record.get("thumbnail_storage_key")) and self._thumbnail_columns_available()
         with get_conn() as conn:
+            if has_thumbnail:
+                row = fetch_one(
+                    conn,
+                    """
+                    insert into attachments (
+                      org_id, filename, mime_type, size, storage_key, sha256, created_by, created_at, source,
+                      thumbnail_storage_key, thumbnail_mime_type, thumbnail_size, thumbnail_sha256, thumbnail_bucket
+                    ) values (%s,%s,%s,%s,%s,%s,%s,now(),%s,%s,%s,%s,%s,%s)
+                    returning *
+                    """,
+                    [
+                        get_org_id(),
+                        record.get("filename"),
+                        record.get("mime_type"),
+                        record.get("size"),
+                        record.get("storage_key"),
+                        record.get("sha256"),
+                        record.get("created_by"),
+                        record.get("source", "upload"),
+                        record.get("thumbnail_storage_key"),
+                        record.get("thumbnail_mime_type") or "image/png",
+                        record.get("thumbnail_size"),
+                        record.get("thumbnail_sha256"),
+                        record.get("thumbnail_bucket"),
+                    ],
+                    query_name="attachments.insert_with_thumbnail",
+                )
+                return dict(row)
             row = fetch_one(
                 conn,
                 """
@@ -5216,11 +5276,14 @@ class DbAttachmentStore:
             return dict(row) if row else None
 
     def delete_by_source_before(self, source: str, before_ts: str, limit: int = 200) -> list[dict]:
+        select_columns = "id, storage_key"
+        if self._thumbnail_columns_available():
+            select_columns += ", thumbnail_storage_key, thumbnail_bucket"
         with get_conn() as conn:
             rows = fetch_all(
                 conn,
-                """
-                select id, storage_key
+                f"""
+                select {select_columns}
                 from attachments
                 where org_id=%s and source=%s and created_at < %s
                 order by created_at asc

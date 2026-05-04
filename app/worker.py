@@ -155,9 +155,9 @@ def _get_attachment_public_url_helpers():
 
 
 def _get_doc_render_helpers():
-    from app.doc_render import normalize_margins, render_html, render_pdf
+    from app.doc_render import normalize_margins, render_html, render_pdf, render_thumbnail
 
-    return render_html, render_pdf, normalize_margins
+    return render_html, render_pdf, normalize_margins, render_thumbnail
 
 
 def _get_app_main():
@@ -752,7 +752,9 @@ def _handle_email_send(job: dict, org_id: str) -> None:
 
 
 def _handle_doc_generate(job: dict, org_id: str) -> dict:
-    render_html, render_pdf, normalize_margins = _get_doc_render_helpers()
+    doc_render_helpers = _get_doc_render_helpers()
+    render_html, render_pdf, normalize_margins = doc_render_helpers[:3]
+    render_thumbnail = doc_render_helpers[3] if len(doc_render_helpers) >= 4 else (lambda *_args, **_kwargs: b"")
     store_bytes, _, _ = _get_attachment_helpers()
     app_main = _get_app_main()
     find_entity_def_in_registry = _get_entity_def_resolver()
@@ -857,17 +859,41 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
         header_html=header_html,
         footer_html=footer_html,
     )
+    thumbnail_stored = None
+    try:
+        thumbnail_bytes = render_thumbnail(
+            html,
+            paper_size=paper_size,
+            margins=margins,
+            header_html=header_html,
+            footer_html=footer_html,
+        )
+        if thumbnail_bytes:
+            thumbnail_stored = store_bytes(org_id, f"{filename}.thumbnail.png", thumbnail_bytes, mime_type="image/png")
+    except Exception as exc:
+        logger.warning("document_thumbnail_generate_failed template_id=%s record_id=%s error=%s", template_id, record_id, exc)
     stored = store_bytes(org_id, f"{filename}.pdf", pdf_bytes)
+    attachment_payload = {
+        "filename": f"{filename}.pdf",
+        "mime_type": "application/pdf",
+        "size": stored["size"],
+        "storage_key": stored["storage_key"],
+        "sha256": stored["sha256"],
+        "created_by": "worker",
+        "source": "generated",
+    }
+    if thumbnail_stored:
+        attachment_payload.update(
+            {
+                "thumbnail_storage_key": thumbnail_stored.get("storage_key"),
+                "thumbnail_mime_type": "image/png",
+                "thumbnail_size": thumbnail_stored.get("size"),
+                "thumbnail_sha256": thumbnail_stored.get("sha256"),
+                "thumbnail_bucket": thumbnail_stored.get("bucket"),
+            }
+        )
     attachment = attach_store.create_attachment(
-        {
-            "filename": f"{filename}.pdf",
-            "mime_type": "application/pdf",
-            "size": stored["size"],
-            "storage_key": stored["storage_key"],
-            "sha256": stored["sha256"],
-            "created_by": "worker",
-            "source": "generated",
-        }
+        attachment_payload
     )
     attach_store.link(
         {
@@ -917,6 +943,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
 
 def _handle_attachments_cleanup(job: dict, org_id: str) -> None:
     _, delete_storage = _get_attachment_helpers()
+    attachments_bucket, _, _ = _get_attachment_public_url_helpers()
     attach_store = DbAttachmentStore()
     payload = job.get("payload") or {}
     source = payload.get("source") or "preview"
@@ -932,6 +959,9 @@ def _handle_attachments_cleanup(job: dict, org_id: str) -> None:
         storage_key = item.get("storage_key")
         if storage_key:
             delete_storage(org_id, storage_key)
+        thumbnail_key = str(item.get("thumbnail_storage_key") or "").strip()
+        if thumbnail_key:
+            delete_storage(org_id, thumbnail_key, bucket=str(item.get("thumbnail_bucket") or "").strip() or attachments_bucket())
 
 
 def _lookup_path(ctx: dict, path: str) -> object:

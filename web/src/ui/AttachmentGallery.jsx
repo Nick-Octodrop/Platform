@@ -104,6 +104,24 @@ async function fetchAttachmentBlob(attachmentId) {
   return response.blob();
 }
 
+async function fetchAttachmentThumbnailBlob(attachmentId) {
+  const session = await getSafeSession();
+  const token = session?.access_token;
+  const workspaceId = getActiveWorkspaceId();
+  const response = await fetch(`${API_URL}/attachments/${attachmentId}/thumbnail`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(workspaceId ? { "X-Workspace-Id": workspaceId } : {}),
+    },
+  });
+  if (!response.ok) throw new Error("THUMBNAIL_FAILED");
+  return response.blob();
+}
+
+function hasStoredThumbnail(row) {
+  return Boolean(row?.thumbnail_storage_key || row?.thumbnail_mime_type || row?.thumbnail_size);
+}
+
 function AttachmentPreviewModal({ preview, onClose, onDownload, t }) {
   const attachment = preview?.attachment || null;
   const kind = preview?.kind || "file";
@@ -205,16 +223,21 @@ export default function AttachmentGallery({
   });
   const previewOpen = !!preview?.attachment;
 
-  const imageRows = useMemo(() => rows.filter((row) => classifyMime(row?.mime_type) === "image" && row?.id), [rows]);
+  const thumbnailRows = useMemo(
+    () => rows.filter((row) => row?.id && (classifyMime(row?.mime_type) === "image" || hasStoredThumbnail(row))),
+    [rows],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadThumbs() {
-      for (const row of imageRows) {
+      for (const row of thumbnailRows) {
         if (!row?.id || thumbUrls[row.id]) continue;
         try {
-          const blob = await fetchAttachmentBlob(row.id);
+          const blob = hasStoredThumbnail(row)
+            ? await fetchAttachmentThumbnailBlob(row.id)
+            : await fetchAttachmentBlob(row.id);
           if (cancelled) return;
           const url = URL.createObjectURL(blob);
           setThumbUrls((prev) => ({ ...prev, [row.id]: url }));
@@ -228,7 +251,7 @@ export default function AttachmentGallery({
     return () => {
       cancelled = true;
     };
-  }, [imageRows, thumbUrls]);
+  }, [thumbnailRows, thumbUrls]);
 
   useEffect(() => {
     thumbUrlsRef.current = thumbUrls;
@@ -348,11 +371,18 @@ export default function AttachmentGallery({
                 className="relative flex-1 min-h-0 w-full bg-base-200/50 overflow-hidden"
                 onClick={() => handleOpenPreview(attachment)}
               >
-                {kind === "image" && thumb ? (
-                  <img src={thumb} alt={attachment.filename || t("common.attachments.attachment")} className="h-full w-full object-cover" />
+                {thumb ? (
+                  <img src={thumb} alt={attachment.filename || t("common.attachments.attachment")} className="h-full w-full object-cover bg-white" />
                 ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-base-content/60">
-                    <Icon className="h-8 w-8" />
+                  <div className="h-full w-full flex items-center justify-center bg-gradient-to-b from-base-100 to-base-200/70 p-5 text-base-content/60">
+                    <div className="relative flex h-full w-full max-h-40 max-w-32 items-center justify-center rounded-md border border-base-300 bg-base-100 shadow-sm">
+                      <Icon className="h-8 w-8" />
+                      {ext ? (
+                        <span className="absolute bottom-2 right-2 rounded border border-base-300 bg-base-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-base-content/70">
+                          {ext.replace(".", "")}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 )}
 
