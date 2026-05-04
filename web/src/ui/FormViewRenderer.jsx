@@ -129,6 +129,24 @@ function recordHasField(record, fieldId) {
   return Object.prototype.hasOwnProperty.call(record, fieldId);
 }
 
+function sourceFieldCandidates(sourceFieldSpec) {
+  if (Array.isArray(sourceFieldSpec)) {
+    return sourceFieldSpec.filter((fieldId) => typeof fieldId === "string" && fieldId);
+  }
+  return typeof sourceFieldSpec === "string" && sourceFieldSpec ? [sourceFieldSpec] : [];
+}
+
+function resolveLookupMappedValue(lookupRecord, sourceFieldSpec) {
+  let hasBlankCandidate = false;
+  for (const sourceFieldId of sourceFieldCandidates(sourceFieldSpec)) {
+    if (!recordHasField(lookupRecord, sourceFieldId)) continue;
+    const value = getFieldValue(lookupRecord, sourceFieldId);
+    if (hasMeaningfulValue(value)) return value;
+    hasBlankCandidate = true;
+  }
+  return hasBlankCandidate ? "" : undefined;
+}
+
 function buildEntityFieldIndex(entityDefs, entityId) {
   if (!Array.isArray(entityDefs) || !entityId) return {};
   const entity = entityDefs.find((item) => item?.id === entityId);
@@ -176,8 +194,8 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
     ) {
       return nextRecord;
     }
-    for (const [targetFieldId, sourceFieldId] of Object.entries(fieldMap)) {
-      if (typeof targetFieldId !== "string" || !targetFieldId || typeof sourceFieldId !== "string" || !sourceFieldId) continue;
+    for (const [targetFieldId, sourceFieldSpec] of Object.entries(fieldMap)) {
+      if (typeof targetFieldId !== "string" || !targetFieldId) continue;
       if (targetFieldId === lookupFieldId) continue;
       const currentValue = getFieldValue(nextRecord || {}, targetFieldId);
       if (onlyWhenEmpty.has(targetFieldId) && hasMeaningfulValue(currentValue)) {
@@ -190,8 +208,8 @@ function applyLookupPopulateConfig(baseRecord, lookupFieldId, selectedValue, loo
           continue;
         }
       }
-      if (!recordHasField(lookupRecord, sourceFieldId)) continue;
-      const mappedValue = getFieldValue(lookupRecord, sourceFieldId);
+      const mappedValue = resolveLookupMappedValue(lookupRecord, sourceFieldSpec);
+      if (mappedValue === undefined) continue;
       nextRecord = setFieldValueIfChanged(nextRecord, targetFieldId, mappedValue ?? "");
     }
     return nextRecord;
@@ -2743,6 +2761,13 @@ function normalizeUserIds(value) {
   return [];
 }
 
+const USER_PICKER_LIST_CLASS = "flex w-full flex-col gap-1 overflow-x-hidden p-1";
+const USER_PICKER_DESKTOP_LIST_CLASS = `${USER_PICKER_LIST_CLASS} max-h-[15rem] overflow-y-auto`;
+const USER_PICKER_EMPTY_CLASS = "block px-3 py-2 text-sm text-base-content/60";
+const USER_PICKER_ROW_CLASS = "block w-full";
+const USER_PICKER_BUTTON_CLASS = "flex w-full items-center rounded-md px-3 py-2 text-left text-sm hover:bg-base-200";
+const USER_PICKER_ACTIVE_BUTTON_CLASS = "flex w-full items-center rounded-md bg-primary px-3 py-2 text-left text-sm text-primary-content";
+
 function WorkspaceUserField({ field, value, onChange, readonly, members, loadingMembers = false }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [opened, setOpened] = useState(false);
@@ -2808,17 +2833,17 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
-          <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
-            {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
+          <ul className={USER_PICKER_DESKTOP_LIST_CLASS}>
+            {loadingMembers && <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("common.loading_workspace_users")}</li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
-              <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
+              <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_workspace_users")}</li>
             )}
             {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-              <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
+              <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_matches")}</li>
             )}
             {!loadingMembers &&
               filtered.map((member) => (
-                <li key={member.user_id}>
+                <li key={member.user_id} className={USER_PICKER_ROW_CLASS}>
                   <button
                     type="button"
                     onClick={() => {
@@ -2826,7 +2851,7 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
                       setOpened(false);
                       setSearch("");
                     }}
-                    className={member.user_id === selectedId ? "active" : ""}
+                    className={member.user_id === selectedId ? USER_PICKER_ACTIVE_BUTTON_CLASS : USER_PICKER_BUTTON_CLASS}
                   >
                     {member.label}
                   </button>
@@ -2860,17 +2885,17 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
               autoFocus
             />
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
-              <ul className="menu menu-compact">
-                {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
+              <ul className={USER_PICKER_LIST_CLASS}>
+                {loadingMembers && <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("common.loading_workspace_users")}</li>}
                 {!loadingMembers && normalizedMembers.length === 0 && (
-                  <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
+                  <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_workspace_users")}</li>
                 )}
                 {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-                  <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
+                  <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_matches")}</li>
                 )}
                 {!loadingMembers &&
                   filtered.map((member) => (
-                    <li key={member.user_id}>
+                    <li key={member.user_id} className={USER_PICKER_ROW_CLASS}>
                       <button
                         type="button"
                         onClick={() => {
@@ -2878,7 +2903,7 @@ function WorkspaceUserField({ field, value, onChange, readonly, members, loading
                           setOpened(false);
                           setSearch("");
                         }}
-                        className={member.user_id === selectedId ? "active" : ""}
+                        className={member.user_id === selectedId ? USER_PICKER_ACTIVE_BUTTON_CLASS : USER_PICKER_BUTTON_CLASS}
                       >
                         {member.label}
                       </button>
@@ -2982,18 +3007,18 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
       </div>
       {opened && !isMobile && (
         <div className="absolute z-30 mt-1 w-full rounded-box border border-base-400 bg-base-100 shadow">
-          <ul className="menu menu-compact menu-vertical w-full max-h-[15rem] overflow-y-auto overflow-x-hidden">
-            {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
+          <ul className={USER_PICKER_DESKTOP_LIST_CLASS}>
+            {loadingMembers && <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("common.loading_workspace_users")}</li>}
             {!loadingMembers && normalizedMembers.length === 0 && (
-              <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
+              <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_workspace_users")}</li>
             )}
             {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-              <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
+              <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_matches")}</li>
             )}
             {!loadingMembers &&
               filtered.map((member) => (
-                <li key={member.user_id}>
-                  <button type="button" onClick={() => addUser(member.user_id)}>
+                <li key={member.user_id} className={USER_PICKER_ROW_CLASS}>
+                  <button type="button" className={USER_PICKER_BUTTON_CLASS} onClick={() => addUser(member.user_id)}>
                     {member.label}
                   </button>
                 </li>
@@ -3029,18 +3054,18 @@ function WorkspaceUsersField({ field, value, onChange, readonly, members, loadin
               autoFocus
             />
             <div className="mt-3 flex-1 min-h-0 overflow-auto">
-              <ul className="menu menu-compact">
-                {loadingMembers && <li className="menu-title"><span>{translateRuntime("common.loading_workspace_users")}</span></li>}
+              <ul className={USER_PICKER_LIST_CLASS}>
+                {loadingMembers && <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("common.loading_workspace_users")}</li>}
                 {!loadingMembers && normalizedMembers.length === 0 && (
-                  <li className="menu-title"><span>{translateRuntime("empty.no_workspace_users")}</span></li>
+                  <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_workspace_users")}</li>
                 )}
                 {!loadingMembers && normalizedMembers.length > 0 && filtered.length === 0 && (
-                  <li className="menu-title"><span>{translateRuntime("empty.no_matches")}</span></li>
+                  <li className={USER_PICKER_EMPTY_CLASS}>{translateRuntime("empty.no_matches")}</li>
                 )}
                 {!loadingMembers &&
                   filtered.map((member) => (
-                    <li key={member.user_id}>
-                      <button type="button" onClick={() => addUser(member.user_id)}>
+                    <li key={member.user_id} className={USER_PICKER_ROW_CLASS}>
+                      <button type="button" className={USER_PICKER_BUTTON_CLASS} onClick={() => addUser(member.user_id)}>
                         {member.label}
                       </button>
                     </li>
@@ -3094,7 +3119,7 @@ function LookupField({
       : [];
     const mappedSourceFields =
       populateFromLookup?.field_map && typeof populateFromLookup.field_map === "object"
-        ? Object.values(populateFromLookup.field_map).filter((fieldId) => typeof fieldId === "string" && fieldId)
+        ? Object.values(populateFromLookup.field_map).flatMap(sourceFieldCandidates)
         : [];
     return Array.from(new Set([...explicitFields, ...mappedSourceFields].filter(Boolean)));
   }, [field?.lookup_fields, populateFromLookup]);

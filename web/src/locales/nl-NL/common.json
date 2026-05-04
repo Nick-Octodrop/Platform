@@ -307,7 +307,18 @@
     "close_preview": "Voorbeeld sluiten",
     "no_preview_content": "(Geen voorbeeldinhoud)",
     "pdf_preview": "Bijlage PDF-voorbeeld",
-    "download_default_filename": "bijlage"
+    "download_default_filename": "bijlage",
+    "add_from_documents": "Toevoegen uit Documenten",
+    "add_from_documents_hint": "Selecteer bestaande documentbestanden om aan dit record te koppelen.",
+    "add_from_documents_failed": "Kan niet toevoegen uit Documenten",
+    "document_sources_failed": "Kan documentbronnen niet laden",
+    "documents_load_failed": "Kan documenten niet laden",
+    "document_source": "Documentbron",
+    "search_documents": "Documenten zoeken...",
+    "no_document_sources": "Geen documentbronnen beschikbaar.",
+    "no_documents_found": "Geen documenten gevonden.",
+    "document_file_count": "{{count}} bestand(en)",
+    "add_selected_documents": "Selectie toevoegen"
   },
   "activity_panel": {
     "preview_unavailable": "Activiteitenfeed niet beschikbaar in voorbeeldmodus.",

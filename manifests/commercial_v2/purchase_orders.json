@@ -206,7 +206,10 @@
               "field_map": {
                 "biz_purchase_order.supplier_contact_name": "biz_contact_person.display_name",
                 "biz_purchase_order.supplier_contact_email": "biz_contact_person.email",
-                "biz_purchase_order.supplier_contact_phone": "biz_contact_person.phone"
+                "biz_purchase_order.supplier_contact_phone": [
+                  "biz_contact_person.phone",
+                  "biz_contact_person.mobile"
+                ]
               }
             }
           }

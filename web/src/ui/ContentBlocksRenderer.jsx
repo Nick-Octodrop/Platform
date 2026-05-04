@@ -1248,6 +1248,7 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
   const [activeTab, setActiveTab] = useState("activity");
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [addingFromDocuments, setAddingFromDocuments] = useState(false);
   const [deletingAttachmentId, setDeletingAttachmentId] = useState("");
   const [attachmentToDelete, setAttachmentToDelete] = useState(null);
   const [error, setError] = useState("");
@@ -1705,6 +1706,35 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
     }
   }
 
+  async function handleAddFromDocuments({ documentIds, sourceEntityId }) {
+    if (!canWriteRecords || !entityId || !recordId || addingFromDocuments) return;
+    burstUntilRef.current = Date.now() + BURST_WINDOW_MS;
+    setAddingFromDocuments(true);
+    setError("");
+    try {
+      await apiFetch(
+        `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/from-documents`,
+        {
+          method: "POST",
+          body: {
+            document_entity_id: sourceEntityId,
+            document_ids: documentIds,
+            purpose: "default",
+          },
+        }
+      );
+      const att = await apiFetch(`/records/${entityId}/${recordId}/attachments`, { cacheTtl: 0 });
+      setAttachments(att.attachments || []);
+      const activity = await fetchActivity();
+      setItems(mergeIncoming([], activity));
+    } catch (err) {
+      setError(err?.message || translateRuntime("common.attachments.add_from_documents_failed"));
+      throw err;
+    } finally {
+      setAddingFromDocuments(false);
+    }
+  }
+
   if (!entityId) return <div className="alert alert-warning">{translateRuntime("common.activity_panel.missing_entity")}</div>;
   if (!recordId) return <div className="alert alert-info">{translateRuntime("common.activity_panel.save_record")}</div>;
 
@@ -1794,10 +1824,13 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
           <AttachmentGallery
             attachments={attachments}
             uploading={uploading}
+            addingFromDocuments={addingFromDocuments}
             deletingId={deletingAttachmentId}
             canUpload={canWriteRecords}
             canDelete={canWriteRecords}
+            canAddFromDocuments={canWriteRecords}
             onUpload={handleUpload}
+            onAddFromDocuments={handleAddFromDocuments}
             onDelete={(attachment) => setAttachmentToDelete(attachment)}
           />
         </div>

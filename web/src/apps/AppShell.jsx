@@ -2447,6 +2447,7 @@ function AppView({
       selectedIds: modal.selectedIds,
       skipConfirm: true,
       emailCompose: {
+        automation_id: compose.automation_id,
         step_id: compose.step_id,
         inputs: {
           to: splitEmailInput(modal.toText),
@@ -2681,11 +2682,9 @@ function AppView({
       setActiveManifestModal((prev) => {
         if (!prev) return prev;
         const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, { ...(prev.draft || {}), ...next });
-        const missingFieldIds = computeManifestModalMissingFieldIds(prev, nextModalDraft);
         return {
           ...prev,
           draft: nextModalDraft,
-          missingFieldIds,
           busy: false,
           error: "",
           savedAt: Date.now(),
@@ -3777,11 +3776,9 @@ function AppView({
                   setActiveManifestModal((prev) => {
                     if (!prev) return prev;
                     const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, next || {});
-                    const missingFieldIds = computeManifestModalMissingFieldIds(prev, nextModalDraft);
                     return {
                       ...prev,
                       draft: nextModalDraft,
-                      missingFieldIds,
                       error: "",
                       savedAt: null,
                     };

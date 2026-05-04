@@ -10,11 +10,13 @@ import {
   FileSpreadsheet,
   FileText,
   FileVideo2,
+  FolderPlus,
   Paperclip,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
-import { API_URL, getActiveWorkspaceId } from "../api.js";
+import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { getSafeSession } from "../supabase.js";
 import { formatDateTime } from "../utils/dateTime.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
@@ -196,6 +198,202 @@ function AttachmentPreviewModal({ preview, onClose, onDownload, t }) {
   );
 }
 
+function DocumentAttachmentPickerModal({ open, onClose, onConfirm, busy = false, t }) {
+  const [sources, setSources] = useState([]);
+  const [sourceId, setSourceId] = useState("");
+  const [documents, setDocuments] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const label = (key, fallback, params) => {
+    const value = t(key, params);
+    return value === key ? fallback : value;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setError("");
+    setSelectedIds([]);
+    apiFetch("/attachments/document-sources", { cacheTtl: 0 })
+      .then((res) => {
+        if (cancelled) return;
+        const nextSources = Array.isArray(res?.sources) ? res.sources : [];
+        setSources(nextSources);
+        setSourceId((prev) => (
+          nextSources.some((source) => source?.entity_id === prev)
+            ? prev
+            : nextSources[0]?.entity_id || ""
+        ));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.message || label("common.attachments.document_sources_failed", "Failed to load document sources"));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !sourceId) {
+      setDocuments([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError("");
+      const qs = new URLSearchParams({ limit: "50" });
+      if (query.trim()) qs.set("q", query.trim());
+      apiFetch(`/attachments/document-sources/${encodeURIComponent(sourceId)}/documents?${qs.toString()}`, { cacheTtl: 0 })
+        .then((res) => {
+          if (cancelled) return;
+          setDocuments(Array.isArray(res?.documents) ? res.documents : []);
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setDocuments([]);
+            setError(err?.message || label("common.attachments.documents_load_failed", "Failed to load documents"));
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sourceId, query]);
+
+  if (!open) return null;
+
+  const selectedSource = sources.find((source) => source?.entity_id === sourceId) || null;
+  const selectedCount = selectedIds.length;
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box max-w-3xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">{label("common.attachments.add_from_documents", "Add from Documents")}</h3>
+            <p className="mt-1 text-sm text-base-content/60">
+              {label("common.attachments.add_from_documents_hint", "Select existing document files to attach to this record.")}
+            </p>
+          </div>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onClose} disabled={busy}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[220px_1fr]">
+          <label className="form-control">
+            <span className="label-text">{label("common.attachments.document_source", "Document source")}</span>
+            <select
+              className="select select-bordered w-full"
+              value={sourceId}
+              onChange={(event) => {
+                setSourceId(event.target.value);
+                setSelectedIds([]);
+              }}
+              disabled={busy || sources.length <= 1}
+            >
+              {sources.map((source) => (
+                <option key={`${source.entity_id}:${source.attachment_field}`} value={source.entity_id}>
+                  {source.label || source.entity_id}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-control">
+            <span className="label-text">{label("common.search", "Search")}</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-base-content/45" />
+              <input
+                className="input input-bordered w-full pl-9"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={label("common.attachments.search_documents", "Search documents...")}
+                disabled={busy || !selectedSource}
+              />
+            </div>
+          </label>
+        </div>
+
+        <div className="mt-4 max-h-[48vh] overflow-auto rounded-box border border-base-300">
+          {error ? <div className="p-4 text-sm text-error">{error}</div> : null}
+          {!error && sources.length === 0 ? (
+            <div className="p-4 text-sm text-base-content/60">
+              {label("common.attachments.no_document_sources", "No document sources are available.")}
+            </div>
+          ) : null}
+          {!error && loading ? (
+            <div className="p-4 text-sm text-base-content/60">{label("common.loading", "Loading...")}</div>
+          ) : null}
+          {!error && !loading && sourceId && documents.length === 0 ? (
+            <div className="p-4 text-sm text-base-content/60">
+              {label("common.attachments.no_documents_found", "No documents found.")}
+            </div>
+          ) : null}
+          {!error && !loading && documents.map((document) => {
+            const attachmentCount = Number(document?.attachment_count || 0);
+            const disabled = attachmentCount <= 0;
+            const checked = selectedIds.includes(document.id);
+            return (
+              <label
+                key={document.id}
+                className={`flex cursor-pointer items-start gap-3 border-b border-base-300 px-4 py-3 last:border-b-0 ${disabled ? "opacity-50" : "hover:bg-base-200/60"}`}
+              >
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm mt-1"
+                  checked={checked}
+                  disabled={disabled || busy}
+                  onChange={(event) => {
+                    setSelectedIds((prev) => {
+                      if (event.target.checked) return Array.from(new Set([...prev, document.id]));
+                      return prev.filter((id) => id !== document.id);
+                    });
+                  }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{document.title || document.id}</div>
+                  <div className="mt-1 text-xs text-base-content/60">
+                    {label("common.attachments.document_file_count", "{{count}} file(s)", { count: attachmentCount })}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="modal-action">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            {label("common.cancel", "Cancel")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => onConfirm?.({ documentIds: selectedIds, sourceEntityId: sourceId })}
+            disabled={busy || selectedIds.length === 0}
+          >
+            {busy
+              ? label("common.saving", "Saving...")
+              : label("common.attachments.add_selected_documents", "Add selected", { count: selectedCount })}
+          </button>
+        </div>
+      </div>
+      <button className="modal-backdrop" type="button" onClick={onClose}>
+        {label("common.close", "Close")}
+      </button>
+    </div>
+  );
+}
+
 export default function AttachmentGallery({
   attachments,
   uploading,
@@ -204,6 +402,9 @@ export default function AttachmentGallery({
   canDelete,
   onUpload,
   onDelete,
+  canAddFromDocuments = false,
+  addingFromDocuments = false,
+  onAddFromDocuments = null,
   buttonLabel = "",
   showUploadButton = true,
   showCount = true,
@@ -221,6 +422,7 @@ export default function AttachmentGallery({
     text: "",
     error: "",
   });
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const previewOpen = !!preview?.attachment;
 
   const thumbnailRows = useMemo(
@@ -342,11 +544,24 @@ export default function AttachmentGallery({
       {(showUploadButton || showCount) ? (
         <div className="flex items-center justify-between gap-2 mb-3">
           {showUploadButton ? (
-            <label className={`${SOFT_BUTTON_SM} gap-2 cursor-pointer`} aria-disabled={!canUpload || uploading}>
-              <Paperclip className="h-4 w-4" />
-              {uploading ? t("common.uploading") : (buttonLabel || t("common.attach"))}
-              <input type="file" multiple className="hidden" onChange={onUpload} disabled={!canUpload || uploading} />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className={`${SOFT_BUTTON_SM} gap-2 cursor-pointer`} aria-disabled={!canUpload || uploading}>
+                <Paperclip className="h-4 w-4" />
+                {uploading ? t("common.uploading") : (buttonLabel || t("common.attach"))}
+                <input type="file" multiple className="hidden" onChange={onUpload} disabled={!canUpload || uploading} />
+              </label>
+              {canAddFromDocuments && typeof onAddFromDocuments === "function" ? (
+                <button
+                  type="button"
+                  className={`${SOFT_BUTTON_SM} gap-2`}
+                  onClick={() => setDocumentPickerOpen(true)}
+                  disabled={addingFromDocuments}
+                >
+                  <FolderPlus className="h-4 w-4" />
+                  {addingFromDocuments ? t("common.saving") : (t("common.attachments.add_from_documents") === "common.attachments.add_from_documents" ? "Add from Documents" : t("common.attachments.add_from_documents"))}
+                </button>
+              ) : null}
+            </div>
           ) : (
             <span />
           )}
@@ -447,6 +662,18 @@ export default function AttachmentGallery({
           const attachment = preview?.attachment;
           if (!attachment) return;
           handleDownload(attachment);
+        }}
+      />
+      <DocumentAttachmentPickerModal
+        open={documentPickerOpen}
+        busy={addingFromDocuments}
+        t={t}
+        onClose={() => {
+          if (!addingFromDocuments) setDocumentPickerOpen(false);
+        }}
+        onConfirm={async ({ documentIds, sourceEntityId }) => {
+          await onAddFromDocuments?.({ documentIds, sourceEntityId });
+          setDocumentPickerOpen(false);
         }}
       />
     </div>

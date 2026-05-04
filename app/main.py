@@ -595,6 +595,10 @@ STUDIO2_BUILDER_MODEL = os.getenv("STUDIO2_BUILDER_MODEL", "").strip() or OPENAI
 STUDIO2_MODULE_DESIGN_MODEL = os.getenv("STUDIO2_MODULE_DESIGN_MODEL", "").strip() or STUDIO2_PLANNER_MODEL
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "120"))
+PROVIDER_ENV_FALLBACKS = {
+    "openai": {"api_key": "OPENAI_API_KEY"},
+    "google_maps": {"api_key": "GOOGLE_MAPS_API_KEY"},
+}
 STUDIO2_AGENT_DEBUG = os.getenv("STUDIO2_AGENT_DEBUG", "").strip().lower() in ("1", "true", "yes")
 STUDIO2_AGENT_LOG_PAYLOAD = os.getenv("STUDIO2_AGENT_LOG_PAYLOAD", "").strip().lower() in ("1", "true", "yes")
 STUDIO2_AGENT_STREAM_DEBUG = os.getenv("STUDIO2_AGENT_STREAM_DEBUG", "").strip().lower() in ("1", "true", "yes")
@@ -4567,6 +4571,152 @@ def _hydrate_linked_attachment_fields(entity_def: dict | None, entity_id: str | 
         if linked:
             hydrated[field_id] = linked
     return hydrated
+
+
+def _attachment_ref_item(attachment: dict | None) -> dict | None:
+    if not isinstance(attachment, dict):
+        return None
+    attachment_id = attachment.get("id") or attachment.get("attachment_id")
+    if not isinstance(attachment_id, str) or not attachment_id:
+        return None
+    return {
+        "id": attachment_id,
+        "attachment_id": attachment_id,
+        "filename": attachment.get("filename"),
+        "mime_type": attachment.get("mime_type"),
+        "size": attachment.get("size"),
+        "storage_key": attachment.get("storage_key"),
+        **({"thumbnail_storage_key": attachment.get("thumbnail_storage_key")} if attachment.get("thumbnail_storage_key") else {}),
+        **({"thumbnail_mime_type": attachment.get("thumbnail_mime_type")} if attachment.get("thumbnail_mime_type") else {}),
+        **({"thumbnail_size": attachment.get("thumbnail_size")} if attachment.get("thumbnail_size") else {}),
+    }
+
+
+def _list_attachment_links_safe(entity_id: str, record_id: str, purpose: str | None = None) -> list[dict]:
+    try:
+        links = attachment_store.list_links(entity_id, record_id, purpose)
+    except TypeError:
+        links = attachment_store.list_links(get_org_id(), entity_id, record_id, purpose)
+    return [dict(item) for item in links or [] if isinstance(item, dict)]
+
+
+def _link_attachment_once(attachment_id: str, entity_id: str, record_id: str, purpose: str | None = None) -> dict:
+    normalized_purpose = str(purpose or "").strip() or "default"
+    for link in _list_attachment_links_safe(entity_id, record_id, normalized_purpose):
+        if link.get("attachment_id") == attachment_id:
+            return link
+    return attachment_store.link(
+        {
+            "attachment_id": attachment_id,
+            "entity_id": entity_id,
+            "record_id": record_id,
+            "purpose": normalized_purpose,
+        }
+    )
+
+
+def _append_attachments_to_record_field(
+    request: Request,
+    entity_id: str,
+    record_id: str,
+    field_id: str | None,
+    attachments: list[dict],
+) -> tuple[bool, dict | None]:
+    if not isinstance(field_id, str) or not field_id:
+        return False, None
+    found = _find_entity_def(request, entity_id)
+    if not found or field_id not in _attachment_fields_for_entity(found[1]):
+        return False, None
+    wrapper = generic_records.get(entity_id, record_id)
+    record = wrapper.get("record") if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict) else None
+    if not isinstance(record, dict):
+        return False, None
+    existing_items = _extract_attachment_refs_for_metadata(record.get(field_id))
+    seen_ids = {
+        str(item.get("id") or item.get("attachment_id"))
+        for item in existing_items
+        if isinstance(item, dict) and (item.get("id") or item.get("attachment_id"))
+    }
+    next_items = list(existing_items)
+    changed = False
+    for attachment in attachments:
+        item = _attachment_ref_item(attachment)
+        if not item:
+            continue
+        attachment_id = str(item.get("id") or "")
+        if attachment_id in seen_ids:
+            continue
+        seen_ids.add(attachment_id)
+        next_items.append(item)
+        changed = True
+    if not changed:
+        return False, record
+    next_record = dict(record)
+    next_record[field_id] = next_items
+    next_record = _apply_attachment_metadata_fields(found[1], next_record)
+    updated = _update_record_with_computed_fields(
+        request,
+        entity_id,
+        found[1],
+        record_id,
+        next_record,
+        before_record=record,
+    )
+    updated_record = updated.get("record") if isinstance(updated, dict) and isinstance(updated.get("record"), dict) else next_record
+    return True, updated_record
+
+
+def _document_attachment_sources(request: Request) -> list[dict]:
+    sources: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for module_id, entity_def, manifest in _get_entity_registry_index(request).values():
+        interfaces = manifest.get("interfaces") if isinstance(manifest, dict) else {}
+        documentable = interfaces.get("documentable") if isinstance(interfaces, dict) else None
+        if not isinstance(documentable, list):
+            continue
+        for item in documentable:
+            if not isinstance(item, dict) or item.get("enabled") is False:
+                continue
+            source_entity_id = _normalize_entity_id(item.get("entity_id") or entity_def.get("id"))
+            if source_entity_id != _normalize_entity_id(entity_def.get("id")):
+                continue
+            attachment_field = item.get("attachment_field")
+            if not isinstance(attachment_field, str) or attachment_field not in _attachment_fields_for_entity(entity_def):
+                continue
+            key = (source_entity_id, attachment_field)
+            if key in seen:
+                continue
+            seen.add(key)
+            display = entity_def.get("display") if isinstance(entity_def.get("display"), dict) else {}
+            title_field = item.get("title_field") if isinstance(item.get("title_field"), str) else display.get("title_field")
+            sources.append(
+                {
+                    "module_id": module_id,
+                    "entity_id": source_entity_id,
+                    "attachment_field": attachment_field,
+                    "title_field": title_field,
+                    "label": entity_def.get("label") or entity_def.get("name") or source_entity_id,
+                }
+            )
+    return sources
+
+
+def _attachments_for_document_record(entity_id: str, record_id: str, record: dict, attachment_field: str) -> list[dict]:
+    items_by_id: dict[str, dict] = {}
+    for ref in _extract_attachment_refs_for_metadata(record.get(attachment_field)):
+        attachment_id = ref.get("id") or ref.get("attachment_id") if isinstance(ref, dict) else None
+        attachment = attachment_store.get_attachment(attachment_id) if isinstance(attachment_id, str) else None
+        item = attachment if isinstance(attachment, dict) else ref
+        ref_item = _attachment_ref_item(item)
+        if ref_item:
+            items_by_id[ref_item["id"]] = ref_item
+    for link in _list_attachment_links_safe(entity_id, record_id, f"field:{attachment_field}"):
+        attachment_id = link.get("attachment_id")
+        attachment = attachment_store.get_attachment(attachment_id) if isinstance(attachment_id, str) else None
+        ref_item = _attachment_ref_item(attachment)
+        if ref_item:
+            items_by_id[ref_item["id"]] = ref_item
+    return list(items_by_id.values())
 
 
 def _filter_satisfied_attachment_required_errors(entity_def: dict | None, entity_id: str | None, record_id: str | None, errors: list[dict]) -> list[dict]:
@@ -18164,6 +18314,8 @@ def _active_secret_ref_for_provider(provider_key: str, secret_key: str = "api_ke
 
 
 def _resolve_provider_secret_value(provider_key: str, secret_key: str = "api_key", env_key: str | None = None) -> str | None:
+    provider = str(provider_key or "").strip().lower()
+    slot = str(secret_key or "api_key").strip().lower()
     secret_ref = _active_secret_ref_for_provider(provider_key, secret_key=secret_key)
     if secret_ref:
         try:
@@ -18172,8 +18324,13 @@ def _resolve_provider_secret_value(provider_key: str, secret_key: str = "api_key
             value = None
         if isinstance(value, str) and value.strip():
             return value.strip()
-    if env_key:
-        fallback = os.getenv(env_key, "").strip()
+    fallback_env_key = env_key
+    if not fallback_env_key:
+        provider_fallbacks = PROVIDER_ENV_FALLBACKS.get(provider) if provider else None
+        if isinstance(provider_fallbacks, dict):
+            fallback_env_key = provider_fallbacks.get(slot)
+    if fallback_env_key:
+        fallback = os.getenv(fallback_env_key, "").strip()
         if fallback:
             return fallback
     return None
@@ -18196,7 +18353,7 @@ def _provider_status_payload(actor: dict | None, provider_key: str, *, secret_ke
 
 
 def _openai_configured() -> bool:
-    return bool(_resolve_provider_secret_value("openai"))
+    return bool(_resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY"))
 
 
 def _openai_not_configured() -> JSONResponse:
@@ -18222,7 +18379,7 @@ def _openai_chat_completion(
     temperature: float = 0.2,
     response_format: dict | None = None,
 ) -> dict:
-    api_key = _resolve_provider_secret_value("openai")
+    api_key = _resolve_provider_secret_value("openai", env_key="OPENAI_API_KEY")
     if not api_key:
         raise SecretStoreError("OpenAI API key is not configured for this workspace")
     payload = {
@@ -18232,32 +18389,92 @@ def _openai_chat_completion(
     }
     if isinstance(response_format, dict):
         payload["response_format"] = response_format
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        _openai_url("/chat/completions"),
-        data=data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+
+    def _request_for_payload(next_payload: dict) -> urllib.request.Request:
+        return urllib.request.Request(
+            _openai_url("/chat/completions"),
+            data=json.dumps(next_payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+    active_payload = payload
+    retried_without_temperature = False
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=OPENAI_TIMEOUT) as resp:
+            with urllib.request.urlopen(_request_for_payload(active_payload), timeout=OPENAI_TIMEOUT) as resp:
                 raw = resp.read().decode("utf-8")
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
             last_exc = exc
+            detail = _openai_http_error_detail(exc)
+            if (
+                exc.code == 400
+                and not retried_without_temperature
+                and "temperature" in active_payload
+                and _openai_error_indicates_temperature_unsupported(detail)
+            ):
+                active_payload = {key: value for key, value in active_payload.items() if key != "temperature"}
+                retried_without_temperature = True
+                continue
             if exc.code not in (429, 500, 502, 503, 504):
-                raise
+                raise RuntimeError(_openai_http_error_message(exc.code, detail)) from exc
         except urllib.error.URLError as exc:
             last_exc = exc
         time.sleep(0.6 * (attempt + 1))
     if last_exc:
+        if isinstance(last_exc, urllib.error.HTTPError):
+            raise RuntimeError(_openai_http_error_message(last_exc.code, _openai_http_error_detail(last_exc))) from last_exc
         raise last_exc
     raise RuntimeError("OpenAI request failed")
+
+
+def _openai_http_error_detail(exc: urllib.error.HTTPError) -> str:
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+    if not raw:
+        return ""
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return raw.strip()
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return raw.strip()
+
+
+def _openai_http_error_message(status_code: int, detail: str | None = None) -> str:
+    text = str(detail or "").strip()
+    if text:
+        return f"OpenAI request failed ({status_code}): {text}"
+    return f"OpenAI request failed ({status_code})"
+
+
+def _openai_error_indicates_temperature_unsupported(detail: str | None) -> bool:
+    text = str(detail or "").lower()
+    if "temperature" not in text:
+        return False
+    unsupported_markers = (
+        "unsupported",
+        "does not support",
+        "only the default",
+        "only default",
+        "invalid value",
+    )
+    return any(marker in text for marker in unsupported_markers)
 
 
 def _extract_first_json_block(text: str) -> tuple[dict | None, str | None]:
@@ -25447,6 +25664,7 @@ def _action_context_email_compose_payload(context: dict | None) -> dict:
     compose = context.get("email_compose")
     if not isinstance(compose, dict):
         return {}
+    automation_id = compose.get("automation_id")
     step_id = compose.get("step_id")
     inputs = compose.get("inputs") if isinstance(compose.get("inputs"), dict) else compose
     if not isinstance(inputs, dict):
@@ -25468,6 +25686,8 @@ def _action_context_email_compose_payload(context: dict | None) -> dict:
     if not clean_inputs:
         return {}
     payload: dict[str, Any] = {"inputs": clean_inputs}
+    if isinstance(automation_id, str) and automation_id.strip():
+        payload["automation_id"] = automation_id.strip()
     if isinstance(step_id, str) and step_id.strip():
         payload["step_id"] = step_id.strip()
     return {"email_compose": payload}
@@ -51610,6 +51830,24 @@ def _lookup_populate_config(field: dict | None) -> dict | None:
     return config if isinstance(config, dict) else None
 
 
+def _lookup_populate_source_candidates(source_spec: Any) -> list[str]:
+    if isinstance(source_spec, list):
+        return [item for item in source_spec if isinstance(item, str) and item]
+    return [source_spec] if isinstance(source_spec, str) and source_spec else []
+
+
+def _lookup_populate_resolve_source_value(lookup_record: dict, source_spec: Any) -> tuple[bool, Any]:
+    has_blank_candidate = False
+    for source_field_id in _lookup_populate_source_candidates(source_spec):
+        if source_field_id not in lookup_record:
+            continue
+        value = lookup_record.get(source_field_id)
+        if _lookup_populate_has_value(value):
+            return True, value
+        has_blank_candidate = True
+    return (True, "") if has_blank_candidate else (False, None)
+
+
 def _apply_lookup_populate_config_for_record(
     entity_def: dict | None,
     data: dict | None,
@@ -51673,12 +51911,10 @@ def _apply_lookup_populate_config_for_record(
             if isinstance(config.get("overwrite_if_current_matches"), dict)
             else {}
         )
-        for target_field_id, source_field_id in field_map.items():
+        for target_field_id, source_spec in field_map.items():
             if not isinstance(target_field_id, str) or not target_field_id:
                 continue
             if target_field_id == field_id:
-                continue
-            if not isinstance(source_field_id, str) or not source_field_id:
                 continue
             current_value = updated.get(target_field_id)
             if target_field_id in only_when_empty and _lookup_populate_has_value(current_value):
@@ -51686,9 +51922,9 @@ def _apply_lookup_populate_config_for_record(
                 compare_value = base.get(compare_field_id) if isinstance(compare_field_id, str) else None
                 if not (isinstance(compare_field_id, str) and _lookup_populate_values_equivalent(current_value, compare_value)):
                     continue
-            if source_field_id not in lookup_record:
+            has_mapped_value, mapped_value = _lookup_populate_resolve_source_value(lookup_record, source_spec)
+            if not has_mapped_value:
                 continue
-            mapped_value = lookup_record.get(source_field_id)
             updated[target_field_id] = "" if mapped_value is None else mapped_value
     return updated
 
@@ -66352,6 +66588,177 @@ async def list_record_attachments(request: Request, entity_id: str, record_id: s
         unique_links.append(link)
         attachments.append(att)
     return _ok_response({"links": unique_links, "attachments": attachments})
+
+
+@app.get("/attachments/document-sources")
+async def list_attachment_document_sources(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    sources = []
+    for source in _document_attachment_sources(request):
+        found = _find_entity_def(request, source.get("entity_id"))
+        if not found:
+            continue
+        access_denied = _entity_access_denied_response(actor, found[0], found[1].get("id"), write=False)
+        if access_denied:
+            continue
+        sources.append(source)
+    return _ok_response({"sources": sources})
+
+
+@app.get("/attachments/document-sources/{source_entity_id}/documents")
+async def list_attachment_source_documents(
+    request: Request,
+    source_entity_id: str,
+    q: str | None = None,
+    limit: int = 50,
+) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.read", "Read access required")
+    if denied:
+        return denied
+    source_entity_id = _normalize_entity_id(source_entity_id)
+    source = next((item for item in _document_attachment_sources(request) if item.get("entity_id") == source_entity_id), None)
+    if not source:
+        return _error_response("DOCUMENT_SOURCE_NOT_FOUND", "Document source not found", "entity_id", status=404)
+    found = _find_entity_def(request, source_entity_id)
+    if not found:
+        return _error_response("ENTITY_NOT_FOUND", "Entity not found or disabled", "entity_id", status=404)
+    access_denied = _entity_access_denied_response(actor, found[0], source_entity_id, write=False)
+    if access_denied:
+        return access_denied
+    limit_cap = min(max(int(limit or 50), 1), 100)
+    title_field = source.get("title_field") if isinstance(source.get("title_field"), str) else None
+    search_fields = [title_field] if title_field else None
+    rows = generic_records.list(source_entity_id, limit=limit_cap, offset=0, q=q, search_fields=search_fields)
+    visible_rows = _filter_record_items_for_actor(actor, found[0], found[1], rows)
+    documents = []
+    attachment_field = source.get("attachment_field")
+    for row in visible_rows if isinstance(visible_rows, list) else []:
+        record_id = row.get("record_id")
+        record = row.get("record") if isinstance(row.get("record"), dict) else {}
+        if not isinstance(record_id, str) or not isinstance(record, dict):
+            continue
+        hydrated = _hydrate_linked_attachment_fields(found[1], source_entity_id, record_id, record)
+        attachments = _attachments_for_document_record(source_entity_id, record_id, hydrated, attachment_field)
+        title = record.get(title_field) if isinstance(title_field, str) else None
+        documents.append(
+            {
+                "id": record_id,
+                "record_id": record_id,
+                "title": title or record.get("id") or record_id,
+                "attachments": attachments,
+                "attachment_count": len(attachments),
+            }
+        )
+    return _ok_response({"documents": documents, "source": source})
+
+
+@app.post("/records/{entity_id}/{record_id}/attachments/from-documents")
+async def add_record_attachments_from_documents(request: Request, entity_id: str, record_id: str) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    denied = _require_capability(actor, "records.write", "Write access required")
+    if denied:
+        return denied
+    target_denied = _record_access_denied_response(request, actor, entity_id, record_id, write=True)
+    if target_denied:
+        return target_denied
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    document_ids = [
+        str(item).strip()
+        for item in body.get("document_ids", [])
+        if isinstance(item, (str, int)) and str(item).strip()
+    ]
+    if not document_ids:
+        return _error_response("DOCUMENT_IDS_REQUIRED", "document_ids required", "document_ids", status=400)
+    source_entity_id = _normalize_entity_id(body.get("document_entity_id") or body.get("source_entity_id") or "")
+    sources = _document_attachment_sources(request)
+    source = next((item for item in sources if item.get("entity_id") == source_entity_id), None) if source_entity_id else None
+    if not source and len(sources) == 1:
+        source = sources[0]
+        source_entity_id = source.get("entity_id")
+    if not source:
+        return _error_response("DOCUMENT_SOURCE_REQUIRED", "document_entity_id required", "document_entity_id", status=400)
+    source_found = _find_entity_def(request, source_entity_id)
+    if not source_found:
+        return _error_response("DOCUMENT_SOURCE_NOT_FOUND", "Document source not found", "document_entity_id", status=404)
+    source_denied = _entity_access_denied_response(actor, source_found[0], source_entity_id, write=False)
+    if source_denied:
+        return source_denied
+
+    attachment_field = source.get("attachment_field")
+    target_field_id = str(body.get("attachment_field_id") or "").strip() or None
+    if target_field_id:
+        target_found = _find_entity_def(request, entity_id)
+        if not target_found or target_field_id not in _attachment_fields_for_entity(target_found[1]):
+            return _error_response("ATTACHMENT_FIELD_INVALID", "attachment_field_id must be an attachment field", "attachment_field_id", status=400)
+    purpose = str(body.get("purpose") or "").strip()
+    target_purpose = f"field:{target_field_id}" if target_field_id else (purpose or "default")
+    linked_attachments: dict[str, dict] = {}
+    linked_documents = []
+
+    for document_id in document_ids:
+        document_denied = _record_access_denied_response(request, actor, source_entity_id, document_id, write=False)
+        if document_denied:
+            if len(document_ids) == 1:
+                return document_denied
+            continue
+        wrapper = generic_records.get(source_entity_id, document_id)
+        record = wrapper.get("record") if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict) else None
+        if not isinstance(record, dict):
+            continue
+        hydrated = _hydrate_linked_attachment_fields(source_found[1], source_entity_id, document_id, record)
+        attachments = _attachments_for_document_record(source_entity_id, document_id, hydrated, attachment_field)
+        if not attachments:
+            linked_documents.append({"id": document_id, "attachment_count": 0, "linked_count": 0})
+            continue
+        linked_count = 0
+        for attachment in attachments:
+            attachment_id = attachment.get("id") or attachment.get("attachment_id")
+            if not isinstance(attachment_id, str) or not attachment_id:
+                continue
+            _link_attachment_once(attachment_id, source_entity_id, document_id, f"field:{attachment_field}")
+            _link_attachment_once(attachment_id, entity_id, record_id, target_purpose)
+            linked_attachments[attachment_id] = attachment
+            linked_count += 1
+        linked_documents.append({"id": document_id, "attachment_count": len(attachments), "linked_count": linked_count})
+
+    attachments = list(linked_attachments.values())
+    if not attachments:
+        return _error_response("DOCUMENT_ATTACHMENTS_NOT_FOUND", "No attachments found on the selected documents", "document_ids", status=400)
+    field_updated = False
+    if target_field_id:
+        field_updated, _updated_record = _append_attachments_to_record_field(request, entity_id, record_id, target_field_id, attachments)
+    for attachment in attachments:
+        try:
+            _activity_add_attachment_event(
+                entity_id,
+                record_id,
+                attachment,
+                action="added",
+                purpose=target_purpose,
+                actor=getattr(request.state, "user", None),
+            )
+        except Exception:
+            pass
+    return _ok_response(
+        {
+            "attachments": attachments,
+            "documents": linked_documents,
+            "target_purpose": target_purpose,
+            "field_updated": field_updated,
+        }
+    )
 
 
 @app.delete("/records/{entity_id}/{record_id}/attachments/{attachment_id}")

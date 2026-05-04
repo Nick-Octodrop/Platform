@@ -323,7 +323,18 @@
     "close_preview": "Close preview",
     "no_preview_content": "(No preview content)",
     "pdf_preview": "Attachment PDF preview",
-    "download_default_filename": "attachment"
+    "download_default_filename": "attachment",
+    "add_from_documents": "Add from Documents",
+    "add_from_documents_hint": "Select existing document files to attach to this record.",
+    "add_from_documents_failed": "Failed to add from documents",
+    "document_sources_failed": "Failed to load document sources",
+    "documents_load_failed": "Failed to load documents",
+    "document_source": "Document source",
+    "search_documents": "Search documents...",
+    "no_document_sources": "No document sources are available.",
+    "no_documents_found": "No documents found.",
+    "document_file_count": "{{count}} file(s)",
+    "add_selected_documents": "Add selected"
   },
   "activity_panel": {
     "preview_unavailable": "Activity feed unavailable in preview.",

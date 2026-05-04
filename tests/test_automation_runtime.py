@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from datetime import datetime, timezone
 
 import app.main as app_main
+from app.automations_runtime import handle_event
 from manifests.commercial_v2.setup_commercial_automations import build_send_record_email_automation
 from app.stores import MemoryAutomationStore, MemoryJobStore
 from app.worker import _emit_automation_event, _handle_system_action, _run_automation
@@ -74,6 +75,63 @@ class TestAutomationRuntime(unittest.TestCase):
         self.assertEqual(event["meta"]["manifest_hash"], "sha256:automation")
         self.assertEqual(event["meta"]["actor"]["roles"], ["system"])
         self.assertEqual(captured["webhook"]["meta"]["manifest_hash"], "sha256:automation")
+
+    def test_email_compose_targets_only_selected_automation(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        selected = store.create(
+            {
+                "name": "Send Quote Selected",
+                "status": "published",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": ["action.clicked"],
+                    "filters": [
+                        {"path": "entity_id", "op": "eq", "value": "entity.biz_quote"},
+                        {"path": "action_id", "op": "eq", "value": "action.quote_mark_sent"},
+                    ],
+                },
+                "steps": [{"kind": "action", "action_id": "system.send_email", "inputs": {"subject": "Selected"}}],
+            }
+        )
+        duplicate = store.create(
+            {
+                "name": "Send Quote Duplicate",
+                "status": "published",
+                "trigger": {
+                    "kind": "event",
+                    "event_types": ["action.clicked"],
+                    "filters": [
+                        {"path": "entity_id", "op": "eq", "value": "entity.biz_quote"},
+                        {"path": "action_id", "op": "eq", "value": "action.quote_mark_sent"},
+                    ],
+                },
+                "steps": [{"kind": "action", "action_id": "system.send_email", "inputs": {"subject": "Duplicate"}}],
+            }
+        )
+
+        event = {
+            "name": "action.clicked",
+            "payload": {
+                "event": "action.clicked",
+                "entity_id": "entity.biz_quote",
+                "action_id": "action.quote_mark_sent",
+                "email_compose": {
+                    "automation_id": selected["id"],
+                    "step_id": "send_document_email",
+                    "inputs": {
+                        "attachment_ids": ["att_selected"],
+                        "replace_attachments": True,
+                    },
+                },
+            },
+            "meta": {"org_id": "default", "event_id": "event_1"},
+        }
+
+        runs = handle_event(store, job_store, event)
+
+        self.assertEqual([run.get("automation_id") for run in runs], [selected["id"]])
+        self.assertNotIn(duplicate["id"], [run.get("automation_id") for run in runs])
 
     def test_action_email_compose_payload_preserves_exact_send_overrides(self):
         payload = app_main._action_context_email_compose_payload(
@@ -1644,6 +1702,143 @@ class TestAutomationRuntime(unittest.TestCase):
                     "filename": "selected-quote.pdf",
                     "mime_type": "application/pdf",
                     "storage_key": "attachments/selected-quote.pdf",
+                }
+            ],
+        )
+
+    def test_run_automation_email_compose_selected_attachments_replace_attachment_field(self):
+        store = MemoryAutomationStore()
+        job_store = MemoryJobStore()
+        created_outbox: list[dict] = []
+
+        class _FakeAttachmentStore:
+            def list_links(self, entity_id, record_id, purpose):
+                return []
+
+            def get_attachment(self, attachment_id):
+                attachments = {
+                    "att_1": {
+                        "id": "att_1",
+                        "filename": "QUO-1001.pdf",
+                        "mime_type": "application/pdf",
+                        "storage_key": "attachments/QUO-1001.pdf",
+                    },
+                    "att_2": {
+                        "id": "att_2",
+                        "filename": "QUO-1001_v2.pdf",
+                        "mime_type": "application/pdf",
+                        "storage_key": "attachments/QUO-1001_v2.pdf",
+                    },
+                    "att_3": {
+                        "id": "att_3",
+                        "filename": "QUO-1001_v3.pdf",
+                        "mime_type": "application/pdf",
+                        "storage_key": "attachments/QUO-1001_v3.pdf",
+                    },
+                }
+                return attachments.get(attachment_id)
+
+        class _FakeEmailStore:
+            def create_outbox(self, payload):
+                item = {"id": "outbox_1", **payload, "created_at": datetime.now(timezone.utc).isoformat()}
+                created_outbox.append(item)
+                return item
+
+        class _FakeConnectionStore:
+            def get(self, _connection_id):
+                return None
+
+            def get_default_email(self):
+                return {"id": "conn_default", "config": {"from_email": "noreply@example.com"}}
+
+        fake_app = SimpleNamespace(
+            _build_template_render_context=lambda record_data, entity_def, entity_id, branding: {
+                "record": dict(record_data or {}),
+                "entity_id": entity_id,
+                **(branding or {}),
+            },
+            _branding_context_for_org=lambda _org_id: {},
+        )
+        quote_entity_def = {
+            "id": "entity.biz_quote",
+            "fields": [
+                {"id": "biz_quote.customer_email", "label": "Customer Email", "type": "email"},
+                {"id": "biz_quote.generated_files", "label": "Generated Files", "type": "attachments"},
+            ],
+        }
+        automation = store.create(
+            {
+                "name": "Send Quote",
+                "status": "published",
+                "trigger": {"kind": "event", "event_types": ["action.clicked"]},
+                "steps": [
+                    {
+                        "id": "send_quote_email",
+                        "kind": "action",
+                        "action_id": "system.send_email",
+                        "inputs": {
+                            "entity_id": "entity.biz_quote",
+                            "to_field_ids": ["biz_quote.customer_email"],
+                            "attachment_field_id": "biz_quote.generated_files",
+                            "subject": "Quote",
+                            "body_text": "Please find the attached quote.",
+                        },
+                    }
+                ],
+            }
+        )
+        run = store.create_run(
+            {
+                "automation_id": automation["id"],
+                "status": "queued",
+                "trigger_type": "action.clicked",
+                "trigger_payload": {
+                    "entity_id": "entity.biz_quote",
+                    "record_id": "quote_1",
+                    "email_compose": {
+                        "step_id": "send_quote_email",
+                        "inputs": {
+                            "to": ["customer@example.com"],
+                            "subject": "Quote",
+                            "body_text": "Please find the attached quote.",
+                            "attachment_ids": ["att_2"],
+                            "replace_recipients": True,
+                            "replace_attachments": True,
+                        },
+                    },
+                },
+            }
+        )
+
+        with (
+            patch("app.worker._get_app_main", return_value=fake_app),
+            patch("app.worker.DbAttachmentStore", return_value=_FakeAttachmentStore()),
+            patch("app.worker.DbEmailStore", return_value=_FakeEmailStore()),
+            patch("app.worker.DbConnectionStore", return_value=_FakeConnectionStore()),
+            patch(
+                "app.worker._fetch_record_payload",
+                return_value={
+                    "biz_quote.customer_email": "customer@example.com",
+                    "biz_quote.generated_files": [
+                        {"id": "att_1"},
+                        {"id": "att_2"},
+                        {"id": "att_3"},
+                    ],
+                },
+            ),
+            patch("app.worker._find_entity_def", return_value=quote_entity_def),
+        ):
+            _run_automation({"payload": {"run_id": run["id"]}}, "default", automation_store=store, job_store=job_store)
+
+        self.assertEqual(len(created_outbox), 1, created_outbox)
+        self.assertEqual(
+            created_outbox[0]["attachments_json"],
+            [
+                {
+                    "attachment_id": "att_2",
+                    "filename": "QUO-1001_v2.pdf",
+                    "mime_type": "application/pdf",
+                    "storage_key": "attachments/QUO-1001_v2.pdf",
                 }
             ],
         )

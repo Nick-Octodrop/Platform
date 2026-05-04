@@ -354,7 +354,10 @@
               "field_map": {
                 "biz_quote.customer_contact_name": "biz_contact_person.display_name",
                 "biz_quote.customer_contact_email": "biz_contact_person.email",
-                "biz_quote.customer_contact_phone": "biz_contact_person.phone"
+                "biz_quote.customer_contact_phone": [
+                  "biz_contact_person.phone",
+                  "biz_contact_person.mobile"
+                ]
               }
             }
           }
@@ -3001,9 +3004,7 @@
             {
               "id": "documents",
               "label": "Documents",
-              "sections": [
-                "documents"
-              ],
+              "sections": [],
               "content": [
                 {
                   "kind": "related_list",

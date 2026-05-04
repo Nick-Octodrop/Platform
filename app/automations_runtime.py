@@ -59,6 +59,18 @@ def _render_trigger_coalesce_key(automation: dict, trigger: dict, event: dict, p
     return f"coalesce:{rendered}"
 
 
+def _target_automation_id_for_email_compose(payload: dict) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    compose = payload.get("email_compose")
+    if not isinstance(compose, dict):
+        return None
+    automation_id = compose.get("automation_id")
+    if isinstance(automation_id, str) and automation_id.strip():
+        return automation_id.strip()
+    return None
+
+
 def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dict]:
     payload = event.get("payload") or {}
     event_type = payload.get("event")
@@ -75,7 +87,11 @@ def handle_event(automation_store: Any, job_store: Any, event: dict) -> list[dic
         if not automations:
             logger.info("automation_no_published event=%s org_id=%s", event_type, org_id)
             return []
+        target_automation_id = _target_automation_id_for_email_compose(payload)
         for automation in automations:
+            automation_id = automation.get("id")
+            if target_automation_id and automation_id != target_automation_id:
+                continue
             trigger = automation.get("trigger") or {}
             if not match_event(trigger, event_type, payload):
                 continue

@@ -433,7 +433,10 @@
               "field_map": {
                 "crm_lead.contact_name": "biz_contact_person.display_name",
                 "crm_lead.contact_email": "biz_contact_person.email",
-                "crm_lead.contact_phone": "biz_contact_person.phone",
+                "crm_lead.contact_phone": [
+                  "biz_contact_person.phone",
+                  "biz_contact_person.mobile"
+                ],
                 "crm_lead.contact_role": "biz_contact_person.job_title"
               }
             }
@@ -744,7 +747,10 @@
               "field_map": {
                 "crm_opportunity.primary_contact_name": "biz_contact_person.display_name",
                 "crm_opportunity.primary_contact_email": "biz_contact_person.email",
-                "crm_opportunity.primary_contact_phone": "biz_contact_person.phone",
+                "crm_opportunity.primary_contact_phone": [
+                  "biz_contact_person.phone",
+                  "biz_contact_person.mobile"
+                ],
                 "crm_opportunity.primary_contact_role": "biz_contact_person.job_title"
               }
             }

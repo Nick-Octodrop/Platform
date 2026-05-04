@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Paperclip } from "lucide-react";
 import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
 import { getSafeSession } from "../supabase.js";
-import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useI18n } from "../i18n/LocalizationProvider.jsx";
 import AttachmentGallery from "./AttachmentGallery.jsx";
 
@@ -21,6 +19,7 @@ export default function AttachmentField({
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [addingFromDocuments, setAddingFromDocuments] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [error, setError] = useState("");
   const [toDelete, setToDelete] = useState(null);
@@ -133,29 +132,54 @@ export default function AttachmentField({
     }
   }
 
+  async function handleAddFromDocuments({ documentIds, sourceEntityId }) {
+    if (!entityId || !recordId || readonly || previewMode || addingFromDocuments) return;
+    setAddingFromDocuments(true);
+    setError("");
+    try {
+      await apiFetch(
+        `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/from-documents`,
+        {
+          method: "POST",
+          body: {
+            document_entity_id: sourceEntityId,
+            document_ids: documentIds,
+            attachment_field_id: fieldId,
+            purpose: attachmentPurpose,
+          },
+        }
+      );
+      await loadAttachments();
+    } catch (err) {
+      setError(err?.message || t("common.attachments.add_from_documents_failed"));
+      throw err;
+    } finally {
+      setAddingFromDocuments(false);
+    }
+  }
+
   if (!recordId) {
     return <div className="text-xs opacity-60">{t("common.attachments.save_record_before_adding")}</div>;
   }
 
   return (
     <div className="space-y-2">
-      <label className={`${SOFT_BUTTON_SM} gap-2 cursor-pointer inline-flex`} aria-disabled={readonly || previewMode || uploading}>
-        <Paperclip className="h-4 w-4" />
-        {uploading ? t("common.uploading") : (buttonLabel || t("common.attach"))}
-        <input type="file" multiple className="hidden" onChange={handleUpload} disabled={readonly || previewMode || uploading} />
-      </label>
       {description ? <div className="text-xs opacity-70">{description}</div> : null}
       {loading ? <div className="text-xs opacity-60">{t("common.attachments.loading")}</div> : null}
       {error ? <div className="text-xs text-error">{error}</div> : null}
       <AttachmentGallery
         attachments={attachments}
         uploading={uploading}
+        addingFromDocuments={addingFromDocuments}
         deletingId={deletingId}
-        canUpload={false}
+        canUpload={!readonly && !previewMode}
         canDelete={!readonly && !previewMode}
-        onUpload={() => {}}
+        canAddFromDocuments={!readonly && !previewMode}
+        onUpload={handleUpload}
+        onAddFromDocuments={handleAddFromDocuments}
         onDelete={(attachment) => setToDelete(attachment)}
-        showUploadButton={false}
+        buttonLabel={buttonLabel}
+        showUploadButton
         showCount={false}
       />
       {toDelete ? (

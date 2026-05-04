@@ -207,7 +207,10 @@
               "field_map": {
                 "biz_order.customer_contact_name": "biz_contact_person.display_name",
                 "biz_order.customer_contact_email": "biz_contact_person.email",
-                "biz_order.customer_contact_phone": "biz_contact_person.phone"
+                "biz_order.customer_contact_phone": [
+                  "biz_contact_person.phone",
+                  "biz_contact_person.mobile"
+                ]
               }
             }
           }

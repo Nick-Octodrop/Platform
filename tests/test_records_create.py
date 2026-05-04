@@ -83,6 +83,7 @@ class TestRecordsCreate(unittest.TestCase):
                         {"id": "person.display_name", "type": "string", "required": True},
                         {"id": "person.email", "type": "string"},
                         {"id": "person.phone", "type": "string"},
+                        {"id": "person.mobile", "type": "string"},
                     ],
                 },
                 {
@@ -120,7 +121,7 @@ class TestRecordsCreate(unittest.TestCase):
                                     "field_map": {
                                         "quote.customer_contact_name": "person.display_name",
                                         "quote.customer_contact_email": "person.email",
-                                        "quote.customer_contact_phone": "person.phone",
+                                        "quote.customer_contact_phone": ["person.phone", "person.mobile"],
                                     }
                                 }
                             },
@@ -162,7 +163,7 @@ class TestRecordsCreate(unittest.TestCase):
                 "record": {
                     "person.display_name": "Ada Lovelace",
                     "person.email": "ada@example.test",
-                    "person.phone": "+64 21 000 000",
+                    "person.mobile": "+64 21 000 000",
                 }
             },
         )
