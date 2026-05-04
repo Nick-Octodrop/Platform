@@ -4,6 +4,7 @@ import math
 import os
 import json
 import logging
+import re
 import httpx
 import signal
 import sys
@@ -234,6 +235,125 @@ def _attachment_extension_from_filename(filename: object) -> str:
     return trimmed.rsplit(".", 1)[-1].strip().lower()
 
 
+def _document_filename_stem(filename: object) -> str:
+    if not isinstance(filename, str):
+        return ""
+    trimmed = filename.strip()
+    if trimmed.lower().endswith(".pdf"):
+        return trimmed[:-4].strip()
+    return trimmed
+
+
+def _normalize_filename_conflict_mode(value: object) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if text in {"append_version", "version", "versioned"}:
+        return "append_version"
+    if text in {"append_timestamp", "timestamp", "dated"}:
+        return "append_timestamp"
+    return "keep_same_name"
+
+
+def _attachment_filenames_from_refs(attach_store: DbAttachmentStore, refs: list[dict]) -> list[str]:
+    filenames: list[str] = []
+    seen_attachment_ids: set[str] = set()
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        filename = ref.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            filenames.append(filename.strip())
+        attachment_id = ref.get("id") or ref.get("attachment_id")
+        if not isinstance(attachment_id, str) or not attachment_id.strip() or attachment_id in seen_attachment_ids:
+            continue
+        seen_attachment_ids.add(attachment_id)
+        attachment = attach_store.get_attachment(attachment_id)
+        if not isinstance(attachment, dict):
+            continue
+        filename = attachment.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            filenames.append(filename.strip())
+    return filenames
+
+
+def _linked_attachment_filenames(
+    attach_store: DbAttachmentStore,
+    entity_id: str | None,
+    record_id: str | None,
+    purpose: str | None,
+) -> list[str]:
+    if not isinstance(entity_id, str) or not entity_id.strip():
+        return []
+    if not isinstance(record_id, str) or not record_id.strip():
+        return []
+    if not isinstance(purpose, str) or not purpose.strip() or purpose == "default":
+        return []
+    return _attachment_filenames_from_refs(
+        attach_store,
+        [link for link in attach_store.list_links(entity_id, record_id, purpose.strip()) if isinstance(link, dict)],
+    )
+
+
+def _existing_generated_document_filenames(
+    records: DbGenericRecordStore,
+    attach_store: DbAttachmentStore,
+    *,
+    entity_id: str,
+    record_id: str,
+    record_data: dict,
+    attachment_field: str | None,
+    purpose: str | None,
+) -> list[str]:
+    filenames: list[str] = []
+    if isinstance(attachment_field, str) and attachment_field:
+        filenames.extend(_attachment_filenames_from_refs(attach_store, _extract_attachment_refs(record_data.get(attachment_field))))
+    filenames.extend(_linked_attachment_filenames(attach_store, entity_id, record_id, purpose))
+
+    if _entity_id_matches(entity_id, "entity.biz_document"):
+        source_entity_id = record_data.get("biz_document.source_entity_id")
+        source_record_id = record_data.get("biz_document.source_record_id")
+        source_field_id = record_data.get("biz_document.source_field_id")
+        if isinstance(source_entity_id, str) and source_entity_id.strip() and isinstance(source_record_id, str) and source_record_id.strip():
+            source_wrapper = records.get(source_entity_id, source_record_id) or (
+                records.get(source_entity_id[7:], source_record_id) if source_entity_id.startswith("entity.") else None
+            )
+            source_record = _record_payload(source_wrapper if isinstance(source_wrapper, dict) else None)
+            if isinstance(source_record, dict) and source_record:
+                if isinstance(source_field_id, str) and source_field_id.strip():
+                    filenames.extend(_attachment_filenames_from_refs(attach_store, _extract_attachment_refs(source_record.get(source_field_id))))
+                filenames.extend(_linked_attachment_filenames(attach_store, source_entity_id, source_record_id, purpose))
+    return list(dict.fromkeys(item for item in filenames if isinstance(item, str) and item.strip()))
+
+
+def _resolve_generated_document_filename(
+    filename: str,
+    *,
+    mode: str,
+    existing_filenames: list[str],
+) -> str:
+    base = _document_filename_stem(filename) or "document"
+    conflict_mode = _normalize_filename_conflict_mode(mode)
+    if conflict_mode == "append_timestamp":
+        return f"{base}_{_now().strftime('%Y%m%d_%H%M%S')}"
+    if conflict_mode != "append_version":
+        return base
+    escaped_base = re.escape(base)
+    version_pattern = re.compile(rf"^{escaped_base}(?:_v(?P<version>[0-9]+))?$", re.IGNORECASE)
+    max_version = 0
+    for existing in existing_filenames:
+        stem = _document_filename_stem(existing)
+        if not stem:
+            continue
+        match = version_pattern.match(stem)
+        if not match:
+            continue
+        raw_version = match.group("version")
+        version = int(raw_version) if isinstance(raw_version, str) and raw_version.isdigit() else 1
+        max_version = max(max_version, version)
+    if max_version <= 0:
+        return base
+    return f"{base}_v{max_version + 1}"
+
+
 def _attachment_metadata_patch(entity_def: dict | None, attachment_field: str | None, attachment: dict | None) -> dict:
     if not isinstance(entity_def, dict) or not isinstance(attachment_field, str) or not attachment_field or not isinstance(attachment, dict):
         return {}
@@ -293,17 +413,54 @@ def _sync_attachment_field(
     attachment: dict,
     *,
     entity_def: dict | None = None,
+    attach_store: DbAttachmentStore | None = None,
 ) -> None:
     if not isinstance(attachment_field, str) or not attachment_field:
         return
     existing_items = _extract_attachment_refs(record_data.get(attachment_field))
     attachment_id = attachment.get("id")
-    if isinstance(attachment_id, str) and any(item.get("id") == attachment_id for item in existing_items if isinstance(item, dict)):
+    already_in_field = isinstance(attachment_id, str) and any(item.get("id") == attachment_id for item in existing_items if isinstance(item, dict))
+    if not already_in_field:
+        updated_record = dict(record_data)
+        updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
+        updated_record.update(_attachment_metadata_patch(entity_def, attachment_field, attachment))
+        records.update(entity_id, record_id, updated_record)
+    if isinstance(attachment_id, str) and attachment_id and attach_store is not None:
+        _link_attachment_once(
+            attach_store,
+            attachment_id=attachment_id,
+            entity_id=entity_id,
+            record_id=record_id,
+            purpose=f"field:{attachment_field}",
+        )
+
+
+def _link_attachment_once(
+    attach_store: DbAttachmentStore,
+    *,
+    attachment_id: str,
+    entity_id: str,
+    record_id: str,
+    purpose: str,
+) -> None:
+    if not all(isinstance(item, str) and item.strip() for item in (attachment_id, entity_id, record_id, purpose)):
         return
-    updated_record = dict(record_data)
-    updated_record[attachment_field] = [*existing_items, _attachment_item(attachment)]
-    updated_record.update(_attachment_metadata_patch(entity_def, attachment_field, attachment))
-    records.update(entity_id, record_id, updated_record)
+    try:
+        links = attach_store.list_links(entity_id, record_id, purpose)
+    except TypeError:
+        links = attach_store.list_links(get_org_id(), entity_id, record_id, purpose)
+    except Exception:
+        links = []
+    if any(isinstance(link, dict) and link.get("attachment_id") == attachment_id for link in links or []):
+        return
+    attach_store.link(
+        {
+            "attachment_id": attachment_id,
+            "entity_id": entity_id,
+            "record_id": record_id,
+            "purpose": purpose,
+        }
+    )
 
 
 def _sync_generated_document_record(
@@ -425,7 +582,7 @@ def _mirror_generated_attachment_to_parent_record(
         source_record = _record_payload(source_wrapper if isinstance(source_wrapper, dict) else None)
         if not isinstance(source_record, dict) or not source_record:
             continue
-        _sync_attachment_field(records, target_entity_id, target_record_id, source_record, attachment_field, attachment)
+        _sync_attachment_field(records, target_entity_id, target_record_id, source_record, attachment_field, attachment, attach_store=attach_store)
         link_purpose = (
             doc_type
             or (purpose.strip() if isinstance(purpose, str) and purpose.strip() and purpose != "default" else "")
@@ -626,6 +783,20 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
     record_entity_id = entity_id
     record_entity_def = found[1] if found else None
     record_data = _record_payload(record if isinstance(record, dict) else None)
+    if _entity_id_matches(record_entity_id, "entity.biz_document"):
+        generated_source_values = {
+            "biz_document.source_entity_id": payload.get("source_entity_id"),
+            "biz_document.source_record_id": payload.get("source_record_id"),
+            "biz_document.source_field_id": payload.get("source_field_id"),
+        }
+        missing_source_values = {
+            key: value
+            for key, value in generated_source_values.items()
+            if isinstance(value, str) and value.strip() and not record_data.get(key)
+        }
+        if missing_source_values:
+            record_data = {**record_data, **missing_source_values}
+    attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, record_entity_id)
     render_entity_id, render_entity_def, render_record_data = app_main._resolve_document_template_record_source(
         source_template,
         record_entity_id,
@@ -648,6 +819,19 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
             filename = filename[:-4]
         if not isinstance(filename, str) or not filename.strip():
             filename = "document"
+        filename = _resolve_generated_document_filename(
+            filename,
+            mode=payload.get("filename_conflict_mode"),
+            existing_filenames=_existing_generated_document_filenames(
+                records,
+                attach_store,
+                entity_id=record_entity_id,
+                record_id=record_id,
+                record_data=record_data,
+                attachment_field=attachment_field,
+                purpose=purpose,
+            ),
+        )
         header_html = source_template.get("header_html") or ""
         footer_html = source_template.get("footer_html") or ""
         if header_html:
@@ -700,8 +884,7 @@ def _handle_doc_generate(job: dict, org_id: str) -> dict:
                 "purpose": purpose,
             }
         )
-    attachment_field = _find_documentable_attachment_field(found[2] if isinstance(found, tuple) and len(found) >= 3 else None, record_entity_id)
-    _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment, entity_def=record_entity_def)
+    _sync_attachment_field(records, record_entity_id, record_id, record_data, attachment_field, attachment, entity_def=record_entity_def, attach_store=attach_store)
     _sync_generated_document_record(
         records,
         entity_id=record_entity_id,
@@ -991,7 +1174,37 @@ def _resolve_action_inputs(step: dict, ctx: dict) -> dict:
                 resolved[key] = preserved_items if should_preserve else _resolve_value(value, ctx)
                 continue
         resolved[key] = _resolve_value(value, ctx)
+    overrides = _email_compose_overrides_for_step(ctx, step)
+    if overrides:
+        for key in (
+            "to",
+            "cc",
+            "bcc",
+            "reply_to",
+            "template_id",
+            "subject",
+            "body_html",
+            "body_text",
+            "attachment_ids",
+            "replace_recipients",
+            "replace_attachments",
+        ):
+            if key in overrides:
+                resolved[key] = overrides.get(key)
     return resolved
+
+
+def _email_compose_overrides_for_step(ctx: dict, step: dict) -> dict:
+    trigger = ctx.get("trigger") if isinstance(ctx.get("trigger"), dict) else {}
+    compose = trigger.get("email_compose") if isinstance(trigger.get("email_compose"), dict) else None
+    if not compose:
+        return {}
+    target_step_id = compose.get("step_id")
+    step_id = step.get("id") if isinstance(step.get("id"), str) else None
+    if isinstance(target_step_id, str) and target_step_id and step_id and target_step_id != step_id:
+        return {}
+    overrides = compose.get("inputs") if isinstance(compose.get("inputs"), dict) else compose
+    return dict(overrides) if isinstance(overrides, dict) else {}
 
 
 def _coerce_json_like_value(value: object) -> object:
@@ -1811,6 +2024,9 @@ def _resolve_recipients(inputs: dict, context: dict, record_data: dict, entity_i
         if text:
             rendered_to_values.append(text)
     recipients.extend(_split_recipients(rendered_to_values))
+    if _coerce_bool(inputs.get("replace_recipients"), False):
+        recipients = [item for item in recipients if "@" in item]
+        return _dedupe(recipients)
     recipients.extend(_split_recipients(inputs.get("to_internal_emails")))
 
     # Record fields can contribute recipients.
@@ -2130,15 +2346,23 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
             body_text = render_template(body_text, context, strict=False)
         attachment_entity_id = inputs.get("attachment_entity_id") or entity_id
         attachment_record_id = inputs.get("attachment_record_id") or record_id
-        attachments = _resolve_linked_attachments(
-            attach_store,
-            entity_id=attachment_entity_id,
-            record_id=attachment_record_id,
-            purpose=inputs.get("attachment_purpose"),
-            attachment_ids=inputs.get("attachment_ids"),
-            record_data=record_data,
-            attachment_field=inputs.get("attachment_field_id"),
-        )
+        if _coerce_bool(inputs.get("replace_attachments"), False):
+            attachments = _resolve_linked_attachments(
+                attach_store,
+                entity_id=None,
+                record_id=None,
+                attachment_ids=inputs.get("attachment_ids"),
+            )
+        else:
+            attachments = _resolve_linked_attachments(
+                attach_store,
+                entity_id=attachment_entity_id,
+                record_id=attachment_record_id,
+                purpose=inputs.get("attachment_purpose"),
+                attachment_ids=inputs.get("attachment_ids"),
+                record_data=record_data,
+                attachment_field=inputs.get("attachment_field_id"),
+            )
         recipients = _resolve_recipients(inputs, context, enriched_record, entity_id, entity_def)
         if not recipients:
             raise RuntimeError("Email recipients not resolved")
@@ -2194,7 +2418,7 @@ def _handle_system_action(action_id: str, inputs: dict, ctx: dict, job_store: Db
         }
         if actor_user_id:
             doc_payload["actor_user_id"] = actor_user_id
-        for key in ("source_entity_id", "source_record_id"):
+        for key in ("source_entity_id", "source_record_id", "source_field_id", "filename_conflict_mode"):
             value = inputs.get(key) or trigger.get(key)
             if isinstance(value, str) and value.strip():
                 doc_payload[key] = value.strip()

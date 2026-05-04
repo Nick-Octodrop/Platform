@@ -91,7 +91,7 @@ export function evalCondition(condition, context) {
   }
 
   if (op === "exists") {
-    return left !== undefined && left !== null && left !== "";
+    return left !== undefined && left !== null && left !== "" && (!Array.isArray(left) || left.length > 0);
   }
   if (op === "eq") return left === right;
   if (op === "neq") return left !== right;

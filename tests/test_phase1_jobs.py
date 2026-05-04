@@ -191,10 +191,19 @@ class TestPhase1Jobs(unittest.TestCase):
         class _FakeAttachmentStore:
             def create_attachment(self, payload):
                 captured["attachment_payload"] = dict(payload)
-                return {"id": "att_1"}
+                return {"id": "att_1", **dict(payload)}
 
             def link(self, payload):
                 captured.setdefault("links", []).append(dict(payload))
+
+            def list_links(self, entity_id, record_id, purpose=None):
+                return [
+                    link
+                    for link in captured.get("links", [])
+                    if link.get("entity_id") == entity_id
+                    and link.get("record_id") == record_id
+                    and (purpose is None or link.get("purpose") == purpose)
+                ]
 
         class _FakeRecordStore:
             def get(self, entity_id, record_id):
@@ -325,10 +334,19 @@ class TestPhase1Jobs(unittest.TestCase):
         class _FakeAttachmentStore:
             def create_attachment(self, payload):
                 captured["attachment_payload"] = dict(payload)
-                return {"id": "att_1"}
+                return {"id": "att_1", **dict(payload)}
 
             def link(self, payload):
                 captured.setdefault("links", []).append(dict(payload))
+
+            def list_links(self, entity_id, record_id, purpose=None):
+                return [
+                    link
+                    for link in captured.get("links", [])
+                    if link.get("entity_id") == entity_id
+                    and link.get("record_id") == record_id
+                    and (purpose is None or link.get("purpose") == purpose)
+                ]
 
         class _FakeRecordStore:
             def __init__(self) -> None:
@@ -421,8 +439,16 @@ class TestPhase1Jobs(unittest.TestCase):
 
         self.assertEqual(captured.get("context_entity_id"), "entity.biz_quote")
         self.assertEqual(captured.get("context_record", {}).get("biz_quote.quote_number"), "QUO-1001")
-        self.assertEqual(record_store.rows[("entity.biz_document", "doc_1")].get("biz_document.attachments"), [{"id": "att_1", "filename": None, "mime_type": None, "size": None, "storage_key": None}])
-        self.assertEqual(record_store.rows[("entity.biz_quote", "quote_1")].get("biz_quote.generated_files"), [{"id": "att_1", "filename": None, "mime_type": None, "size": None, "storage_key": None}])
+        self.assertEqual(record_store.rows[("entity.biz_document", "doc_1")].get("biz_document.attachments"), [{"id": "att_1", "filename": "quote-file.pdf", "mime_type": "application/pdf", "size": 21, "storage_key": "default/quote-file.pdf"}])
+        self.assertEqual(record_store.rows[("entity.biz_quote", "quote_1")].get("biz_quote.generated_files"), [{"id": "att_1", "filename": "quote-file.pdf", "mime_type": "application/pdf", "size": 21, "storage_key": "default/quote-file.pdf"}])
+        self.assertIn(
+            {"attachment_id": "att_1", "entity_id": "entity.biz_document", "record_id": "doc_1", "purpose": "field:biz_document.attachments"},
+            captured.get("links", []),
+        )
+        self.assertIn(
+            {"attachment_id": "att_1", "entity_id": "entity.biz_quote", "record_id": "quote_1", "purpose": "field:biz_quote.generated_files"},
+            captured.get("links", []),
+        )
         self.assertIn(
             {"attachment_id": "att_1", "entity_id": "entity.biz_quote", "record_id": "quote_1", "purpose": "quote_pdf"},
             captured.get("links", []),

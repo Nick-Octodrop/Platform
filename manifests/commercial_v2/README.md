@@ -40,7 +40,7 @@ Manual setup order:
 - `python3 manifests/commercial_v2/setup_quote_scripts.py`
 - `python3 manifests/commercial_v2/seed_catalog_items.py`
 - `python3 manifests/commercial_v2/setup_access_profiles.py`
-- `python3 manifests/commercial_v2/setup_commercial_automations.py --quote-document-template-id "<template id>" --publish`
+- `python3 manifests/commercial_v2/setup_commercial_automations.py --publish`
 - `python3 manifests/commercial_v2/setup_xero_phase1.py --connection-name "<your xero connection>" --sales-entity "<your sales entity>"`
 - `python3 manifests/commercial_v2/seed_dummy_examples.py`
 
@@ -70,7 +70,6 @@ Environment:
 - `OCTO_BASE_URL`
 - `OCTO_API_TOKEN`
 - `OCTO_WORKSPACE_ID`
-
 
 
 

@@ -4474,6 +4474,64 @@ def _attachment_fields_for_entity(entity_def: dict | None) -> list[str]:
     ]
 
 
+def _attachment_ref_matches(value: Any, attachment_id: str) -> bool:
+    if not isinstance(attachment_id, str) or not attachment_id:
+        return False
+    if isinstance(value, str):
+        return value == attachment_id
+    if isinstance(value, dict):
+        return value.get("id") == attachment_id or value.get("attachment_id") == attachment_id
+    return False
+
+
+def _remove_attachment_ref_from_value(value: Any, attachment_id: str) -> tuple[Any, bool]:
+    if isinstance(value, list):
+        next_items = [item for item in value if not _attachment_ref_matches(item, attachment_id)]
+        return next_items, len(next_items) != len(value)
+    if _attachment_ref_matches(value, attachment_id):
+        return [], True
+    return value, False
+
+
+def _remove_attachment_from_record_fields(
+    request: Request,
+    entity_id: str,
+    record_id: str,
+    attachment_id: str,
+    *,
+    field_id: str | None = None,
+) -> tuple[list[str], dict | None]:
+    found = _find_entity_def(request, entity_id)
+    if not found:
+        return [], None
+    wrapper = generic_records.get(entity_id, record_id)
+    record = wrapper.get("record") if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict) else None
+    if not isinstance(record, dict):
+        return [], None
+    attachment_fields = _attachment_fields_for_entity(found[1])
+    if isinstance(field_id, str) and field_id:
+        attachment_fields = [item for item in attachment_fields if item == field_id]
+    changed_fields: list[str] = []
+    next_record = dict(record)
+    for attachment_field in attachment_fields:
+        next_value, changed = _remove_attachment_ref_from_value(next_record.get(attachment_field), attachment_id)
+        if changed:
+            next_record[attachment_field] = next_value
+            changed_fields.append(attachment_field)
+    if not changed_fields:
+        return [], record
+    updated = _update_record_with_computed_fields(
+        request,
+        entity_id,
+        found[1],
+        record_id,
+        next_record,
+        before_record=record,
+    )
+    updated_record = updated.get("record") if isinstance(updated, dict) and isinstance(updated.get("record"), dict) else next_record
+    return changed_fields, updated_record
+
+
 def _linked_attachments_for_field(entity_id: str | None, record_id: str | None, field_id: str | None) -> list[dict]:
     if not (isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id and isinstance(field_id, str) and field_id):
         return []
@@ -25275,6 +25333,7 @@ def _run_transform_record_action(
                 "changed_fields": sorted((target_record or {}).keys()),
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
+                **_action_context_email_compose_payload(context),
             },
             action_id=action_id,
         )
@@ -25298,6 +25357,357 @@ def _run_transform_record_action(
             }
         },
         warnings=[],
+    )
+
+
+def _action_email_compose_config(action: dict | None) -> dict:
+    if not isinstance(action, dict):
+        return {}
+    ui = action.get("ui") if isinstance(action.get("ui"), dict) else {}
+    raw = action.get("email_compose")
+    if raw is True:
+        return {"enabled": True}
+    if isinstance(raw, dict):
+        return {"enabled": True, **raw}
+    raw_ui = ui.get("email_compose")
+    if raw_ui is True:
+        return {"enabled": True}
+    if isinstance(raw_ui, dict):
+        return {"enabled": True, **raw_ui}
+    if ui.get("mode") == "compose_before_send":
+        return {"enabled": True}
+    return {}
+
+
+def _step_email_compose_config(step: dict | None) -> dict:
+    if not isinstance(step, dict):
+        return {}
+    ui = step.get("ui") if isinstance(step.get("ui"), dict) else {}
+    if ui.get("mode") == "compose_before_send" or ui.get("compose_before_send") is True:
+        return {"enabled": True, **ui}
+    raw = ui.get("email_compose")
+    if raw is True:
+        return {"enabled": True}
+    if isinstance(raw, dict):
+        return {"enabled": True, **raw}
+    return {}
+
+
+def _action_context_email_compose_payload(context: dict | None) -> dict:
+    if not isinstance(context, dict):
+        return {}
+    compose = context.get("email_compose")
+    if not isinstance(compose, dict):
+        return {}
+    step_id = compose.get("step_id")
+    inputs = compose.get("inputs") if isinstance(compose.get("inputs"), dict) else compose
+    if not isinstance(inputs, dict):
+        return {}
+    allowed = {
+        "to",
+        "cc",
+        "bcc",
+        "reply_to",
+        "template_id",
+        "subject",
+        "body_html",
+        "body_text",
+        "attachment_ids",
+        "replace_recipients",
+        "replace_attachments",
+    }
+    clean_inputs = {key: copy.deepcopy(inputs.get(key)) for key in allowed if key in inputs}
+    if not clean_inputs:
+        return {}
+    payload: dict[str, Any] = {"inputs": clean_inputs}
+    if isinstance(step_id, str) and step_id.strip():
+        payload["step_id"] = step_id.strip()
+    return {"email_compose": payload}
+
+
+def _attachment_store_links(entity_id: str | None, record_id: str | None, purpose: str | None = None) -> list[dict]:
+    if not isinstance(entity_id, str) or not entity_id or not isinstance(record_id, str) or not record_id:
+        return []
+    try:
+        links = attachment_store.list_links(entity_id, record_id, purpose)
+    except TypeError:
+        links = attachment_store.list_links(get_org_id(), entity_id, record_id, purpose)
+    except Exception:
+        return []
+    return [dict(item) for item in links or [] if isinstance(item, dict)]
+
+
+def _email_compose_attachment_item(attachment: dict, *, selected: bool = False, required: bool = False, source: str | None = None) -> dict | None:
+    attachment_id = attachment.get("attachment_id") or attachment.get("id")
+    if not isinstance(attachment_id, str) or not attachment_id:
+        return None
+    return {
+        "id": attachment_id,
+        "attachment_id": attachment_id,
+        "filename": attachment.get("filename"),
+        "mime_type": attachment.get("mime_type"),
+        "size": attachment.get("size"),
+        "storage_key": attachment.get("storage_key"),
+        "selected": selected,
+        "required": required,
+        "source": source,
+    }
+
+
+def _append_email_compose_attachment(
+    items_by_id: dict[str, dict],
+    attachment: dict | None,
+    *,
+    selected: bool = False,
+    required: bool = False,
+    source: str | None = None,
+) -> None:
+    if not isinstance(attachment, dict):
+        return
+    item = _email_compose_attachment_item(attachment, selected=selected, required=required, source=source)
+    if not item:
+        return
+    existing = items_by_id.get(item["id"])
+    if existing:
+        existing["selected"] = bool(existing.get("selected") or selected)
+        existing["required"] = bool(existing.get("required") or required)
+        if source and source not in str(existing.get("source") or ""):
+            existing["source"] = f"{existing.get('source')}, {source}" if existing.get("source") else source
+        for key in ("filename", "mime_type", "size", "storage_key"):
+            if existing.get(key) in (None, "") and item.get(key) not in (None, ""):
+                existing[key] = item.get(key)
+        return
+    items_by_id[item["id"]] = item
+
+
+def _append_record_email_compose_attachments(
+    items_by_id: dict[str, dict],
+    *,
+    entity_id: str | None,
+    record_id: str | None,
+    record_data: dict | None = None,
+    entity_def: dict | None = None,
+    source: str,
+) -> None:
+    if not isinstance(entity_id, str) or not entity_id or not isinstance(record_id, str) or not record_id:
+        return
+    for link in _attachment_store_links(entity_id, record_id):
+        attachment_id = link.get("attachment_id")
+        if isinstance(attachment_id, str) and attachment_id:
+            _append_email_compose_attachment(items_by_id, attachment_store.get_attachment(attachment_id), source=source)
+    if isinstance(record_data, dict):
+        for field_id in _attachment_fields_for_entity(entity_def):
+            for ref in _extract_attachment_items(record_data.get(field_id)):
+                attachment_id = ref.get("id") or ref.get("attachment_id")
+                attachment = attachment_store.get_attachment(attachment_id) if isinstance(attachment_id, str) else None
+                _append_email_compose_attachment(items_by_id, attachment or ref, source=source)
+
+
+def _resolve_action_for_email_compose(request: Request, module_id: str | None, action_id: str | None) -> tuple[dict | None, dict | None, dict | None, dict | None]:
+    if not isinstance(module_id, str) or not module_id or not isinstance(action_id, str) or not action_id:
+        return None, None, None, None
+    module, manifest = _get_installed_manifest(request, module_id)
+    if not isinstance(module, dict) or not module.get("enabled") or not isinstance(manifest, dict):
+        return module, manifest, None, None
+    manifest_hash = module.get("current_hash") if isinstance(module, dict) else None
+    compiled = _get_compiled_manifest(module_id, manifest_hash, manifest) if manifest_hash else None
+    action = compiled.get("action_by_id", {}).get(action_id) if isinstance(compiled, dict) else None
+    if not action:
+        action = _resolve_action(manifest, action_id)
+    return module, manifest, compiled if isinstance(compiled, dict) else None, action
+
+
+@app.post("/actions/email-compose/preview")
+async def preview_action_email_compose(request: Request) -> dict:
+    actor = _resolve_actor(request)
+    if isinstance(actor, JSONResponse):
+        return actor
+    body = await _safe_json(request)
+    if not isinstance(body, dict):
+        return _error_response("INVALID_BODY", "Expected JSON object", None, status=400)
+    module_id = body.get("module_id")
+    action_id = body.get("action_id")
+    context = body.get("context") if isinstance(body.get("context"), dict) else {}
+    module, manifest, _compiled, action = _resolve_action_for_email_compose(request, module_id, action_id)
+    if not isinstance(module, dict):
+        return _error_response("MODULE_NOT_INSTALLED", "Module not installed", "module_id", status=404)
+    if not isinstance(manifest, dict):
+        return _error_response("MODULE_NOT_FOUND", "Module manifest not found", "module_id", status=404)
+    if not isinstance(action, dict):
+        return _error_response("ACTION_NOT_FOUND", "Action not found", "action_id", status=404)
+    if not _action_visible_for_actor(actor, module_id, action_id):
+        return _error_response("FORBIDDEN", "Action access denied", "action_id", status=403)
+    if action.get("kind") in {"create_record", "update_record", "bulk_update", "transform_record"}:
+        denied = _require_capability(actor, "records.write", "Write access required")
+        if denied:
+            return denied
+
+    record_id = context.get("record_id")
+    entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else context.get("entity_id")
+    if isinstance(entity_id, str) and entity_id:
+        entity_id = _normalize_entity_id(entity_id)
+    record_context = context.get("record_draft") if isinstance(context.get("record_draft"), dict) else context.get("record")
+    if not isinstance(record_context, dict):
+        record_context = {}
+    if isinstance(entity_id, str) and entity_id and isinstance(record_id, str) and record_id and not record_context:
+        wrapper = generic_records.get(entity_id, record_id) or {}
+        if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict):
+            record_context = wrapper.get("record") or {}
+    found = _find_entity_def(request, entity_id) if isinstance(entity_id, str) and entity_id else None
+    entity_def = found[1] if found else None
+    if isinstance(entity_id, str) and isinstance(record_id, str) and isinstance(record_context, dict):
+        record_context = _hydrate_linked_attachment_fields(entity_def, entity_id, record_id, record_context)
+    try:
+        actor_ctx = _actor_domain_context(actor)
+        if action.get("enabled_when") and not eval_condition(action.get("enabled_when"), {"record": record_context, "actor": actor_ctx}):
+            return _error_response("ACTION_DISABLED", "Action is disabled", "action_id", status=400)
+        if action.get("visible_when") and not eval_condition(action.get("visible_when"), {"record": record_context, "actor": actor_ctx}):
+            return _error_response("ACTION_DISABLED", "Action is hidden", "action_id", status=400)
+    except Exception:
+        return _error_response("ACTION_INVALID", "Action condition failed", "action_id", status=400)
+
+    record_snapshot = _automation_record_snapshot(record_context, entity_def)
+    trigger_payload = {
+        "action_id": action_id,
+        "kind": action.get("kind"),
+        "entity_id": entity_id,
+        "record_id": record_id,
+        "record": record_snapshot,
+        "changed_fields": sorted((record_snapshot or {}).get("flat", {}).keys()),
+        "user_id": actor.get("user_id") if isinstance(actor, dict) else None,
+        "timestamp": _now(),
+    }
+    matching: list[tuple[dict, dict, dict]] = []
+    action_compose_cfg = _action_email_compose_config(action)
+    for automation in automation_store.list(status="published"):
+        trigger = automation.get("trigger") if isinstance(automation, dict) else None
+        if not isinstance(trigger, dict) or not match_event(trigger, "action.clicked", trigger_payload):
+            continue
+        for step in automation.get("steps") or []:
+            if not isinstance(step, dict) or step.get("action_id") != "system.send_email":
+                continue
+            step_compose_cfg = _step_email_compose_config(step)
+            if not action_compose_cfg.get("enabled") and not step_compose_cfg.get("enabled"):
+                continue
+            matching.append((automation, step, {**step_compose_cfg, **action_compose_cfg}))
+            break
+    if not matching:
+        return _error_response("EMAIL_COMPOSE_NOT_CONFIGURED", "No compose-enabled send_email automation matched this action.", "action_id", status=404)
+
+    automation, step, compose_cfg = matching[0]
+    from app.worker import _resolve_action_inputs, _resolve_recipients
+
+    runtime_ctx = {"trigger": trigger_payload, "steps": {}, "vars": {}, "last": None}
+    inputs = _resolve_action_inputs(step, runtime_ctx)
+    template = None
+    if inputs.get("template_id"):
+        template = email_store.get_template(inputs.get("template_id"))
+        if not template:
+            return _error_response("EMAIL_TEMPLATE_NOT_FOUND", "Email template not found", "template_id", status=404)
+    connection = connection_store.get(inputs.get("connection_id")) if inputs.get("connection_id") else None
+    if not connection and template and template.get("default_connection_id"):
+        connection = connection_store.get(template.get("default_connection_id"))
+    if not connection:
+        connection = connection_store.get_default_email()
+    if not connection:
+        return _error_response("EMAIL_CONNECTION_MISSING", "Email connection not configured", "connection_id", status=400)
+
+    email_entity_id = inputs.get("entity_id") or entity_id
+    email_record_id = inputs.get("record_id") or record_id
+    email_entity_def = None
+    email_record_data: dict = {}
+    if isinstance(email_entity_id, str) and isinstance(email_record_id, str):
+        email_found = _find_entity_def(request, email_entity_id)
+        email_entity_def = email_found[1] if email_found else None
+        wrapper = generic_records.get(email_entity_id, email_record_id) or {}
+        if isinstance(wrapper, dict) and isinstance(wrapper.get("record"), dict):
+            email_record_data = wrapper.get("record") or {}
+    render_context = _build_template_render_context(
+        email_record_data,
+        email_entity_def,
+        email_entity_id if isinstance(email_entity_id, str) else None,
+        _branding_context_for_org(get_org_id()),
+        localization=_localization_context_for_actor(actor),
+    )
+    render_context["trigger"] = trigger_payload
+    subject = inputs.get("subject") or (template.get("subject") if template else None)
+    if not subject:
+        return _error_response("SUBJECT_REQUIRED", "Email subject required", "subject", status=400)
+    if isinstance(subject, str) and "{{" in subject:
+        subject = render_template(subject, render_context, strict=False)
+    body_html = inputs.get("body_html") or (template.get("body_html") if template else None)
+    body_text = inputs.get("body_text") or (template.get("body_text") if template else None)
+    if body_html:
+        body_html = render_template(body_html, render_context, strict=False)
+    if body_text:
+        body_text = render_template(body_text, render_context, strict=False)
+    if not body_text and body_html:
+        body_text = _html_to_text(body_html)
+    enriched_record = render_context.get("record") if isinstance(render_context.get("record"), dict) else {}
+    recipients = _resolve_recipients(inputs, render_context, enriched_record, email_entity_id, email_entity_def)
+    if not recipients:
+        return _error_response("EMAIL_RECIPIENTS_MISSING", "Email recipients not resolved", "to", status=400)
+
+    default_attachments = _resolve_outbox_attachments(
+        inputs.get("attachment_entity_id") or email_entity_id,
+        inputs.get("attachment_record_id") or email_record_id,
+        purpose=inputs.get("attachment_purpose"),
+        attachment_ids=inputs.get("attachment_ids"),
+        record_data=email_record_data,
+        attachment_field=inputs.get("attachment_field_id"),
+    )
+    require_attachments = compose_cfg.get("required_attachments") is not False
+    items_by_id: dict[str, dict] = {}
+    for attachment in default_attachments:
+        _append_email_compose_attachment(items_by_id, attachment, selected=True, required=require_attachments, source="Default")
+    _append_record_email_compose_attachments(
+        items_by_id,
+        entity_id=entity_id,
+        record_id=record_id,
+        record_data=record_context,
+        entity_def=entity_def,
+        source="Current record",
+    )
+    attachment_entity_id = inputs.get("attachment_entity_id")
+    attachment_record_id = inputs.get("attachment_record_id")
+    if isinstance(attachment_entity_id, str) and isinstance(attachment_record_id, str):
+        source_def = (_find_entity_def(request, attachment_entity_id) or (None, None))[1]
+        source_wrapper = generic_records.get(attachment_entity_id, attachment_record_id) or {}
+        source_record = source_wrapper.get("record") if isinstance(source_wrapper, dict) else {}
+        _append_record_email_compose_attachments(
+            items_by_id,
+            entity_id=attachment_entity_id,
+            record_id=attachment_record_id,
+            record_data=source_record if isinstance(source_record, dict) else {},
+            entity_def=source_def,
+            source="Primary document",
+        )
+    attachments = list(items_by_id.values())
+    selected_attachment_ids = [item["id"] for item in attachments if item.get("selected")]
+    return _ok_response(
+        {
+            "compose": {
+                "automation_id": automation.get("id"),
+                "automation_name": automation.get("name"),
+                "step_id": step.get("id"),
+                "action_id": action_id,
+                "to": recipients,
+                "cc": inputs.get("cc") or [],
+                "bcc": inputs.get("bcc") or [],
+                "reply_to": inputs.get("reply_to"),
+                "from_email": (connection.get("config") or {}).get("from_email"),
+                "subject": subject,
+                "body_html": body_html,
+                "body_text": body_text,
+                "template_id": inputs.get("template_id"),
+                "attachments": attachments,
+                "selected_attachment_ids": selected_attachment_ids,
+                "required_attachment_ids": selected_attachment_ids if require_attachments else [],
+                "require_attachments": require_attachments,
+                "allow_edit_body": compose_cfg.get("allow_edit_body", True) is not False,
+                "allow_optional_attachments": compose_cfg.get("allow_optional_attachments", True) is not False,
+            }
+        }
     )
 
 
@@ -25421,6 +25831,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                 "changed_fields": sorted((record_snapshot or {}).get("flat", {}).keys()),
                 "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                 "timestamp": _now(),
+                **_action_context_email_compose_payload(context),
             },
             action_id=action_id,
         )
@@ -25551,6 +25962,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "changed_fields": sorted(created_record.keys()) if isinstance(created_record, dict) else [],
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
+                    **_action_context_email_compose_payload(context),
                 },
                 action_id=action_id,
             )
@@ -25733,6 +26145,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "changed_fields": changed,
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
+                    **_action_context_email_compose_payload(context),
                 },
                 action_id=action_id,
             )
@@ -25906,6 +26319,7 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
                     "changed_fields": list(patch.keys()) if isinstance(patch, dict) else [],
                     "user_id": (getattr(request.state, "actor", None) or {}).get("user_id"),
                     "timestamp": _now(),
+                    **_action_context_email_compose_payload(context),
                 },
                 action_id=action_id,
             )
@@ -58847,10 +59261,11 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
             {
                 "action_id": "system.generate_document",
                 "required_inputs": ["template_id", "record_id"],
-                "optional_inputs": ["entity_id", "purpose"],
+                "optional_inputs": ["entity_id", "purpose", "source_entity_id", "source_record_id", "source_field_id", "filename_conflict_mode"],
                 "notes": [
                     "Use template_id from meta.doc_templates when generating a document.",
                     "Use record_id to identify the source record for template variables.",
+                    "Use filename_conflict_mode append_version for audit-friendly generated document history.",
                 ],
             },
             {
@@ -63680,6 +64095,11 @@ async def generate_document(request: Request) -> dict:
                 "record_id": record_id,
                 "purpose": body.get("purpose") or "default",
                 "actor_user_id": actor.get("user_id"),
+                **{
+                    key: body.get(key)
+                    for key in ("source_entity_id", "source_record_id", "source_field_id", "filename_conflict_mode")
+                    if isinstance(body.get(key), str) and body.get(key).strip()
+                },
             },
         }
     )
@@ -65855,11 +66275,32 @@ async def delete_record_attachment(request: Request, entity_id: str, record_id: 
     attachment = attachment_store.get_attachment(attachment_id)
 
     purpose = (request.query_params.get("purpose") or "").strip() or None
+    field_id = (request.query_params.get("field_id") or "").strip() or None
+    delete_scope = (request.query_params.get("delete_scope") or "").strip().lower()
+    if not field_id and isinstance(purpose, str) and purpose.startswith("field:"):
+        field_id = purpose[len("field:") :].strip() or None
+    updated_fields, _updated_record = _remove_attachment_from_record_fields(
+        request,
+        entity_id,
+        record_id,
+        attachment_id,
+        field_id=field_id,
+    )
+    unlink_purpose = None if delete_scope == "record" else purpose
     try:
-        removed_links = int(attachment_store.unlink(entity_id, record_id, attachment_id, purpose))
+        removed_links = int(attachment_store.unlink(entity_id, record_id, attachment_id, unlink_purpose))
     except TypeError:
-        removed_links = int(attachment_store.unlink(get_org_id(), entity_id, record_id, attachment_id, purpose))
-    if removed_links <= 0:
+        removed_links = int(attachment_store.unlink(get_org_id(), entity_id, record_id, attachment_id, unlink_purpose))
+    if unlink_purpose is not None:
+        for updated_field_id in updated_fields:
+            field_purpose = f"field:{updated_field_id}"
+            if field_purpose == unlink_purpose:
+                continue
+            try:
+                removed_links += int(attachment_store.unlink(entity_id, record_id, attachment_id, field_purpose))
+            except TypeError:
+                removed_links += int(attachment_store.unlink(get_org_id(), entity_id, record_id, attachment_id, field_purpose))
+    if removed_links <= 0 and not updated_fields:
         return _error_response("ATTACHMENT_NOT_FOUND", "Attachment not linked to this record", "attachment_id", status=404)
 
     if attachment:
@@ -65896,6 +66337,7 @@ async def delete_record_attachment(request: Request, entity_id: str, record_id: 
             "deleted": True,
             "attachment_id": attachment_id,
             "removed_links": removed_links,
+            "updated_fields": updated_fields,
             "deleted_attachment": deleted_attachment,
         }
     )

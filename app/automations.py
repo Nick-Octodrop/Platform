@@ -40,6 +40,10 @@ def _get_snapshot_path(snapshot: dict, path: str) -> Any:
     return None
 
 
+def _condition_value_exists(value: Any) -> bool:
+    return value is not None and value != "" and not (isinstance(value, list) and len(value) == 0)
+
+
 def _matches_filter(payload: dict, filt: dict) -> bool:
     if not isinstance(filt, dict):
         return False
@@ -74,9 +78,9 @@ def _matches_filter(payload: dict, filt: dict) -> bool:
             return False
         return value not in target
     if op == "exists":
-        return value is not None
+        return _condition_value_exists(value)
     if op == "not_exists":
-        return value is None
+        return not _condition_value_exists(value)
     if op == "contains":
         if isinstance(value, list):
             return target in value

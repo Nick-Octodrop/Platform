@@ -88,6 +88,10 @@ def _resolve_operand(operand: Any, context: dict) -> Any:
     return operand
 
 
+def _condition_value_exists(value: Any) -> bool:
+    return value is not None and value != "" and not (isinstance(value, list) and len(value) == 0)
+
+
 def eval_condition(condition: dict | None, context: dict) -> bool:
     if not condition or not isinstance(condition, dict):
         return False
@@ -117,9 +121,9 @@ def eval_condition(condition: dict | None, context: dict) -> bool:
         right = _resolve_operand(condition.get("value"), context)
 
     if op == "exists":
-        return left is not None and left != ""
+        return _condition_value_exists(left)
     if op == "not_exists":
-        return left is None or left == ""
+        return not _condition_value_exists(left)
     if op == "eq":
         return left == right
     if op == "neq":

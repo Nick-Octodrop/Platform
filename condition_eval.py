@@ -98,9 +98,9 @@ def _eval_exists(node: Any, ctx: dict, path: str, depth: int, limit: int) -> boo
             value = _resolve_var(ctx, node["var"], path)
         except VarResolveError:
             return False
-        return value is not None
+        return value is not None and value != "" and not (isinstance(value, list) and len(value) == 0)
     value = _eval_value(node, ctx, path, depth + 1, limit)
-    return value is not None
+    return value is not None and value != "" and not (isinstance(value, list) and len(value) == 0)
 
 
 def _require_fields(cond: dict, fields: List[str], path: str) -> None:

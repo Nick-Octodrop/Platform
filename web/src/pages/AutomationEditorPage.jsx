@@ -827,6 +827,29 @@ export default function AutomationEditorPage({ user }) {
     });
   }
 
+  function triggerUiFlagEnabled(key) {
+    const ui = trigger?.ui && typeof trigger.ui === "object" ? trigger.ui : {};
+    return ui[key] !== false;
+  }
+
+  function updateTriggerUiSetting(key, enabled) {
+    setTrigger((prev) => {
+      const next = { ...(prev || {}) };
+      const ui = next.ui && typeof next.ui === "object" && !Array.isArray(next.ui) ? { ...next.ui } : {};
+      if (enabled) {
+        delete ui[key];
+      } else {
+        ui[key] = false;
+      }
+      if (Object.keys(ui).length > 0) {
+        next.ui = ui;
+      } else {
+        delete next.ui;
+      }
+      return next;
+    });
+  }
+
   function updateTriggerFilter(index, patch) {
     setTrigger((prev) => {
       const filters = Array.isArray(prev?.filters) ? prev.filters : [];
@@ -3743,6 +3766,23 @@ export default function AutomationEditorPage({ user }) {
                 <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
                 <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.document_purpose_help")}</span>
               </label>
+              <div className="md:col-span-2 mt-1 flex items-center gap-3">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/70">{t("settings.automation_editor.document_output_title")}</span>
+                <span className="h-px flex-1 bg-base-300" />
+              </div>
+              <label className="form-control">
+                <span className="label-text">{t("settings.automation_editor.filename_conflict_mode")}</span>
+                <AppSelect
+                  className="select select-bordered"
+                  value={step.inputs?.filename_conflict_mode || ""}
+                  onChange={(e) => updateStepInput(index, "filename_conflict_mode", e.target.value || undefined)}
+                >
+                  <option value="">{t("settings.automation_editor.filename_conflict_keep_same_name")}</option>
+                  <option value="append_version">{t("settings.automation_editor.filename_conflict_append_version")}</option>
+                  <option value="append_timestamp">{t("settings.automation_editor.filename_conflict_append_timestamp")}</option>
+                </AppSelect>
+                <span className="label-text-alt mt-1 block opacity-50">{t("settings.automation_editor.filename_conflict_mode_help")}</span>
+              </label>
               <label className="form-control">
                 <span className="label-text">{t("common.entity")}</span>
                 <AppSelect
@@ -6108,6 +6148,22 @@ export default function AutomationEditorPage({ user }) {
                           <span className="label-text">{t("settings.automation_editor.purpose")}</span>
                           <input className="input input-bordered" value={step.inputs?.purpose || ""} onChange={(e) => updateStepInput(index, "purpose", e.target.value)} />
                         </label>
+                        <div className="md:col-span-2 mt-1 flex items-center gap-3">
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-base-content/70">{t("settings.automation_editor.document_output_title")}</span>
+                          <span className="h-px flex-1 bg-base-300" />
+                        </div>
+                        <label className="form-control">
+                          <span className="label-text">{t("settings.automation_editor.filename_conflict_mode")}</span>
+                          <AppSelect
+                            className="select select-bordered"
+                            value={step.inputs?.filename_conflict_mode || ""}
+                            onChange={(e) => updateStepInput(index, "filename_conflict_mode", e.target.value || undefined)}
+                          >
+                            <option value="">{t("settings.automation_editor.filename_conflict_keep_same_name")}</option>
+                            <option value="append_version">{t("settings.automation_editor.filename_conflict_append_version")}</option>
+                            <option value="append_timestamp">{t("settings.automation_editor.filename_conflict_append_timestamp")}</option>
+                          </AppSelect>
+                        </label>
                         <label className="form-control">
                           <span className="label-text">{t("common.entity")}</span>
                           <AppSelect
@@ -6697,6 +6753,53 @@ export default function AutomationEditorPage({ user }) {
             </AppSelect>
           </label>
         )}
+      </div>
+
+      <div className={triggerSectionCardClass}>
+        <div>
+          <div className="font-medium text-sm">{t("settings.automation_editor.run_feedback_title")}</div>
+          <div className="text-xs opacity-60 mt-1">{t("settings.automation_editor.run_feedback_help")}</div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="label cursor-pointer justify-start gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-3">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={triggerUiFlagEnabled("show_progress")}
+              onChange={(e) => updateTriggerUiSetting("show_progress", e.target.checked)}
+            />
+            <span className="label-text">{t("settings.automation_editor.show_automation_progress")}</span>
+          </label>
+          <label className="label cursor-pointer justify-start gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-3">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={triggerUiFlagEnabled("show_toast")}
+              onChange={(e) => updateTriggerUiSetting("show_toast", e.target.checked)}
+            />
+            <span className="label-text">{t("settings.automation_editor.show_automation_toasts")}</span>
+          </label>
+          <label className="label cursor-pointer justify-start gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-3">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={triggerUiFlagEnabled("toast_on_start")}
+              disabled={!triggerUiFlagEnabled("show_toast")}
+              onChange={(e) => updateTriggerUiSetting("toast_on_start", e.target.checked)}
+            />
+            <span className="label-text">{t("settings.automation_editor.toast_on_start")}</span>
+          </label>
+          <label className="label cursor-pointer justify-start gap-3 rounded-box border border-base-300 bg-base-100 px-3 py-3">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm"
+              checked={triggerUiFlagEnabled("toast_on_finish")}
+              disabled={!triggerUiFlagEnabled("show_toast")}
+              onChange={(e) => updateTriggerUiSetting("toast_on_finish", e.target.checked)}
+            />
+            <span className="label-text">{t("settings.automation_editor.toast_on_finish")}</span>
+          </label>
+        </div>
       </div>
 
       {(triggerMode === "event" || triggerMode === "webhook") && (

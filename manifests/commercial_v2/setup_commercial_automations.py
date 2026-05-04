@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "_shared"))
 
 from automation_tooling import upsert_automation_by_name
+from manifest_tooling import api_call, collect_error_text, is_ok
 
 
 ACTIVE_OPPORTUNITY_STAGES = [
@@ -106,10 +107,12 @@ def build_generate_document_automation(
     name: str,
     description: str,
     source_entity_id: str,
-    primary_document_field_id: str,
+    trigger_action_id: str,
+    attachment_field_id: str,
     template_id: str,
     purpose: str,
     status: str,
+    filename_conflict_mode: str = "append_version",
 ) -> dict[str, Any]:
     return {
         "name": name,
@@ -117,12 +120,12 @@ def build_generate_document_automation(
         "status": status,
         "trigger": {
             "kind": "event",
-            "event_types": ["record.updated"],
+            "event_types": ["action.clicked"],
             "filters": [
-                {"path": "entity_id", "op": "eq", "value": source_entity_id},
-                {"path": primary_document_field_id, "op": "changed"},
+                {"path": "action_id", "op": "eq", "value": trigger_action_id},
+                {"path": "source_entity_id", "op": "eq", "value": source_entity_id},
             ],
-            "expr": exists("trigger.record.fields.primary_document_id"),
+            "expr": exists("trigger.source_record_id"),
         },
         "steps": [
             {
@@ -132,14 +135,50 @@ def build_generate_document_automation(
                 "inputs": {
                     "template_id": template_id,
                     "entity_id": "entity.biz_document",
-                    "record_id": "{{ trigger.record.fields.primary_document_id }}",
+                    "record_id": "{{ trigger.record_id }}",
+                    "source_entity_id": source_entity_id,
+                    "source_record_id": "{{ trigger.source_record_id }}",
+                    "source_field_id": attachment_field_id,
+                    "filename_conflict_mode": filename_conflict_mode,
                     "purpose": purpose,
-                    "wait_for_completion": False,
+                    "wait_for_completion": True,
                     "actor_user_id": "{{ trigger.user_id }}",
                 },
             }
         ],
     }
+
+
+def list_document_templates(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
+    status, payload = api_call(
+        "GET",
+        f"{base_url}/documents/templates",
+        token=token,
+        workspace_id=workspace_id,
+        timeout=120,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"list document templates failed: {collect_error_text(payload)}")
+    rows = payload.get("templates")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def resolve_template_id_by_name(
+    base_url: str,
+    *,
+    token: str,
+    workspace_id: str,
+    name: str,
+) -> str | None:
+    needle = name.strip().lower()
+    if not needle:
+        return None
+    for template in list_document_templates(base_url, token=token, workspace_id=workspace_id):
+        if str(template.get("name") or "").strip().lower() != needle:
+            continue
+        template_id = template.get("id")
+        return template_id if isinstance(template_id, str) and template_id.strip() else None
+    return None
 
 
 def build_send_record_email_automation(
@@ -149,7 +188,7 @@ def build_send_record_email_automation(
     source_entity_id: str,
     trigger_action_id: str,
     recipient_lookup_field_id: str,
-    attachment_purpose: str,
+    attachment_field_id: str,
     subject: str,
     body_html: str,
     status: str,
@@ -159,9 +198,7 @@ def build_send_record_email_automation(
         "entity_id": source_entity_id,
         "record_id": "{{ trigger.record_id }}",
         "to_lookup_field_ids": [recipient_lookup_field_id],
-        "attachment_entity_id": source_entity_id,
-        "attachment_record_id": "{{ trigger.record_id }}",
-        "attachment_purpose": attachment_purpose,
+        "attachment_field_id": attachment_field_id,
     }
     if isinstance(email_template_id, str) and email_template_id.strip():
         inputs["template_id"] = email_template_id.strip()
@@ -190,6 +227,12 @@ def build_send_record_email_automation(
                 "id": "send_document_email",
                 "kind": "action",
                 "action_id": "system.send_email",
+                "ui": {
+                    "mode": "compose_before_send",
+                    "required_attachments": True,
+                    "allow_optional_attachments": True,
+                    "allow_edit_body": True,
+                },
                 "inputs": inputs,
             },
             {
@@ -624,7 +667,8 @@ def desired_automations(
                 name="Commercial - Generate Quote PDF",
                 description="Generate the quote PDF when a user clicks Create Document on a quote.",
                 source_entity_id="entity.biz_quote",
-                primary_document_field_id="biz_quote.primary_document_id",
+                trigger_action_id="action.quote_create_document",
+                attachment_field_id="biz_quote.generated_files",
                 template_id=quote_document_template_id.strip(),
                 purpose="quote_pdf",
                 status=status,
@@ -636,7 +680,8 @@ def desired_automations(
                 name="Commercial - Generate Order Confirmation",
                 description="Generate the order confirmation PDF when a user clicks Create Document on a customer order.",
                 source_entity_id="entity.biz_order",
-                primary_document_field_id="biz_order.primary_document_id",
+                trigger_action_id="action.customer_order_create_document",
+                attachment_field_id="biz_order.generated_files",
                 template_id=order_document_template_id.strip(),
                 purpose="order_confirmation",
                 status=status,
@@ -648,7 +693,8 @@ def desired_automations(
                 name="Commercial - Generate Purchase Order PDF",
                 description="Generate the purchase order PDF when a user clicks Create Document on a purchase order.",
                 source_entity_id="entity.biz_purchase_order",
-                primary_document_field_id="biz_purchase_order.primary_document_id",
+                trigger_action_id="action.purchase_order_create_document",
+                attachment_field_id="biz_purchase_order.generated_files",
                 template_id=purchase_order_document_template_id.strip(),
                 purpose="purchase_order_pdf",
                 status=status,
@@ -660,7 +706,8 @@ def desired_automations(
                 name="Commercial - Generate Invoice PDF",
                 description="Generate the invoice PDF when a user clicks Create Document on an invoice.",
                 source_entity_id="entity.biz_invoice",
-                primary_document_field_id="biz_invoice.primary_document_id",
+                trigger_action_id="action.invoice_create_document",
+                attachment_field_id="biz_invoice.generated_files",
                 template_id=invoice_document_template_id.strip(),
                 purpose="invoice_pdf",
                 status=status,
@@ -675,7 +722,7 @@ def desired_automations(
                 source_entity_id="entity.biz_quote",
                 trigger_action_id="action.quote_mark_sent",
                 recipient_lookup_field_id="biz_quote.customer_id",
-                attachment_purpose="quote_pdf",
+                attachment_field_id="biz_quote.generated_files",
                 subject="Quote {{ formatted_nested.biz_quote.quote_number }}",
                 body_html="<p>Please find the attached quote.</p>",
                 status=status,
@@ -690,7 +737,7 @@ def desired_automations(
                 source_entity_id="entity.biz_order",
                 trigger_action_id="action.customer_order_send_confirmation",
                 recipient_lookup_field_id="biz_order.customer_id",
-                attachment_purpose="order_confirmation",
+                attachment_field_id="biz_order.generated_files",
                 subject="Order confirmation {{ formatted_nested.biz_order.order_number }}",
                 body_html="<p>Please find the attached order confirmation.</p>",
                 status=status,
@@ -705,7 +752,7 @@ def desired_automations(
                 source_entity_id="entity.biz_purchase_order",
                 trigger_action_id="action.purchase_order_mark_sent",
                 recipient_lookup_field_id="biz_purchase_order.supplier_id",
-                attachment_purpose="purchase_order_pdf",
+                attachment_field_id="biz_purchase_order.generated_files",
                 subject="Purchase order {{ formatted_nested.biz_purchase_order.po_number }}",
                 body_html="<p>Please find the attached purchase order.</p>",
                 status=status,
@@ -720,7 +767,7 @@ def desired_automations(
                 source_entity_id="entity.biz_invoice",
                 trigger_action_id="action.invoice_send_email",
                 recipient_lookup_field_id="biz_invoice.customer_id",
-                attachment_purpose="invoice_pdf",
+                attachment_field_id="biz_invoice.generated_files",
                 subject="Invoice {{ formatted_nested.biz_invoice.invoice_number }}",
                 body_html="<p>Please find the attached invoice.</p>",
                 status=status,
@@ -736,6 +783,7 @@ def main() -> None:
     parser.add_argument("--token", default=os.getenv("OCTO_API_TOKEN", "").strip(), help="Bearer token")
     parser.add_argument("--workspace-id", default=os.getenv("OCTO_WORKSPACE_ID", "").strip(), help="Workspace ID")
     parser.add_argument("--quote-document-template-id", default=os.getenv("OCTO_QUOTE_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for quote PDFs")
+    parser.add_argument("--quote-document-template-name", default=os.getenv("OCTO_QUOTE_DOCUMENT_TEMPLATE_NAME", "Customer Quote Template").strip(), help="Document template name to resolve when --quote-document-template-id is not provided")
     parser.add_argument("--order-document-template-id", default=os.getenv("OCTO_ORDER_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for order confirmations")
     parser.add_argument("--purchase-order-document-template-id", default=os.getenv("OCTO_PURCHASE_ORDER_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for purchase order PDFs")
     parser.add_argument("--invoice-document-template-id", default=os.getenv("OCTO_INVOICE_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for invoice PDFs")
@@ -757,10 +805,23 @@ def main() -> None:
     if not workspace_id:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
 
+    quote_document_template_id = args.quote_document_template_id or None
+    if not quote_document_template_id and args.quote_document_template_name:
+        quote_document_template_id = resolve_template_id_by_name(
+            base_url,
+            token=token,
+            workspace_id=workspace_id,
+            name=args.quote_document_template_name,
+        )
+        if quote_document_template_id:
+            print(f"[automation] resolved quote document template '{args.quote_document_template_name}' -> {quote_document_template_id}")
+        else:
+            print(f"[automation] quote document template '{args.quote_document_template_name}' not found; quote PDF automation skipped")
+
     automation_status = "published" if args.publish else "draft"
     definitions = desired_automations(
         status=automation_status,
-        quote_document_template_id=args.quote_document_template_id or None,
+        quote_document_template_id=quote_document_template_id,
         order_document_template_id=args.order_document_template_id or None,
         purchase_order_document_template_id=args.purchase_order_document_template_id or None,
         invoice_document_template_id=args.invoice_document_template_id or None,

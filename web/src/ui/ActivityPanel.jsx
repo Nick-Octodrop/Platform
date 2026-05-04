@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Paperclip, Send, Trash2 } from "lucide-react";
-import { API_URL, apiFetch, getActiveWorkspaceId } from "../api.js";
+import { API_URL, apiFetch, getActiveWorkspaceId, subscribeRecordMutations } from "../api.js";
 import { getSafeSession } from "../supabase.js";
 import { SOFT_BUTTON_SM } from "../components/buttonStyles.js";
 import { useAccessContext } from "../access.js";
@@ -104,6 +104,20 @@ export default function ActivityPanel({ entityId, recordId, config = {} }) {
     }
     window.addEventListener("octo:activity-mutated", handleActivityMutated);
     return () => window.removeEventListener("octo:activity-mutated", handleActivityMutated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityId, recordId, showChanges]);
+
+  useEffect(() => {
+    if (!entityId || !recordId) return undefined;
+    return subscribeRecordMutations((detail) => {
+      if (!detail || detail.entityId !== entityId) return;
+      const ids = Array.isArray(detail.recordIds)
+        ? detail.recordIds.map((value) => String(value || "")).filter(Boolean)
+        : detail.recordId
+          ? [String(detail.recordId)]
+          : [];
+      if (ids.includes(String(recordId))) loadActivity();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityId, recordId, showChanges]);
 

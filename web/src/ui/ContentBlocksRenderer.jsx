@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
-import { apiFetch, API_URL, getActiveWorkspaceId, getManifest } from "../api.js";
+import { apiFetch, API_URL, getActiveWorkspaceId, getManifest, subscribeRecordMutations } from "../api.js";
 import { getSafeSession } from "../supabase.js";
 import { evalCondition } from "../utils/conditions.js";
 import Tabs from "../components/Tabs.jsx";
@@ -421,7 +421,7 @@ function BlockRenderer({ block, renderView, recordId, searchParams, setSearchPar
         <div className={shouldFill ? "mt-4 flex-1 min-h-0 overflow-hidden" : "mt-4"}>
           {tabs.map((tab) =>
             tab.id === activeId ? (
-              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} onFallback={onFallback} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={onPageSectionLoadingChange} onRecordCountChange={onRecordCountChange} frameRelatedLists={frameRelatedLists} relatedListFrameProvided={relatedListFrameProvided} />
+              <ContentBlocksRenderer key={tab.id} blocks={tab.content} renderView={renderView} recordId={recordId} searchParams={searchParams} setSearchParams={setSearchParams} manifest={manifest} moduleId={moduleId} actionsMap={actionsMap} onNavigate={onNavigate} onRunAction={onRunAction} onConfirm={onConfirm} onPrompt={onPrompt} onLookupCreate={onLookupCreate} onFallback={onFallback} externalRefreshTick={externalRefreshTick} previewMode={previewMode} bootstrap={bootstrap} bootstrapVersion={bootstrapVersion} bootstrapLoading={bootstrapLoading} canWriteRecords={canWriteRecords} onPageSectionLoadingChange={null} onRecordCountChange={onRecordCountChange} frameRelatedLists={frameRelatedLists} relatedListFrameProvided={relatedListFrameProvided} />
             ) : null
           )}
         </div>
@@ -1339,6 +1339,33 @@ function ChatterPanel({ entityId, recordId, onPageSectionLoadingChange = null })
     }
     load();
   }, [entityId, recordId]);
+
+  useEffect(() => {
+    if (!entityId || !recordId) return undefined;
+    return subscribeRecordMutations((detail) => {
+      if (!detail || detail.entityId !== entityId) return;
+      const ids = Array.isArray(detail.recordIds)
+        ? detail.recordIds.map((value) => String(value || "")).filter(Boolean)
+        : detail.recordId
+          ? [String(detail.recordId)]
+          : [];
+      if (!ids.includes(String(recordId))) return;
+      fetchAttachments()
+        .then((nextAtt) => {
+          setAttachments(nextAtt);
+          lastAttachmentRefreshAtRef.current = Date.now();
+        })
+        .catch((err) => console.warn("chatter_attachment_refresh_failed", err));
+      if (activeTab === "activity") {
+        fetchActivity()
+          .then((serverItems) => {
+            setItems(serverItems);
+            latestSeenAtRef.current = serverItems[0]?.created_at || latestSeenAtRef.current;
+          })
+          .catch((err) => console.warn("chatter_activity_refresh_failed", err));
+      }
+    });
+  }, [entityId, recordId, activeTab]);
 
   useEffect(() => {
     onPageSectionLoadingChange?.(sectionKey, loading);

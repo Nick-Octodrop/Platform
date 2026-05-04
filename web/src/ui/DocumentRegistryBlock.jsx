@@ -349,7 +349,7 @@ export default function DocumentRegistryBlock({
       for (const row of deletableRows) {
         const item = row?._item;
         await apiFetch(
-          `/records/${encodeURIComponent(item.entity_id)}/${encodeURIComponent(item.record_id)}/attachments/${encodeURIComponent(attachmentIdFromItem(item))}`,
+          `/records/${encodeURIComponent(item.entity_id)}/${encodeURIComponent(item.record_id)}/attachments/${encodeURIComponent(attachmentIdFromItem(item))}?field_id=${encodeURIComponent(item.attachment_field || "")}&delete_scope=record`,
           { method: "DELETE" },
         );
       }

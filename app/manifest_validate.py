@@ -36,7 +36,7 @@ ALLOWED_V1_NAV_GROUP_KEYS = {"group", "group_key", "items", "mode", "inline", "a
 ALLOWED_V1_NAV_ITEM_KEYS = {"label", "label_key", "menu_label_key", "to"}
 ALLOWED_V1_PAGE_KEYS = {"id", "title", "title_key", "layout", "header", "content", "breadcrumbs"}
 ALLOWED_V1_PAGE_HEADER_KEYS = {"actions", "variant"}
-ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui"}
+ALLOWED_V1_PAGE_ACTION_KEYS = {"kind", "label", "label_key", "action_label_key", "target", "action_id", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui", "email_compose"}
 ALLOWED_V1_BLOCK_KEYS = {
     "kind",
     "id",
@@ -173,9 +173,9 @@ ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions",
 ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
 ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
 ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record", "validation_ui"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record", "validation_ui", "email_compose"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs", "validation_ui"}
-ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui"}
+ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui", "email_compose"}
 ALLOWED_V1_MODAL_KEYS = {
     "id",
     "title",
@@ -476,7 +476,7 @@ def _validate_validation_ui(value: Any, path: str, errors: list[Issue]) -> None:
     if not isinstance(value, dict):
         errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", "validation_ui must be boolean or object", path))
         return
-    allowed = {"enabled", "mode", "behavior", "behaviour", "show_missing_only", "save_progress"}
+    allowed = {"enabled", "mode", "behavior", "behaviour", "show_missing_only", "save_progress", "title", "title_key", "description", "description_key"}
     _reject_unknown_keys(errors, value, allowed, path)
     enabled = _get(value, "enabled")
     if enabled is not None and not isinstance(enabled, bool):
@@ -489,6 +489,24 @@ def _validate_validation_ui(value: Any, path: str, errors: list[Issue]) -> None:
         item = _get(value, key)
         if item is not None and (not isinstance(item, str) or item not in {"modal_on_block", "none"}):
             errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", f"validation_ui.{key} must be modal_on_block or none", f"{path}.{key}"))
+    for key in ("title", "title_key", "description", "description_key"):
+        item = _get(value, key)
+        if item is not None and not isinstance(item, str):
+            errors.append(_issue("MANIFEST_VALIDATION_UI_INVALID", f"validation_ui.{key} must be string", f"{path}.{key}"))
+
+
+def _validate_email_compose(value: Any, path: str, errors: list[Issue]) -> None:
+    if value is None or isinstance(value, bool):
+        return
+    if not isinstance(value, dict):
+        errors.append(_issue("MANIFEST_EMAIL_COMPOSE_INVALID", "email_compose must be boolean or object", path))
+        return
+    allowed = {"enabled", "required_attachments", "allow_optional_attachments", "allow_edit_body"}
+    _reject_unknown_keys(errors, value, allowed, path)
+    for key in allowed:
+        item = _get(value, key)
+        if item is not None and not isinstance(item, bool):
+            errors.append(_issue("MANIFEST_EMAIL_COMPOSE_INVALID", f"email_compose.{key} must be boolean", f"{path}.{key}"))
 
 
 def _validate_view_header_actions(
@@ -550,6 +568,7 @@ def _validate_view_header_actions(
         if confirm is not None and not isinstance(confirm, dict):
             errors.append(_issue("MANIFEST_ACTION_CONFIRM_INVALID", "confirm must be object", f"{apath}.confirm"))
         _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
+        _validate_email_compose(_get(action, "email_compose"), f"{apath}.email_compose", errors)
 
 
 def _is_v11(manifest_version: str) -> bool:
@@ -1498,6 +1517,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
             if confirm is not None and not isinstance(confirm, dict):
                 errors.append(_issue("MANIFEST_ACTION_CONFIRM_INVALID", "confirm must be object", f"{apath}.confirm"))
             _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
+            _validate_email_compose(_get(action, "email_compose"), f"{apath}.email_compose", errors)
 
     modals = _get(manifest, "modals", [])
     modal_by_id: dict[str, dict] = {}
@@ -2323,6 +2343,7 @@ def validate_manifest(manifest: dict, expected_module_id: str | None = None) -> 
                                     else:
                                         _validate_condition(enabled_when, f"{apath}.enabled_when", errors)
                                 _validate_validation_ui(_get(action, "validation_ui"), f"{apath}.validation_ui", errors)
+                                _validate_email_compose(_get(action, "email_compose"), f"{apath}.email_compose", errors)
 
                 content = _get(page, "content", [])
                 _validate_blocks(content, f"{ppath}.content", view_ids, entity_by_id, action_by_id, errors, allow_layout=is_v11, allow_chatter=is_v12, allow_v13=is_v13, record_entity=None)

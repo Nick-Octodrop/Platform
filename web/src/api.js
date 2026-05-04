@@ -187,7 +187,7 @@ function invalidateRecordCache(entityId, recordId = null) {
   invalidateRequestPrefix(`/page/bootstrap`);
 }
 
-function emitRecordMutation(detail) {
+export function emitRecordMutation(detail) {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(RECORD_MUTATION_EVENT, {

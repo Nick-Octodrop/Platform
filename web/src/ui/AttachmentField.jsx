@@ -15,6 +15,7 @@ export default function AttachmentField({
   buttonLabel = "",
   description = "",
   onAttachmentsChange = null,
+  refreshKey = "",
 }) {
   const { t } = useI18n();
   const [attachments, setAttachments] = useState([]);
@@ -50,7 +51,7 @@ export default function AttachmentField({
   useEffect(() => {
     loadAttachments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityId, recordId]);
+  }, [entityId, recordId, fieldId, refreshKey]);
 
   async function uploadOne(file) {
     const session = await getSafeSession();
@@ -116,7 +117,7 @@ export default function AttachmentField({
     setError("");
     try {
       await apiFetch(
-        `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/${encodeURIComponent(toDelete.id)}?purpose=${encodeURIComponent(attachmentPurpose)}`,
+        `/records/${encodeURIComponent(entityId)}/${encodeURIComponent(recordId)}/attachments/${encodeURIComponent(toDelete.id)}?purpose=${encodeURIComponent(attachmentPurpose)}&field_id=${encodeURIComponent(fieldId)}&delete_scope=record`,
         { method: "DELETE" }
       );
       setAttachments((prev) => {

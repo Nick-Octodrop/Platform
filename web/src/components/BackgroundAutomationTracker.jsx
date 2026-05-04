@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, emitRecordMutation } from "../api";
 import { useToast } from "./Toast.jsx";
 import { translateRuntime } from "../i18n/runtime.js";
 
@@ -81,6 +81,21 @@ function initialActionFromRun(action, run) {
   const name = run?.automation_name || "";
   if (name) return { ...action, label: name };
   return action;
+}
+
+function automationAffectedRecords(runOrTask) {
+  const payload = runOrTask?.triggerPayload || runOrTask?.trigger_payload || {};
+  const records = [];
+  const add = (entityId, recordId) => {
+    if (!entityId || !recordId) return;
+    const key = `${entityId}:${recordId}`;
+    if (records.some((item) => item.key === key)) return;
+    records.push({ key, entityId, recordId });
+  };
+  add(payload.entity_id, payload.record_id);
+  add(payload.source_entity_id, payload.source_record_id);
+  add(payload.target_entity_id, payload.target_record_id);
+  return records;
 }
 
 function titleForTask(task) {
@@ -258,6 +273,7 @@ export default function BackgroundAutomationTracker() {
             ui: automationRunUi(run),
             automationName: run.automation_name || existing?.automationName || null,
             triggerType: run.trigger_type || existing?.triggerType || null,
+            triggerPayload: run.trigger_payload || existing?.triggerPayload || null,
             actionId: actionMeta?.id || existing?.actionId || null,
             label: actionMeta?.label || actionMeta?.action_label || existing?.label || null,
             status: run.status || existing?.status || "queued",
@@ -288,8 +304,20 @@ export default function BackgroundAutomationTracker() {
     let cancelled = false;
     const notifyCompleted = (task) => {
       if (!task?.id || !task.done || notifiedRef.current.has(task.id)) return;
-      if (task.scheduledForLater || shouldToastAutomationRun(task, {}, "finish") === false) return;
       notifiedRef.current.add(task.id);
+      if (!task.failed && !task.scheduledForLater) {
+        for (const record of automationAffectedRecords(task)) {
+          emitRecordMutation({
+            source: "automation",
+            operation: "automation_complete",
+            entityId: record.entityId,
+            recordId: record.recordId,
+            recordIds: [record.recordId],
+            broad: true,
+          });
+        }
+      }
+      if (task.scheduledForLater || shouldToastAutomationRun(task, {}, "finish") === false) return;
       const title = titleForTask(task);
       if (task.failed) {
         pushToastRef.current(

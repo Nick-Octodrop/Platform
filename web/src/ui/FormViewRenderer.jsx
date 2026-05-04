@@ -408,6 +408,7 @@ export default function FormViewRenderer({
   bottomActionsMode = "inline",
   renderBlocks = null,
   syncAttachmentValues = false,
+  externalRefreshTick = 0,
 }) {
   const { t, version: i18nVersion } = useI18n();
   if (!view) return <div className="alert">{t("common.missing_form_view")}</div>;
@@ -1097,6 +1098,7 @@ export default function FormViewRenderer({
           recordId: effectiveRecordId,
           record: computedRecord,
           hiddenFields: Array.from(hiddenSet),
+          suppressPageSectionLoading: true,
         })}
         {emptyTabState && (
           <div className="text-sm opacity-70 py-2">
@@ -1216,6 +1218,7 @@ export default function FormViewRenderer({
                                 previewMode={previewMode}
                                 buttonLabel={field?.ui?.button_label || field?.button_label || translateRuntime("common.attach")}
                                 description={field?.ui?.description || field?.help_text || ""}
+                                refreshKey={`${externalRefreshTick}:${JSON.stringify(value || [])}`}
                                 onAttachmentsChange={
                                   syncAttachmentValues
                                     ? (items) => applyRecordChange(setFieldValue(computedRecord, fieldId, Array.isArray(items) ? items : []))
@@ -1328,6 +1331,7 @@ export default function FormViewRenderer({
                 previewMode={previewMode}
                 buttonLabel={mobileAttachmentSheet.buttonLabel}
                 description={mobileAttachmentSheet.description}
+                refreshKey={`${externalRefreshTick}:${JSON.stringify(getFieldValue(computedRecord, mobileAttachmentSheet.fieldId) || [])}`}
                 onAttachmentsChange={
                   syncAttachmentValues
                     ? (items) =>

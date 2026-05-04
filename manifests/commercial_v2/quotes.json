@@ -676,13 +676,13 @@
         },
         {
           "id": "biz_quote.validity_notes",
-          "type": "rich_text",
+          "type": "text",
           "label": "Validity Notes",
           "label_key": "quotes.entities.biz_quote.fields.validity_notes.label"
         },
         {
           "id": "biz_quote.loss_reason",
-          "type": "rich_text",
+          "type": "text",
           "label": "Loss / Expiry Reason",
           "required_when": {
             "op": "in",
@@ -696,13 +696,13 @@
         },
         {
           "id": "biz_quote.internal_notes",
-          "type": "rich_text",
+          "type": "text",
           "label": "Internal Notes",
           "label_key": "quotes.entities.biz_quote.fields.internal_notes.label"
         },
         {
           "id": "biz_quote.customer_notes",
-          "type": "rich_text",
+          "type": "text",
           "label": "Customer Notes",
           "label_key": "quotes.entities.biz_quote.fields.customer_notes.label"
         },
@@ -1662,7 +1662,8 @@
           "label": "Sent",
           "required_fields": [
             "biz_quote.customer_id",
-            "biz_quote.expiry_date"
+            "biz_quote.expiry_date",
+            "biz_quote.generated_files"
           ],
           "status_label_key": "quotes.workflows.quote_status_workflow.states.sent.label",
           "label_key": "quotes.workflows.quote_status_workflow.states.sent.label"
@@ -1730,7 +1731,8 @@
       "required_fields_by_state": {
         "sent": [
           "biz_quote.customer_id",
-          "biz_quote.expiry_date"
+          "biz_quote.expiry_date",
+          "biz_quote.generated_files"
         ],
         "accepted": [
           "biz_quote.customer_id",
@@ -2105,6 +2107,15 @@
         "title": "Send quote email?",
         "body": "Send the latest quote PDF and mark it sent.",
         "title_key": "quotes.actions.action_quote_mark_sent.confirm.title"
+      },
+      "validation_ui": {
+        "title": "Complete Quote Before Sending",
+        "description": "Generate the quote PDF and confirm it is attached in Generated Files before sending."
+      },
+      "email_compose": {
+        "required_attachments": true,
+        "allow_optional_attachments": true,
+        "allow_edit_body": true
       },
       "visible_when": {
         "op": "eq",
