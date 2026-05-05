@@ -1541,6 +1541,7 @@
       "entity_id": "entity.biz_invoice",
       "label": "Generate Document",
       "transformation_key": "invoice_to_document",
+      "stay_on_source_record": true,
       "visible_when": {
         "op": "in",
         "field": "biz_invoice.status",
@@ -1611,6 +1612,11 @@
         "title": "Send invoice email?",
         "body": "Send the latest invoice PDF.",
         "title_key": "invoices.actions.action_invoice_send_email.confirm.title"
+      },
+      "email_compose": {
+        "required_attachments": true,
+        "allow_optional_attachments": true,
+        "allow_edit_body": true
       }
     },
     {

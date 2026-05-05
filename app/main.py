@@ -24973,6 +24973,46 @@ def _list_entity_records_for_transform(entity_id: str) -> list[dict]:
     return records
 
 
+def _list_entity_records_by_field_for_transform(entity_id: str, field_id: str, value: Any) -> list[dict]:
+    if not isinstance(field_id, str) or not field_id.strip():
+        return _list_entity_records_for_transform(entity_id)
+    if not hasattr(generic_records, "list_by_field_value"):
+        return _list_entity_records_for_transform(entity_id)
+    records: list[dict] = []
+    limit = 500
+    offset = 0
+    try:
+        while True:
+            paged_lookup = True
+            try:
+                rows = generic_records.list_by_field_value(
+                    entity_id,
+                    field_id.strip(),
+                    value,
+                    limit=limit,
+                    offset=offset,
+                    order="created_at_asc",
+                )
+            except TypeError:
+                paged_lookup = False
+                rows = generic_records.list_by_field_value(entity_id, field_id.strip(), value)
+            for item in rows if isinstance(rows, list) else []:
+                rid, payload = _unwrap_store_record(item if isinstance(item, dict) else None)
+                if rid and isinstance(payload, dict):
+                    records.append({"record_id": rid, "record": payload})
+            if not paged_lookup or not isinstance(rows, list) or len(rows) < limit:
+                break
+            offset += limit
+    except Exception:
+        source_items = _list_entity_records_for_transform(entity_id)
+        return [
+            item
+            for item in source_items
+            if isinstance(item.get("record"), dict) and item.get("record", {}).get(field_id) == value
+        ]
+    return records
+
+
 def _emit_transform_hook_event(request: Request, module_id: str, manifest: dict, event_name: str, payload: dict) -> None:
     if not isinstance(event_name, str) or not event_name:
         return
@@ -25222,7 +25262,7 @@ def _run_transform_record_action(
         else:
             if not isinstance(source_link_field, str):
                 return _error_response("TRANSFORMATION_INVALID", "child mapping source_link_field required", f"child_mappings[{child_idx}].source_link_field", status=400)
-            source_items = _list_entity_records_for_transform(source_child_entity)
+            source_items = _list_entity_records_by_field_for_transform(source_child_entity, source_link_field, source_id)
             scoped = [
                 item
                 for item in source_items

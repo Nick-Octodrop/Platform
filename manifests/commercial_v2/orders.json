@@ -3026,6 +3026,7 @@
       "entity_id": "entity.biz_order",
       "label": "Generate Document",
       "transformation_key": "customer_order_to_document",
+      "stay_on_source_record": true,
       "visible_when": {
         "op": "in",
         "field": "biz_order.status",
@@ -3098,6 +3099,11 @@
         "title": "Send order confirmation?",
         "body": "Send the latest order confirmation.",
         "title_key": "orders.actions.action_customer_order_send_confirmation.confirm.title"
+      },
+      "email_compose": {
+        "required_attachments": true,
+        "allow_optional_attachments": true,
+        "allow_edit_body": true
       }
     }
   ],

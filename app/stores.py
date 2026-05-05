@@ -182,6 +182,32 @@ class MemoryGenericRecordStore:
             trimmed.append({"record_id": record_id, "record": rec})
         return trimmed, None
 
+    def list_by_field_value(
+        self,
+        entity_id: str,
+        field_id: str,
+        value,
+        tenant_id: str = "default",
+        limit: int = 200,
+        offset: int = 0,
+        order: str | None = None,
+    ) -> list[dict]:
+        items = [
+            record
+            for record in self._bucket(tenant_id, entity_id).values()
+            if isinstance(record, dict) and record.get(field_id) == value
+        ]
+        if str(order or "").strip().lower() == "created_at_asc":
+            items.sort(key=lambda record: (record.get("created_at") or "", record.get("id") or ""))
+        else:
+            items.sort(key=lambda record: (record.get("updated_at") or "", record.get("id") or ""), reverse=True)
+        sliced = items[offset : offset + limit]
+        return [
+            {"record_id": item.get("id"), "record": copy.deepcopy(item)}
+            for item in sliced
+            if isinstance(item.get("id"), str)
+        ]
+
     def get(self, entity_id: str, record_id: str, tenant_id: str = "default") -> dict | None:
         record = self._bucket(tenant_id, entity_id).get(record_id)
         return copy.deepcopy(record) if record else None

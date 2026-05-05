@@ -210,6 +210,22 @@ def _simple_parent_eq_field(where: Any) -> str | None:
     return field_id.strip()
 
 
+def _scoped_parent_eq_field(where: Any) -> str | None:
+    """Return a parent link field that can safely scope aggregate record fetches."""
+    if not isinstance(where, dict):
+        return None
+    simple = _simple_parent_eq_field(where)
+    if simple:
+        return simple
+    if str(where.get("op") or "").strip().lower() != "and":
+        return None
+    for condition in where.get("conditions") or []:
+        scoped = _scoped_parent_eq_field(condition)
+        if scoped:
+            return scoped
+    return None
+
+
 def _as_number(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -386,6 +402,38 @@ def _compute_aggregate(
                     return min(numeric) if numeric else 0
                 if op == "max":
                     return max(numeric) if numeric else 0
+    scoped_parent_field = None if simple_parent_field else _scoped_parent_eq_field(where)
+    if scoped_parent_field:
+        parent_id = parent_record.get("id")
+        if parent_id not in (None, ""):
+            try:
+                rows = fetch_records(target_entity, scoped_parent_field, parent_id) or []
+            except TypeError:
+                rows = fetch_records(target_entity) or []
+            values: list[Any] = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                current_record = _enrich_record_for_compute(row, target_entity_def, fetch_record, fetch_entity_def)
+                ctx = {"record": current_record, "current": current_record, "parent": parent_record}
+                if isinstance(where, dict) and not eval_condition(where, ctx):
+                    continue
+                if op == "count":
+                    values.append(1)
+                    continue
+                if isinstance(field_id, str) and field_id:
+                    values.append(_resolve_ref(field_id, ctx))
+            if op == "count":
+                return len(values)
+            numeric = [_as_number(value) for value in values]
+            if op == "sum":
+                return sum(numeric)
+            if op == "avg":
+                return (sum(numeric) / len(numeric)) if numeric else 0
+            if op == "min":
+                return min(numeric) if numeric else 0
+            if op == "max":
+                return max(numeric) if numeric else 0
     rows = fetch_records(target_entity) or []
     values: list[Any] = []
     for row in rows:

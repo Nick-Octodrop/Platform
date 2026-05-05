@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
   Download,
   Eye,
   File,
@@ -198,6 +199,74 @@ function AttachmentPreviewModal({ preview, onClose, onDownload, t }) {
   );
 }
 
+function DocumentSourceDropdown({ sources, value, onChange, disabled = false, label }) {
+  const [opened, setOpened] = useState(false);
+  const containerRef = useRef(null);
+  const selected = sources.find((source) => source?.entity_id === value) || null;
+  const selectedLabel = selected?.label || selected?.entity_id || "";
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(event.target)) return;
+      setOpened(false);
+    }
+    if (!opened) return undefined;
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [opened]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        className={`input input-bordered flex h-12 w-full items-center justify-between gap-2 bg-base-100 text-left ${
+          disabled ? "pointer-events-none opacity-60" : ""
+        }`}
+        onClick={() => {
+          if (!disabled) setOpened((prev) => !prev);
+        }}
+        disabled={disabled}
+        aria-expanded={opened}
+      >
+        <span className={`truncate ${selectedLabel ? "" : "text-base-content/50"}`}>
+          {selectedLabel || label("common.select", "Select")}
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-base-content/55 transition-transform ${opened ? "rotate-180" : ""}`} />
+      </button>
+      {opened ? (
+        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-box border border-base-400 bg-base-100 shadow">
+          <ul className="menu menu-compact menu-vertical block max-h-64 w-full overflow-y-auto overflow-x-hidden whitespace-normal">
+            {sources.length === 0 ? (
+              <li className="menu-title">
+                <span>{label("common.empty", "Empty")}</span>
+              </li>
+            ) : null}
+            {sources.map((source) => {
+              const sourceValue = source?.entity_id || "";
+              if (!sourceValue) return null;
+              return (
+                <li key={`${sourceValue}:${source?.attachment_field || ""}`}>
+                  <button
+                    type="button"
+                    className={sourceValue === value ? "active" : ""}
+                    onClick={() => {
+                      onChange(sourceValue);
+                      setOpened(false);
+                    }}
+                  >
+                    <span className="truncate">{source?.label || sourceValue}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DocumentAttachmentPickerModal({ open, onClose, onConfirm, busy = false, t }) {
   const [sources, setSources] = useState([]);
   const [sourceId, setSourceId] = useState("");
@@ -293,21 +362,16 @@ function DocumentAttachmentPickerModal({ open, onClose, onConfirm, busy = false,
         <div className="mt-5 grid gap-3 md:grid-cols-[220px_1fr]">
           <label className="form-control">
             <span className="label-text">{label("common.attachments.document_source", "Document source")}</span>
-            <select
-              className="select select-bordered w-full"
+            <DocumentSourceDropdown
+              sources={sources}
               value={sourceId}
-              onChange={(event) => {
-                setSourceId(event.target.value);
+              label={label}
+              disabled={busy || sources.length <= 1}
+              onChange={(nextSourceId) => {
+                setSourceId(nextSourceId);
                 setSelectedIds([]);
               }}
-              disabled={busy || sources.length <= 1}
-            >
-              {sources.map((source) => (
-                <option key={`${source.entity_id}:${source.attachment_field}`} value={source.entity_id}>
-                  {source.label || source.entity_id}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label className="form-control">
             <span className="label-text">{label("common.search", "Search")}</span>

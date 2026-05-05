@@ -349,6 +349,55 @@ class TestRecordTransformations(unittest.TestCase):
             self.assertFalse(duplicate_run.get("ok"), duplicate_run)
             self.assertEqual((duplicate_run.get("errors") or [{}])[0].get("code"), "TRANSFORMATION_ALREADY_LINKED")
 
+    def test_transform_child_mapping_uses_link_field_lookup(self):
+        module_id = f"quote_to_job_{uuid.uuid4().hex[:8]}"
+        self._install_manifest(module_id)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
+
+            quote_res = client.post(
+                "/records/entity.quote",
+                json={"record": {"quote.number": "Q-LOOKUP", "quote.status": "accepted", "quote.customer_id": "customer-1"}},
+            ).json()
+            self.assertTrue(quote_res.get("ok"), quote_res)
+            quote_id = quote_res["record_id"]
+
+            for idx in range(5):
+                unrelated = client.post(
+                    "/records/entity.quote",
+                    json={"record": {"quote.number": f"Q-OTHER-{idx}", "quote.status": "accepted", "quote.customer_id": "customer-2"}},
+                ).json()
+                self.assertTrue(unrelated.get("ok"), unrelated)
+                line = client.post(
+                    "/records/entity.quote_line",
+                    json={
+                        "record": {
+                            "quote_line.quote_id": unrelated["record_id"],
+                            "quote_line.description": f"Unrelated {idx}",
+                            "quote_line.qty": 1,
+                        }
+                    },
+                ).json()
+                self.assertTrue(line.get("ok"), line)
+
+            line_res = client.post(
+                "/records/entity.quote_line",
+                json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Only selected quote line", "quote_line.qty": 1}},
+            ).json()
+            self.assertTrue(line_res.get("ok"), line_res)
+
+            with patch.object(main.generic_records, "list", side_effect=AssertionError("full child entity scan should not be used")):
+                run_body = client.post(
+                    "/actions/run",
+                    json={
+                        "module_id": module_id,
+                        "action_id": "action.quote_to_job",
+                        "context": {"record_id": quote_id},
+                    },
+                ).json()
+            self.assertTrue(run_body.get("ok"), run_body)
+            self.assertEqual((run_body.get("result") or {}).get("child_created"), 1)
+
     def test_selected_records_transform_creates_one_invoice_with_multiple_lines(self):
         module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
         self._install_group_invoice_manifest(module_id)

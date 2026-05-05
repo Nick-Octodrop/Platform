@@ -1257,6 +1257,11 @@
         "body": "Send the latest PO PDF and mark it sent.",
         "title_key": "purchase_orders.actions.action_purchase_order_mark_sent.confirm.title"
       },
+      "email_compose": {
+        "required_attachments": true,
+        "allow_optional_attachments": true,
+        "allow_edit_body": true
+      },
       "visible_when": {
         "op": "eq",
         "field": "biz_purchase_order.status",
@@ -1456,6 +1461,7 @@
       "entity_id": "entity.biz_purchase_order",
       "label": "Generate Document",
       "transformation_key": "purchase_order_to_document",
+      "stay_on_source_record": true,
       "visible_when": {
         "op": "in",
         "field": "biz_purchase_order.status",
