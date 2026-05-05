@@ -163,22 +163,70 @@ def list_document_templates(base_url: str, *, token: str, workspace_id: str) -> 
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
+def list_email_templates(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
+    status, payload = api_call(
+        "GET",
+        f"{base_url}/email/templates",
+        token=token,
+        workspace_id=workspace_id,
+        timeout=120,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"list email templates failed: {collect_error_text(payload)}")
+    rows = payload.get("templates")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
 def resolve_template_id_by_name(
     base_url: str,
     *,
     token: str,
     workspace_id: str,
     name: str,
+    kind: str = "document",
 ) -> str | None:
     needle = name.strip().lower()
     if not needle:
         return None
-    for template in list_document_templates(base_url, token=token, workspace_id=workspace_id):
+    templates = (
+        list_email_templates(base_url, token=token, workspace_id=workspace_id)
+        if kind == "email"
+        else list_document_templates(base_url, token=token, workspace_id=workspace_id)
+    )
+    for template in templates:
         if str(template.get("name") or "").strip().lower() != needle:
             continue
         template_id = template.get("id")
         return template_id if isinstance(template_id, str) and template_id.strip() else None
     return None
+
+
+def resolve_template_arg(
+    base_url: str,
+    *,
+    token: str,
+    workspace_id: str,
+    explicit_id: str | None,
+    name: str | None,
+    label: str,
+    kind: str = "document",
+) -> str | None:
+    if isinstance(explicit_id, str) and explicit_id.strip():
+        return explicit_id.strip()
+    if not isinstance(name, str) or not name.strip():
+        return None
+    template_id = resolve_template_id_by_name(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        name=name,
+        kind=kind,
+    )
+    if template_id:
+        print(f"[automation] resolved {label} {kind} template '{name}' -> {template_id}")
+    else:
+        print(f"[automation] {label} {kind} template '{name}' not found; related automation skipped or will use inline fallback")
+    return template_id
 
 
 def build_send_record_email_automation(
@@ -785,12 +833,19 @@ def main() -> None:
     parser.add_argument("--quote-document-template-id", default=os.getenv("OCTO_QUOTE_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for quote PDFs")
     parser.add_argument("--quote-document-template-name", default=os.getenv("OCTO_QUOTE_DOCUMENT_TEMPLATE_NAME", "Customer Quote Template").strip(), help="Document template name to resolve when --quote-document-template-id is not provided")
     parser.add_argument("--order-document-template-id", default=os.getenv("OCTO_ORDER_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for order confirmations")
+    parser.add_argument("--order-document-template-name", default=os.getenv("OCTO_ORDER_DOCUMENT_TEMPLATE_NAME", "Customer Order Confirmation Template").strip(), help="Document template name to resolve when --order-document-template-id is not provided")
     parser.add_argument("--purchase-order-document-template-id", default=os.getenv("OCTO_PURCHASE_ORDER_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for purchase order PDFs")
+    parser.add_argument("--purchase-order-document-template-name", default=os.getenv("OCTO_PURCHASE_ORDER_DOCUMENT_TEMPLATE_NAME", "Supplier Purchase Order Template").strip(), help="Document template name to resolve when --purchase-order-document-template-id is not provided")
     parser.add_argument("--invoice-document-template-id", default=os.getenv("OCTO_INVOICE_DOCUMENT_TEMPLATE_ID", "").strip(), help="Document template id for invoice PDFs")
+    parser.add_argument("--invoice-document-template-name", default=os.getenv("OCTO_INVOICE_DOCUMENT_TEMPLATE_NAME", "Customer Invoice Template").strip(), help="Document template name to resolve when --invoice-document-template-id is not provided")
     parser.add_argument("--quote-email-template-id", default=os.getenv("OCTO_QUOTE_EMAIL_TEMPLATE_ID", "").strip(), help="Optional email template id for quote emails")
+    parser.add_argument("--quote-email-template-name", default=os.getenv("OCTO_QUOTE_EMAIL_TEMPLATE_NAME", "Customer Quote Email").strip(), help="Email template name to resolve when --quote-email-template-id is not provided")
     parser.add_argument("--order-email-template-id", default=os.getenv("OCTO_ORDER_EMAIL_TEMPLATE_ID", "").strip(), help="Optional email template id for order confirmation emails")
+    parser.add_argument("--order-email-template-name", default=os.getenv("OCTO_ORDER_EMAIL_TEMPLATE_NAME", "Customer Order Confirmation Email").strip(), help="Email template name to resolve when --order-email-template-id is not provided")
     parser.add_argument("--purchase-order-email-template-id", default=os.getenv("OCTO_PURCHASE_ORDER_EMAIL_TEMPLATE_ID", "").strip(), help="Optional email template id for purchase order emails")
+    parser.add_argument("--purchase-order-email-template-name", default=os.getenv("OCTO_PURCHASE_ORDER_EMAIL_TEMPLATE_NAME", "Supplier Purchase Order Email").strip(), help="Email template name to resolve when --purchase-order-email-template-id is not provided")
     parser.add_argument("--invoice-email-template-id", default=os.getenv("OCTO_INVOICE_EMAIL_TEMPLATE_ID", "").strip(), help="Optional email template id for invoice emails")
+    parser.add_argument("--invoice-email-template-name", default=os.getenv("OCTO_INVOICE_EMAIL_TEMPLATE_NAME", "Customer Invoice Email").strip(), help="Email template name to resolve when --invoice-email-template-id is not provided")
     parser.add_argument("--publish", action="store_true", help="Publish the created or updated automations")
     parser.add_argument("--dry-run", action="store_true", help="Print planned changes without writing")
     args = parser.parse_args()
@@ -805,30 +860,86 @@ def main() -> None:
     if not workspace_id:
         raise SystemExit("Missing --workspace-id or OCTO_WORKSPACE_ID")
 
-    quote_document_template_id = args.quote_document_template_id or None
-    if not quote_document_template_id and args.quote_document_template_name:
-        quote_document_template_id = resolve_template_id_by_name(
-            base_url,
-            token=token,
-            workspace_id=workspace_id,
-            name=args.quote_document_template_name,
-        )
-        if quote_document_template_id:
-            print(f"[automation] resolved quote document template '{args.quote_document_template_name}' -> {quote_document_template_id}")
-        else:
-            print(f"[automation] quote document template '{args.quote_document_template_name}' not found; quote PDF automation skipped")
+    quote_document_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.quote_document_template_id or None,
+        name=args.quote_document_template_name,
+        label="quote",
+    )
+    order_document_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.order_document_template_id or None,
+        name=args.order_document_template_name,
+        label="order",
+    )
+    purchase_order_document_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.purchase_order_document_template_id or None,
+        name=args.purchase_order_document_template_name,
+        label="purchase order",
+    )
+    invoice_document_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.invoice_document_template_id or None,
+        name=args.invoice_document_template_name,
+        label="invoice",
+    )
+    quote_email_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.quote_email_template_id or None,
+        name=args.quote_email_template_name,
+        label="quote",
+        kind="email",
+    )
+    order_email_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.order_email_template_id or None,
+        name=args.order_email_template_name,
+        label="order",
+        kind="email",
+    )
+    purchase_order_email_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.purchase_order_email_template_id or None,
+        name=args.purchase_order_email_template_name,
+        label="purchase order",
+        kind="email",
+    )
+    invoice_email_template_id = resolve_template_arg(
+        base_url,
+        token=token,
+        workspace_id=workspace_id,
+        explicit_id=args.invoice_email_template_id or None,
+        name=args.invoice_email_template_name,
+        label="invoice",
+        kind="email",
+    )
 
     automation_status = "published" if args.publish else "draft"
     definitions = desired_automations(
         status=automation_status,
         quote_document_template_id=quote_document_template_id,
-        order_document_template_id=args.order_document_template_id or None,
-        purchase_order_document_template_id=args.purchase_order_document_template_id or None,
-        invoice_document_template_id=args.invoice_document_template_id or None,
-        quote_email_template_id=args.quote_email_template_id or None,
-        order_email_template_id=args.order_email_template_id or None,
-        purchase_order_email_template_id=args.purchase_order_email_template_id or None,
-        invoice_email_template_id=args.invoice_email_template_id or None,
+        order_document_template_id=order_document_template_id,
+        purchase_order_document_template_id=purchase_order_document_template_id,
+        invoice_document_template_id=invoice_document_template_id,
+        quote_email_template_id=quote_email_template_id,
+        order_email_template_id=order_email_template_id,
+        purchase_order_email_template_id=purchase_order_email_template_id,
+        invoice_email_template_id=invoice_email_template_id,
     )
     for definition in definitions:
         upsert_automation_by_name(

@@ -483,6 +483,38 @@ class TestRecordTransformations(unittest.TestCase):
             first_error = (run_body.get("errors") or [{}])[0]
             self.assertEqual(first_error.get("code"), "ACTION_DISABLED")
 
+    def test_transform_action_guard_merges_persisted_record_with_draft_context(self):
+        module_id = f"quote_to_job_{uuid.uuid4().hex[:8]}"
+        self._install_manifest(module_id)
+        with self._no_document_sequences():
+            client = TestClient(main.app)
+
+            quote_res = client.post(
+                "/records/entity.quote",
+                json={"record": {"quote.number": "Q-003", "quote.status": "accepted", "quote.customer_id": "customer-1"}},
+            ).json()
+            self.assertTrue(quote_res.get("ok"), quote_res)
+            quote_id = quote_res["record_id"]
+            line_res = client.post(
+                "/records/entity.quote_line",
+                json={"record": {"quote_line.quote_id": quote_id, "quote_line.description": "Cabinet C", "quote_line.qty": 1}},
+            ).json()
+            self.assertTrue(line_res.get("ok"), line_res)
+
+            run_body = client.post(
+                "/actions/run",
+                json={
+                    "module_id": module_id,
+                    "action_id": "action.quote_to_job_guarded",
+                    "context": {
+                        "record_id": quote_id,
+                        "record_draft": {"quote.customer_id": "customer-1"},
+                    },
+                },
+            ).json()
+            self.assertTrue(run_body.get("ok"), run_body)
+            self.assertEqual((run_body.get("result") or {}).get("entity_id"), "entity.job")
+
     def test_selected_records_transform_rejects_rows_outside_domain(self):
         module_id = f"grouped_invoice_{uuid.uuid4().hex[:8]}"
         self._install_group_invoice_manifest(module_id)

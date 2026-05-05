@@ -1,0 +1,77 @@
+{% set invoice_lines = lines if lines is defined and lines else (line_items if line_items is defined and line_items else (formatted_line_items if formatted_line_items is defined and formatted_line_items else [])) %}
+{% set brand_name = template_branding.brand_name if template_branding is defined and template_branding and template_branding.brand_name is defined and template_branding.brand_name else (workspace.name if workspace is defined and workspace and workspace.name is defined and workspace.name else 'NLight') %}
+{% set invoice_number = record['biz_invoice.invoice_number'] if record is defined and record and record['biz_invoice.invoice_number'] is defined and record['biz_invoice.invoice_number'] else 'Draft invoice' %}
+{% set invoice_status = record['biz_invoice.status'] if record is defined and record and record['biz_invoice.status'] is defined and record['biz_invoice.status'] else 'Draft' %}
+{% set sales_entity = record['biz_invoice.sales_entity'] if record is defined and record and record['biz_invoice.sales_entity'] is defined and record['biz_invoice.sales_entity'] else '' %}
+{% set invoice_date = record['biz_invoice.invoice_date'] if record is defined and record and record['biz_invoice.invoice_date'] is defined and record['biz_invoice.invoice_date'] else '' %}
+{% set due_date = record['biz_invoice.due_date'] if record is defined and record and record['biz_invoice.due_date'] is defined and record['biz_invoice.due_date'] else '' %}
+{% set customer_name = record['biz_invoice.customer_id_label'] if record is defined and record and record['biz_invoice.customer_id_label'] is defined and record['biz_invoice.customer_id_label'] else '' %}
+{% set customer_contact_name = record['biz_invoice.customer_contact_name'] if record is defined and record and record['biz_invoice.customer_contact_name'] is defined and record['biz_invoice.customer_contact_name'] else '' %}
+{% set customer_contact_email = record['biz_invoice.customer_contact_email'] if record is defined and record and record['biz_invoice.customer_contact_email'] is defined and record['biz_invoice.customer_contact_email'] else '' %}
+{% set customer_reference = record['biz_invoice.customer_reference'] if record is defined and record and record['biz_invoice.customer_reference'] is defined and record['biz_invoice.customer_reference'] else '' %}
+{% set currency = record['biz_invoice.currency'] if record is defined and record and record['biz_invoice.currency'] is defined and record['biz_invoice.currency'] else '' %}
+{% set invoice_total = record['biz_invoice.invoice_total'] if record is defined and record and record['biz_invoice.invoice_total'] is defined and record['biz_invoice.invoice_total'] else 0 %}
+<style>
+  body { font-family: Arial, sans-serif; color: #1f2937; font-size: 12px; line-height: 1.45; }
+  .header { display: table; width: 100%; border-bottom: 2px solid #e879b8; padding-bottom: 14px; margin-bottom: 22px; }
+  .left, .right { display: table-cell; vertical-align: top; width: 50%; }
+  .right { text-align: right; color: #4b5563; }
+  h1 { margin: 0 0 8px; font-size: 24px; color: #111827; }
+  h2 { margin: 24px 0 10px; font-size: 15px; color: #111827; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { text-align: left; background: #f8f4f7; color: #374151; font-size: 11px; padding: 8px; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .amount { text-align: right; white-space: nowrap; }
+  .summary { margin-left: auto; width: 45%; }
+  .muted { color: #6b7280; }
+</style>
+<div class="header">
+  <div class="left">
+    <h1>Invoice</h1>
+    <div><strong>{{ invoice_number }}</strong></div>
+    <div class="muted">Status: {{ invoice_status }}</div>
+  </div>
+  <div class="right">
+    <strong>{{ brand_name }}</strong><br>
+    {{ sales_entity }}<br>
+    Invoice date: {{ invoice_date }}<br>
+    Due date: {{ due_date }}
+  </div>
+</div>
+
+<h2>Bill To</h2>
+<table>
+  <tr><td>Company</td><td>{{ customer_name }}</td></tr>
+  <tr><td>Contact</td><td>{{ customer_contact_name }}</td></tr>
+  <tr><td>Email</td><td>{{ customer_contact_email }}</td></tr>
+  <tr><td>Reference</td><td>{{ customer_reference }}</td></tr>
+</table>
+
+<h2>Invoice Lines</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Description</th>
+      <th class="amount">Qty</th>
+      <th class="amount">Unit Price</th>
+      <th class="amount">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in invoice_lines %}
+    <tr>
+      <td>{{ line['biz_invoice_line.description'] if line['biz_invoice_line.description'] is defined else line.description if line.description is defined else 'Line item' }}</td>
+      <td class="amount">{{ line['biz_invoice_line.quantity'] if line['biz_invoice_line.quantity'] is defined else line.quantity if line.quantity is defined else '' }}</td>
+      <td class="amount">{{ line['biz_invoice_line.unit_price'] if line['biz_invoice_line.unit_price'] is defined else line.unit_price if line.unit_price is defined else '' }}</td>
+      <td class="amount">{{ line['biz_invoice_line.line_total'] if line['biz_invoice_line.line_total'] is defined else line.line_total if line.line_total is defined else '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">No lines on this invoice yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<table class="summary">
+  <tr><td><strong>Currency</strong></td><td class="amount">{{ currency }}</td></tr>
+  <tr><td><strong>Invoice Total</strong></td><td class="amount">{{ invoice_total }}</td></tr>
+</table>

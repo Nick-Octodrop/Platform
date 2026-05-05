@@ -24,6 +24,7 @@ const manifestInFlight = new Map();
 const requestCache = new Map();
 const requestCacheTs = new Map();
 const requestInFlight = new Map();
+let requestCacheEpoch = 0;
 
 const REQUEST_DEFAULT_TTL_MS = 0;
 const REQUEST_CACHE_TTL_MS = 30000;
@@ -167,11 +168,22 @@ function requestKey(method, path, body, cacheKey, workspaceId = null) {
 }
 
 function invalidateRequestPrefix(prefix) {
+  let invalidated = false;
   for (const key of requestCache.keys()) {
     if (key.includes(prefix)) {
       requestCache.delete(key);
       requestCacheTs.delete(key);
+      invalidated = true;
     }
+  }
+  for (const key of requestInFlight.keys()) {
+    if (key.includes(prefix)) {
+      requestInFlight.delete(key);
+      invalidated = true;
+    }
+  }
+  if (invalidated) {
+    requestCacheEpoch += 1;
   }
 }
 
@@ -362,6 +374,7 @@ export async function apiFetch(path, options = {}) {
   const cacheKey = requestOptions.cacheKey || null;
   const cacheAllowed = cacheTtl > 0;
   const key = requestKey(method, path, body, cacheKey, activeWorkspaceId);
+  const requestEpochAtStart = requestCacheEpoch;
 
   if (cacheAllowed) {
     const cached = requestCache.get(key);
@@ -375,7 +388,7 @@ export async function apiFetch(path, options = {}) {
     }
   }
 
-  const inflight = requestInFlight.get(key);
+  const inflight = cacheAllowed ? requestInFlight.get(key) : null;
   if (inflight) {
     return inflight;
   }
@@ -411,7 +424,7 @@ export async function apiFetch(path, options = {}) {
           if (Array.isArray(data?.warnings)) err.warnings = data.warnings;
           throw err;
         }
-        if (cacheAllowed) {
+        if (cacheAllowed && requestEpochAtStart === requestCacheEpoch) {
           requestCache.set(key, data);
           requestCacheTs.set(key, Date.now());
         }
@@ -478,7 +491,9 @@ export async function apiFetch(path, options = {}) {
         if (timeoutId) clearTimeout(timeoutId);
       });
 
-    requestInFlight.set(key, request);
+    if (cacheAllowed) {
+      requestInFlight.set(key, request);
+    }
     return await request;
   } catch (err) {
     const shouldRetryWorkspaceSelection =

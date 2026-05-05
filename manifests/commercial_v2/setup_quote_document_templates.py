@@ -11,7 +11,6 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 
-ENTITY_ID = "entity.biz_quote"
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = SCRIPT_DIR / "templates"
 
@@ -81,22 +80,68 @@ def read_text(name: str) -> str:
     return (TEMPLATE_DIR / name).read_text(encoding="utf-8").strip()
 
 
+def document_template(
+    *,
+    name: str,
+    description: str,
+    entity_id: str,
+    filename_pattern: str,
+    html_file: str,
+    margin_top: str = "12mm",
+    margin_right: str = "12mm",
+    margin_bottom: str = "12mm",
+    margin_left: str = "12mm",
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "description": description,
+        "filename_pattern": filename_pattern,
+        "html": read_text(html_file),
+        "header_html": "",
+        "footer_html": "",
+        "paper_size": "A4",
+        "margin_top": margin_top,
+        "margin_right": margin_right,
+        "margin_bottom": margin_bottom,
+        "margin_left": margin_left,
+        "variables_schema": {"entity_id": entity_id},
+    }
+
+
 def desired_templates() -> list[dict[str, Any]]:
     return [
-        {
-            "name": "Customer Quote Template",
-            "description": "Customer-facing quote template styled after the Simpro reference, with full-bleed branded background, commercial summary, and quote-script sections.",
-            "filename_pattern": "quote_{{ record['biz_quote.quote_number'] if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] else 'draft' }}",
-            "html": read_text("customer_quote_template.html.jinja"),
-            "header_html": "",
-            "footer_html": "",
-            "paper_size": "A4",
-            "margin_top": "0mm",
-            "margin_right": "0mm",
-            "margin_bottom": "0mm",
-            "margin_left": "0mm",
-            "variables_schema": {"entity_id": ENTITY_ID},
-        }
+        document_template(
+            name="Customer Quote Template",
+            description="Customer-facing quote template styled after the Simpro reference, with full-bleed branded background, commercial summary, and quote-script sections.",
+            filename_pattern="quote_{{ record['biz_quote.quote_number'] if record is defined and record and record['biz_quote.quote_number'] is defined and record['biz_quote.quote_number'] else 'draft' }}",
+            html_file="customer_quote_template.html.jinja",
+            entity_id="entity.biz_quote",
+            margin_top="0mm",
+            margin_right="0mm",
+            margin_bottom="0mm",
+            margin_left="0mm",
+        ),
+        document_template(
+            name="Customer Order Confirmation Template",
+            description="Placeholder customer-facing order confirmation for UAT. Replace the HTML once the final NLight design is ready.",
+            filename_pattern="order_confirmation_{{ record['biz_order.order_number'] if record is defined and record and record['biz_order.order_number'] is defined and record['biz_order.order_number'] else 'draft' }}",
+            html_file="customer_order_confirmation_placeholder.html.jinja",
+            entity_id="entity.biz_order",
+        ),
+        document_template(
+            name="Supplier Purchase Order Template",
+            description="Placeholder supplier-facing purchase order for UAT. Replace the HTML once the final NLight design is ready.",
+            filename_pattern="purchase_order_{{ record['biz_purchase_order.po_number'] if record is defined and record and record['biz_purchase_order.po_number'] is defined and record['biz_purchase_order.po_number'] else 'draft' }}",
+            html_file="supplier_purchase_order_placeholder.html.jinja",
+            entity_id="entity.biz_purchase_order",
+        ),
+        document_template(
+            name="Customer Invoice Template",
+            description="Placeholder customer-facing invoice for UAT. Replace the HTML once the final NLight design is ready.",
+            filename_pattern="invoice_{{ record['biz_invoice.invoice_number'] if record is defined and record and record['biz_invoice.invoice_number'] is defined and record['biz_invoice.invoice_number'] else 'draft' }}",
+            html_file="customer_invoice_placeholder.html.jinja",
+            entity_id="entity.biz_invoice",
+        ),
     ]
 
 

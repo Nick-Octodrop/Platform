@@ -26030,23 +26030,23 @@ def _run_action_core(request: Request, module_id: str | None, action_id: str | N
         if denied:
             return denied
 
+    draft_context = context.get("record_draft") if isinstance(context.get("record_draft"), dict) else None
+    explicit_context = context.get("record") if isinstance(context.get("record"), dict) else None
+    client_record_context = draft_context or explicit_context or {}
     record_context = {}
-    if isinstance(context, dict):
-        record_context = context.get("record") or context.get("record_draft") or {}
-    # Automation/module action steps often provide only entity_id + record_id.
-    # Hydrate the current record before evaluating action guards so enabled_when /
-    # visible_when behave the same as interactive UI-triggered actions.
-    if not isinstance(record_context, dict) or not record_context:
-        candidate_entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else None
-        candidate_record_id = context.get("record_id") if isinstance(context, dict) else None
-        if isinstance(candidate_entity_id, str) and candidate_entity_id:
-            candidate_entity_id = _normalize_entity_id(candidate_entity_id)
-        if isinstance(candidate_entity_id, str) and candidate_entity_id and isinstance(candidate_record_id, str) and candidate_record_id:
-            _, existing_context_record = _get_record_for_entity_candidates(candidate_entity_id, candidate_record_id)
-            if isinstance(existing_context_record, dict) and isinstance(existing_context_record.get("record"), dict):
-                record_context = existing_context_record.get("record") or {}
     candidate_entity_id = action.get("entity_id") if isinstance(action.get("entity_id"), str) else None
     candidate_record_id = context.get("record_id") if isinstance(context, dict) else None
+    if isinstance(candidate_entity_id, str) and candidate_entity_id:
+        candidate_entity_id = _normalize_entity_id(candidate_entity_id)
+    # Automation/module action steps often provide only entity_id + record_id, while
+    # interactive validation modals can submit drafts that omit computed fields.
+    # Evaluate guards against the persisted record with the client draft overlaid.
+    if isinstance(candidate_entity_id, str) and candidate_entity_id and isinstance(candidate_record_id, str) and candidate_record_id:
+        _, existing_context_record = _get_record_for_entity_candidates(candidate_entity_id, candidate_record_id)
+        if isinstance(existing_context_record, dict) and isinstance(existing_context_record.get("record"), dict):
+            record_context = dict(existing_context_record.get("record") or {})
+    if isinstance(client_record_context, dict) and client_record_context:
+        record_context.update(client_record_context)
     if isinstance(candidate_entity_id, str) and isinstance(candidate_record_id, str) and isinstance(record_context, dict):
         normalized_candidate_entity = _normalize_entity_id(candidate_entity_id)
         candidate_found = _find_entity_def(request, normalized_candidate_entity)
@@ -59645,6 +59645,279 @@ def _artifact_ai_automation_meta(request: Request, actor: dict | None) -> dict:
     }
 
 
+def _artifact_ai_automation_prompt_tokens(prompt: str | None) -> set[str]:
+    normalized = _ai_norm_token(prompt or "")
+    return {token for token in normalized.split() if len(token) >= 3}
+
+
+def _artifact_ai_automation_relevant_entity_ids(meta: dict | None, current: dict | None, prompt: str | None) -> list[str]:
+    if not isinstance(meta, dict):
+        return []
+    entities = [item for item in (meta.get("entities") or []) if isinstance(item, dict)]
+    prompt_tokens = _artifact_ai_automation_prompt_tokens(prompt)
+    current_trigger = current.get("trigger") if isinstance(current, dict) and isinstance(current.get("trigger"), dict) else {}
+    current_entity_id = _artifact_ai_automation_trigger_entity_id(meta, current_trigger)
+    scored: list[tuple[int, str]] = []
+    seen: set[str] = set()
+
+    def score_entity(entity: dict) -> int:
+        entity_id = str(entity.get("id") or "").strip()
+        if not entity_id:
+            return 0
+        score = 0
+        if current_entity_id and entity_id == current_entity_id:
+            score += 100
+        short_id = entity_id.split(".")[-1]
+        label = str(entity.get("label") or "").strip()
+        aliases = {
+            _ai_norm_token(entity_id),
+            _ai_norm_token(short_id),
+            _ai_norm_token(_ai_humanize_identifier(short_id) or ""),
+            _ai_norm_token(label),
+        }
+        for alias in aliases:
+            if not alias:
+                continue
+            alias_tokens = {token for token in alias.split() if len(token) >= 3}
+            if alias in _ai_norm_token(prompt or ""):
+                score += 40
+            overlap = len(alias_tokens.intersection(prompt_tokens))
+            if overlap:
+                score += 10 * overlap
+        field_score = 0
+        for field in entity.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            field_id = str(field.get("id") or "").strip()
+            label = str(field.get("label") or "").strip()
+            field_tokens = set(_ai_norm_token(f"{field_id} {label}").split())
+            field_score += min(2, len(field_tokens.intersection(prompt_tokens)))
+        return score + min(field_score, 20)
+
+    for entity in entities:
+        entity_id = str(entity.get("id") or "").strip()
+        if not entity_id or entity_id in seen:
+            continue
+        score = score_entity(entity)
+        if score <= 0:
+            continue
+        seen.add(entity_id)
+        scored.append((score, entity_id))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    out = [entity_id for _score, entity_id in scored[:6]]
+    if current_entity_id and current_entity_id not in out:
+        out.insert(0, current_entity_id)
+    if not out and entities:
+        first_id = str(entities[0].get("id") or "").strip()
+        if first_id:
+            out.append(first_id)
+    return out[:6]
+
+
+def _artifact_ai_trim_automation_entity(entity: dict, *, max_fields: int = 60) -> dict:
+    fields = [field for field in (entity.get("fields") or []) if isinstance(field, dict)]
+    preferred_tokens = {"email", "name", "title", "number", "status", "date", "owner", "user", "contact", "phone", "customer"}
+
+    def field_rank(field: dict) -> tuple[int, str]:
+        field_id = str(field.get("id") or "").strip()
+        field_type = str(field.get("type") or "").strip().lower()
+        label = str(field.get("label") or "").strip().lower()
+        haystack = f"{field_id.lower()} {label}"
+        priority = 0
+        if field_type in {"email", "user", "owner", "lookup"}:
+            priority -= 20
+        if any(token in haystack for token in preferred_tokens):
+            priority -= 10
+        return (priority, field_id)
+
+    selected_fields = sorted(fields, key=field_rank)[:max_fields]
+    return {
+        "id": entity.get("id"),
+        "label": entity.get("label"),
+        "display_field": entity.get("display_field"),
+        "module_id": entity.get("module_id"),
+        "module_name": entity.get("module_name"),
+        "fields": [
+            {
+                "id": field.get("id"),
+                "label": field.get("label"),
+                "type": field.get("type"),
+                **({"entity": field.get("entity")} if field.get("entity") else {}),
+                **({"display_field": field.get("display_field")} if field.get("display_field") else {}),
+            }
+            for field in selected_fields
+            if isinstance(field.get("id"), str) and field.get("id").strip()
+        ],
+        **({"field_count": len(fields), "fields_truncated": len(fields) > len(selected_fields)} if len(fields) > len(selected_fields) else {}),
+    }
+
+
+def _artifact_ai_compact_automation_meta_for_prompt(meta: dict | None, current: dict | None, prompt: str | None) -> dict:
+    if not isinstance(meta, dict):
+        return {}
+    relevant_entity_ids = _artifact_ai_automation_relevant_entity_ids(meta, current, prompt)
+    relevant_set = set(relevant_entity_ids)
+    current_trigger = current.get("trigger") if isinstance(current, dict) and isinstance(current.get("trigger"), dict) else {}
+    current_event_types = {
+        str(item).strip()
+        for item in (current_trigger.get("event_types") if isinstance(current_trigger.get("event_types"), list) else [])
+        if isinstance(item, str) and item.strip()
+    }
+    prompt_norm = _ai_norm_token(prompt or "")
+    entities_by_id = {
+        str(entity.get("id") or "").strip(): entity
+        for entity in (meta.get("entities") or [])
+        if isinstance(entity, dict) and str(entity.get("id") or "").strip()
+    }
+    compact_entities = [
+        _artifact_ai_trim_automation_entity(entities_by_id[entity_id])
+        for entity_id in relevant_entity_ids
+        if entity_id in entities_by_id
+    ]
+
+    event_catalog: list[dict] = []
+    for item in meta.get("event_catalog") or []:
+        if not isinstance(item, dict):
+            continue
+        event_id = str(item.get("id") or "").strip()
+        entity_id = str(item.get("entity_id") or "").strip()
+        label_norm = _ai_norm_token(f"{item.get('label') or ''} {event_id}")
+        if (
+            event_id in current_event_types
+            or entity_id in relevant_set
+            or (label_norm and label_norm in prompt_norm)
+            or len(event_catalog) < 20
+        ):
+            event_catalog.append(
+                {
+                    "id": item.get("id"),
+                    "label": item.get("label"),
+                    "event": item.get("event"),
+                    "entity_id": item.get("entity_id"),
+                    "kind": item.get("kind"),
+                    "source_module_id": item.get("source_module_id"),
+                }
+            )
+        if len(event_catalog) >= 80:
+            break
+
+    relevant_module_ids = {
+        str(entity.get("module_id") or "").strip()
+        for entity in compact_entities
+        if isinstance(entity.get("module_id"), str) and entity.get("module_id").strip()
+    }
+    current_action_ids = {
+        str(step.get("action_id") or "").strip()
+        for step in _artifact_ai_iter_automation_steps(current.get("steps") if isinstance(current, dict) else [])
+        if isinstance(step, dict) and isinstance(step.get("action_id"), str) and step.get("action_id").strip()
+    }
+    module_actions: list[dict] = []
+    for group in meta.get("module_actions") or []:
+        if not isinstance(group, dict):
+            continue
+        module_id = str(group.get("module_id") or "").strip()
+        actions = [action for action in (group.get("actions") or []) if isinstance(action, dict)]
+        selected_actions = [
+            {
+                "id": action.get("id"),
+                "label": action.get("label"),
+                "kind": action.get("kind"),
+                "entity_id": action.get("entity_id"),
+                "display_id": action.get("display_id"),
+            }
+            for action in actions
+            if module_id in relevant_module_ids
+            or str(action.get("id") or "").strip() in current_action_ids
+            or str(action.get("entity_id") or "").strip() in relevant_set
+        ][:30]
+        if selected_actions:
+            module_actions.append({"module_id": module_id, "module_name": group.get("module_name"), "actions": selected_actions})
+        if len(module_actions) >= 12:
+            break
+
+    def slim_templates(items: Any) -> list[dict]:
+        out: list[dict] = []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            out.append(
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    **({"subject": item.get("subject")} if item.get("subject") else {}),
+                    **({"filename_pattern": item.get("filename_pattern")} if item.get("filename_pattern") else {}),
+                    **({"variables_schema": item.get("variables_schema")} if isinstance(item.get("variables_schema"), dict) else {}),
+                }
+            )
+            if len(out) >= 40:
+                break
+        return out
+
+    compact = {
+        "current_user_id": meta.get("current_user_id"),
+        "entities": compact_entities,
+        "field_path_catalog": _artifact_ai_automation_field_path_catalog(compact_entities),
+        "event_types": [
+            item
+            for item in (meta.get("event_types") or [])
+            if isinstance(item, str) and item.strip()
+        ][:80],
+        "event_catalog": event_catalog,
+        "system_actions": meta.get("system_actions") or [],
+        "integration_mappings": [
+            {"id": item.get("id"), "name": item.get("name"), "source": item.get("source"), "target": item.get("target")}
+            for item in (meta.get("integration_mappings") or [])[:30]
+            if isinstance(item, dict)
+        ],
+        "action_contracts": meta.get("action_contracts") or [],
+        "trigger_contracts": meta.get("trigger_contracts") or [],
+        "step_kind_contracts": meta.get("step_kind_contracts") or [],
+        "condition_contract": meta.get("condition_contract") or {},
+        "runtime_context": _artifact_ai_automation_runtime_context({"entities": compact_entities}),
+        "editor_settings": meta.get("editor_settings") or {},
+        "module_actions": module_actions,
+        "members": [
+            {
+                "user_id": item.get("user_id") or item.get("id"),
+                "name": item.get("name") or item.get("display_name"),
+                "email": item.get("email"),
+            }
+            for item in (meta.get("members") or [])[:50]
+            if isinstance(item, dict)
+        ],
+        "connections": [
+            {"id": item.get("id"), "name": item.get("name"), "provider": item.get("provider"), "status": item.get("status")}
+            for item in (meta.get("connections") or [])[:25]
+            if isinstance(item, dict)
+        ],
+        "email_templates": slim_templates(meta.get("email_templates")),
+        "doc_templates": slim_templates(meta.get("doc_templates")),
+        "prompt_context_note": "Automation AI prompt metadata is relevance-trimmed. Use reference_contract and included entities/actions as the available prompt surface.",
+    }
+    return compact
+
+
+def _artifact_ai_trim_automation_prompt_context(context_payload: dict, full_meta: dict | None, current: dict | None, prompt: str | None) -> dict:
+    if not isinstance(context_payload, dict):
+        return context_payload
+    compact = copy.deepcopy(context_payload)
+    compact_meta = _artifact_ai_compact_automation_meta_for_prompt(full_meta, current, prompt)
+    compact["meta"] = compact_meta
+    compact["reference_contract"] = _artifact_ai_automation_reference_contract(compact_meta)
+    selected_entity_id = compact.get("selected_entity_id")
+    selected_entity = _artifact_ai_automation_entity(compact_meta, selected_entity_id if isinstance(selected_entity_id, str) else None)
+    if selected_entity:
+        compact["selected_entity"] = selected_entity
+        compact["selected_entity_summary"] = _artifact_ai_template_entity_summary(selected_entity)
+        compact["safe_jinja_examples"] = _artifact_ai_template_safe_jinja_examples(selected_entity)
+    compact["context_budget"] = {
+        "mode": "relevance_trimmed",
+        "included_entity_ids": [entity.get("id") for entity in compact_meta.get("entities", []) if isinstance(entity, dict)],
+        "full_entity_count": len(full_meta.get("entities") or []) if isinstance(full_meta, dict) else 0,
+    }
+    return compact
+
+
 def _artifact_ai_automation_reference_contract(meta: dict | None) -> dict:
     if not isinstance(meta, dict):
         return {}
@@ -62640,10 +62913,16 @@ def _artifact_ai_generate_plan(
         requested_focus=requested_focus,
         shared_context=shared_context,
     )
+    full_automation_meta = context_payload.get("meta") if kind == "automation" and isinstance(context_payload, dict) else None
+    prompt_context_payload = (
+        _artifact_ai_trim_automation_prompt_context(context_payload, full_automation_meta, current, prompt)
+        if kind == "automation"
+        else context_payload
+    )
     messages = [
         {"role": "system", "content": _artifact_ai_system_prompt(kind)},
         {"role": "user", "content": f"request.md\n{prompt.strip()}"},
-        {"role": "user", "content": f"context.json\n```json\n{_json_prompt_payload(context_payload)}\n```"},
+        {"role": "user", "content": f"context.json\n```json\n{_json_prompt_payload(prompt_context_payload)}\n```"},
     ]
     response = _openai_chat_completion(
         messages,
@@ -62658,7 +62937,7 @@ def _artifact_ai_generate_plan(
     warnings = _artifact_ai_text_lines(parsed.get("warnings"))
     candidate_draft = parsed.get("draft") if isinstance(parsed.get("draft"), dict) else {}
     if kind == "automation":
-        automation_meta = context_payload.get("meta") if isinstance(context_payload, dict) else None
+        automation_meta = full_automation_meta if isinstance(full_automation_meta, dict) else (context_payload.get("meta") if isinstance(context_payload, dict) else None)
         draft = _artifact_ai_normalize_automation_draft(current, candidate_draft, automation_meta)
         validation = _artifact_ai_validate_automation_draft(draft, automation_meta)
         last_serialized = json.dumps(draft, sort_keys=True, default=str)
@@ -62670,13 +62949,14 @@ def _artifact_ai_generate_plan(
             repair_context["current_draft"] = copy.deepcopy(draft)
             repair_context["current_validation"] = copy.deepcopy(validation)
             repair_context["repair_attempt"] = attempt - 1
+            repair_prompt_context = _artifact_ai_trim_automation_prompt_context(repair_context, automation_meta, draft, prompt)
             repair_messages = [
                 {"role": "system", "content": _artifact_ai_system_prompt(kind)},
                 {
                     "role": "user",
                     "content": f"request.md\n{_artifact_ai_automation_repair_prompt(prompt, summary=summary if isinstance(summary, str) else None, validation=validation)}",
                 },
-                {"role": "user", "content": f"context.json\n```json\n{_json_prompt_payload(repair_context)}\n```"},
+                {"role": "user", "content": f"context.json\n```json\n{_json_prompt_payload(repair_prompt_context)}\n```"},
             ]
             repair_response = _openai_chat_completion(
                 repair_messages,

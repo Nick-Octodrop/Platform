@@ -23,6 +23,8 @@ Scripts:
 - `python3 manifests/commercial_v2/setup_uat_workspace.py`
 - `python3 manifests/commercial_v2/clear_workspace_data.py --dry-run`
 - `python3 manifests/commercial_v2/setup_document_numbering.py`
+- `python3 manifests/commercial_v2/setup_quote_document_templates.py`
+- `python3 manifests/commercial_v2/setup_commercial_email_templates.py`
 - `python3 manifests/commercial_v2/setup_xero_phase1.py --connection-name "<your xero connection>" --sales-entity "<your sales entity>"`
 - `python3 manifests/commercial_v2/seed_catalog_items.py`
 - `python3 manifests/commercial_v2/seed_dummy_examples.py`
@@ -37,6 +39,7 @@ Manual setup order:
 - `python3 manifests/commercial_v2/setup_document_registry_metadata.py`
 - `python3 manifests/commercial_v2/setup_document_numbering.py`
 - `python3 manifests/commercial_v2/setup_quote_document_templates.py`
+- `python3 manifests/commercial_v2/setup_commercial_email_templates.py`
 - `python3 manifests/commercial_v2/setup_quote_scripts.py`
 - `python3 manifests/commercial_v2/seed_catalog_items.py`
 - `python3 manifests/commercial_v2/setup_access_profiles.py`
@@ -70,7 +73,6 @@ Environment:
 - `OCTO_BASE_URL`
 - `OCTO_API_TOKEN`
 - `OCTO_WORKSPACE_ID`
-
 
 
 

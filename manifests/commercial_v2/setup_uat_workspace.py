@@ -70,13 +70,32 @@ def list_document_templates(base_url: str, *, token: str, workspace_id: str) -> 
     return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
 
 
-def resolve_template_id(args: argparse.Namespace, name: str, env_name: str) -> str | None:
+def list_email_templates(base_url: str, *, token: str, workspace_id: str) -> list[dict[str, Any]]:
+    status, payload = api_call(
+        "GET",
+        f"{base_url}/email/templates",
+        token=token,
+        workspace_id=workspace_id,
+        timeout=120,
+    )
+    if status >= 400 or not is_ok(payload):
+        raise RuntimeError(f"list email templates failed: {collect_error_text(payload)}")
+    rows = payload.get("templates")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def resolve_template_id(args: argparse.Namespace, name: str, env_name: str, *, kind: str = "document") -> str | None:
     explicit = str(os.getenv(env_name, "") or "").strip()
     if explicit:
         return explicit
     if args.dry_run or not args.token:
         return None
-    for item in list_document_templates(args.base_url, token=args.token, workspace_id=args.workspace_id):
+    templates = (
+        list_email_templates(args.base_url, token=args.token, workspace_id=args.workspace_id)
+        if kind == "email"
+        else list_document_templates(args.base_url, token=args.token, workspace_id=args.workspace_id)
+    )
+    for item in templates:
         if str(item.get("name") or "").strip().lower() == name.strip().lower():
             template_id = item.get("id")
             return template_id if isinstance(template_id, str) and template_id else None
@@ -171,8 +190,15 @@ def main() -> None:
         requires_token_for_dry_run=True,
     )
     run_step(
-        "Setup quote document template",
+        "Setup commercial document templates",
         [str(SCRIPT_DIR / "setup_quote_document_templates.py"), *shared],
+        dry_run=args.dry_run,
+        token_provided=bool(args.token),
+        requires_token_for_dry_run=True,
+    )
+    run_step(
+        "Setup commercial email templates",
+        [str(SCRIPT_DIR / "setup_commercial_email_templates.py"), *shared],
         dry_run=args.dry_run,
         token_provided=bool(args.token),
         requires_token_for_dry_run=True,
@@ -191,12 +217,31 @@ def main() -> None:
         access_args.append("--skip-assignments")
     run_step("Setup access profiles", access_args, dry_run=args.dry_run, supports_dry_run=False)
 
-    quote_template_id = resolve_template_id(args, "Customer Quote Template", "OCTO_QUOTE_DOCUMENT_TEMPLATE_ID")
+    document_templates = [
+        ("--quote-document-template-id", "Customer Quote Template", "OCTO_QUOTE_DOCUMENT_TEMPLATE_ID"),
+        ("--order-document-template-id", "Customer Order Confirmation Template", "OCTO_ORDER_DOCUMENT_TEMPLATE_ID"),
+        ("--purchase-order-document-template-id", "Supplier Purchase Order Template", "OCTO_PURCHASE_ORDER_DOCUMENT_TEMPLATE_ID"),
+        ("--invoice-document-template-id", "Customer Invoice Template", "OCTO_INVOICE_DOCUMENT_TEMPLATE_ID"),
+    ]
+    email_templates = [
+        ("--quote-email-template-id", "Customer Quote Email", "OCTO_QUOTE_EMAIL_TEMPLATE_ID"),
+        ("--order-email-template-id", "Customer Order Confirmation Email", "OCTO_ORDER_EMAIL_TEMPLATE_ID"),
+        ("--purchase-order-email-template-id", "Supplier Purchase Order Email", "OCTO_PURCHASE_ORDER_EMAIL_TEMPLATE_ID"),
+        ("--invoice-email-template-id", "Customer Invoice Email", "OCTO_INVOICE_EMAIL_TEMPLATE_ID"),
+    ]
     automation_args = [str(SCRIPT_DIR / "setup_commercial_automations.py"), *shared]
-    if quote_template_id:
-        automation_args.extend(["--quote-document-template-id", quote_template_id])
-    else:
-        print("[uat] quote template id not resolved; document generation automation will only include non-template automations")
+    for flag, name, env_name in document_templates:
+        template_id = resolve_template_id(args, name, env_name)
+        if template_id:
+            automation_args.extend([flag, template_id])
+        else:
+            print(f"[uat] {name} id not resolved; setup_commercial_automations.py will try resolving by name")
+    for flag, name, env_name in email_templates:
+        template_id = resolve_template_id(args, name, env_name, kind="email")
+        if template_id:
+            automation_args.extend([flag, template_id])
+        else:
+            print(f"[uat] {name} id not resolved; setup_commercial_automations.py will try resolving by name")
     if args.publish_automations:
         automation_args.append("--publish")
     run_step(

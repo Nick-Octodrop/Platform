@@ -2182,6 +2182,23 @@ function AppView({
     return errors;
   }
 
+  function normalizedWritableDraft(nextDraft) {
+    return normalizeManifestRecordPayload(fieldIndex, nextDraft || {});
+  }
+
+  function hasWritableDraftChanges(nextDraft = draftRef.current || {}, nextInitial = initialDraftRef.current || {}) {
+    return !formDraftValuesEqual(normalizedWritableDraft(nextDraft), normalizedWritableDraft(nextInitial));
+  }
+
+  function markDraftBaseline(nextDraft = draftRef.current || {}) {
+    const computed = applyDraftComputed(nextDraft || {});
+    draftRef.current = computed;
+    initialDraftRef.current = computed;
+    isDirtyRef.current = false;
+    setDraft(computed);
+    setInitialDraft(computed);
+  }
+
   function resolveHeaderAction(action) {
     if (!action || typeof action !== "object") return null;
     if (action.action_id) {
@@ -2337,6 +2354,7 @@ function AppView({
     const next = applyDraftComputed({ ...(draftRef.current || draft || {}), ...patch });
     draftRevisionRef.current += 1;
     draftRef.current = next;
+    isDirtyRef.current = !formDraftValuesEqual(next, initialDraftRef.current || initialDraft || {});
     setDraft(next);
     return next;
   }
@@ -2440,29 +2458,33 @@ function AppView({
     }
     setEmailComposeModal((prev) => (prev ? { ...prev, status: "sending", error: null } : prev));
     const useTemplateBody = modal.bodyMode !== "plain" && Boolean(compose.template_id && modal.bodyHtml);
-    const result = await runViewAction(modal.action, {
-      moduleId: modal.moduleId,
-      recordId: modal.recordId,
-      recordDraft: modal.recordDraft,
-      selectedIds: modal.selectedIds,
-      skipConfirm: true,
-      emailCompose: {
-        automation_id: compose.automation_id,
-        step_id: compose.step_id,
-        inputs: {
-          to: splitEmailInput(modal.toText),
-          cc: splitEmailInput(modal.ccText),
-          bcc: splitEmailInput(modal.bccText),
-          template_id: useTemplateBody ? compose.template_id : null,
-          subject: modal.subject,
-          body_html: useTemplateBody ? modal.bodyHtml : "",
-          body_text: modal.bodyText,
-          attachment_ids: selectedAttachmentIds,
-          replace_recipients: true,
-          replace_attachments: true,
-        },
+    const emailCompose = {
+      automation_id: compose.automation_id,
+      step_id: compose.step_id,
+      inputs: {
+        to: splitEmailInput(modal.toText),
+        cc: splitEmailInput(modal.ccText),
+        bcc: splitEmailInput(modal.bccText),
+        template_id: useTemplateBody ? compose.template_id : null,
+        subject: modal.subject,
+        body_html: useTemplateBody ? modal.bodyHtml : "",
+        body_text: modal.bodyText,
+        attachment_ids: selectedAttachmentIds,
+        replace_recipients: true,
+        replace_attachments: true,
       },
-    });
+    };
+    const result = await handleHeaderAction(
+      { ...modal.action, moduleId: modal.moduleId },
+      {
+        recordDraft: modal.recordDraft,
+        selectedIds: modal.selectedIds,
+        validationRetry: true,
+        emailComposeConfirmed: true,
+        skipConfirm: true,
+        emailCompose,
+      }
+    );
     if (result) {
       setEmailComposeModal(null);
     } else {
@@ -2547,6 +2569,7 @@ function AppView({
       const optimistic = applyDraftComputed({ ...prevDraft, ...resolvedPatch });
       const writeSeq = beginRecordWriteGuard(resolvedPatch);
       draftRevisionRef.current += 1;
+      const actionRevision = draftRevisionRef.current;
       invalidatePendingRecordLoads();
       draftRef.current = optimistic;
       setDraft(optimistic);
@@ -2561,7 +2584,7 @@ function AppView({
         flushPendingFormSave,
       });
       Promise.resolve(run)
-        .then((result) => {
+        .then(async (result) => {
           if (latestWriteSeqRef.current !== writeSeq) return;
           if (!result) {
             clearRecordWriteGuard(writeSeq);
@@ -2572,12 +2595,15 @@ function AppView({
             return;
           }
           if (result.record) {
-            const next = applyDraftComputed(result.record);
+            const next = applyDraftComputed({ ...result.record, ...resolvedPatch });
             finishRecordWriteGuard(writeSeq, next);
             applyLoadedDraft(next);
           } else {
             finishRecordWriteGuard(writeSeq, optimistic);
             applyLoadedDraft(optimistic);
+          }
+          if (effectiveRecordId && draftRevisionRef.current === actionRevision) {
+            await refreshCurrentRecord({ force: true, expectedRevision: actionRevision });
           }
           if (closeOnSuccess) setActiveManifestModal(null);
           else setActiveManifestModal((prev) => (prev ? { ...prev, busy: false } : prev));
@@ -2626,16 +2652,19 @@ function AppView({
     return patch;
   }
 
-  async function handleManifestModalSaveProgress() {
-    const modal = activeManifestModal;
-    if (!modal?.saveProgress || modal.busy || !effectiveRecordId || !canWriteRecords) return;
+  async function persistManifestModalProgress(modal = activeManifestModal, options = {}) {
+    if (!modal?.saveProgress || (!options.ignoreBusy && modal.busy) || !effectiveRecordId || !canWriteRecords) {
+      return { ok: false, draft: draftRef.current || draft || {} };
+    }
     const modalEntityId = modal.entityId || recordEntityId;
-    if (!modalEntityId) return;
+    if (!modalEntityId) return { ok: false, draft: draftRef.current || draft || {} };
     const rawPatch = buildManifestModalProgressPatch(modal);
     const patch = normalizeManifestRecordPayload(modal.fieldIndex || fieldIndex, rawPatch);
     if (Object.keys(patch).length === 0) {
-      setActiveManifestModal((prev) => (prev ? { ...prev, error: "", savedAt: Date.now() } : prev));
-      return;
+      if (!options.keepBusy) {
+        setActiveManifestModal((prev) => (prev ? { ...prev, error: "", savedAt: Date.now() } : prev));
+      }
+      return { ok: true, draft: draftRef.current || draft || {} };
     }
 
     const prevDraft = draftRef.current || draft || {};
@@ -2646,6 +2675,8 @@ function AppView({
     draftRevisionRef.current += 1;
     invalidatePendingRecordLoads();
     draftRef.current = optimistic;
+    initialDraftRef.current = optimisticInitial;
+    isDirtyRef.current = !formDraftValuesEqual(optimistic, optimisticInitial);
     setDraft(optimistic);
     setInitialDraft(optimisticInitial);
     setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "", savedAt: null } : prev));
@@ -2676,6 +2707,8 @@ function AppView({
       if (latestWriteSeqRef.current === writeSeq) {
         if (!finishRecordWriteGuard(writeSeq, next)) clearRecordWriteGuard(writeSeq);
         draftRef.current = next;
+        initialDraftRef.current = nextInitial;
+        isDirtyRef.current = !formDraftValuesEqual(next, nextInitial);
         setDraft(next);
         setInitialDraft(nextInitial);
       }
@@ -2685,31 +2718,47 @@ function AppView({
         return {
           ...prev,
           draft: nextModalDraft,
-          busy: false,
+          busy: Boolean(options.keepBusy),
           error: "",
           savedAt: Date.now(),
         };
       });
+      return { ok: true, draft: next, initialDraft: nextInitial };
     } catch (err) {
       if (latestWriteSeqRef.current === writeSeq) {
         clearRecordWriteGuard(writeSeq);
         draftRef.current = prevDraft;
+        initialDraftRef.current = prevInitial;
+        isDirtyRef.current = !formDraftValuesEqual(prevDraft, prevInitial);
         setDraft(prevDraft);
         setInitialDraft(prevInitial);
       }
       setActiveManifestModal((prev) =>
         prev ? { ...prev, busy: false, error: err?.message || translateRuntime("common.save_failed") } : prev
       );
+      return { ok: false, draft: prevDraft, error: err };
     }
+  }
+
+  async function handleManifestModalSaveProgress() {
+    await persistManifestModalProgress(activeManifestModal);
   }
 
   async function handleValidationModalContinue() {
     const modal = activeManifestModal;
     const source = modal?.validationSource;
     if (!modal || !source || modal.busy) return;
-    const nextDraft = syncValidationModalDraftToForm(modal);
+    let nextDraft = syncValidationModalDraftToForm(modal);
+    const modalWithSyncedDraft = { ...modal, draft: nextDraft };
     setActiveManifestModal((prev) => (prev ? { ...prev, busy: true, error: "" } : prev));
     try {
+      if (source.type === "action" && modal.saveProgress && effectiveRecordId && canWriteRecords) {
+        const progressResult = await persistManifestModalProgress(modalWithSyncedDraft, { ignoreBusy: true, keepBusy: true });
+        if (!progressResult.ok) {
+          return;
+        }
+        nextDraft = progressResult.draft || draftRef.current || nextDraft;
+      }
       let ok = false;
       if (source.type === "save") {
         ok = await handleSave(null, { force: true });
@@ -2737,6 +2786,8 @@ function AppView({
     if (!action) return;
     if (actionRunningRef.current) return;
     let contextDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draft || {};
+    const contextSelectedIds = Array.isArray(options?.selectedIds) ? options.selectedIds : selectedIds;
+    const contextRecordId = options?.recordId || effectiveRecordId;
     if (action.modal_id) {
       const completedModalAction = resolveCompletedMissingOnlyModalAction(action.modal_id, contextDraft);
       if (completedModalAction) {
@@ -2754,9 +2805,9 @@ function AppView({
     if (!options?.emailComposeConfirmed && actionRequestsEmailCompose(action)) {
       return await openEmailComposeAction(action, {
         moduleId: actionModuleId,
-        recordId: effectiveRecordId,
+        recordId: contextRecordId,
         recordDraft: contextDraft,
-        selectedIds,
+        selectedIds: contextSelectedIds,
       });
     }
     if (!options?.skipConfirm && !(await confirmAction(action))) return;
@@ -2765,9 +2816,9 @@ function AppView({
       if (onRunAction) {
         try {
           await runViewAction(action, {
-            recordId: effectiveRecordId,
+            recordId: contextRecordId,
             recordDraft: contextDraft,
-            selectedIds,
+            selectedIds: contextSelectedIds,
             skipConfirm: true,
           });
         } catch (err) {
@@ -2818,19 +2869,21 @@ function AppView({
       const writeSeq = beginRecordWriteGuard(resolvedPatch);
       startActionPending(action);
       draftRevisionRef.current += 1;
+      const actionRevision = draftRevisionRef.current;
       invalidatePendingRecordLoads();
       draftRef.current = optimistic;
       setDraft(optimistic);
       setInitialDraft(applyDraftComputed({ ...prevInitial, ...resolvedPatch }));
       const run = onRunAction?.(action, {
         moduleId: actionModuleId,
-        recordId: effectiveRecordId,
+        recordId: contextRecordId,
         recordDraft: contextDraft,
-        selectedIds,
+        selectedIds: contextSelectedIds,
         skipConfirm: true,
+        emailCompose: options?.emailCompose || undefined,
       });
       return await Promise.resolve(run)
-        .then((result) => {
+        .then(async (result) => {
           if (latestWriteSeqRef.current !== writeSeq) return;
           if (!result) {
             clearRecordWriteGuard(writeSeq);
@@ -2840,12 +2893,15 @@ function AppView({
             return null;
           }
           if (result.record) {
-            const next = applyDraftComputed(result.record);
+            const next = applyDraftComputed({ ...result.record, ...resolvedPatch });
             finishRecordWriteGuard(writeSeq, next);
             applyLoadedDraft(next);
           } else {
             finishRecordWriteGuard(writeSeq, optimistic);
             applyLoadedDraft(optimistic);
+          }
+          if (effectiveRecordId && draftRevisionRef.current === actionRevision) {
+            await refreshCurrentRecord({ force: true, expectedRevision: actionRevision });
           }
           return result;
         })
@@ -2866,10 +2922,11 @@ function AppView({
     try {
       return await runViewAction(action, {
         moduleId: actionModuleId,
-        recordId: effectiveRecordId,
+        recordId: contextRecordId,
         recordDraft: contextDraft,
-        selectedIds,
+        selectedIds: contextSelectedIds,
         skipConfirm: true,
+        emailCompose: options?.emailCompose || undefined,
       });
     } catch (err) {
       console.warn("action_run_failed", err);
@@ -2993,10 +3050,18 @@ function AppView({
         : null,
     [createDefaultsParam, createReturnToParam, effectiveRecordId, kind, moduleId, previewMode, recordEntityId, view?.id]
   );
+  const formHydrationIdentity = useMemo(
+    () =>
+      kind === "form"
+        ? `${moduleId || ""}:${recordEntityId || ""}:${effectiveRecordId || "new"}:${view?.id || ""}`
+        : "",
+    [effectiveRecordId, kind, moduleId, recordEntityId, view?.id]
+  );
   const isDirty = useMemo(() => !formDraftValuesEqual(draft, initialDraft), [draft, initialDraft]);
   const isDirtyRef = useRef(false);
   const draftNotifyTimerRef = useRef(null);
   const lastLoadedDraftKeyRef = useRef(null);
+  const formHydrationIdentityRef = useRef(null);
   const draftRevisionRef = useRef(0);
   const recordLoadSeqRef = useRef(0);
   const latestWriteSeqRef = useRef(0);
@@ -3012,7 +3077,14 @@ function AppView({
           ? [String(detail.recordId)]
           : [];
       if (!ids.includes(String(effectiveRecordId))) return;
-      if (isDirtyRef.current || saveInFlightRef.current || actionRunningRef.current) return;
+      if (
+        isDirtyRef.current ||
+        hasWritableDraftChanges(draftRef.current || {}, initialDraftRef.current || {}) ||
+        saveInFlightRef.current ||
+        actionRunningRef.current
+      ) {
+        return;
+      }
       invalidatePendingRecordLoads();
       setRefreshTick((value) => value + 1);
     });
@@ -3076,7 +3148,14 @@ function AppView({
   }
 
   function canApplyServerRecord(record) {
-    if (isDirtyRef.current || saveInFlightRef.current || actionRunningRef.current) return false;
+    if (
+      isDirtyRef.current ||
+      hasWritableDraftChanges(draftRef.current || {}, initialDraftRef.current || {}) ||
+      saveInFlightRef.current ||
+      actionRunningRef.current
+    ) {
+      return false;
+    }
     return recordMatchesWriteGuard(record);
   }
 
@@ -3085,6 +3164,7 @@ function AppView({
     draftRevisionRef.current += 1;
     invalidatePendingRecordLoads();
     draftRef.current = computed;
+    isDirtyRef.current = !formDraftValuesEqual(computed, initialDraftRef.current || {});
     setDraft(computed);
   }, [applyDraftComputed]);
 
@@ -3092,6 +3172,9 @@ function AppView({
     const computedDraft = applyDraftComputed(nextDraft);
     const computedInitial = applyDraftComputed(nextInitial);
     draftRef.current = computedDraft;
+    initialDraftRef.current = computedInitial;
+    formHydrationIdentityRef.current = formHydrationIdentity;
+    isDirtyRef.current = !formDraftValuesEqual(computedDraft, computedInitial);
     setDraft(computedDraft);
     setInitialDraft(computedInitial);
   }
@@ -3101,18 +3184,18 @@ function AppView({
     const entries = Object.entries(compactPatch);
     if (entries.length === 0) return;
     invalidatePendingRecordLoads();
-    setDraft((prev) => {
-      const base = prev && typeof prev === "object" ? prev : {};
-      if (entries.every(([key, value]) => base[key] === value)) return prev;
-      const next = applyDraftComputed({ ...base, ...compactPatch });
-      draftRef.current = next;
-      return next;
-    });
-    setInitialDraft((prev) => {
-      const base = prev && typeof prev === "object" ? prev : {};
-      if (entries.every(([key, value]) => base[key] === value)) return prev;
-      return applyDraftComputed({ ...base, ...compactPatch });
-    });
+    const currentDraft = draftRef.current && typeof draftRef.current === "object" ? draftRef.current : {};
+    const currentInitial = initialDraftRef.current && typeof initialDraftRef.current === "object" ? initialDraftRef.current : {};
+    const draftChanged = entries.some(([key, value]) => currentDraft[key] !== value);
+    const initialChanged = entries.some(([key, value]) => currentInitial[key] !== value);
+    if (!draftChanged && !initialChanged) return;
+    const nextDraft = draftChanged ? applyDraftComputed({ ...currentDraft, ...compactPatch }) : currentDraft;
+    const nextInitial = initialChanged ? applyDraftComputed({ ...currentInitial, ...compactPatch }) : currentInitial;
+    draftRef.current = nextDraft;
+    initialDraftRef.current = nextInitial;
+    isDirtyRef.current = !formDraftValuesEqual(nextDraft, nextInitial);
+    setDraft(nextDraft);
+    setInitialDraft(nextInitial);
   }, [applyDraftComputed]);
 
   function applyServerLoadedDraft(nextDraft, nextInitial = nextDraft) {
@@ -3131,8 +3214,8 @@ function AppView({
   }
 
   useEffect(() => {
-    isDirtyRef.current = isDirty;
-  }, [isDirty]);
+    isDirtyRef.current = !formDraftValuesEqual(draftRef.current || draft || {}, initialDraftRef.current || initialDraft || {});
+  }, [isDirty, draft, initialDraft]);
 
   useEffect(() => {
     draftRef.current = draft;
@@ -3255,17 +3338,21 @@ function AppView({
       }
     }
     if (isDirtyRef.current) {
-      const errors = computeValidationErrors(draftRef.current || {});
-      if (Object.keys(errors).length > 0) {
-        if (showValidationErrors) setShowValidation(true);
-        setAutoSaveState("idle");
-        pushToast("error", translateRuntime("common.save_failed"));
-        return false;
+      if (!hasWritableDraftChanges(draftRef.current || {}, initialDraftRef.current || {})) {
+        markDraftBaseline(draftRef.current || {});
+      } else {
+        const errors = computeValidationErrors(draftRef.current || {});
+        if (Object.keys(errors).length > 0) {
+          if (showValidationErrors) setShowValidation(true);
+          setAutoSaveState("idle");
+          pushToast("error", translateRuntime("common.save_failed"));
+          return false;
+        }
+        setAutoSaveState("saving");
+        const saved = await handleSave(null, { force: true, silent: true, suppressActivity: true });
+        setAutoSaveState(saved && !isDirtyRef.current ? "saved" : "idle");
+        if (!saved) return false;
       }
-      setAutoSaveState("saving");
-      const saved = await handleSave(null, { force: true, silent: true, suppressActivity: true });
-      setAutoSaveState(saved && !isDirtyRef.current ? "saved" : "idle");
-      if (!saved) return false;
     }
     if (pendingActivityCommitRef.current) {
       await flushPendingActivityCommit();
@@ -3308,7 +3395,12 @@ function AppView({
 
   useEffect(() => {
     if (kind === "form") {
-      if (isDirtyRef.current && formDraftStorageKey && lastLoadedDraftKeyRef.current === formDraftStorageKey) return;
+      if (
+        formHydrationIdentityRef.current === formHydrationIdentity &&
+        (isDirtyRef.current || hasWritableDraftChanges(draftRef.current || {}, initialDraftRef.current || {}))
+      ) {
+        return;
+      }
       setShowValidation(false);
       if (!effectiveRecordId) {
         const persisted = loadFormDraftSnapshot(formDraftStorageKey);
@@ -3404,7 +3496,7 @@ function AppView({
           setState({ status: "error", error: msg });
         });
     }
-  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed, formDraftStorageKey, createDefaults, refreshTick]);
+  }, [kind, recordEntityId, effectiveRecordId, contextEntityId, contextRecordLoading, contextRecordError, previewMode, previewStore?.version, bootstrapVersion, bootstrap, view?.id, bootstrapLoading, applyDraftComputed, formDraftStorageKey, createDefaults, refreshTick, formHydrationIdentity]);
 
   useEffect(() => {
     if (kind !== "form" || effectiveRecordId || recordEntityId !== "entity.material_log") return;
@@ -3496,6 +3588,11 @@ function AppView({
     }
     const silent = opts.silent === true;
     const suppressActivity = opts.suppressActivity === true;
+    if (effectiveRecordId && !hasWritableDraftChanges(liveDraft, initialDraftRef.current || {})) {
+      markDraftBaseline(liveDraft);
+      if (!silent) pushToast("success", translateRuntime("common.saved"));
+      return true;
+    }
     if (saveInFlightRef.current && !opts.force) {
       pendingAutoSaveRef.current = true;
       return false;
@@ -3623,14 +3720,21 @@ function AppView({
     }
   }
 
-  const refreshCurrentRecord = useCallback(async () => {
+  const refreshCurrentRecord = useCallback(async (options = {}) => {
     if (!recordEntityId || !effectiveRecordId || previewMode) return;
+    const force = options?.force === true;
+    const expectedRevision = Number.isFinite(options?.expectedRevision) ? options.expectedRevision : null;
     const loadSeq = ++recordLoadSeqRef.current;
     const draftRevisionAtStart = draftRevisionRef.current;
     const writeGuardPatchAtStart = currentWriteGuardPatch();
     try {
       const res = await apiFetch(`/records/${recordEntityId}/${effectiveRecordId}`, { cacheTtl: 0 });
       const next = applyDraftComputed(res?.record || {});
+      if (force) {
+        if (expectedRevision !== null && draftRevisionRef.current !== expectedRevision) return;
+        applyLoadedDraft(next);
+        return;
+      }
       if (!canApplyRecordLoad(loadSeq, draftRevisionAtStart, next, writeGuardPatchAtStart)) return;
       applyLoadedDraft(next);
     } catch {
@@ -3698,6 +3802,11 @@ function AppView({
     autoSaveTimerRef.current = setTimeout(async () => {
       const errors = computeValidationErrors(draftRef.current || {});
       if (Object.keys(errors).length > 0) return;
+      if (!hasWritableDraftChanges(draftRef.current || {}, initialDraftRef.current || {})) {
+        markDraftBaseline(draftRef.current || {});
+        setAutoSaveState("idle");
+        return;
+      }
       if (saveInFlightRef.current) {
         pendingAutoSaveRef.current = true;
         return;

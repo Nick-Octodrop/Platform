@@ -3563,9 +3563,6 @@
             "action_id": "action.customer_order_resume"
           },
           {
-            "action_id": "action.customer_order_create_purchase_order"
-          },
-          {
             "action_id": "action.customer_order_create_deposit_invoice"
           },
           {
@@ -3640,6 +3637,39 @@
                       "ref": "$record.id"
                     }
                   }
+                },
+                {
+                  "kind": "container",
+                  "variant": "panel",
+                  "title": "Purchase Orders",
+                  "content": [
+                    {
+                      "kind": "related_list",
+                      "target_module_id": "biz_purchase_orders",
+                      "entity_id": "entity.biz_purchase_order",
+                      "target": "view:biz_purchase_order.list",
+                      "record_domain": {
+                        "op": "or",
+                        "conditions": [
+                          {
+                            "op": "eq",
+                            "field": "biz_purchase_order.source_customer_order_id",
+                            "value": {
+                              "ref": "$record.id"
+                            }
+                          },
+                          {
+                            "op": "eq",
+                            "field": "biz_purchase_order.id",
+                            "value": {
+                              "ref": "$record.biz_order.primary_purchase_order_id"
+                            }
+                          }
+                        ]
+                      },
+                      "create_modal": false
+                    }
+                  ]
                 }
               ]
             },
