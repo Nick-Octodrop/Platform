@@ -47,12 +47,46 @@ function actionRequestsEmailCompose(action) {
   return false;
 }
 
+function actionRequestsChildSelection(action) {
+  return Boolean(action?.child_selection && typeof action.child_selection === "object");
+}
+
 function splitEmailInput(value) {
   if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
   return String(value || "")
     .split(/[,\n;]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function resolveRecordRefValue(ref, record, recordId) {
+  if (typeof ref !== "string") return undefined;
+  if (ref === "$record.id") return recordId || record?.id;
+  if (ref.startsWith("$record.")) return getFieldValue(record || {}, ref.slice("$record.".length));
+  if (ref === "$current.id") return recordId || record?.id;
+  if (ref.startsWith("$current.")) return getFieldValue(record || {}, ref.slice("$current.".length));
+  return getFieldValue(record || {}, ref);
+}
+
+function resolveConditionRecordRefs(value, record, recordId) {
+  if (Array.isArray(value)) return value.map((item) => resolveConditionRecordRefs(item, record, recordId));
+  if (!value || typeof value !== "object") return value;
+  if (typeof value.ref === "string") return resolveRecordRefValue(value.ref, record, recordId);
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveConditionRecordRefs(item, record, recordId)]));
+}
+
+function buildChildSelectionDomain(config, parentRecord, parentRecordId) {
+  const childParentField = config?.child_parent_field || config?.parent_field || config?.parentField;
+  const conditions = [];
+  if (childParentField && parentRecordId) {
+    conditions.push({ op: "eq", field: childParentField, value: parentRecordId });
+  }
+  const rawDomain = config?.domain || config?.record_domain || config?.recordDomain;
+  if (rawDomain && typeof rawDomain === "object") {
+    conditions.push(resolveConditionRecordRefs(rawDomain, parentRecord || {}, parentRecordId));
+  }
+  if (conditions.length === 0) return null;
+  return conditions.length === 1 ? conditions[0] : { op: "and", conditions };
 }
 
 function toRouteEntityId(entityId) {
@@ -1985,6 +2019,7 @@ function AppView({
   const openCreateModal = onLookupCreate;
   const [activeManifestModal, setActiveManifestModal] = useState(null);
   const [emailComposeModal, setEmailComposeModal] = useState(null);
+  const [childSelectionModal, setChildSelectionModal] = useState(null);
   const actionRunning = actionState.status === "running";
   const idleActionState = { status: "idle", label: null, kind: null };
 
@@ -2219,11 +2254,11 @@ function AppView({
     return action;
   }
 
-  function computeManifestModalMissingFieldIds({ fields = [], showMissingOnly = false, missingFieldsActionId = null } = {}, record = {}) {
+  function computeManifestModalMissingFieldIds({ fields = [], showMissingOnly = false, missingFieldsActionId = null, sourceAction = null } = {}, record = {}) {
     if (!showMissingOnly) return null;
-    if (missingFieldsActionId) {
-      const sourceAction = resolveModalAction({ action_id: missingFieldsActionId });
-      const condition = sourceAction?.enabled_when;
+    const actionForMissingFields = missingFieldsActionId ? resolveModalAction({ action_id: missingFieldsActionId }) : sourceAction;
+    if (actionForMissingFields) {
+      const condition = actionForMissingFields?.enabled_when;
       if (condition) {
         const missing = new Set();
         if (!evalCondition(condition, _conditionEvalContext(record || {}, currentActor))) {
@@ -2233,6 +2268,23 @@ function AppView({
       }
     }
     return fields.filter((fieldId) => isEmptyFieldValue(getFieldValue(record || {}, fieldId)));
+  }
+
+  function computeActiveManifestModalMissingFieldIds(modal = activeManifestModal, record = {}) {
+    if (!modal?.showMissingOnly) return null;
+    const sourceAction =
+      modal.validationSource?.action && typeof modal.validationSource.action === "object"
+        ? modal.validationSource.action
+        : null;
+    return computeManifestModalMissingFieldIds(
+      {
+        fields: modal.fields || [],
+        showMissingOnly: modal.showMissingOnly,
+        missingFieldsActionId: modal.missingFieldsActionId || null,
+        sourceAction,
+      },
+      record || {}
+    );
   }
 
   function getActionValidationFieldIds(action, contextRecord = draft || {}) {
@@ -2369,6 +2421,157 @@ function AppView({
     return true;
   }
 
+  function childSelectionFieldDef(modal, fieldId) {
+    if (!modal?.childEntityDef || !Array.isArray(modal.childEntityDef.fields)) return null;
+    return modal.childEntityDef.fields.find((field) => field?.id === fieldId) || null;
+  }
+
+  function formatChildSelectionValue(modal, record, fieldId) {
+    const value = getFieldValue(record || {}, fieldId);
+    if (value === undefined || value === null || value === "") return "—";
+    const field = childSelectionFieldDef(modal, fieldId);
+    if (field?.type === "lookup") return modal.lookupLabels?.[`${fieldId}:${value}`] || value;
+    if (field?.type === "bool") return value ? translateRuntime("common.yes") : translateRuntime("common.no");
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+    return String(value);
+  }
+
+  function buildChildSelectionGroups(rows, groupBy, modalBase) {
+    if (!Array.isArray(groupBy) || groupBy.length === 0) {
+      return [{ key: "__all__", label: translateRuntime("common.all"), rows }];
+    }
+    const groups = new Map();
+    for (const row of rows) {
+      const record = row?.record || {};
+      const values = groupBy.map((fieldId) => getFieldValue(record, fieldId) ?? "");
+      const key = JSON.stringify(values);
+      if (!groups.has(key)) {
+        const label = groupBy
+          .map((fieldId) => {
+            const field = modalBase?.childEntityDef?.fields?.find((item) => item?.id === fieldId);
+            return `${field?.label || fieldId}: ${formatChildSelectionValue(modalBase, record, fieldId)}`;
+          })
+          .join(" · ");
+        groups.set(key, { key, label, rows: [] });
+      }
+      groups.get(key).rows.push(row);
+    }
+    return Array.from(groups.values());
+  }
+
+  async function loadChildSelectionLookupLabels(childEntityDef, rows, fields) {
+    const lookupFields = (fields || [])
+      .map((fieldId) => childEntityDef?.fields?.find((field) => field?.id === fieldId))
+      .filter((field) => field?.type === "lookup" && field?.entity);
+    const labels = {};
+    await Promise.all(
+      lookupFields.map(async (field) => {
+        const ids = Array.from(new Set((rows || []).map((row) => getFieldValue(row?.record || {}, field.id)).filter(Boolean)));
+        if (ids.length === 0) return;
+        try {
+          const res = await apiFetch(`/lookup/${field.entity}/labels`, {
+            method: "POST",
+            body: {
+              ids,
+              label_field: field.display_field || undefined,
+            },
+            cacheTtl: 60000,
+          });
+          const fieldLabels = res?.labels || {};
+          for (const id of ids) {
+            if (fieldLabels[id]) labels[`${field.id}:${id}`] = fieldLabels[id];
+          }
+        } catch {
+          // Label resolution is cosmetic; raw ids remain selectable.
+        }
+      })
+    );
+    return labels;
+  }
+
+  async function openChildSelectionAction(action, options = {}) {
+    const config = action?.child_selection;
+    if (!config || typeof config !== "object") return null;
+    if (!canWriteRecords) return null;
+    const actionModuleId = action?.moduleId || moduleId;
+    const parentRecordId = options?.recordId || effectiveRecordId;
+    const parentDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draftRef.current || draft || {};
+    if (!parentRecordId) {
+      pushToast("error", translateRuntime("common.app_shell.action_missing_record_context"));
+      return null;
+    }
+    const saved = await flushPendingFormSave();
+    if (!saved) return null;
+    const childEntityId = resolveEntityFullId(manifest, config.child_entity_id || config.entity_id);
+    const runActionId = config.run_action_id || config.action_id;
+    const runAction = resolveHeaderAction({ action_id: runActionId });
+    const childEntityDef = (manifest?.entities || []).find((entity) => entity?.id === childEntityId) || null;
+    if (!childEntityId || !runAction || !childEntityDef) {
+      pushToast("error", translateRuntime("common.app_shell.action_failed"));
+      return null;
+    }
+    const columns = Array.isArray(config.columns) && config.columns.length
+      ? config.columns.filter((fieldId) => typeof fieldId === "string" && fieldId)
+      : (childEntityDef.fields || []).slice(0, 6).map((field) => field.id).filter(Boolean);
+    const groupBy = Array.isArray(config.group_by) ? config.group_by.filter((fieldId) => typeof fieldId === "string" && fieldId) : [];
+    const requiredFields = Array.isArray(config.require_uniform_fields)
+      ? config.require_uniform_fields.filter((fieldId) => typeof fieldId === "string" && fieldId)
+      : groupBy;
+    const fields = Array.from(new Set(["id", ...columns, ...groupBy, ...requiredFields]));
+    const domain = buildChildSelectionDomain(config, parentDraft, parentRecordId);
+    setChildSelectionModal({
+      status: "loading",
+      action,
+      runAction,
+      moduleId: actionModuleId,
+      parentRecordId,
+      parentDraft,
+      childEntityId,
+      childEntityDef,
+      columns,
+      groupBy,
+      requiredFields,
+      title: config.title || action.confirm?.title || resolveActionLabel(action, manifest, views),
+      description: config.description || action.confirm?.body || "",
+      groupLabel: config.group_label || config.groupLabel || "Group",
+      submitLabel: config.submit_label || config.submitLabel || resolveActionLabel(runAction, manifest, views),
+      rows: [],
+      groups: [],
+      groupKey: "",
+      selectedIds: new Set(),
+      lookupLabels: {},
+      error: "",
+    });
+    try {
+      const params = new URLSearchParams({ limit: String(Math.min(Number(config.limit || 100) || 100, 200)) });
+      if (fields.length) params.set("fields", fields.join(","));
+      if (domain) params.set("domain", JSON.stringify(domain));
+      const res = await apiFetch(`/records/${encodeURIComponent(childEntityId)}?${params.toString()}`, { cacheTtl: 0 });
+      const rows = Array.isArray(res?.records) ? res.records : [];
+      const lookupLabels = await loadChildSelectionLookupLabels(childEntityDef, rows, Array.from(new Set([...columns, ...groupBy])));
+      const modalBase = { childEntityDef, lookupLabels };
+      const groups = buildChildSelectionGroups(rows, groupBy, modalBase);
+      setChildSelectionModal((prev) => prev ? ({
+        ...prev,
+        status: "ready",
+        rows,
+        lookupLabels,
+        groups,
+        groupKey: groups[0]?.key || "",
+        selectedIds: new Set(),
+        error: "",
+      }) : prev);
+      return rows;
+    } catch (err) {
+      setChildSelectionModal((prev) => prev ? ({
+        ...prev,
+        status: "error",
+        error: err?.message || translateRuntime("common.app_shell.action_failed"),
+      }) : prev);
+      return null;
+    }
+  }
+
   async function openEmailComposeAction(action, options = {}) {
     const actionModuleId = action?.moduleId || moduleId;
     const contextDraft = options?.recordDraft && typeof options.recordDraft === "object" ? options.recordDraft : draft || {};
@@ -2490,6 +2693,37 @@ function AppView({
     } else {
       setEmailComposeModal((prev) => (prev ? { ...prev, status: "ready", error: "Email send action did not complete." } : prev));
     }
+  }
+
+  async function confirmChildSelectionAction() {
+    const modal = childSelectionModal;
+    if (!modal || modal.status === "submitting" || modal.status === "loading") return;
+    const selectedIdsForAction = Array.from(modal.selectedIds || []).filter(Boolean);
+    if (selectedIdsForAction.length === 0) {
+      setChildSelectionModal((prev) => (prev ? { ...prev, error: "Select at least one record." } : prev));
+      return;
+    }
+    setChildSelectionModal((prev) => (prev ? { ...prev, status: "submitting", error: "" } : prev));
+    const result = await handleHeaderAction(
+      { ...modal.runAction, moduleId: modal.moduleId },
+      {
+        recordId: modal.parentRecordId,
+        recordDraft: modal.parentDraft,
+        selectedIds: selectedIdsForAction,
+        childSelectionConfirmed: true,
+        skipConfirm: true,
+        stayOnSourceRecord: true,
+      }
+    );
+    if (result) {
+      setChildSelectionModal(null);
+      if (effectiveRecordId) await refreshCurrentRecord({ force: true });
+      else onRefresh?.();
+      return;
+    }
+    setChildSelectionModal((prev) =>
+      prev ? { ...prev, status: "ready", error: prev.error || translateRuntime("common.app_shell.action_failed") } : prev
+    );
   }
 
   function normalizeTarget(target, defaultPrefix = "page:") {
@@ -2711,13 +2945,18 @@ function AppView({
         isDirtyRef.current = !formDraftValuesEqual(next, nextInitial);
         setDraft(next);
         setInitialDraft(nextInitial);
+        if (!isDirtyRef.current) {
+          clearFormDraftSnapshot(formDraftStorageKey);
+        }
       }
       setActiveManifestModal((prev) => {
         if (!prev) return prev;
         const nextModalDraft = applyComputedFields(prev.fieldIndex || {}, { ...(prev.draft || {}), ...next });
+        const nextMissingFieldIds = computeActiveManifestModalMissingFieldIds(prev, nextModalDraft);
         return {
           ...prev,
           draft: nextModalDraft,
+          missingFieldIds: nextMissingFieldIds,
           busy: Boolean(options.keepBusy),
           error: "",
           savedAt: Date.now(),
@@ -2801,7 +3040,15 @@ function AppView({
       if (openActionValidationModal(action, contextDraft)) return;
     }
     const actionModuleId = action?.moduleId || moduleId;
-    if (isWriteActionKind(action.kind) && !canWriteRecords) return;
+    if ((isWriteActionKind(action.kind) || actionRequestsChildSelection(action)) && !canWriteRecords) return;
+    if (!options?.childSelectionConfirmed && actionRequestsChildSelection(action)) {
+      return await openChildSelectionAction(action, {
+        moduleId: actionModuleId,
+        recordId: contextRecordId,
+        recordDraft: contextDraft,
+        selectedIds: contextSelectedIds,
+      });
+    }
     if (!options?.emailComposeConfirmed && actionRequestsEmailCompose(action)) {
       return await openEmailComposeAction(action, {
         moduleId: actionModuleId,
@@ -2880,6 +3127,7 @@ function AppView({
         recordDraft: contextDraft,
         selectedIds: contextSelectedIds,
         skipConfirm: true,
+        stayOnSourceRecord: options?.stayOnSourceRecord,
         emailCompose: options?.emailCompose || undefined,
       });
       return await Promise.resolve(run)
@@ -2926,6 +3174,7 @@ function AppView({
         recordDraft: contextDraft,
         selectedIds: contextSelectedIds,
         skipConfirm: true,
+        stayOnSourceRecord: options?.stayOnSourceRecord,
         emailCompose: options?.emailCompose || undefined,
       });
     } catch (err) {
@@ -4165,6 +4414,173 @@ function AppView({
       </div>,
       document.body
     );
+  const activeChildSelectionGroup = childSelectionModal?.groups?.find((group) => group.key === childSelectionModal.groupKey) || null;
+  const activeChildSelectionRows = activeChildSelectionGroup?.rows || [];
+  const childSelectionSelectedCount = (childSelectionModal?.selectedIds || new Set()).size;
+  const childSelectionNode =
+    childSelectionModal &&
+    createPortal(
+      <div className="modal modal-open">
+        <div className="modal-box flex max-h-[calc(100dvh-2rem)] w-11/12 max-w-6xl flex-col overflow-hidden">
+          <div className="shrink-0">
+            <h3 className="font-bold text-lg">{childSelectionModal.title || "Select records"}</h3>
+            {childSelectionModal.description ? (
+              <p className="mt-1 text-sm opacity-70">{childSelectionModal.description}</p>
+            ) : null}
+          </div>
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto space-y-4 pr-1">
+            {childSelectionModal.status === "loading" ? (
+              <LoadingSpinner className="min-h-[20vh]" />
+            ) : childSelectionModal.status === "error" ? (
+              <div className="alert alert-error text-sm">
+                {childSelectionModal.error || translateRuntime("common.app_shell.action_failed")}
+              </div>
+            ) : (
+              <>
+                {childSelectionModal.error ? <div className="alert alert-error text-sm">{childSelectionModal.error}</div> : null}
+                {(childSelectionModal.groups || []).length > 1 ? (
+                  <label className="form-control max-w-xl">
+                    <span className="label label-text">{childSelectionModal.groupLabel || "Group"}</span>
+                    <AppSelect
+                      className="select select-bordered select-sm"
+                      value={childSelectionModal.groupKey || ""}
+                      disabled={childSelectionModal.status === "submitting"}
+                      onChange={(event) =>
+                        setChildSelectionModal((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                groupKey: event.target.value,
+                                selectedIds: new Set(),
+                                error: "",
+                              }
+                            : prev
+                        )
+                      }
+                    >
+                      {(childSelectionModal.groups || []).map((group) => (
+                        <option key={group.key} value={group.key}>
+                          {group.label}
+                        </option>
+                      ))}
+                    </AppSelect>
+                  </label>
+                ) : null}
+                <div className="overflow-hidden rounded-box border border-base-300">
+                  <div className="flex items-center justify-between border-b border-base-200 px-3 py-2 text-xs opacity-70">
+                    <span>{activeChildSelectionRows.length} available</span>
+                    <span>{childSelectionSelectedCount} selected</span>
+                  </div>
+                  {activeChildSelectionRows.length === 0 ? (
+                    <div className="p-4 text-sm opacity-60">No eligible records available.</div>
+                  ) : (
+                    <div className="max-h-[48vh] overflow-auto">
+                      <table className="table table-sm">
+                        <thead>
+                          <tr>
+                            <th className="w-10">
+                              <input
+                                type="checkbox"
+                                className="checkbox checkbox-sm"
+                                checked={
+                                  activeChildSelectionRows.length > 0 &&
+                                  activeChildSelectionRows.every((row) => childSelectionModal.selectedIds?.has(row.record_id))
+                                }
+                                disabled={childSelectionModal.status === "submitting"}
+                                onChange={(event) =>
+                                  setChildSelectionModal((prev) => {
+                                    if (!prev) return prev;
+                                    const next = new Set(prev.selectedIds || []);
+                                    for (const row of activeChildSelectionRows) {
+                                      if (event.target.checked) next.add(row.record_id);
+                                      else next.delete(row.record_id);
+                                    }
+                                    return { ...prev, selectedIds: next, error: "" };
+                                  })
+                                }
+                                aria-label="Select all visible records"
+                              />
+                            </th>
+                            {(childSelectionModal.columns || []).map((fieldId) => {
+                              const field = childSelectionFieldDef(childSelectionModal, fieldId);
+                              return <th key={fieldId}>{field?.label || fieldId}</th>;
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activeChildSelectionRows.map((row) => {
+                            const selected = childSelectionModal.selectedIds?.has(row.record_id);
+                            return (
+                              <tr key={row.record_id} className={selected ? "bg-primary/5" : undefined}>
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    className="checkbox checkbox-sm"
+                                    checked={Boolean(selected)}
+                                    disabled={childSelectionModal.status === "submitting"}
+                                    onChange={(event) =>
+                                      setChildSelectionModal((prev) => {
+                                        if (!prev) return prev;
+                                        const next = new Set(prev.selectedIds || []);
+                                        if (event.target.checked) next.add(row.record_id);
+                                        else next.delete(row.record_id);
+                                        return { ...prev, selectedIds: next, error: "" };
+                                      })
+                                    }
+                                    aria-label="Select record"
+                                  />
+                                </td>
+                                {(childSelectionModal.columns || []).map((fieldId) => {
+                                  const value = formatChildSelectionValue(childSelectionModal, row.record || {}, fieldId);
+                                  return (
+                                    <td key={fieldId} className="max-w-64 truncate" title={value}>
+                                      {value}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="modal-action shrink-0">
+            <button
+              className="btn btn-ghost"
+              disabled={childSelectionModal.status === "submitting"}
+              onClick={() => setChildSelectionModal(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className={PRIMARY_BUTTON_SM}
+              disabled={
+                childSelectionModal.status !== "ready" ||
+                activeChildSelectionRows.length === 0 ||
+                childSelectionSelectedCount === 0
+              }
+              onClick={confirmChildSelectionAction}
+            >
+              {childSelectionModal.status === "submitting" ? <span className="loading loading-spinner loading-xs" /> : null}
+              {childSelectionModal.submitLabel || "Continue"}
+            </button>
+          </div>
+        </div>
+        <button
+          className="modal-backdrop"
+          onClick={() => {
+            if (childSelectionModal.status !== "submitting") setChildSelectionModal(null);
+          }}
+          aria-label="Close"
+        />
+      </div>,
+      document.body
+    );
 
   if (kind === "list") {
     const header = view.header || null;
@@ -4225,7 +4641,7 @@ function AppView({
       for (const action of actions || []) {
         const resolved = resolveHeaderAction(action);
         if (!resolved || !resolved.kind) continue;
-        if (isWriteActionKind(resolved.kind) && !canWriteRecords) continue;
+        if ((isWriteActionKind(resolved.kind) || actionRequestsChildSelection(resolved)) && !canWriteRecords) continue;
         const label = resolveActionLabel(resolved, manifest, views);
         const visible = resolved.visible_when ? evalCondition(resolved.visible_when, _conditionEvalContext(contextRecord || {}, currentActor)) : true;
         if (!visible) continue;
@@ -4496,6 +4912,7 @@ function AppView({
       </div>
       {manifestModalNode}
       {emailComposeNode}
+      {childSelectionNode}
       </>
     );
   }
@@ -4639,6 +5056,7 @@ function AppView({
       </div>
       {manifestModalNode}
       {emailComposeNode}
+      {childSelectionNode}
       </>
     );
   }
@@ -4648,6 +5066,7 @@ function AppView({
       <div className="alert alert-error">Unsupported view type: {kind}</div>
       {manifestModalNode}
       {emailComposeNode}
+      {childSelectionNode}
     </>
   );
 }

@@ -2749,14 +2749,58 @@
     },
     {
       "id": "action.customer_order_create_purchase_order",
-      "kind": "transform_record",
+      "kind": "refresh",
       "entity_id": "entity.biz_order",
       "label": "Raise Purchase Order",
-      "transformation_key": "customer_order_to_purchase_order",
-      "confirm": {
-        "title": "Raise purchase order?",
-        "body": "Create supplier POs from this order.",
-        "title_key": "orders.actions.action_customer_order_create_purchase_order.confirm.title"
+      "child_selection": {
+        "title": "Raise purchase order",
+        "description": "Select the order lines for one supplier purchase order.",
+        "child_entity_id": "entity.biz_order_line",
+        "child_parent_field": "biz_order_line.customer_order_id",
+        "run_action_id": "action.customer_order_line_raise_purchase_order",
+        "group_label": "Supplier group",
+        "group_by": [
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.buy_currency_snapshot"
+        ],
+        "require_uniform_fields": [
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.buy_currency_snapshot"
+        ],
+        "columns": [
+          "biz_order_line.product_id",
+          "biz_order_line.description",
+          "biz_order_line.procurement_quantity_required",
+          "biz_order_line.procured_quantity_total",
+          "biz_order_line.procurement_shortfall_quantity",
+          "biz_order_line.procurement_supplier_id",
+          "biz_order_line.buy_currency_snapshot",
+          "biz_order_line.unit_cost_snapshot",
+          "biz_order_line.buy_total_order_currency",
+          "biz_order_line.linked_purchase_order_id"
+        ],
+        "domain": {
+          "op": "and",
+          "conditions": [
+            {
+              "op": "gt",
+              "field": "biz_order_line.procurement_quantity_required",
+              "value": 0
+            },
+            {
+              "op": "exists",
+              "field": "biz_order_line.procurement_supplier_id"
+            },
+            {
+              "op": "not",
+              "condition": {
+                "op": "exists",
+                "field": "biz_order_line.linked_purchase_order_id"
+              }
+            }
+          ]
+        },
+        "submit_label": "Create Purchase Order"
       },
       "visible_when": {
         "op": "and",
@@ -2775,17 +2819,6 @@
                 "value": "in_production"
               }
             ]
-          },
-          {
-            "op": "exists",
-            "field": "biz_order.preferred_supplier_id"
-          },
-          {
-            "op": "not",
-            "condition": {
-              "op": "exists",
-              "field": "biz_order.primary_purchase_order_id"
-            }
           }
         ]
       },
@@ -2803,7 +2836,7 @@
           },
           {
             "op": "gt",
-            "field": "biz_order.procurement_line_count",
+            "field": "biz_order.unprocured_purchase_line_count",
             "value": 0
           }
         ]
@@ -3566,6 +3599,9 @@
             "action_id": "action.customer_order_send_confirmation"
           },
           {
+            "action_id": "action.customer_order_create_purchase_order"
+          },
+          {
             "action_id": "action.customer_order_resume"
           },
           {
@@ -4126,9 +4162,6 @@
           },
           {
             "action_id": "action.customer_order_line_set_route_auto"
-          },
-          {
-            "action_id": "action.customer_order_line_raise_purchase_order"
           }
         ],
         "search": {

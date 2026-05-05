@@ -173,9 +173,9 @@ ALLOWED_CONDITION_KEYS = {"op", "field", "value", "left", "right", "conditions",
 ALLOWED_COMPUTE_KEYS = {"expression", "aggregate", "persist"}
 ALLOWED_COMPUTE_AGGREGATE_KEYS = {"op", "measure", "entity", "field", "where"}
 ALLOWED_COMPUTE_AGGREGATE_OPS = {"sum", "count", "min", "max", "avg"}
-ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record", "validation_ui", "email_compose"}
+ALLOWED_V1_ACTION_KEYS = {"id", "kind", "label", "label_key", "action_label_key", "target", "entity_id", "defaults", "patch", "transformation_key", "selection_mode", "child_selection", "enabled_when", "visible_when", "confirm", "modal_id", "stay_on_source_record", "validation_ui", "email_compose"}
 ALLOWED_V1_VIEW_HEADER_KEYS = {"title_field", "primary_actions", "secondary_actions", "search", "filters", "bulk_actions", "save_mode", "open_record_target", "auto_save", "auto_save_debounce_ms", "auto_state_actions", "statusbar", "tabs", "validation_ui"}
-ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui", "email_compose"}
+ALLOWED_V1_VIEW_HEADER_ACTION_KEYS = {"action_id", "kind", "label", "label_key", "action_label_key", "target", "enabled_when", "visible_when", "confirm", "modal_id", "validation_ui", "email_compose", "child_selection"}
 ALLOWED_V1_MODAL_KEYS = {
     "id",
     "title",

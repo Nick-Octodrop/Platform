@@ -50839,7 +50839,7 @@ async def list_generic_records(
             cursor=cursor,
             q=q,
             search_fields=fields_list,
-            fields=None if (parsed_domain or entity_has_computed) else field_ids,
+            fields=None if parsed_domain else field_ids,
         )
     else:
         items = generic_records.list(entity_id, limit=limit_cap, offset=offset_val, q=q, search_fields=fields_list)
